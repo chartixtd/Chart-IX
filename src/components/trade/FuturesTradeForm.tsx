@@ -12,7 +12,7 @@ interface FuturesTradeFormProps {
 
 type OrderType = "MARKET" | "LIMIT" | "STOP_MARKET" | "STOP_LIMIT" | "TAKE_PROFIT_MARKET" | "TAKE_PROFIT_LIMIT" | "TRAILING_STOP_MARKET";
 
-const LEVERAGE_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 25, 33, 50, 75, 100, 125];
+const LEVERAGE_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 25, 33, 50, 75, 100, 125, 150, 200, 300];
 
 const ORDER_TYPES: { key: OrderType; label: string; desc: string }[] = [
   { key: "MARKET", label: "Market", desc: "Fill immediately at best price" },
@@ -140,7 +140,7 @@ export function FuturesTradeForm({ symbol }: FuturesTradeFormProps) {
             ))}
           </div>
           <input
-            type="number" min="1" max="125" placeholder="Custom"
+            type="number" min="1" max="300" placeholder="Custom"
             value={customLeverage}
             onChange={(e) => setCustomLeverage(e.target.value)}
             className="w-full rounded-xs bg-bg-tertiary px-2 py-1 text-xs text-text-primary outline-none focus:ring-1 focus:ring-gold/30"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/Badge";
 import { MarketOverview } from "@/components/trade/MarketOverview";
@@ -20,8 +20,11 @@ export default function TradePage() {
   const [interval, setInterval] = useState("1h");
   const { data: ticker } = useSpotTicker(symbol);
 
-  // 确保当前选中交易对始终被 WebSocket 订阅
-  useBingXWebSocket([symbol]);
+  // K 线 WebSocket 订阅
+  const klineSubs = useMemo(() => [{ symbol, interval }], [symbol, interval]);
+
+  // 订阅 ticker + kline 实时数据
+  useBingXWebSocket([symbol], klineSubs);
 
   const isPositive = ticker ? parseFloat(ticker.priceChangePercent) >= 0 : false;
 

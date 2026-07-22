@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useMarketStore } from "@/stores/market";
-import type { BingXTicker } from "@/types/bingx";
+import type { BingXTicker, BingXKline } from "@/types/bingx";
 
 const WS_URL = "wss://open-api-ws.bingx.com/market";
 const RECONNECT_DELAY = 3_000;
@@ -23,21 +23,47 @@ function mapTicker(raw: Record<string, string>): BingXTicker {
   };
 }
 
+/** Map raw WebSocket kline data to BingXKline */
+function mapKline(raw: Record<string, unknown>): BingXKline | null {
+  // BingX kline push: { t, T, o, h, l, c, v, q }  or nested in K object
+  const d = (raw.K || raw) as Record<string, unknown>;
+  const openTime = Number(d.t ?? 0);
+  const closeTime = Number(d.T ?? 0);
+  const open = parseFloat(String(d.o ?? "0"));
+  const high = parseFloat(String(d.h ?? "0"));
+  const low = parseFloat(String(d.l ?? "0"));
+  const close = parseFloat(String(d.c ?? "0"));
+  const volume = parseFloat(String(d.v ?? "0"));
+  const quoteVolume = parseFloat(String(d.q ?? "0"));
+
+  if (!openTime || isNaN(open)) return null;
+
+  return { openTime, open, high, low, close, volume, closeTime, quoteVolume };
+}
+
+interface KlineSub {
+  symbol: string;
+  interval: string;
+}
+
 /**
  * Connect to BingX WebSocket for real-time market data.
- * @param symbols - list of symbols to subscribe (e.g. ["BTC-USDT", "ETH-USDT"])
+ * @param symbols - ticker symbols to subscribe (e.g. ["BTC-USDT", "ETH-USDT"])
+ * @param klineSubs - kline subscriptions (e.g. [{ symbol: "BTC-USDT", interval: "1h" }])
  */
-export function useBingXWebSocket(symbols: string[]) {
+export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
   const wsRef = useRef<WebSocket | null>(null);
   const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const symbolsRef = useRef(symbols);
+  const klineSubsRef = useRef(klineSubs ?? []);
   symbolsRef.current = symbols;
+  klineSubsRef.current = klineSubs ?? [];
 
-  const { setTicker, setWsConnected } = useMarketStore();
+  const { setTicker, setKline, setWsConnected } = useMarketStore();
 
   useEffect(() => {
-    if (symbols.length === 0) return;
+    if (symbols.length === 0 && klineSubsRef.current.length === 0) return;
 
     let destroyed = false;
 
@@ -54,13 +80,21 @@ export function useBingXWebSocket(symbols: string[]) {
         }
         setWsConnected(true);
 
-        // Subscribe to each symbol's ticker stream
-        const currentSymbols = symbolsRef.current;
-        for (const sym of currentSymbols) {
+        // Subscribe to ticker streams
+        for (const sym of symbolsRef.current) {
           ws.send(JSON.stringify({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             reqType: "sub",
             dataType: `${sym}@ticker`,
+          }));
+        }
+
+        // Subscribe to kline streams
+        for (const ks of klineSubsRef.current) {
+          ws.send(JSON.stringify({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            reqType: "sub",
+            dataType: `${ks.symbol}@kline_${ks.interval}`,
           }));
         }
       };
@@ -71,17 +105,30 @@ export function useBingXWebSocket(symbols: string[]) {
           const msg = JSON.parse(event.data);
           if (msg.code !== 0 || !msg.dataType) return;
 
-          // Handle individual ticker push
-          if (msg.dataType.endsWith("@ticker")) {
+          const dataType = msg.dataType as string;
+
+          // Handle ticker push
+          if (dataType.endsWith("@ticker")) {
             const raw = msg.data;
             if (raw) {
-              // Could be single object or array
               const items = Array.isArray(raw) ? raw : [raw];
               for (const item of items) {
                 const ticker = mapTicker(item);
                 if (ticker.symbol) {
                   setTicker(ticker.symbol, ticker);
                 }
+              }
+            }
+          }
+
+          // Handle kline push: dataType like "BTC-USDT@kline_1h"
+          if (dataType.includes("@kline_")) {
+            const match = dataType.match(/^(.+)@kline_(.+)$/);
+            if (match) {
+              const [, sym, interval] = match;
+              const kline = mapKline(msg.data);
+              if (kline) {
+                setKline(sym, interval, kline);
               }
             }
           }
@@ -122,5 +169,5 @@ export function useBingXWebSocket(symbols: string[]) {
         wsRef.current = null;
       }
     };
-  }, [symbols.join(",")]); // re-connect when symbols list changes
+  }, [symbols.join(","), JSON.stringify(klineSubs)]); // re-connect when subscriptions change
 }

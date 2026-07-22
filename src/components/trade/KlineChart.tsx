@@ -13,6 +13,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useKlines } from "@/hooks/useMarketData";
+import { useMarketStore } from "@/stores/market";
 import { cn } from "@/lib/utils";
 
 interface KlineChartProps {
@@ -27,7 +28,11 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const isFirstDataRef = useRef(true);
+  const lastWsTimeRef = useRef<number>(0);
   const { data: klines, isLoading } = useKlines(symbol, interval);
+
+  // Read WebSocket kline from store for real-time candle updates
+  const wsKline = useMarketStore((s) => s.klines[`${symbol}:${interval}`]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -98,10 +103,10 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
     };
   }, []);
 
+  // Initial / full data load from REST
   useEffect(() => {
     if (!klines?.length) return;
 
-    // Filter invalid data and sort oldest-first (API returns newest-first)
     const valid = klines
       .filter(
         (k) =>
@@ -138,6 +143,33 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       isFirstDataRef.current = false;
     }
   }, [klines]);
+
+  // Real-time update of the current candle via WebSocket
+  useEffect(() => {
+    if (!wsKline || !candleSeriesRef.current || !volumeSeriesRef.current) return;
+
+    const time = (wsKline.openTime / 1000) as UTCTimestamp;
+
+    // Update candle
+    candleSeriesRef.current.update({
+      time,
+      open: wsKline.open,
+      high: wsKline.high,
+      low: wsKline.low,
+      close: wsKline.close,
+    });
+
+    // Update volume
+    volumeSeriesRef.current.update({
+      time,
+      value: wsKline.volume,
+      color: wsKline.close >= wsKline.open
+        ? "rgba(34, 197, 94, 0.2)"
+        : "rgba(239, 68, 68, 0.2)",
+    });
+
+    lastWsTimeRef.current = wsKline.openTime;
+  }, [wsKline]);
 
   return (
     <div className={cn("relative", className)}>

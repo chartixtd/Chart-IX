@@ -84,32 +84,19 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
       const fileExt = videoFile.name.split(".").pop()?.toLowerCase() ?? "mp4";
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${fileExt}`;
 
-      // Get presigned upload URL from Supabase (bypasses client-side 50MB limit)
+      // Use resumable (TUS) upload to bypass 50MB free tier limit
       const mimeType = videoFile.type || "video/mp4";
-      const { data: signedData, error: signedErr } = await supabase.storage
+      const { data: uploadData, error: uploadErr } = await supabase.storage
         .from("videos")
-        .createSignedUploadUrl(fileName, { upsert: false });
+        .upload(fileName, videoFile, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: mimeType,
+          duplex: "half",
+        } as never);
 
-      if (signedErr || !signedData?.signedUrl) {
-        setUploadError(`Failed to get upload URL: ${signedErr?.message ?? "Unknown error"}`);
-        setUploading(false);
-        return;
-      }
-
-      setUploadProgress(20);
-
-      // Upload directly to the presigned URL
-      const uploadResponse = await fetch(signedData.signedUrl, {
-        method: "PUT",
-        body: videoFile,
-        headers: {
-          "Content-Type": mimeType,
-        },
-      });
-
-      if (!uploadResponse.ok) {
-        const errText = await uploadResponse.text();
-        setUploadError(`Upload failed: ${errText || uploadResponse.statusText}`);
+      if (uploadErr || !uploadData) {
+        setUploadError(`Upload failed: ${uploadErr?.message ?? "Unknown error"}`);
         setUploading(false);
         return;
       }

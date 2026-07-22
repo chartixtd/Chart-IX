@@ -6,7 +6,22 @@ import type { BingXTicker, BingXKline } from "@/types/bingx";
 
 const WS_URL = "wss://open-api-ws.bingx.com/market";
 const RECONNECT_DELAY = 3_000;
-const PING_INTERVAL = 30_000;
+
+/** BingX WebSocket spot kline uses "min" suffix, not "m" */
+function toWsInterval(interval: string): string {
+  if (interval.endsWith("m") && !interval.endsWith("min")) {
+    return interval.replace(/m$/, "min");
+  }
+  return interval;
+}
+
+/** Convert WS interval back to internal format (e.g., "1min" → "1m") */
+function fromWsInterval(wsIntv: string): string {
+  if (wsIntv.endsWith("min")) {
+    return wsIntv.replace(/min$/, "m");
+  }
+  return wsIntv;
+}
 
 /** Map raw WebSocket ticker data to BingXTicker */
 function mapTicker(raw: Record<string, string>): BingXTicker {
@@ -25,7 +40,7 @@ function mapTicker(raw: Record<string, string>): BingXTicker {
 
 /** Map raw WebSocket kline data to BingXKline */
 function mapKline(raw: Record<string, unknown>): BingXKline | null {
-  // BingX kline push: { t, T, o, h, l, c, v, q }  or nested in K object
+  // BingX kline push: data.K.{t,T,o,h,l,c,v} or flat data.{t,T,o,h,l,c,v}
   const d = (raw.K || raw) as Record<string, unknown>;
   const openTime = Number(d.t ?? 0);
   const closeTime = Number(d.T ?? 0);
@@ -41,19 +56,24 @@ function mapKline(raw: Record<string, unknown>): BingXKline | null {
   return { openTime, open, high, low, close, volume, closeTime, quoteVolume };
 }
 
+/** GZIP decompress a binary WebSocket message to text */
+async function decompress(data: Blob | ArrayBuffer): Promise<string> {
+  const stream = data instanceof Blob
+    ? data.stream()
+    : new Blob([data]).stream();
+
+  const ds = new DecompressionStream("gzip");
+  const decompressed = stream.pipeThrough(ds);
+  return new Response(decompressed).text();
+}
+
 interface KlineSub {
   symbol: string;
   interval: string;
 }
 
-/**
- * Connect to BingX WebSocket for real-time market data.
- * @param symbols - ticker symbols to subscribe (e.g. ["BTC-USDT", "ETH-USDT"])
- * @param klineSubs - kline subscriptions (e.g. [{ symbol: "BTC-USDT", interval: "1h" }])
- */
 export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
   const wsRef = useRef<WebSocket | null>(null);
-  const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const symbolsRef = useRef(symbols);
   const klineSubsRef = useRef(klineSubs ?? []);
@@ -71,6 +91,8 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
       if (destroyed) return;
 
       const ws = new WebSocket(WS_URL);
+      // Receive binary for GZIP decompression
+      ws.binaryType = "arraybuffer";
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -79,30 +101,54 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
           return;
         }
         setWsConnected(true);
+        console.debug("[WS] connected, subscribing...");
 
         // Subscribe to ticker streams
         for (const sym of symbolsRef.current) {
-          ws.send(JSON.stringify({
+          const msg = JSON.stringify({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             reqType: "sub",
             dataType: `${sym}@ticker`,
-          }));
+          });
+          console.debug("[WS] sub ticker:", `${sym}@ticker`);
+          ws.send(msg);
         }
 
         // Subscribe to kline streams
         for (const ks of klineSubsRef.current) {
-          ws.send(JSON.stringify({
+          const dt = `${ks.symbol}@kline_${toWsInterval(ks.interval)}`;
+          const msg = JSON.stringify({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             reqType: "sub",
-            dataType: `${ks.symbol}@kline_${ks.interval}`,
-          }));
+            dataType: dt,
+          });
+          console.debug("[WS] sub kline:", dt);
+          ws.send(msg);
         }
       };
 
-      ws.onmessage = (event) => {
+      ws.onmessage = async (event) => {
         if (destroyed) return;
         try {
-          const msg = JSON.parse(event.data);
+          // BingX sends GZIP-compressed messages — decompress before parsing
+          let text: string;
+          if (event.data instanceof ArrayBuffer && (event.data as ArrayBuffer).byteLength > 0) {
+            text = await decompress(event.data as ArrayBuffer);
+          } else if (typeof event.data === "string") {
+            text = event.data;
+          } else {
+            // Blob or other binary
+            text = await decompress(event.data as Blob);
+          }
+
+          // Handle text Ping from server
+          if (text === "Ping" || text.trim() === "Ping") {
+            console.debug("[WS] received Ping, sending Pong");
+            ws.send("Pong");
+            return;
+          }
+
+          const msg = JSON.parse(text);
           if (msg.code !== 0 || !msg.dataType) return;
 
           const dataType = msg.dataType as string;
@@ -121,40 +167,35 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
             }
           }
 
-          // Handle kline push: dataType like "BTC-USDT@kline_1h"
+          // Handle kline push: dataType like "BTC-USDT@kline_1min"
           if (dataType.includes("@kline_")) {
             const match = dataType.match(/^(.+)@kline_(.+)$/);
             if (match) {
-              const [, sym, interval] = match;
+              const [, sym, wsIntv] = match;
               const kline = mapKline(msg.data);
               if (kline) {
-                setKline(sym, interval, kline);
+                // Store with internal interval format (e.g., "1m") so KlineChart can read it
+                setKline(sym, fromWsInterval(wsIntv), kline);
               }
             }
           }
-        } catch {
-          // ignore malformed messages
+        } catch (err) {
+          console.debug("[WS] message parse error:", err);
         }
       };
 
-      ws.onerror = () => {
-        // will trigger onclose
+      ws.onerror = (err) => {
+        console.debug("[WS] error:", err);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (evt) => {
         if (destroyed) return;
+        console.debug("[WS] closed, reconnecting in", RECONNECT_DELAY, "ms");
         setWsConnected(false);
         wsRef.current = null;
         reconnectRef.current = setTimeout(connect, RECONNECT_DELAY);
       };
     }
-
-    // Start ping loop
-    pingRef.current = setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send("Ping");
-      }
-    }, PING_INTERVAL);
 
     connect();
 
@@ -162,12 +203,11 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
       destroyed = true;
       setWsConnected(false);
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      if (pingRef.current) clearInterval(pingRef.current);
       if (wsRef.current) {
-        wsRef.current.onclose = null; // prevent reconnect
+        wsRef.current.onclose = null;
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [symbols.join(","), JSON.stringify(klineSubs)]); // re-connect when subscriptions change
+  }, [symbols.join(","), JSON.stringify(klineSubs)]);
 }

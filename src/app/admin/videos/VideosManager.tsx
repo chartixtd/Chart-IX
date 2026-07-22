@@ -85,9 +85,10 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${fileExt}`;
 
       // Get presigned upload URL from Supabase (bypasses client-side 50MB limit)
+      const mimeType = videoFile.type || "video/mp4";
       const { data: signedData, error: signedErr } = await supabase.storage
         .from("videos")
-        .createSignedUploadUrl(fileName);
+        .createSignedUploadUrl(fileName, { upsert: false });
 
       if (signedErr || !signedData?.signedUrl) {
         setUploadError(`Failed to get upload URL: ${signedErr?.message ?? "Unknown error"}`);
@@ -102,8 +103,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
         method: "PUT",
         body: videoFile,
         headers: {
-          "Content-Type": videoFile.type || "application/octet-stream",
-          "x-upsert": "false",
+          "Content-Type": mimeType,
         },
       });
 

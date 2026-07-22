@@ -5,7 +5,11 @@ import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/Badge";
 import { MarketOverview } from "@/components/trade/MarketOverview";
 import { KlineChart } from "@/components/trade/KlineChart";
-import { RightPanel } from "@/components/trade/RightPanel";
+import { TradeForm } from "@/components/trade/TradeForm";
+import { OrdersPanel } from "@/components/trade/OrdersPanel";
+import { OrderBook } from "@/components/trade/OrderBook";
+import { FuturesTradeForm } from "@/components/trade/FuturesTradeForm";
+import { FuturesInfoPanel } from "@/components/trade/FuturesInfoPanel";
 import { useSpotTicker } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
@@ -13,22 +17,48 @@ import { cn } from "@/lib/utils";
 
 const DEFAULT_SYMBOL = "BTC-USDT";
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"];
+type MarketType = "spot" | "futures";
 
 export default function TradePage() {
   const t = useTranslations("trade");
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
   const [interval, setInterval] = useState("1h");
+  const [market, setMarket] = useState<MarketType>("spot");
+  const [rightTab, setRightTab] = useState<"trade" | "orders" | "book">("trade");
   const { data: ticker } = useSpotTicker(symbol);
 
-  // 订阅 ticker 实时数据（K线: REST 加载历史 + WS 实时价格驱动当前蜡烛）
   useBingXWebSocket([symbol]);
 
   const isPositive = ticker ? parseFloat(ticker.priceChangePercent) >= 0 : false;
 
+  const tabs: { key: typeof rightTab; label: string }[] = [
+    { key: "trade", label: t("market.trade") },
+    { key: "orders", label: "Orders" },
+    { key: "book", label: t("market.order_book") },
+  ];
+
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      {/* Top bar: symbol info */}
+      {/* Top bar */}
       <div className="flex items-center gap-4 border-b border-border-default px-4 py-3">
+        {/* Market toggle */}
+        <div className="flex rounded-xs bg-bg-tertiary p-0.5">
+          {(["spot", "futures"] as MarketType[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMarket(m)}
+              className={cn(
+                "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
+                market === m ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+              )}
+            >
+              {m === "spot" ? "Spot" : "Futures"}
+            </button>
+          ))}
+        </div>
+
+        <div className="w-px h-4 bg-border-default" />
+
         <h2 className="text-lg font-bold">{symbol}</h2>
         {ticker && (
           <>
@@ -49,14 +79,13 @@ export default function TradePage() {
 
       {/* Main grid */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Symbol list */}
+        {/* Left */}
         <div className="hidden w-60 shrink-0 border-r border-border-default lg:block">
           <MarketOverview onSelectSymbol={setSymbol} activeSymbol={symbol} />
         </div>
 
-        {/* Center: Chart + order form */}
+        {/* Center: Chart */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Interval selector */}
           <div className="flex items-center gap-1 border-b border-border-default px-3 py-1.5">
             {INTERVALS.map((int) => (
               <button
@@ -64,24 +93,53 @@ export default function TradePage() {
                 onClick={() => setInterval(int)}
                 className={cn(
                   "rounded-xs px-2 py-0.5 text-xs font-medium transition-colors",
-                  interval === int
-                    ? "bg-gold/20 text-gold"
-                    : "text-text-muted hover:text-text-primary"
+                  interval === int ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
                 )}
               >
                 {int}
               </button>
             ))}
           </div>
-
-          {/* Chart */}
           <div className="flex-1">
             <KlineChart symbol={symbol} interval={interval} className="h-full" />
           </div>
         </div>
 
-        {/* Right: Trade Form + Order Book */}
-        <RightPanel symbol={symbol} />
+        {/* Right Panel */}
+        <div className="w-64 shrink-0 border-l border-border-default flex flex-col overflow-hidden">
+          {/* Tabs */}
+          <div className="flex border-b border-border-default">
+            {tabs.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setRightTab(key)}
+                className={cn(
+                  "flex-1 py-2 text-xs font-medium transition-colors",
+                  rightTab === key
+                    ? "text-text-primary border-b border-gold bg-bg-tertiary"
+                    : "text-text-muted hover:text-text-secondary"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-hidden">
+            {rightTab === "trade" && (
+              market === "spot"
+                ? <TradeForm symbol={symbol} />
+                : <FuturesTradeForm symbol={symbol} />
+            )}
+            {rightTab === "orders" && (
+              market === "spot"
+                ? <OrdersPanel symbol={symbol} />
+                : <FuturesInfoPanel symbol={symbol} />
+            )}
+            {rightTab === "book" && <OrderBook symbol={symbol} />}
+          </div>
+        </div>
       </div>
     </div>
   );

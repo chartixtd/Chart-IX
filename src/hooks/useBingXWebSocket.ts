@@ -188,7 +188,7 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
 
         // Log subscription confirmations (no dataType)
         if (msg.code === 0 && !msg.dataType) {
-          if (msgCount === 0) console.log("[WS] subscription confirmed, id:", msg.id);
+          if (msgCount === 0) console.log("[WS] subscription confirmed, id:", (msg as Record<string,unknown>).id);
           msgCount++;
           return;
         }

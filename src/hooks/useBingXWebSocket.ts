@@ -52,7 +52,7 @@ function mapKline(raw: Record<string, unknown>): BingXKline | null {
   // Auto-detect time unit: if < 1e10, it's probably seconds → convert to ms
   let openTime = Number(rawTime);
   if (isNaN(openTime) || openTime <= 0) return null;
-  if (openTime < 1e10) openTime *= 1000; // seconds → milliseconds
+  if (openTime < 1e10) openTime *= 1000;
 
   const closeTime = Number(d.T ?? (openTime + 60000));
   const open = parseFloat(String(d.o ?? "0"));
@@ -64,20 +64,16 @@ function mapKline(raw: Record<string, unknown>): BingXKline | null {
 
   if (isNaN(open)) return null;
 
-  console.debug("[WS] kline:", { sym: raw.s || (raw as Record<string,unknown>).s, openTime, open, high, low, close, volume });
-
   return { openTime, open, high, low, close, volume, closeTime, quoteVolume };
 }
 
-/** GZIP decompress a binary WebSocket message to text */
-async function decompress(data: Blob | ArrayBuffer): Promise<string> {
-  const stream = data instanceof Blob
-    ? data.stream()
-    : new Blob([data]).stream();
-
+/** GZIP decompress an ArrayBuffer to text */
+async function gunzip(buf: ArrayBuffer): Promise<string> {
   const ds = new DecompressionStream("gzip");
-  const decompressed = stream.pipeThrough(ds);
-  return new Response(decompressed).text();
+  const writer = ds.writable.getWriter();
+  writer.write(new Uint8Array(buf));
+  writer.close();
+  return new Response(ds.readable).text();
 }
 
 interface KlineSub {
@@ -99,12 +95,12 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
     if (symbols.length === 0 && klineSubsRef.current.length === 0) return;
 
     let destroyed = false;
+    let tickerCount = 0;
 
     function connect() {
       if (destroyed) return;
 
       const ws = new WebSocket(WS_URL);
-      // Receive binary for GZIP decompression
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
 
@@ -114,96 +110,119 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
           return;
         }
         setWsConnected(true);
-        console.debug("[WS] connected, subscribing...");
+        console.log("[WS] connected, subscribing...");
 
-        // Subscribe to ticker streams
         for (const sym of symbolsRef.current) {
-          const msg = JSON.stringify({
+          ws.send(JSON.stringify({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             reqType: "sub",
             dataType: `${sym}@ticker`,
-          });
-          console.debug("[WS] sub ticker:", `${sym}@ticker`);
-          ws.send(msg);
+          }));
         }
 
-        // Subscribe to kline streams
         for (const ks of klineSubsRef.current) {
           const dt = `${ks.symbol}@kline_${toWsInterval(ks.interval)}`;
-          const msg = JSON.stringify({
+          ws.send(JSON.stringify({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             reqType: "sub",
             dataType: dt,
-          });
-          console.debug("[WS] sub kline:", dt);
-          ws.send(msg);
+          }));
         }
       };
 
       ws.onmessage = async (event) => {
         if (destroyed) return;
-        try {
-          // BingX sends GZIP-compressed messages — decompress before parsing
-          let text: string;
-          if (event.data instanceof ArrayBuffer && (event.data as ArrayBuffer).byteLength > 0) {
-            text = await decompress(event.data as ArrayBuffer);
-          } else if (typeof event.data === "string") {
-            text = event.data;
-          } else {
-            // Blob or other binary
-            text = await decompress(event.data as Blob);
-          }
 
-          // Handle text Ping from server
-          if (text === "Ping" || text.trim() === "Ping") {
-            console.debug("[WS] received Ping, sending Pong");
-            ws.send("Pong");
+        // Get text: try raw first, decompress if needed
+        let text: string;
+        try {
+          if (typeof event.data === "string") {
+            text = event.data;
+          } else if (event.data instanceof ArrayBuffer) {
+            const buf = event.data as ArrayBuffer;
+            if (buf.byteLength === 0) return;
+
+            // Try raw decode first (some WS may not actually compress)
+            const raw = new TextDecoder().decode(buf);
+            // Check if it looks like JSON
+            if (raw.startsWith("{") || raw.startsWith("[")) {
+              text = raw;
+            } else {
+              // It's binary — decompress
+              text = await gunzip(buf);
+            }
+          } else {
+            return; // unknown type
+          }
+        } catch {
+          return;
+        }
+
+        // Handle text Ping from server
+        if (text === "Ping" || text.trim() === "Ping") {
+          ws.send("Pong");
+          return;
+        }
+
+        // Parse JSON
+        let msg: { code?: number; dataType?: string; data?: unknown };
+        try {
+          msg = JSON.parse(text);
+        } catch {
+          // Try GZIP decompress as fallback (text might still be binary)
+          if (event.data instanceof ArrayBuffer) {
+            try {
+              text = await gunzip(event.data as ArrayBuffer);
+              msg = JSON.parse(text);
+            } catch {
+              return;
+            }
+          } else {
             return;
           }
+        }
 
-          const msg = JSON.parse(text);
-          if (msg.code !== 0 || !msg.dataType) return;
+        if (msg.code !== 0 || !msg.dataType) return;
 
-          const dataType = msg.dataType as string;
+        const dataType = msg.dataType as string;
+        const raw = msg.data;
 
-          // Handle ticker push
-          if (dataType.endsWith("@ticker")) {
-            const raw = msg.data;
-            if (raw) {
-              const items = Array.isArray(raw) ? raw : [raw];
-              for (const item of items) {
-                const ticker = mapTicker(item);
-                if (ticker.symbol) {
-                  setTicker(ticker.symbol, ticker);
-                }
+        // --- Ticker push ---
+        if (dataType.endsWith("@ticker") && raw) {
+          const items = Array.isArray(raw) ? raw : [raw];
+          for (const item of items) {
+            const ticker = mapTicker(item as Record<string, string>);
+            if (ticker.symbol) {
+              setTicker(ticker.symbol, ticker);
+              tickerCount++;
+              if (tickerCount <= 3 || tickerCount % 20 === 0) {
+                console.log("[WS] ticker:", ticker.symbol, ticker.lastPrice);
               }
             }
           }
+        }
 
-          // Handle kline push: dataType like "BTC-USDT@kline_1min"
-          if (dataType.includes("@kline_")) {
-            const match = dataType.match(/^(.+)@kline_(.+)$/);
-            if (match) {
-              const [, sym, wsIntv] = match;
-              const kline = mapKline(msg.data);
-              if (kline) {
-                // Store with internal interval format (e.g., "1m") so KlineChart can read it
-                setKline(sym, fromWsInterval(wsIntv), kline);
-              }
+        // --- Kline push ---
+        if (dataType.includes("@kline_") && raw) {
+          const match = dataType.match(/^(.+)@kline_(.+)$/);
+          if (match) {
+            const [, sym, wsIntv] = match;
+            const kline = mapKline(raw as Record<string, unknown>);
+            if (kline) {
+              console.log("[WS] kline:", sym, wsIntv, kline.close);
+              setKline(sym, fromWsInterval(wsIntv), kline);
             }
           }
-        } catch (err) {
-          console.debug("[WS] message parse error:", err);
         }
       };
 
-      ws.onerror = (err) => {
-        console.debug("[WS] error:", err);
+      ws.onerror = () => {
+        // will trigger onclose
       };
 
       ws.onclose = (evt) => {
         if (destroyed) return;
-        console.debug("[WS] closed, reconnecting in", RECONNECT_DELAY, "ms");
+        console.log("[WS] closed (code:", evt.code, "), reconnecting in", RECONNECT_DELAY, "ms");
         setWsConnected(false);
         wsRef.current = null;
         reconnectRef.current = setTimeout(connect, RECONNECT_DELAY);

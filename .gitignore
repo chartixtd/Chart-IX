@@ -1,0 +1,49 @@
+# 文档 - 永不提交到 GitHub
+docs/
+
+# 环境变量 - 包含密钥
+.env
+.env.local
+.env.production
+.env*.local
+
+# 依赖
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# 测试
+coverage/
+.nyc_output/
+
+# 调试
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Vercel
+.vercel
+
+# Supabase
+supabase/.temp/

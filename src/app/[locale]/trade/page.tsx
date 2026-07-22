@@ -20,7 +20,7 @@ export default function TradePage() {
   const [interval, setInterval] = useState("1h");
   const { data: ticker } = useSpotTicker(symbol);
 
-  // 订阅 ticker 实时数据（K线通过 REST 2s 轮询）
+  // 订阅 ticker 实时数据（K线: REST 加载历史 + WS 实时价格驱动当前蜡烛）
   useBingXWebSocket([symbol]);
 
   const isPositive = ticker ? parseFloat(ticker.priceChangePercent) >= 0 : false;

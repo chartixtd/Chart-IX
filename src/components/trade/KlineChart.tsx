@@ -13,6 +13,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useKlines } from "@/hooks/useMarketData";
+import { useMarketStore } from "@/stores/market";
 import { cn } from "@/lib/utils";
 
 interface KlineChartProps {
@@ -21,15 +22,53 @@ interface KlineChartProps {
   className?: string;
 }
 
+/** interval → duration in seconds */
+const INTERVAL_SECONDS: Record<string, number> = {
+  "1m": 60,
+  "3m": 180,
+  "5m": 300,
+  "15m": 900,
+  "30m": 1800,
+  "1h": 3600,
+  "2h": 7200,
+  "4h": 14400,
+  "6h": 21600,
+  "12h": 43200,
+  "1d": 86400,
+  "3d": 259200,
+  "1w": 604800,
+};
+
+const UP = "#22c55e";
+const DOWN = "#ef4444";
+const VOL_UP = "rgba(34, 197, 94, 0.2)";
+const VOL_DOWN = "rgba(239, 68, 68, 0.2)";
+
 export function KlineChart({ symbol, interval = "1h", className }: KlineChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const isFirstDataRef = useRef(true);
-  const lastCandleTimeRef = useRef<number>(0);
-  const { data: klines, isLoading } = useKlines(symbol, interval);
 
+  // Last candle state, kept in sync so ticker updates can mutate it live
+  const lastCandleRef = useRef<{
+    time: UTCTimestamp;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  } | null>(null);
+
+  const { data: klines, isLoading } = useKlines(symbol, interval);
+  // Live price from WebSocket ticker (drives the current candle in real time)
+  const livePrice = useMarketStore((s) => {
+    const t = s.tickers[symbol];
+    return t ? parseFloat(t.lastPrice) : undefined;
+  });
+
+  // ---- Create chart once ----
   useEffect(() => {
     if (!chartRef.current) return;
 
@@ -57,16 +96,16 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
     });
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      borderUpColor: "#22c55e",
-      borderDownColor: "#ef4444",
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      upColor: UP,
+      downColor: DOWN,
+      borderUpColor: UP,
+      borderDownColor: DOWN,
+      wickUpColor: UP,
+      wickDownColor: DOWN,
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      color: "rgba(212, 168, 67, 0.3)",
+      color: VOL_UP,
       priceFormat: { type: "volume" },
       priceScaleId: "volume",
     });
@@ -96,13 +135,19 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
       isFirstDataRef.current = true;
-      lastCandleTimeRef.current = 0;
+      lastCandleRef.current = null;
     };
   }, []);
 
-  // Update kline data from REST polling (2s interval)
+  // ---- Reset when symbol/interval changes ----
   useEffect(() => {
-    if (!klines?.length) return;
+    isFirstDataRef.current = true;
+    lastCandleRef.current = null;
+  }, [symbol, interval]);
+
+  // ---- Load full history from REST ----
+  useEffect(() => {
+    if (!klines?.length || !candleSeriesRef.current || !volumeSeriesRef.current) return;
 
     const valid = klines
       .filter(
@@ -115,54 +160,95 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
 
     if (!valid.length) return;
 
+    const candleData: CandlestickData[] = valid.map((k) => ({
+      time: (k.openTime / 1000) as UTCTimestamp,
+      open: k.open,
+      high: k.high,
+      low: k.low,
+      close: k.close,
+    }));
+
+    const volumeData: HistogramData[] = valid.map((k) => ({
+      time: (k.openTime / 1000) as UTCTimestamp,
+      value: k.volume,
+      color: k.close >= k.open ? VOL_UP : VOL_DOWN,
+    }));
+
+    candleSeriesRef.current.setData(candleData);
+    volumeSeriesRef.current.setData(volumeData);
+
+    // Track the last candle so live prices can extend it
     const last = valid[valid.length - 1];
+    lastCandleRef.current = {
+      time: (last.openTime / 1000) as UTCTimestamp,
+      open: last.open,
+      high: last.high,
+      low: last.low,
+      close: last.close,
+      volume: last.volume,
+    };
 
-    // First load or interval/symbol changed: full setData
-    if (isFirstDataRef.current || last.openTime !== lastCandleTimeRef.current) {
-      const candleData: CandlestickData[] = valid.map((k) => ({
-        time: (k.openTime / 1000) as UTCTimestamp,
-        open: k.open,
-        high: k.high,
-        low: k.low,
-        close: k.close,
-      }));
-
-      const volumeData: HistogramData[] = valid.map((k) => ({
-        time: (k.openTime / 1000) as UTCTimestamp,
-        value: k.volume,
-        color: k.close >= k.open ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)",
-      }));
-
-      candleSeriesRef.current?.setData(candleData);
-      volumeSeriesRef.current?.setData(volumeData);
-      lastCandleTimeRef.current = last.openTime;
-
-      if (isFirstDataRef.current) {
-        chartApiRef.current?.timeScale().fitContent();
-        isFirstDataRef.current = false;
-      }
-    } else {
-      // Same candle: just update the last candle values smoothly
-      const time = (last.openTime / 1000) as UTCTimestamp;
-      try {
-        candleSeriesRef.current?.update({
-          time,
-          open: last.open,
-          high: last.high,
-          low: last.low,
-          close: last.close,
-        });
-        volumeSeriesRef.current?.update({
-          time,
-          value: last.volume,
-          color: last.close >= last.open ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)",
-        });
-      } catch {
-        // chart might not have this candle yet → do full setData
-        // (happens on race conditions, silently fall through)
-      }
+    if (isFirstDataRef.current) {
+      chartApiRef.current?.timeScale().fitContent();
+      isFirstDataRef.current = false;
     }
   }, [klines]);
+
+  // ---- Drive the current candle with live ticker price ----
+  useEffect(() => {
+    if (livePrice === undefined || isNaN(livePrice)) return;
+    if (!candleSeriesRef.current) return;
+
+    const durationSec = INTERVAL_SECONDS[interval] ?? 3600;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const bucketStart = (Math.floor(nowSec / durationSec) * durationSec) as UTCTimestamp;
+
+    const prev = lastCandleRef.current;
+
+    // New candle bucket started → open a fresh candle at the live price
+    if (!prev || bucketStart > prev.time) {
+      const fresh = {
+        time: bucketStart,
+        open: livePrice,
+        high: livePrice,
+        low: livePrice,
+        close: livePrice,
+        volume: 0,
+      };
+      lastCandleRef.current = fresh;
+      try {
+        candleSeriesRef.current.update({
+          time: fresh.time,
+          open: fresh.open,
+          high: fresh.high,
+          low: fresh.low,
+          close: fresh.close,
+        });
+      } catch {
+        /* chart may not be ready yet */
+      }
+      return;
+    }
+
+    // Only extend the current bucket (never mutate a past candle)
+    if (bucketStart < prev.time) return;
+
+    prev.close = livePrice;
+    if (livePrice > prev.high) prev.high = livePrice;
+    if (livePrice < prev.low) prev.low = livePrice;
+
+    try {
+      candleSeriesRef.current.update({
+        time: prev.time,
+        open: prev.open,
+        high: prev.high,
+        low: prev.low,
+        close: prev.close,
+      });
+    } catch {
+      /* ignore transient update errors */
+    }
+  }, [livePrice, interval]);
 
   return (
     <div className={cn("relative", className)}>

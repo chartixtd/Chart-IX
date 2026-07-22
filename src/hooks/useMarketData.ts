@@ -64,8 +64,8 @@ export function useKlines(symbol: string, interval = "1h", market = "spot") {
   return useQuery({
     queryKey: ["bingx", "klines", market, symbol, interval],
     queryFn: () => fetchApi<BingXKline[]>("klines", { symbol, interval, market, limit: "200" }),
-    refetchInterval: 2_000,
-    staleTime: 0,
+    refetchInterval: 10_000,
+    staleTime: 5_000,
     enabled: !!symbol,
   });
 }

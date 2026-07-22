@@ -6,7 +6,6 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 function getStoragePath(url: string): string | null {
   try {
     const u = new URL(url);
-    // URL format: /storage/v1/object/public/videos/<path>
     const parts = u.pathname.split("/");
     const bucketIndex = parts.indexOf("videos");
     if (bucketIndex === -1) return null;
@@ -14,6 +13,33 @@ function getStoragePath(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Proxy a range request to Supabase and return the response */
+async function proxyRange(
+  signedUrl: string,
+  rangeStart: number,
+  rangeEnd: number,
+  totalSize: number,
+  upstreamContentType: string
+) {
+  const upstreamRes = await fetch(signedUrl, {
+    headers: { Range: `bytes=${rangeStart}-${rangeEnd}` },
+  });
+
+  const body = upstreamRes.body;
+  const actualLength = parseInt(upstreamRes.headers.get("Content-Length") ?? "0");
+
+  const headers = new Headers();
+  headers.set("Content-Type", upstreamContentType);
+  headers.set("Content-Range", `bytes ${rangeStart}-${rangeStart + actualLength - 1}/${totalSize}`);
+  headers.set("Content-Length", String(actualLength));
+  headers.set("Accept-Ranges", "bytes");
+  headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  headers.set("Content-Disposition", "inline");
+  headers.set("X-Content-Type-Options", "nosniff");
+
+  return new NextResponse(body, { status: 206, headers });
 }
 
 export async function GET(
@@ -55,35 +81,31 @@ export async function GET(
     isPro = profile?.tier === "pro";
   }
 
-  // 3. Pro user or free video → redirect to signed URL (no Vercel bandwidth cost)
-  if (isPro || video.tier_required === "free") {
-    const { data: signedData, error: signedErr } = await serviceClient.storage
-      .from("videos")
-      .createSignedUrl(storagePath, 86400); // 24 hours
+  const isFreePreview = !isPro && video.tier_required === "pro";
 
-    if (signedErr || !signedData?.signedUrl) {
-      return NextResponse.json({ error: "Failed to generate URL" }, { status: 500 });
-    }
+  // 3. Calculate size limit
+  const fullSize = video.file_size_bytes ?? 0;
+  const maxBytes = isFreePreview
+    ? (fullSize > 0 && video.duration_seconds > 0
+        ? Math.ceil((fullSize / video.duration_seconds) * 70) // 60s + buffer
+        : 50 * 1024 * 1024) // fallback: 50MB
+    : fullSize;
 
-    return NextResponse.redirect(signedData.signedUrl);
-  }
-
-  // 4. Free user + pro video → proxy with byte limit to prevent full download
-  // Calculate max bytes for ~70 seconds (60s preview + buffer for VBR)
-  const maxBytes = video.file_size_bytes && video.duration_seconds > 0
-    ? Math.ceil((video.file_size_bytes / video.duration_seconds) * 70)
-    : 50 * 1024 * 1024; // fallback: 50MB
-
-  // Generate signed URL to fetch from Supabase
+  // 4. Generate signed URL to fetch from Supabase
   const { data: signedData, error: signedErr } = await serviceClient.storage
     .from("videos")
-    .createSignedUrl(storagePath, 300); // 5 minutes for server-side fetch
+    .createSignedUrl(storagePath, 300); // 5 min
 
   if (signedErr || !signedData?.signedUrl) {
     return NextResponse.json({ error: "Failed to generate URL" }, { status: 500 });
   }
 
-  // 5. Handle Range requests from HTML5 video player
+  const signedUrl = signedData.signedUrl;
+
+  // 5. Get Content-Type from upstream (HEAD or first chunk)
+  let upstreamContentType = "video/mp4";
+
+  // 6. Handle Range requests from browser
   const rangeHeader = request.headers.get("range");
 
   if (rangeHeader) {
@@ -91,48 +113,41 @@ export async function GET(
     if (match) {
       const rangeStart = parseInt(match[1]);
       const rangeEndRaw = match[2];
-      const rangeEnd = rangeEndRaw ? parseInt(rangeEndRaw) : rangeStart + maxBytes - 1;
+      const requestedEnd = rangeEndRaw ? parseInt(rangeEndRaw) : (maxBytes > 0 ? maxBytes - 1 : rangeStart + 1024 * 1024 - 1);
 
-      if (rangeStart >= maxBytes) {
-        return new NextResponse(null, { status: 416, headers: { "Content-Range": `bytes */${maxBytes}` } });
+      // Free preview: reject ranges past the limit
+      if (isFreePreview && rangeStart >= maxBytes) {
+        return new NextResponse(null, {
+          status: 416,
+          headers: { "Content-Range": `bytes */${maxBytes}` },
+        });
       }
 
-      const cappedEnd = Math.min(rangeEnd, maxBytes - 1);
-      const fetchHeaders: Record<string, string> = {
-        Range: `bytes=${rangeStart}-${cappedEnd}`,
-      };
+      const cappedEnd = isFreePreview ? Math.min(requestedEnd, maxBytes - 1) : requestedEnd;
 
-      const upstreamRes = await fetch(signedData.signedUrl, { headers: fetchHeaders });
-      if (!upstreamRes.ok && upstreamRes.status !== 206) {
-        return NextResponse.json({ error: "Upstream fetch failed" }, { status: 502 });
+      // Get content type from a small initial range if needed
+      if (upstreamContentType === "video/mp4") {
+        const headRes = await fetch(signedUrl, {
+          headers: { Range: `bytes=0-0` },
+        });
+        upstreamContentType = headRes.headers.get("Content-Type") ?? "video/mp4";
       }
 
-      const headers = new Headers();
-      headers.set("Content-Type", upstreamRes.headers.get("Content-Type") ?? "video/mp4");
-      headers.set("Content-Range", `bytes ${rangeStart}-${cappedEnd}/${maxBytes}`);
-      headers.set("Content-Length", String(cappedEnd - rangeStart + 1));
-      headers.set("Accept-Ranges", "bytes");
-      headers.set("Cache-Control", "no-store");
-
-      return new NextResponse(upstreamRes.body, { status: 206, headers });
+      const effectiveTotal = isFreePreview ? maxBytes : fullSize;
+      return proxyRange(signedUrl, rangeStart, cappedEnd, effectiveTotal, upstreamContentType);
     }
   }
 
-  // 6. No Range header → cap initial fetch to maxBytes
-  const upstreamRes = await fetch(signedData.signedUrl, {
-    headers: { Range: `bytes=0-${maxBytes - 1}` },
+  // 7. No Range header → serve initial chunk
+  // Get content type
+  const headRes = await fetch(signedUrl, {
+    headers: { Range: `bytes=0-0` },
   });
+  upstreamContentType = headRes.headers.get("Content-Type") ?? "video/mp4";
 
-  if (!upstreamRes.ok && upstreamRes.status !== 206) {
-    return NextResponse.json({ error: "Upstream fetch failed" }, { status: 502 });
-  }
+  // Determine how much to serve
+  const serveEnd = isFreePreview ? maxBytes - 1 : Math.min(fullSize - 1, 10 * 1024 * 1024 - 1); // Pro: first 10MB initial
+  const effectiveTotal = isFreePreview ? maxBytes : fullSize;
 
-  const headers = new Headers();
-  headers.set("Content-Type", upstreamRes.headers.get("Content-Type") ?? "video/mp4");
-  headers.set("Content-Range", `bytes 0-${Math.min(maxBytes - 1, parseInt(upstreamRes.headers.get("Content-Length") ?? "0") - 1)}/${maxBytes}`);
-  headers.set("Content-Length", upstreamRes.headers.get("Content-Length") ?? String(maxBytes));
-  headers.set("Accept-Ranges", "bytes");
-  headers.set("Cache-Control", "no-store");
-
-  return new NextResponse(upstreamRes.body, { status: 206, headers });
+  return proxyRange(signedUrl, 0, serveEnd, effectiveTotal, upstreamContentType);
 }

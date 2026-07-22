@@ -27,8 +27,31 @@ export default function VideoDetailPage() {
   const [previewEnded, setPreviewEnded] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const viewIncrementedRef = useRef(false);
+
+  // Block keyboard shortcuts that can be used to download/save
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ctrl+S / Cmd+S → save page
+      // Ctrl+U / Cmd+U → view source
+      // Ctrl+Shift+I / Cmd+Shift+I / F12 → devtools
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key === "s" || e.key === "S" || e.key === "u" || e.key === "U")
+      ) {
+        e.preventDefault();
+        return false;
+      }
+      if (e.key === "F12" || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "I" || e.key === "i"))) {
+        e.preventDefault();
+        return false;
+      }
+    };
+    window.addEventListener("keydown", handler, { capture: true });
+    return () => window.removeEventListener("keydown", handler, { capture: true });
+  }, []);
 
   // Fetch video and user data
   useEffect(() => {
@@ -209,14 +232,20 @@ export default function VideoDetailPage() {
       </Link>
 
       {/* Video player */}
-      <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
+      <div
+        ref={containerRef}
+        className="relative aspect-video overflow-hidden rounded-lg bg-black select-none"
+        onContextMenu={(e) => e.preventDefault()}
+      >
         <video
           ref={videoRef}
           src={`/api/video/stream/${video.id}`}
-          className="h-full w-full"
+          className="h-full w-full pointer-events-auto"
           controls
           controlsList="nodownload"
+          disablePictureInPicture
           onTimeUpdate={handleTimeUpdate}
+          onContextMenu={(e) => e.preventDefault()}
           preload="metadata"
           crossOrigin="anonymous"
         />

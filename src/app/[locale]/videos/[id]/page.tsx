@@ -212,12 +212,13 @@ export default function VideoDetailPage() {
       <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
         <video
           ref={videoRef}
-          src={video.storage_url}
+          src={`/api/video/stream/${video.id}`}
           className="h-full w-full"
           controls
           controlsList="nodownload"
           onTimeUpdate={handleTimeUpdate}
           preload="metadata"
+          crossOrigin="anonymous"
         />
 
         {/* Preview ended overlay */}

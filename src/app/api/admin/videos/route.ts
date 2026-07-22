@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
       storage_url,
       thumbnail_url,
       duration_seconds,
+      file_size_bytes,
       tier_required,
     } = body;
 
@@ -32,6 +33,7 @@ export async function POST(request: NextRequest) {
         storage_url,
         thumbnail_url: thumbnail_url ?? null,
         duration_seconds: duration_seconds ?? 0,
+        file_size_bytes: file_size_bytes ?? null,
         tier_required: tier_required ?? "free",
       })
       .select()

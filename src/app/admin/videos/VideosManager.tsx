@@ -141,6 +141,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
           storage_url: publicUrl,
           thumbnail_url: thumbnailUrl.trim() || null,
           duration_seconds: duration ? parseInt(duration) : 0,
+          file_size_bytes: videoFile.size,
           tier_required: tier,
         }),
       });

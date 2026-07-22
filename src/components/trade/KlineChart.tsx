@@ -13,7 +13,6 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useKlines } from "@/hooks/useMarketData";
-import { useMarketStore } from "@/stores/market";
 import { cn } from "@/lib/utils";
 
 interface KlineChartProps {
@@ -28,10 +27,8 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const isFirstDataRef = useRef(true);
+  const lastCandleTimeRef = useRef<number>(0);
   const { data: klines, isLoading } = useKlines(symbol, interval);
-
-  // Read WebSocket kline from store for real-time candle updates
-  const wsKline = useMarketStore((s) => s.klines[`${symbol}:${interval}`]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -99,10 +96,11 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
       isFirstDataRef.current = true;
+      lastCandleTimeRef.current = 0;
     };
   }, []);
 
-  // Initial / full data load from REST
+  // Update kline data from REST polling (2s interval)
   useEffect(() => {
     if (!klines?.length) return;
 
@@ -110,69 +108,61 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       .filter(
         (k) =>
           k.openTime > 0 &&
-          !isNaN(k.open) &&
-          !isNaN(k.high) &&
-          !isNaN(k.low) &&
-          !isNaN(k.close) &&
-          !isNaN(k.volume)
+          !isNaN(k.open) && !isNaN(k.high) && !isNaN(k.low) &&
+          !isNaN(k.close) && !isNaN(k.volume)
       )
       .sort((a, b) => a.openTime - b.openTime);
 
     if (!valid.length) return;
 
-    const candleData: CandlestickData[] = valid.map((k) => ({
-      time: (k.openTime / 1000) as UTCTimestamp,
-      open: k.open,
-      high: k.high,
-      low: k.low,
-      close: k.close,
-    }));
+    const last = valid[valid.length - 1];
 
-    const volumeData: HistogramData[] = valid.map((k) => ({
-      time: (k.openTime / 1000) as UTCTimestamp,
-      value: k.volume,
-      color: k.close >= k.open ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)",
-    }));
+    // First load or interval/symbol changed: full setData
+    if (isFirstDataRef.current || last.openTime !== lastCandleTimeRef.current) {
+      const candleData: CandlestickData[] = valid.map((k) => ({
+        time: (k.openTime / 1000) as UTCTimestamp,
+        open: k.open,
+        high: k.high,
+        low: k.low,
+        close: k.close,
+      }));
 
-    candleSeriesRef.current?.setData(candleData);
-    volumeSeriesRef.current?.setData(volumeData);
+      const volumeData: HistogramData[] = valid.map((k) => ({
+        time: (k.openTime / 1000) as UTCTimestamp,
+        value: k.volume,
+        color: k.close >= k.open ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)",
+      }));
 
-    if (isFirstDataRef.current) {
-      chartApiRef.current?.timeScale().fitContent();
-      isFirstDataRef.current = false;
+      candleSeriesRef.current?.setData(candleData);
+      volumeSeriesRef.current?.setData(volumeData);
+      lastCandleTimeRef.current = last.openTime;
+
+      if (isFirstDataRef.current) {
+        chartApiRef.current?.timeScale().fitContent();
+        isFirstDataRef.current = false;
+      }
+    } else {
+      // Same candle: just update the last candle values smoothly
+      const time = (last.openTime / 1000) as UTCTimestamp;
+      try {
+        candleSeriesRef.current?.update({
+          time,
+          open: last.open,
+          high: last.high,
+          low: last.low,
+          close: last.close,
+        });
+        volumeSeriesRef.current?.update({
+          time,
+          value: last.volume,
+          color: last.close >= last.open ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)",
+        });
+      } catch {
+        // chart might not have this candle yet → do full setData
+        // (happens on race conditions, silently fall through)
+      }
     }
   }, [klines]);
-
-  // Real-time update of the current candle via WebSocket
-  useEffect(() => {
-    if (!wsKline || !candleSeriesRef.current || !volumeSeriesRef.current) return;
-
-    // Guard: ensure time is a valid number (NaN has typeof "number")
-    if (typeof wsKline.openTime !== "number" || isNaN(wsKline.openTime) || wsKline.openTime <= 0) return;
-
-    // lightweight-charts uses seconds
-    const time = (wsKline.openTime / 1000) as UTCTimestamp;
-
-    try {
-      candleSeriesRef.current.update({
-        time,
-        open: wsKline.open,
-        high: wsKline.high,
-        low: wsKline.low,
-        close: wsKline.close,
-      });
-
-      volumeSeriesRef.current.update({
-        time,
-        value: wsKline.volume,
-        color: wsKline.close >= wsKline.open
-          ? "rgba(34, 197, 94, 0.2)"
-          : "rgba(239, 68, 68, 0.2)",
-      });
-    } catch (err) {
-      console.log("[KlineChart] update error, will retry on next tick:", err);
-    }
-  }, [wsKline]);
 
   return (
     <div className={cn("relative", className)}>

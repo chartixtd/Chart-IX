@@ -180,6 +180,7 @@
     },
     "market": {
       "search_symbol": "Search symbol",
+      "trade": "Trade",
       "price": "Price",
       "change_24h": "24h Change",
       "volume_24h": "24h Volume",
@@ -279,6 +280,7 @@
     "invalid": "Invalid",
     "added": "Added",
     "test_key": "Verify Key",
+    "verify": "Verify",
     "validating": "Validating..."
   },
   "error": {
@@ -287,6 +289,8 @@
     "server_error": "Server error. Please try again later.",
     "rate_limited": "Too many requests. Please try again later.",
     "unauthorized": "Please sign in first",
+    "unknown": "An unknown error occurred",
+    "network": "Network error. Please try again.",
     "forbidden": "You do not have permission to access this page",
     "pro_required": "This feature requires a Pro subscription",
     "api_key_required": "Please configure your BingX API Key first",

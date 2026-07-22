@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/Badge";
 import { MarketOverview } from "@/components/trade/MarketOverview";
 import { KlineChart } from "@/components/trade/KlineChart";
-import { OrderBook } from "@/components/trade/OrderBook";
+import { RightPanel } from "@/components/trade/RightPanel";
 import { useSpotTicker } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
@@ -80,13 +80,8 @@ export default function TradePage() {
           </div>
         </div>
 
-        {/* Right: Order Book */}
-        <div className="w-64 shrink-0 border-l border-border-default overflow-y-auto">
-          <div className="border-b border-border-default px-3 py-2">
-            <span className="text-xs font-medium text-text-secondary">{t("market.order_book")}</span>
-          </div>
-          <OrderBook symbol={symbol} />
-        </div>
+        {/* Right: Trade Form + Order Book */}
+        <RightPanel symbol={symbol} />
       </div>
     </div>
   );

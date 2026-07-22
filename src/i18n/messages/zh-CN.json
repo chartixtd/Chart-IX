@@ -180,6 +180,7 @@
     },
     "market": {
       "search_symbol": "搜索交易对",
+      "trade": "交易",
       "price": "价格",
       "change_24h": "24h涨跌",
       "volume_24h": "24h成交量",
@@ -281,6 +282,7 @@
     "invalid": "无效",
     "added": "添加于",
     "test_key": "验证密钥",
+    "verify": "验证",
     "validating": "验证中..."
   },
   "error": {
@@ -289,6 +291,8 @@
     "server_error": "服务器错误，请稍后重试",
     "rate_limited": "请求过于频繁，请稍后重试",
     "unauthorized": "请先登录",
+    "unknown": "发生未知错误",
+    "network": "网络错误，请重试",
     "forbidden": "无权访问此页面",
     "pro_required": "此功能需要 Pro 等级",
     "api_key_required": "请先配置 BingX API Key",

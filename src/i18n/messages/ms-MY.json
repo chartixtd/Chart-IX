@@ -180,6 +180,7 @@
     },
     "market": {
       "search_symbol": "Cari simbol",
+      "trade": "Dagang",
       "price": "Harga",
       "change_24h": "Perubahan 24j",
       "volume_24h": "Volum 24j",
@@ -279,6 +280,7 @@
     "invalid": "Tidak Sah",
     "added": "Ditambah pada",
     "test_key": "Sahkan Kunci",
+    "verify": "Sahkan",
     "validating": "Mengesahkan..."
   },
   "error": {
@@ -287,6 +289,8 @@
     "server_error": "Ralat pelayan. Sila cuba lagi kemudian.",
     "rate_limited": "Terlalu banyak permintaan. Sila cuba lagi kemudian.",
     "unauthorized": "Sila log masuk terlebih dahulu",
+    "unknown": "Ralat tidak diketahui",
+    "network": "Ralat rangkaian. Sila cuba lagi.",
     "forbidden": "Anda tidak mempunyai kebenaran untuk mengakses halaman ini",
     "pro_required": "Ciri ini memerlukan langganan Pro",
     "api_key_required": "Sila konfigurasi BingX API Key terlebih dahulu",

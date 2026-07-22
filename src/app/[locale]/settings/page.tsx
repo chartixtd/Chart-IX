@@ -143,6 +143,19 @@ export default function SettingsPage() {
           ))}
         </div>
       </Card>
+
+      {/* API Keys */}
+      <Card className="mt-6" padding="lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-text-primary">{t("api_keys")}</h2>
+            <p className="mt-1 text-sm text-text-secondary">{t("api_keys_desc")}</p>
+          </div>
+          <Button variant="outline" onClick={() => router.push(`/${locale}/settings/api-keys`)}>
+            {t("api_keys")}
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -30,7 +30,7 @@ export class BingXClient {
     const response = await fetch(url.toString(), {
       method: "GET",
       headers: { "Content-Type": "application/json" },
-      next: { revalidate: 2 }, // 行情数据缓存2秒
+      cache: "no-store",
     });
 
     if (!response.ok) {

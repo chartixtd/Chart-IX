@@ -29,8 +29,8 @@ export function useSpotTickers() {
   return useQuery({
     queryKey: ["bingx", "tickers", "spot"],
     queryFn: () => fetchApi<BingXTicker[]>("ticker"),
-    refetchInterval: 10_000,
-    staleTime: 8_000,
+    refetchInterval: 3_000,
+    staleTime: 1_000,
   });
 }
 
@@ -39,8 +39,8 @@ export function useSpotTicker(symbol: string) {
   return useQuery({
     queryKey: ["bingx", "ticker", "spot", symbol],
     queryFn: () => fetchApi<BingXTicker>("ticker", { symbol }),
-    refetchInterval: 5_000,
-    staleTime: 3_000,
+    refetchInterval: 2_000,
+    staleTime: 1_000,
     enabled: !!symbol,
   });
 }
@@ -60,8 +60,8 @@ export function useOrderBook(symbol: string, limit = 10) {
   return useQuery({
     queryKey: ["bingx", "depth", symbol, limit],
     queryFn: () => fetchApi<BingXDepth>("depth", { symbol, limit: String(limit) }),
-    refetchInterval: 3_000,
-    staleTime: 2_000,
+    refetchInterval: 2_000,
+    staleTime: 1_000,
     enabled: !!symbol,
   });
 }
@@ -71,8 +71,8 @@ export function useRecentTrades(symbol: string, limit = 20) {
   return useQuery({
     queryKey: ["bingx", "trades", symbol, limit],
     queryFn: () => fetchApi<BingXTrade[]>("trades", { symbol, limit: String(limit) }),
-    refetchInterval: 5_000,
-    staleTime: 3_000,
+    refetchInterval: 3_000,
+    staleTime: 1_000,
     enabled: !!symbol,
   });
 }

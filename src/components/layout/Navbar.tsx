@@ -21,6 +21,31 @@ export function Navbar() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const checkAdmin = async (userId: string, supabaseClient: ReturnType<typeof createClient>) => {
+    try {
+      // 先尝试 API 路由
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const json = await res.json();
+        setIsAdmin(json.user?.role === "admin");
+        return;
+      }
+    } catch {
+      // API 失败，尝试客户端直接查询 (RLS 允许读自己的行)
+    }
+
+    try {
+      const { data: profile } = await supabaseClient
+        .from("users")
+        .select("role")
+        .eq("id", userId)
+        .single();
+      setIsAdmin(profile?.role === "admin");
+    } catch {
+      setIsAdmin(false);
+    }
+  };
+
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data }) => {
@@ -28,23 +53,20 @@ export function Navbar() {
       setUser(authUser);
 
       if (authUser) {
-        try {
-          const res = await fetch("/api/auth/me");
-          if (res.ok) {
-            const json = await res.json();
-            setIsAdmin(json.user?.role === "admin");
-          }
-        } catch {
-          // ignore
-        }
+        await checkAdmin(authUser.id, supabase);
       }
 
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (!session?.user) setIsAdmin(false);
+      const authUser = session?.user ?? null;
+      setUser(authUser);
+      if (authUser) {
+        checkAdmin(authUser.id, supabase);
+      } else {
+        setIsAdmin(false);
+      }
     });
 
     return () => subscription.unsubscribe();

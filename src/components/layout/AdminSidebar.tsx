@@ -19,8 +19,8 @@ export function AdminSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-14 h-[calc(100vh-3.5rem)] w-56 border-r border-border-default glass overflow-y-auto">
-      <nav className="p-3 space-y-1">
+    <aside className="fixed left-0 top-14 h-[calc(100vh-3.5rem)] w-56 border-r border-border-default glass overflow-y-auto flex flex-col">
+      <nav className="p-3 space-y-1 flex-1">
         {ADMIN_NAV.map((item) => {
           const isActive = item.href === "/admin"
             ? pathname === "/admin"
@@ -43,6 +43,16 @@ export function AdminSidebar() {
           );
         })}
       </nav>
+
+      <div className="p-3 border-t border-border-default">
+        <Link
+          href="/en-US"
+          className="flex items-center gap-2 rounded-sm px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+        >
+          <span className="text-base">←</span>
+          <span>Back to Site</span>
+        </Link>
+      </div>
     </aside>
   );
 }

@@ -36,15 +36,16 @@ async function signedRequest<T>(
   return json.data;
 }
 
+// ==================== 类型 ====================
+
+export type FuturesOrderType = "MARKET" | "LIMIT" | "STOP_MARKET" | "STOP_LIMIT" | "TAKE_PROFIT_MARKET" | "TAKE_PROFIT_LIMIT" | "TRAILING_STOP_MARKET";
+
 // ==================== 账户 ====================
 
 export interface FuturesBalance {
-  asset: string;
-  balance: string;
-  crossWalletBalance: string;
-  crossUnPnl: string;
-  availableBalance: string;
-  maxWithdrawAmount: string;
+  asset: string; balance: string;
+  crossWalletBalance: string; crossUnPnl: string;
+  availableBalance: string; maxWithdrawAmount: string;
 }
 
 export async function getFuturesBalance(apiKey: string, secret: string): Promise<FuturesBalance> {
@@ -54,21 +55,14 @@ export async function getFuturesBalance(apiKey: string, secret: string): Promise
 // ==================== 仓位 ====================
 
 export interface FuturesPosition {
-  symbol: string;
-  positionId: string;
+  symbol: string; positionId: string;
   positionSide: "LONG" | "SHORT";
-  positionAmt: string;
-  availableAmt: string;
-  unrealizedProfit: string;
-  realisedProfit: string;
-  initialMargin: string;
-  margin: string;
-  leverage: number;
-  entryPrice: string;
-  markPrice: string;
-  liquidationPrice: string;
-  marginType: "isolated" | "cross";
-  notional: string;
+  positionAmt: string; availableAmt: string;
+  unrealizedProfit: string; realisedProfit: string;
+  initialMargin: string; margin: string;
+  leverage: number; entryPrice: string;
+  markPrice: string; liquidationPrice: string;
+  marginType: "isolated" | "cross"; notional: string;
 }
 
 export async function getFuturesPositions(apiKey: string, secret: string, symbol?: string): Promise<FuturesPosition[]> {
@@ -78,66 +72,63 @@ export async function getFuturesPositions(apiKey: string, secret: string, symbol
   return res.positions || [];
 }
 
+// ==================== 仓位止盈止损 ====================
+
+export async function setPositionTpSl(
+  apiKey: string, secret: string,
+  params: { symbol: string; positionSide: "LONG" | "SHORT"; stopLossPrice?: string; takeProfitPrice?: string; }
+): Promise<void> {
+  const body: Record<string, string> = { symbol: params.symbol, positionSide: params.positionSide };
+  if (params.stopLossPrice) body.stopLossPrice = params.stopLossPrice;
+  if (params.takeProfitPrice) body.takeProfitPrice = params.takeProfitPrice;
+  await signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/positionTpSl", body);
+}
+
 // ==================== 杠杆 & 保证金模式 ====================
 
 export async function setLeverage(apiKey: string, secret: string, symbol: string, leverage: number, side: "LONG" | "SHORT"): Promise<void> {
-  await signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/leverage", {
-    symbol, leverage, side,
-  });
+  await signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/leverage", { symbol, leverage, side });
 }
 
 export async function setMarginType(apiKey: string, secret: string, symbol: string, marginType: "ISOLATED" | "CROSS"): Promise<void> {
-  await signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/marginType", {
-    symbol, marginType,
-  });
+  await signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/marginType", { symbol, marginType });
 }
 
 // ==================== 下单 ====================
 
 export interface FuturesOrderResult {
-  symbol: string;
-  orderId: string;
-  side: string;
-  positionSide: string;
-  type: string;
-  origQty: string;
-  price: string;
-  executedQty: string;
-  avgPrice: string;
-  cumQuote: string;
-  status: string;
-  leverage: number;
+  symbol: string; orderId: string;
+  side: string; positionSide: string;
+  type: string; origQty: string;
+  price: string; executedQty: string;
+  avgPrice: string; cumQuote: string;
+  status: string; leverage: number;
   updateTime: number;
 }
 
 export async function placeFuturesOrder(
   apiKey: string, secret: string,
   params: {
-    symbol: string;
-    side: "BUY" | "SELL";
+    symbol: string; side: "BUY" | "SELL";
     positionSide: "LONG" | "SHORT";
-    type: "MARKET" | "LIMIT";
-    quantity: string;
-    price?: string;
-    stopLossPrice?: string;
-    takeProfitPrice?: string;
+    type: FuturesOrderType;
+    quantity?: string; price?: string;
+    stopPrice?: string; activationPrice?: string;
+    callbackRate?: number;
+    workingType?: "MARK_PRICE" | "CONTRACT_PRICE";
   }
 ): Promise<FuturesOrderResult> {
   const body: Record<string, string | number> = {
-    symbol: params.symbol,
-    side: params.side,
-    positionSide: params.positionSide,
-    type: params.type,
+    symbol: params.symbol, side: params.side,
+    positionSide: params.positionSide, type: params.type,
   };
 
-  if (params.type === "MARKET") {
-    body.quantity = params.quantity;
-  } else {
-    body.quantity = params.quantity;
-    if (params.price) body.price = params.price;
-  }
-  if (params.stopLossPrice) body.stopLossPrice = params.stopLossPrice;
-  if (params.takeProfitPrice) body.takeProfitPrice = params.takeProfitPrice;
+  if (params.quantity) body.quantity = params.quantity;
+  if (params.price) body.price = params.price;
+  if (params.stopPrice) body.stopPrice = params.stopPrice;
+  if (params.activationPrice) body.activationPrice = params.activationPrice;
+  if (params.callbackRate) body.callbackRate = params.callbackRate;
+  if (params.workingType) body.workingType = params.workingType;
 
   return signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/order", body);
 }
@@ -145,20 +136,14 @@ export async function placeFuturesOrder(
 // ==================== 查询订单 ====================
 
 export interface FuturesOrder {
-  symbol: string;
-  orderId: string;
-  side: string;
-  positionSide: string;
-  type: string;
-  origQty: string;
-  price: string;
-  executedQty: string;
-  avgPrice: string;
-  cumQuote: string;
-  status: string;
-  time: number;
-  updateTime: number;
-  leverage: number;
+  symbol: string; orderId: string;
+  side: string; positionSide: string;
+  type: string; origQty: string;
+  price: string; stopPrice?: string;
+  executedQty: string; avgPrice: string;
+  cumQuote: string; status: string;
+  time: number; updateTime: number;
+  leverage: number; workingType: string;
 }
 
 export async function getFuturesOpenOrders(apiKey: string, secret: string, symbol?: string): Promise<FuturesOrder[]> {
@@ -184,24 +169,16 @@ export async function cancelAllFuturesOrders(apiKey: string, secret: string, sym
 
 // ==================== 平仓 ====================
 
-export async function closePosition(
-  apiKey: string, secret: string,
-  symbol: string, positionSide: "LONG" | "SHORT"
-): Promise<FuturesOrderResult> {
+export async function closePosition(apiKey: string, secret: string, symbol: string, positionSide: "LONG" | "SHORT"): Promise<FuturesOrderResult> {
   const side = positionSide === "LONG" ? "SELL" : "BUY";
-  return signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/closePosition", {
-    symbol, positionSide, side,
-  });
+  return signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/closePosition", { symbol, positionSide, side });
 }
 
 // ==================== 资金流水 ====================
 
 export interface FuturesIncome {
-  symbol: string;
-  incomeType: string;
-  income: string;
-  info: string;
-  time: number;
+  symbol: string; incomeType: string;
+  income: string; info: string; time: number;
 }
 
 export async function getFuturesIncome(apiKey: string, secret: string, symbol?: string, limit = 50): Promise<FuturesIncome[]> {
@@ -213,10 +190,5 @@ export async function getFuturesIncome(apiKey: string, secret: string, symbol?: 
 // ==================== 验证 ====================
 
 export async function verifyFuturesApiKey(apiKey: string, secret: string): Promise<boolean> {
-  try {
-    await getFuturesBalance(apiKey, secret);
-    return true;
-  } catch {
-    return false;
-  }
+  try { await getFuturesBalance(apiKey, secret); return true; } catch { return false; }
 }

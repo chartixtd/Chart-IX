@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
-import { placeFuturesOrder } from "@/lib/bingx/futures";
-import type { FuturesOrderType } from "@/lib/bingx/futures";
-
-const VALID_TYPES: FuturesOrderType[] = ["MARKET", "LIMIT", "STOP_MARKET", "STOP_LIMIT", "TAKE_PROFIT_MARKET", "TAKE_PROFIT_LIMIT", "TRAILING_STOP_MARKET"];
+import { placeOcoOrder } from "@/lib/bingx/trade";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +12,7 @@ export async function POST(request: NextRequest) {
     const { data: apiKeys, error: keyError } = await supabase
       .from("api_keys").select("api_key_encrypted, secret_encrypted")
       .eq("user_id", authData.user.id).eq("is_valid", true).limit(1);
+
     if (keyError || !apiKeys?.length) {
       return NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 });
     }
@@ -22,23 +20,12 @@ export async function POST(request: NextRequest) {
     const apiKey = decrypt(apiKeys[0].api_key_encrypted);
     const secret = decrypt(apiKeys[0].secret_encrypted);
 
-    const { symbol, side, positionSide, type, quantity, price, stopPrice, callbackRate, workingType } = await request.json();
-    if (!symbol || !side || !positionSide || !type) {
+    const { symbol, side, quantity, price, stopPrice, stopLimitPrice } = await request.json();
+    if (!symbol || !side || !quantity || !price || !stopPrice) {
       return NextResponse.json({ success: false, error: { message: "Missing fields" } }, { status: 400 });
     }
-    if (!VALID_TYPES.includes(type)) {
-      return NextResponse.json({ success: false, error: { message: "Invalid order type" } }, { status: 400 });
-    }
 
-    const result = await placeFuturesOrder(apiKey, secret, {
-      symbol, side, positionSide, type,
-      quantity: quantity || undefined,
-      price: price || undefined,
-      stopPrice: stopPrice || undefined,
-      callbackRate: callbackRate ? parseFloat(callbackRate) : undefined,
-      workingType: workingType || undefined,
-    });
-
+    const result = await placeOcoOrder(apiKey, secret, { symbol, side, quantity, price, stopPrice, stopLimitPrice });
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });

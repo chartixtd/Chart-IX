@@ -1,67 +1,110 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSpotTicker } from "@/hooks/useMarketData";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
-import { useSpotTicker } from "@/hooks/useMarketData";
 
 interface FuturesTradeFormProps {
   symbol: string;
 }
 
-const LEVERAGE_OPTIONS = [1, 2, 3, 5, 10, 20, 25, 50];
+type OrderType = "MARKET" | "LIMIT" | "STOP_MARKET" | "STOP_LIMIT" | "TAKE_PROFIT_MARKET" | "TAKE_PROFIT_LIMIT" | "TRAILING_STOP_MARKET";
+
+const LEVERAGE_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 25, 33, 50, 75, 100, 125];
+
+const ORDER_TYPES: { key: OrderType; label: string; desc: string }[] = [
+  { key: "MARKET", label: "Market", desc: "Fill immediately at best price" },
+  { key: "LIMIT", label: "Limit", desc: "Fill at specified price or better" },
+  { key: "STOP_MARKET", label: "Stop MKT", desc: "Market order when stop price is reached" },
+  { key: "STOP_LIMIT", label: "Stop LMT", desc: "Limit order when stop price is reached" },
+  { key: "TAKE_PROFIT_MARKET", label: "TP Market", desc: "Take profit at market when price reached" },
+  { key: "TAKE_PROFIT_LIMIT", label: "TP Limit", desc: "Take profit with limit when price reached" },
+  { key: "TRAILING_STOP_MARKET", label: "Trail Stop", desc: "Dynamic stop following price at callback rate" },
+];
 
 export function FuturesTradeForm({ symbol }: FuturesTradeFormProps) {
   const { data: ticker } = useSpotTicker(symbol);
   const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
 
   const [positionSide, setPositionSide] = useState<"LONG" | "SHORT">("LONG");
-  const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
+  const [orderType, setOrderType] = useState<OrderType>("MARKET");
   const [leverage, setLeverage] = useState(10);
+  const [customLeverage, setCustomLeverage] = useState("");
   const [price, setPrice] = useState("");
+  const [stopPrice, setStopPrice] = useState("");
+  const [callbackRate, setCallbackRate] = useState("1");
   const [amount, setAmount] = useState("");
   const [slPrice, setSlPrice] = useState("");
   const [tpPrice, setTpPrice] = useState("");
+  const [usePositionTpSl, setUsePositionTpSl] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  // Set leverage when changed
+  const actualLeverage = customLeverage ? parseInt(customLeverage) : leverage;
+
+  const isStopType = orderType.startsWith("STOP") || orderType.startsWith("TAKE_PROFIT");
+  const isLimitType = orderType.endsWith("LIMIT");
+  const isTrailingStop = orderType === "TRAILING_STOP_MARKET";
+
   useEffect(() => {
-    if (!symbol || leverage <= 0) return;
+    if (!symbol || actualLeverage <= 0) return;
     fetch("/api/bingx/futures/positions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "setLeverage", symbol, leverage, positionSide }),
+      body: JSON.stringify({ action: "setLeverage", symbol, leverage: actualLeverage, positionSide }),
     }).catch(() => {});
-  }, [symbol, leverage, positionSide]);
+  }, [symbol, actualLeverage, positionSide]);
 
   const handleSubmit = async () => {
-    if (!amount || parseFloat(amount) <= 0) return;
-    if (orderType === "LIMIT" && (!price || parseFloat(price) <= 0)) return;
+    const qty = parseFloat(amount);
+    if (!qty || qty <= 0) return;
+    if (isLimitType && (!price || parseFloat(price) <= 0)) return;
+    if (isStopType && (!stopPrice || parseFloat(stopPrice) <= 0)) return;
+    if (isTrailingStop && (!callbackRate || parseFloat(callbackRate) <= 0)) return;
 
     setSubmitting(true);
     setResult(null);
 
     try {
-      const side = positionSide === "LONG" ? "BUY" : "SELL";
+      const body: Record<string, unknown> = {
+        symbol, side: positionSide === "LONG" ? "BUY" : "SELL",
+        positionSide, type: orderType, quantity: amount,
+      };
+
+      if (isLimitType) body.price = price;
+      if (isStopType) body.stopPrice = stopPrice;
+      if (isTrailingStop) body.callbackRate = parseFloat(callbackRate);
+
+      if (usePositionTpSl && (slPrice || tpPrice)) {
+        body.stopLossPrice = slPrice || undefined;
+        body.takeProfitPrice = tpPrice || undefined;
+      }
+
       const res = await fetch("/api/bingx/futures/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbol, side, positionSide, type: orderType, quantity: amount,
-          ...(orderType === "LIMIT" && { price }),
-          ...(slPrice && { stopLossPrice: slPrice }),
-          ...(tpPrice && { takeProfitPrice: tpPrice }),
-        }),
+        body: JSON.stringify(body),
       });
 
       const json = await res.json();
       if (json.success) {
-        setResult({ ok: true, message: `${positionSide} ${amount} ${symbol} @ ${leverage}x · ${json.data.orderId}` });
-        setAmount("");
-        if (orderType === "LIMIT") setPrice("");
-        setSlPrice(""); setTpPrice("");
+        // Also set position TP/SL if requested
+        if (usePositionTpSl && json.data?.orderId && (slPrice || tpPrice)) {
+          fetch("/api/bingx/futures/positions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "setPositionTpSl", symbol, positionSide,
+              stopLossPrice: slPrice || undefined,
+              takeProfitPrice: tpPrice || undefined,
+            }),
+          }).catch(() => {});
+        }
+
+        setResult({ ok: true, message: `${positionSide} ${orderType} ${amount}x ${symbol} · ${json.data.orderId}` });
+        setAmount(""); setPrice(""); setStopPrice("");
       } else {
         setResult({ ok: false, message: json.error?.message || "Order failed" });
       }
@@ -73,101 +116,108 @@ export function FuturesTradeForm({ symbol }: FuturesTradeFormProps) {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Position Side */}
+    <div className="flex flex-col h-full overflow-auto">
+      {/* LONG / SHORT */}
       <div className="flex border-b border-border-default">
-        <button
-          onClick={() => setPositionSide("LONG")}
-          className={cn("flex-1 py-2.5 text-sm font-semibold", positionSide === "LONG" ? "bg-success/10 text-success border-b-2 border-success" : "text-text-muted hover:text-text-secondary")}
-        >
-          Long
-        </button>
-        <button
-          onClick={() => setPositionSide("SHORT")}
-          className={cn("flex-1 py-2.5 text-sm font-semibold", positionSide === "SHORT" ? "bg-danger/10 text-danger border-b-2 border-danger" : "text-text-muted hover:text-text-secondary")}
-        >
-          Short
-        </button>
+        <button onClick={() => setPositionSide("LONG")}
+          className={cn("flex-1 py-2.5 text-sm font-semibold", positionSide === "LONG" ? "bg-success/10 text-success border-b-2 border-success" : "text-text-muted")}>Long</button>
+        <button onClick={() => setPositionSide("SHORT")}
+          className={cn("flex-1 py-2.5 text-sm font-semibold", positionSide === "SHORT" ? "bg-danger/10 text-danger border-b-2 border-danger" : "text-text-muted")}>Short</button>
       </div>
 
-      <div className="flex-1 space-y-3 p-3 overflow-auto">
+      <div className="flex-1 space-y-2.5 p-3">
         {/* Leverage */}
         <div>
           <div className="flex items-center justify-between text-xs text-text-muted mb-1">
             <span>Leverage</span>
-            <span className={leverage > 10 ? "text-danger" : ""}>{leverage}x</span>
+            <span className={actualLeverage > 20 ? "text-danger font-semibold" : ""}>{actualLeverage}x</span>
           </div>
-          <div className="flex gap-1 flex-wrap">
+          <div className="grid grid-cols-7 gap-1 mb-1">
             {LEVERAGE_OPTIONS.map((l) => (
-              <button
-                key={l}
-                onClick={() => setLeverage(l)}
-                className={cn(
-                  "rounded-xs px-2 py-0.5 text-xs font-medium transition-colors",
-                  leverage === l ? "bg-gold/20 text-gold" : "bg-bg-tertiary text-text-muted hover:text-text-primary"
-                )}
-              >
-                {l}x
-              </button>
+              <button key={l} onClick={() => { setLeverage(l); setCustomLeverage(""); }}
+                className={cn("rounded-xs py-0.5 text-xs font-medium", leverage === l && !customLeverage ? "bg-gold/20 text-gold" : "bg-bg-tertiary text-text-muted")}
+              >{l}x</button>
             ))}
           </div>
+          <input
+            type="number" min="1" max="125" placeholder="Custom"
+            value={customLeverage}
+            onChange={(e) => setCustomLeverage(e.target.value)}
+            className="w-full rounded-xs bg-bg-tertiary px-2 py-1 text-xs text-text-primary outline-none focus:ring-1 focus:ring-gold/30"
+          />
         </div>
 
         {/* Order Type */}
-        <div className="flex gap-1">
-          {(["MARKET", "LIMIT"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setOrderType(t)}
-              className={cn("flex-1 rounded-xs py-1 text-xs font-medium", orderType === t ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary")}
-            >
-              {t}
-            </button>
-          ))}
+        <div>
+          <div className="text-xs text-text-muted mb-1">Type</div>
+          <div className="grid grid-cols-2 gap-1">
+            {ORDER_TYPES.map(({ key, label }) => (
+              <button key={key} onClick={() => setOrderType(key)}
+                className={cn("rounded-xs py-1 text-xs font-medium", orderType === key ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary")}
+              >{label}</button>
+            ))}
+          </div>
+          <p className="text-xs text-text-muted/60 mt-1">{ORDER_TYPES.find(t => t.key === orderType)?.desc}</p>
         </div>
 
+        {/* Trailing Stop Callback Rate */}
+        {isTrailingStop && (
+          <div>
+            <div className="text-xs text-text-muted mb-1">Callback Rate (%)</div>
+            <Input placeholder="1" value={callbackRate} onChange={(e) => setCallbackRate(e.target.value)} className="text-sm" />
+            <p className="text-xs text-text-muted/60 mt-0.5">Market order triggers when price retraces {callbackRate}% from peak</p>
+          </div>
+        )}
+
         {/* Price */}
-        {orderType === "LIMIT" && (
+        {(isLimitType || orderType === "MARKET") && (
           <div>
             <div className="flex items-center justify-between text-xs text-text-muted mb-1">
               <span>Price</span>
               <span>≈ {currentPrice.toFixed(2)}</span>
             </div>
-            <Input placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)} className="text-sm" />
+            <Input placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)}
+              className="text-sm" disabled={!isLimitType} />
+          </div>
+        )}
+
+        {/* Stop Price */}
+        {isStopType && (
+          <div>
+            <div className="text-xs text-text-muted mb-1">Stop Price</div>
+            <Input placeholder="0.00" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} className="text-sm" />
           </div>
         )}
 
         {/* Quantity */}
         <div>
-          <div className="flex items-center justify-between text-xs text-text-muted mb-1">
-            <span>Qty (USDT)</span>
-          </div>
+          <div className="text-xs text-text-muted mb-1">Qty (USDT)</div>
           <Input placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} className="text-sm" />
         </div>
 
-        {/* TP/SL (advanced) */}
-        <details className="text-xs">
-          <summary className="text-text-muted cursor-pointer hover:text-text-secondary">TP / SL</summary>
-          <div className="mt-2 space-y-2">
-            <div>
-              <span className="text-text-muted">Take Profit</span>
-              <Input placeholder="0.00" value={tpPrice} onChange={(e) => setTpPrice(e.target.value)} className="text-sm mt-1" />
+        {/* Position TP/SL */}
+        <div className="border-t border-border-default pt-2">
+          <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer mb-2">
+            <input type="checkbox" checked={usePositionTpSl} onChange={(e) => setUsePositionTpSl(e.target.checked)}
+              className="rounded-xs" />
+            Set position TP/SL
+          </label>
+          {usePositionTpSl && (
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs text-text-muted mb-1">Take Profit Price</div>
+                <Input placeholder="0.00" value={tpPrice} onChange={(e) => setTpPrice(e.target.value)} className="text-sm" />
+              </div>
+              <div>
+                <div className="text-xs text-text-muted mb-1">Stop Loss Price</div>
+                <Input placeholder="0.00" value={slPrice} onChange={(e) => setSlPrice(e.target.value)} className="text-sm" />
+              </div>
             </div>
-            <div>
-              <span className="text-text-muted">Stop Loss</span>
-              <Input placeholder="0.00" value={slPrice} onChange={(e) => setSlPrice(e.target.value)} className="text-sm mt-1" />
-            </div>
-          </div>
-        </details>
+          )}
+        </div>
 
-        {/* Submit */}
-        <Button
-          className="w-full"
-          variant={positionSide === "LONG" ? "green" : "red"}
-          loading={submitting}
-          onClick={handleSubmit}
-        >
-          {submitting ? "Placing..." : `${positionSide} ${symbol.split("-")[0]} ${leverage}x`}
+        <Button className="w-full" variant={positionSide === "LONG" ? "green" : "red"} loading={submitting} onClick={handleSubmit}>
+          {submitting ? "Placing..." : `${positionSide} ${symbol.split("-")[0]} ${actualLeverage}x`}
         </Button>
 
         {result && (

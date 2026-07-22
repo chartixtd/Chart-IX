@@ -165,6 +165,60 @@ export async function cancelOrder(
   return signedRequest(apiKey, secret, "POST", "/openApi/spot/v1/trade/cancel", { symbol, orderId });
 }
 
+/** 撤销指定 symbol 下所有挂单 */
+export async function cancelAllOrders(
+  apiKey: string,
+  secret: string,
+  symbol: string
+): Promise<{ msg: string }> {
+  return signedRequest(apiKey, secret, "POST", "/openApi/spot/v1/trade/cancelAll", { symbol });
+}
+
+// ==================== 成交记录 ====================
+
+export interface BingXTradeResult {
+  symbol: string;
+  id: string;
+  orderId: string;
+  price: string;
+  qty: string;
+  quoteQty: string;
+  commission: string;
+  commissionAsset: string;
+  time: number;
+  isBuyer: boolean;
+  isMaker: boolean;
+}
+
+/** 查询近期成交明细 */
+export async function getMyTrades(
+  apiKey: string,
+  secret: string,
+  symbol?: string,
+  limit = 50
+): Promise<{ trades: BingXTradeResult[] }> {
+  const params: Record<string, string | number> = { limit };
+  if (symbol) params.symbol = symbol;
+  return signedRequest(apiKey, secret, "GET", "/openApi/spot/v1/trade/myTrades", params);
+}
+
+// ==================== 手续费 ====================
+
+export interface BingXCommissionRate {
+  symbol: string;
+  makerCommissionRate: string;
+  takerCommissionRate: string;
+}
+
+/** 查询交易手续费率 */
+export async function getCommissionRate(
+  apiKey: string,
+  secret: string,
+  symbol: string
+): Promise<BingXCommissionRate> {
+  return signedRequest(apiKey, secret, "GET", "/openApi/spot/v1/trade/commissionRate", { symbol });
+}
+
 // ==================== 验证 API Key ====================
 
 /** 验证 API Key 是否有效（通过查询余额来测试） */

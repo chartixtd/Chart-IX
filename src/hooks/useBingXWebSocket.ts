@@ -96,6 +96,8 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
 
     let destroyed = false;
     let tickerCount = 0;
+    let klineCount = 0;
+    let msgCount = 0;
 
     function connect() {
       if (destroyed) return;
@@ -113,6 +115,7 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
         console.log("[WS] connected, subscribing...");
 
         for (const sym of symbolsRef.current) {
+          console.log("[WS] subscribing ticker:", `${sym}@ticker`);
           ws.send(JSON.stringify({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             reqType: "sub",
@@ -122,6 +125,7 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
 
         for (const ks of klineSubsRef.current) {
           const dt = `${ks.symbol}@kline_${toWsInterval(ks.interval)}`;
+          console.log("[WS] subscribing kline:", dt);
           ws.send(JSON.stringify({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             reqType: "sub",
@@ -182,10 +186,23 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
           }
         }
 
+        // Log subscription confirmations (no dataType)
+        if (msg.code === 0 && !msg.dataType) {
+          if (msgCount === 0) console.log("[WS] subscription confirmed, id:", msg.id);
+          msgCount++;
+          return;
+        }
+
         if (msg.code !== 0 || !msg.dataType) return;
 
         const dataType = msg.dataType as string;
         const raw = msg.data;
+
+        // Log every dataType received (first 20, then every 20th)
+        msgCount++;
+        if (msgCount <= 20 || msgCount % 50 === 0) {
+          console.log("[WS] msg #" + msgCount + " dataType:", dataType);
+        }
 
         // --- Ticker push ---
         if (dataType.endsWith("@ticker") && raw) {
@@ -209,7 +226,10 @@ export function useBingXWebSocket(symbols: string[], klineSubs?: KlineSub[]) {
             const [, sym, wsIntv] = match;
             const kline = mapKline(raw as Record<string, unknown>);
             if (kline) {
-              console.log("[WS] kline:", sym, wsIntv, kline.close);
+              klineCount++;
+              if (klineCount <= 3 || klineCount % 20 === 0) {
+                console.log("[WS] kline #" + klineCount + ":", sym, wsIntv, kline.close);
+              }
               setKline(sym, fromWsInterval(wsIntv), kline);
             }
           }

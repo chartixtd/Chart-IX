@@ -28,7 +28,6 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const isFirstDataRef = useRef(true);
-  const lastWsTimeRef = useRef<number>(0);
   const { data: klines, isLoading } = useKlines(symbol, interval);
 
   // Read WebSocket kline from store for real-time candle updates
@@ -151,9 +150,6 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
     // Guard: ensure time is a valid number (NaN has typeof "number")
     if (typeof wsKline.openTime !== "number" || isNaN(wsKline.openTime) || wsKline.openTime <= 0) return;
 
-    // Skip duplicate updates (same candle time)
-    if (wsKline.openTime === lastWsTimeRef.current) return;
-
     // lightweight-charts uses seconds
     const time = (wsKline.openTime / 1000) as UTCTimestamp;
 
@@ -173,10 +169,8 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
           ? "rgba(34, 197, 94, 0.2)"
           : "rgba(239, 68, 68, 0.2)",
       });
-
-      lastWsTimeRef.current = wsKline.openTime;
     } catch (err) {
-      console.debug("[KlineChart] update error, will retry on next tick:", err);
+      console.log("[KlineChart] update error, will retry on next tick:", err);
     }
   }, [wsKline]);
 

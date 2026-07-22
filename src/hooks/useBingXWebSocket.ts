@@ -40,10 +40,21 @@ function mapTicker(raw: Record<string, string>): BingXTicker {
 
 /** Map raw WebSocket kline data to BingXKline */
 function mapKline(raw: Record<string, unknown>): BingXKline | null {
-  // BingX kline push: data.K.{t,T,o,h,l,c,v} or flat data.{t,T,o,h,l,c,v}
+  if (!raw || typeof raw !== "object") return null;
+
+  // BingX kline push: data.K.{t,T,o,h,l,c,v} (nested) or flat data.{t,T,o,h,l,c,v}
   const d = (raw.K || raw) as Record<string, unknown>;
-  const openTime = Number(d.t ?? 0);
-  const closeTime = Number(d.T ?? 0);
+  if (!d || typeof d !== "object") return null;
+
+  let rawTime = d.t;
+  if (rawTime === undefined || rawTime === null) return null;
+
+  // Auto-detect time unit: if < 1e10, it's probably seconds → convert to ms
+  let openTime = Number(rawTime);
+  if (isNaN(openTime) || openTime <= 0) return null;
+  if (openTime < 1e10) openTime *= 1000; // seconds → milliseconds
+
+  const closeTime = Number(d.T ?? (openTime + 60000));
   const open = parseFloat(String(d.o ?? "0"));
   const high = parseFloat(String(d.h ?? "0"));
   const low = parseFloat(String(d.l ?? "0"));
@@ -51,7 +62,9 @@ function mapKline(raw: Record<string, unknown>): BingXKline | null {
   const volume = parseFloat(String(d.v ?? "0"));
   const quoteVolume = parseFloat(String(d.q ?? "0"));
 
-  if (!openTime || isNaN(open)) return null;
+  if (isNaN(open)) return null;
+
+  console.debug("[WS] kline:", { sym: raw.s || (raw as Record<string,unknown>).s, openTime, open, high, low, close, volume });
 
   return { openTime, open, high, low, close, volume, closeTime, quoteVolume };
 }

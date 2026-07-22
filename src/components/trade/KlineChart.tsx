@@ -148,27 +148,36 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
   useEffect(() => {
     if (!wsKline || !candleSeriesRef.current || !volumeSeriesRef.current) return;
 
+    // Guard: ensure time is a valid number (NaN has typeof "number")
+    if (typeof wsKline.openTime !== "number" || isNaN(wsKline.openTime) || wsKline.openTime <= 0) return;
+
+    // Skip duplicate updates (same candle time)
+    if (wsKline.openTime === lastWsTimeRef.current) return;
+
+    // lightweight-charts uses seconds
     const time = (wsKline.openTime / 1000) as UTCTimestamp;
 
-    // Update candle
-    candleSeriesRef.current.update({
-      time,
-      open: wsKline.open,
-      high: wsKline.high,
-      low: wsKline.low,
-      close: wsKline.close,
-    });
+    try {
+      candleSeriesRef.current.update({
+        time,
+        open: wsKline.open,
+        high: wsKline.high,
+        low: wsKline.low,
+        close: wsKline.close,
+      });
 
-    // Update volume
-    volumeSeriesRef.current.update({
-      time,
-      value: wsKline.volume,
-      color: wsKline.close >= wsKline.open
-        ? "rgba(34, 197, 94, 0.2)"
-        : "rgba(239, 68, 68, 0.2)",
-    });
+      volumeSeriesRef.current.update({
+        time,
+        value: wsKline.volume,
+        color: wsKline.close >= wsKline.open
+          ? "rgba(34, 197, 94, 0.2)"
+          : "rgba(239, 68, 68, 0.2)",
+      });
 
-    lastWsTimeRef.current = wsKline.openTime;
+      lastWsTimeRef.current = wsKline.openTime;
+    } catch (err) {
+      console.debug("[KlineChart] update error, will retry on next tick:", err);
+    }
   }, [wsKline]);
 
   return (

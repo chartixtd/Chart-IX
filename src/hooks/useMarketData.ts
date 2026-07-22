@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useMarketStore } from "@/stores/market";
 import type { BingXSymbol, BingXTicker, BingXKline, BingXDepth, BingXTrade } from "@/types/bingx";
 
 async function fetchApi<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
@@ -24,25 +25,38 @@ export function useSpotSymbols(symbol?: string) {
   });
 }
 
-// 24h行情 (批量)
+// 24h行情 (批量) — WebSocket 实时数据优先
 export function useSpotTickers() {
-  return useQuery({
+  const wsTickers = useMarketStore((s) => s.tickers);
+
+  const query = useQuery({
     queryKey: ["bingx", "tickers", "spot"],
     queryFn: () => fetchApi<BingXTicker[]>("ticker"),
-    refetchInterval: 3_000,
-    staleTime: 1_000,
+    refetchInterval: 5_000,
+    staleTime: 2_000,
   });
+
+  // REST 数据提供完整列表，WebSocket 数据覆盖实时价格
+  const data = query.data && Object.keys(wsTickers).length > 0
+    ? query.data.map((t) => wsTickers[t.symbol] ?? t)
+    : query.data;
+
+  return { ...query, data };
 }
 
-// 单个行情
+// 单个行情 — WebSocket 实时数据优先
 export function useSpotTicker(symbol: string) {
-  return useQuery({
+  const wsTicker = useMarketStore((s) => s.tickers[symbol]);
+
+  const query = useQuery({
     queryKey: ["bingx", "ticker", "spot", symbol],
     queryFn: () => fetchApi<BingXTicker>("ticker", { symbol }),
-    refetchInterval: 2_000,
-    staleTime: 1_000,
+    refetchInterval: 5_000,
+    staleTime: 2_000,
     enabled: !!symbol,
   });
+
+  return { ...query, data: wsTicker ?? query.data };
 }
 
 // K线

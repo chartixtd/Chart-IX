@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { useSpotTickers, useSpotTicker } from "@/hooks/useMarketData";
+import { useState, useMemo } from "react";
+import { useSpotTickers } from "@/hooks/useMarketData";
+import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
+
+const WS_SUBSCRIBE_LIMIT = 30;
 
 interface MarketOverviewProps {
   onSelectSymbol?: (symbol: string) => void;
@@ -14,6 +17,15 @@ interface MarketOverviewProps {
 export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOverviewProps) {
   const [search, setSearch] = useState("");
   const { data: tickers, isLoading } = useSpotTickers();
+
+  // 取前 N 个交易对订阅 WebSocket 实时行情
+  const wsSymbols = useMemo(() => {
+    if (!tickers) return [];
+    return tickers.slice(0, WS_SUBSCRIBE_LIMIT).map((t) => t.symbol);
+  }, [tickers]);
+
+  // 订阅 WebSocket，数据自动写入 useMarketStore → useSpotTickers 返回合并结果
+  useBingXWebSocket(wsSymbols);
 
   const filtered = tickers?.filter((t) =>
     t.symbol.toLowerCase().includes(search.toLowerCase())

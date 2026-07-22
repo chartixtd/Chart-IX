@@ -7,6 +7,7 @@ import { MarketOverview } from "@/components/trade/MarketOverview";
 import { KlineChart } from "@/components/trade/KlineChart";
 import { OrderBook } from "@/components/trade/OrderBook";
 import { useSpotTicker } from "@/hooks/useMarketData";
+import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,9 @@ export default function TradePage() {
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
   const [interval, setInterval] = useState("1h");
   const { data: ticker } = useSpotTicker(symbol);
+
+  // 确保当前选中交易对始终被 WebSocket 订阅
+  useBingXWebSocket([symbol]);
 
   const isPositive = ticker ? parseFloat(ticker.priceChangePercent) >= 0 : false;
 

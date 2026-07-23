@@ -436,7 +436,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
     if (titleMs.trim()) title["ms-MY"] = titleMs.trim();
 
     if (Object.keys(title).length === 0) {
-      toast(t("articles_list.article_created"), "error");
+      toast("At least one title is required", "error");
       return;
     }
 
@@ -455,7 +455,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
       const method = isEdit ? "PATCH" : "POST";
       const body: Record<string, unknown> = {
         title,
-        content: Object.keys(content).length > 0 ? content : null,
+        content: Object.keys(content).length > 0 ? content : {},
         category_id: categoryId ? parseInt(categoryId) : null,
         cover_image: coverImage.trim() || null,
         tier_required: tier,

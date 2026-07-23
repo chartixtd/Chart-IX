@@ -51,8 +51,7 @@ INSERT INTO public.feature_flags (feature_key, feature_group, display_name, free
   ('futures_trading',    'trading', '{"zh-CN":"合约交易", "en-US":"Futures Trading", "ms-MY":"Dagangan Niaga Hadapan"}', false, true),
   ('api_key_management', 'trading', '{"zh-CN":"API密钥管理", "en-US":"API Key Management", "ms-MY":"Pengurusan Kunci API"}', true, true),
   ('advanced_chart',     'trading', '{"zh-CN":"高级K线图", "en-US":"Advanced Chart", "ms-MY":"Carta Lanjutan"}', false, true),
-  ('video_download',     'content', '{"zh-CN":"视频下载", "en-US":"Video Download", "ms-MY":"Muat Turun Video"}', false, true),
-  ('live_stream',        'content', '{"zh-CN":"直播", "en-US":"Live Stream", "ms-MY":"Siaran Langsung"}', false, false);
+  ('video_download',     'content', '{"zh-CN":"视频下载", "en-US":"Video Download", "ms-MY":"Muat Turun Video"}', false, true);
 
 -- 4. 风控配置
 CREATE TABLE public.risk_config (

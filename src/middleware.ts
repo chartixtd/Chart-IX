@@ -75,9 +75,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 根路径重定向到默认语言
+  // 根路径重定向到用户偏好的语言（cookie > accept-language > 默认）
   if (pathname === "/") {
-    return NextResponse.redirect(new URL(`/en-US`, request.url));
+    const cookieLocale = request.cookies.get("NEXT_LOCALE")?.value;
+    const acceptLang = request.headers.get("accept-language")?.split(",")[0]?.split("-")[0];
+    const targetLocale = cookieLocale || (acceptLang && routing.locales.find(l => l.startsWith(acceptLang))) || routing.defaultLocale;
+    return NextResponse.redirect(new URL(`/${targetLocale}`, request.url));
   }
 
   return intlMiddleware(request);

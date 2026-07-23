@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import { useLocale } from "next-intl";
+import { useCallback } from "react";
 import { LANGUAGE_LABELS } from "@/lib/constants";
 
 export function LanguageSwitcher() {
@@ -9,7 +10,10 @@ export function LanguageSwitcher() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const switchLanguage = (newLocale: string) => {
+  const switchLanguage = useCallback((newLocale: string) => {
+    // Persist language preference via cookie (read by middleware & next-intl)
+    document.cookie = `NEXT_LOCALE=${newLocale}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+
     const segments = pathname.split("/").filter(Boolean);
     if (segments.length > 0) {
       segments[0] = newLocale;
@@ -17,7 +21,7 @@ export function LanguageSwitcher() {
       segments.unshift(newLocale);
     }
     router.push("/" + segments.join("/"));
-  };
+  }, [pathname, router]);
 
   return (
     <select

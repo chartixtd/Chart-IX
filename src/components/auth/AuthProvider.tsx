@@ -19,14 +19,24 @@ const AuthContext = createContext<AuthState>({
   loading: true,
 });
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [auth, setAuth] = useState<AuthState>({
-    userId: null,
-    email: null,
-    tier: null,
-    role: null,
-    loading: true,
-  });
+export function AuthProvider({
+  children,
+  initialAuth,
+}: {
+  children: React.ReactNode;
+  initialAuth?: AuthState;
+}) {
+  // Server-prefetched auth is authoritative for first paint — no loading flash,
+  // no client-side request waterfall, and tier/role are always accurate.
+  const [auth, setAuth] = useState<AuthState>(
+    initialAuth ?? {
+      userId: null,
+      email: null,
+      tier: null,
+      role: null,
+      loading: true,
+    }
+  );
 
   const fetchAuth = useCallback(async () => {
     const supabase = createClient();
@@ -55,10 +65,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    fetchAuth();
+    // Only fetch on mount if the server didn't already provide auth
+    if (!initialAuth) {
+      fetchAuth();
+    }
 
     const supabase = createClient();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
         fetchAuth();
       } else if (event === "SIGNED_OUT") {
@@ -67,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchAuth]);
 
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;

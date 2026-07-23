@@ -19,7 +19,9 @@ export function Navbar() {
   const router = useRouter();
   const auth = useAuth();
 
-  const isPro = auth.tier === "pro";
+  // Only show upgrade once auth has loaded and the user is confirmed non-pro —
+  // avoids the upgrade link flashing for pro users during the loading window.
+  const showUpgrade = !auth.loading && auth.tier !== "pro";
   const isAdmin = auth.role === "admin";
 
   const segments = useMemo(() => pathname.split("/").filter(Boolean), [pathname]);
@@ -65,7 +67,7 @@ export function Navbar() {
         {/* Desktop Nav */}
         <nav className="hidden md:flex items-center gap-1">
           {navLinks}
-          {!isPro && (
+          {showUpgrade && (
             <Link
               href={`/${locale}/upgrade`}
               className={cn(

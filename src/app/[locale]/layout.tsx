@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
+import { getServerAuth } from "@/lib/supabase/get-auth";
 import { ClientLocaleLayout } from "./ClientLocaleLayout";
 
 export default async function LocaleLayout({
@@ -16,11 +17,14 @@ export default async function LocaleLayout({
     notFound();
   }
 
-  // Load messages in server component
-  const messages = (await import(`@/i18n/messages/${locale}.json`)).default;
+  // Load messages + prefetch auth in parallel on the server
+  const [messages, initialAuth] = await Promise.all([
+    import(`@/i18n/messages/${locale}.json`).then((m) => m.default),
+    getServerAuth(),
+  ]);
 
   return (
-    <ClientLocaleLayout locale={locale} messages={messages}>
+    <ClientLocaleLayout locale={locale} messages={messages} initialAuth={initialAuth}>
       {children}
     </ClientLocaleLayout>
   );

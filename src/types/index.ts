@@ -56,6 +56,31 @@ export interface VideoProgress {
   updated_at: string;
 }
 
+// ==================== 文章 ====================
+export interface Article {
+  id: string;
+  slug: string;
+  title: Record<Locale, string>;
+  content: Record<Locale, string>;
+  category_id: number | null;
+  category?: ArticleCategory;
+  cover_image: string | null;
+  author_id: string;
+  tier_required: UserTier;
+  view_count: number;
+  is_published: boolean;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ArticleCategory {
+  id: number;
+  name: Record<Locale, string>;
+  slug: string;
+  sort_order: number;
+}
+
 // ==================== 交易 ====================
 export type MarketType = "spot" | "futures";
 export type OrderSide = "buy" | "sell";

@@ -1,12 +1,10 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { LogsHeading } from "./LogsHeading";
 import { LogsTable } from "./LogsTable";
-import { getTranslations } from "next-intl/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminLogsPage() {
-  const t = await getTranslations("admin");
   const client = createServiceRoleClient();
 
   const { data: logs, error } = await client
@@ -18,7 +16,7 @@ export default async function AdminLogsPage() {
   if (error) {
     return (
       <div className="text-red-400">
-        {t("error_loading", { resource: "logs" })}
+        Failed to load logs. Please try again later.
       </div>
     );
   }

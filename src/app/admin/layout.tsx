@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import { NextIntlClientProvider } from "next-intl";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
 import { AdminHeader } from "@/components/layout/AdminHeader";
-import type { Locale } from "@/types";
 
 type ValidLocale = "zh-CN" | "en-US" | "ms-MY";
 

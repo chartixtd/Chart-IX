@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
@@ -8,25 +8,39 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
 import type { Video, VideoCategory } from "@/types";
 
 interface VideosManagerProps {
   videos: Video[];
   categories: VideoCategory[];
+  isLoading?: boolean;
 }
 
-export function VideosManager({ videos, categories }: VideosManagerProps) {
+const PAGE_SIZE = 20;
+
+export function VideosManager({ videos, categories, isLoading = false }: VideosManagerProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useTranslations("admin");
   const tc = useTranslations();
   const locale = useLocale();
+  const { toast } = useToast();
+
+  // Search & pagination
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Upload modal state
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
+
+  // Confirm dialog state
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Upload form fields
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -153,6 +167,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
       }
 
       setUploadProgress(100);
+      toast(t("videos_list.upload_success"), "success");
       resetForm();
       setShowUpload(false);
       router.refresh();
@@ -163,22 +178,44 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
     }
   };
 
-  const updateVideo = async (id: string, updates: Record<string, unknown>) => {
-    const res = await fetch("/api/admin/videos", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, ...updates }),
-    });
-    if (res.ok) router.refresh();
+  const updateVideo = async (id: string, updates: Record<string, unknown>): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/admin/videos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...updates }),
+      });
+      if (res.ok) {
+        router.refresh();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   };
 
-  const deleteVideo = async (id: string) => {
-    const res = await fetch("/api/admin/videos", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    if (res.ok) router.refresh();
+  const handleHardDelete = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/admin/videos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: confirmDelete.id }),
+      });
+      if (res.ok) {
+        toast(t("videos_list.hard_deleted"), "success");
+        router.refresh();
+      } else {
+        toast(t("videos_list.upload_failed"), "error");
+      }
+    } catch {
+      toast(t("videos_list.upload_failed"), "error");
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(null);
+    }
   };
 
   const formatDuration = (seconds: number) => {
@@ -196,14 +233,64 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
     return cat.name?.[locale as keyof typeof cat.name] ?? cat.name?.["en-US"] ?? cat.name?.["zh-CN"] ?? cat.name?.["ms-MY"] ?? cat.slug;
   };
 
+  // Filter videos by search query (case-insensitive across all title locales)
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return videos;
+    const q = searchQuery.toLowerCase();
+    return videos.filter((v) => {
+      const titles = [v.title?.["en-US"], v.title?.["zh-CN"], v.title?.["ms-MY"]];
+      return titles.some((t) => t?.toLowerCase().includes(q));
+    });
+  }, [videos, searchQuery]);
+
+  // Reset page when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginated = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, safePage]);
+
+  // Loading skeleton
+  if (isLoading) {
+    return (
+      <div>
+        <div className="mb-4 flex items-center justify-between">
+          <div className="h-5 w-32 animate-pulse rounded bg-bg-tertiary" />
+          <div className="h-9 w-28 animate-pulse rounded bg-bg-tertiary" />
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-border-default">
+          <div className="animate-pulse space-y-3 p-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-10 rounded bg-bg-tertiary" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Top bar */}
-      <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm text-text-secondary">{t("videos_list.videos_total", { count: videos.length })}</p>
-        <Button variant="primary" size="sm" onClick={() => setShowUpload(true)}>
-          {t("videos_list.add_video")}
-        </Button>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-text-secondary">{t("videos_list.videos_total", { count: filtered.length })}</p>
+        <div className="flex items-center gap-3">
+          <Input
+            placeholder={t("videos_list.search_placeholder")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-56"
+          />
+          <Button variant="primary" size="sm" onClick={() => setShowUpload(true)}>
+            {t("videos_list.add_video")}
+          </Button>
+        </div>
       </div>
 
       {/* Table */}
@@ -221,7 +308,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
             </tr>
           </thead>
           <tbody>
-            {videos.map((v) => (
+            {paginated.map((v) => (
               <tr key={v.id} className="border-t border-border-default hover:bg-bg-tertiary/50">
                 <td className="max-w-[240px] truncate px-4 py-3 text-text-primary" title={getTitle(v)}>
                   {getTitle(v)}
@@ -231,7 +318,10 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                 <td className="px-4 py-3">
                   <select
                     value={v.tier_required}
-                    onChange={(e) => updateVideo(v.id, { tier_required: e.target.value })}
+                    onChange={async (e) => {
+                      const ok = await updateVideo(v.id, { tier_required: e.target.value });
+                      if (ok) toast(t("videos_list.tier_updated"), "success");
+                    }}
                     className="rounded border border-border-default bg-bg-tertiary px-2 py-1 text-xs text-text-primary"
                   >
                     <option value="free">{t("videos_list.free")}</option>
@@ -250,7 +340,10 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => updateVideo(v.id, { is_deleted: false })}
+                        onClick={async () => {
+                          const ok = await updateVideo(v.id, { is_deleted: false });
+                          if (ok) toast(t("videos_list.restored"), "success");
+                        }}
                         className="text-green-400"
                       >
                         {t("videos_list.restore")}
@@ -259,7 +352,10 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => updateVideo(v.id, { is_deleted: true })}
+                        onClick={async () => {
+                          const ok = await updateVideo(v.id, { is_deleted: true });
+                          if (ok) toast(t("videos_list.deleted"), "success");
+                        }}
                         className="text-red-400"
                       >
                         {t("videos_list.delete")}
@@ -268,11 +364,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => {
-                        if (confirm(t("videos_list.hard_delete_confirm"))) {
-                          deleteVideo(v.id);
-                        }
-                      }}
+                      onClick={() => setConfirmDelete({ id: v.id })}
                       className="text-red-500"
                     >
                       {t("videos_list.hard_delete")}
@@ -285,9 +377,52 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
         </table>
       </div>
 
-      {videos.length === 0 && (
-        <p className="mt-4 text-center text-text-muted">{t("videos_list.no_videos")}</p>
+      {/* Empty / no results */}
+      {filtered.length === 0 && (
+        <p className="mt-4 text-center text-text-muted">
+          {searchQuery.trim() ? t("videos_list.no_videos") : t("videos_list.no_videos")}
+        </p>
       )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-text-muted">
+            {t("videos_list.page", { page: safePage, total: totalPages })}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={safePage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            >
+              {t("videos_list.prev")}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={safePage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            >
+              {t("videos_list.next")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Hard Delete ConfirmDialog */}
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleHardDelete}
+        title={t("videos_list.hard_delete")}
+        message={t("videos_list.delete_confirm")}
+        confirmText={t("videos_list.hard_delete")}
+        cancelText={tc("common.cancel")}
+        loading={deleting}
+        variant="danger"
+      />
 
       {/* Upload Modal */}
       <Modal open={showUpload} onClose={() => { setShowUpload(false); resetForm(); }} title={t("videos_list.modal_title")} size="lg">

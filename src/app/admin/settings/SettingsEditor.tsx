@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useToast } from "@/components/ui/Toast";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 
@@ -17,9 +19,9 @@ interface AdminSetting {
 export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
   const router = useRouter();
   const t = useTranslations("admin");
+  const { toast } = useToast();
   const [editingValues, setEditingValues] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
-  const [error, setError] = useState<string | null>(null);
 
   // Add new state
   const [showAdd, setShowAdd] = useState(false);
@@ -27,6 +29,10 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
   const [newValue, setNewValue] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [adding, setAdding] = useState(false);
+
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const getValueString = (setting: AdminSetting): string => {
     if (editingValues[setting.id] !== undefined) return editingValues[setting.id];
@@ -47,12 +53,11 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      setError(t("settings_list.invalid_json", { key: setting.key }));
+      toast(t("settings_list.invalid_json", { key: setting.key }), "error");
       return;
     }
 
     setSaving((prev) => ({ ...prev, [setting.id]: true }));
-    setError(null);
 
     const res = await fetch("/api/admin/settings", {
       method: "PATCH",
@@ -61,6 +66,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
     });
 
     if (res.ok) {
+      toast(t("settings_list.saved_success"), "success");
       setEditingValues((prev) => {
         const next = { ...prev };
         delete next[setting.id];
@@ -69,35 +75,46 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
       router.refresh();
     } else {
       const data = await res.json();
-      setError(data.error ?? t("settings_list.save_failed"));
+      toast(data.error ?? t("settings_list.save_failed"), "error");
     }
     setSaving((prev) => ({ ...prev, [setting.id]: false }));
   };
 
-  const deleteSetting = async (id: number) => {
-    if (!confirm(t("settings_list.delete_confirm"))) return;
+  const confirmDelete = async () => {
+    if (deleteTarget === null) return;
+    setDeleteLoading(true);
+
     const res = await fetch("/api/admin/settings", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id: deleteTarget }),
     });
-    if (res.ok) router.refresh();
+
+    if (res.ok) {
+      toast(t("settings_list.deleted_success"), "success");
+      router.refresh();
+    } else {
+      const data = await res.json();
+      toast(data.error ?? t("settings_list.delete_failed"), "error");
+    }
+
+    setDeleteLoading(false);
+    setDeleteTarget(null);
   };
 
   const addSetting = async () => {
     if (!newKey.trim()) {
-      setError(t("settings_list.key_required_error"));
+      toast(t("settings_list.key_required_error"), "error");
       return;
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(newValue || "null");
     } catch {
-      setError(t("settings_list.value_invalid_json"));
+      toast(t("settings_list.value_invalid_json"), "error");
       return;
     }
     setAdding(true);
-    setError(null);
 
     const res = await fetch("/api/admin/settings", {
       method: "POST",
@@ -110,6 +127,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
     });
 
     if (res.ok) {
+      toast(t("settings_list.added_success"), "success");
       setShowAdd(false);
       setNewKey("");
       setNewValue("");
@@ -117,19 +135,13 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
       router.refresh();
     } else {
       const data = await res.json();
-      setError(data.error ?? t("settings_list.add_failed"));
+      toast(data.error ?? t("settings_list.add_failed"), "error");
     }
     setAdding(false);
   };
 
   return (
     <div>
-      {error && (
-        <div className="mb-4 rounded border border-danger/30 bg-danger/10 px-4 py-2 text-sm text-danger">
-          {error}
-        </div>
-      )}
-
       <div className="space-y-4">
         {settings.map((setting) => (
           <Card key={setting.id} padding="md">
@@ -168,7 +180,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
                   variant="ghost"
                   size="sm"
                   className="text-danger"
-                  onClick={() => deleteSetting(setting.id)}
+                  onClick={() => setDeleteTarget(setting.id)}
                 >
                   {t("settings_list.delete")}
                 </Button>
@@ -248,7 +260,6 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
                   setNewKey("");
                   setNewValue("");
                   setNewDesc("");
-                  setError(null);
                 }}
               >
                 {t("settings_list.cancel")}
@@ -257,6 +268,21 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
           </div>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onClose={() => {
+          if (!deleteLoading) setDeleteTarget(null);
+        }}
+        onConfirm={confirmDelete}
+        title={t("settings_list.delete_confirm_title")}
+        message={t("settings_list.delete_confirm")}
+        confirmText={t("settings_list.delete_confirm_button")}
+        cancelText={t("settings_list.cancel")}
+        loading={deleteLoading}
+        variant="danger"
+      />
     </div>
   );
 }

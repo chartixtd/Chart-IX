@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 
 interface LogEntry {
@@ -29,16 +30,22 @@ function formatJson(value: Record<string, unknown> | null): string {
 
 export function LogsTable({ logs }: { logs: LogEntry[] }) {
   const t = useTranslations("admin");
-  const [search, setSearch] = useState("");
+  const router = useRouter();
+  const [searchText, setSearchText] = useState("");
+  const [actionFilter, setActionFilter] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
   const uniqueActions = [...new Set(logs.map((l) => l.action))].sort();
 
-  const filtered = logs.filter(
-    (l) =>
-      (!search || l.action.toLowerCase().includes(search.toLowerCase()) || l.target_type.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filtered = logs.filter((l) => {
+    const matchesSearch =
+      !searchText ||
+      l.action.toLowerCase().includes(searchText.toLowerCase()) ||
+      l.target_type.toLowerCase().includes(searchText.toLowerCase());
+    const matchesAction = !actionFilter || l.action === actionFilter;
+    return matchesSearch && matchesAction;
+  });
 
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
   const paginated = filtered.slice(
@@ -71,17 +78,17 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
         <input
           type="text"
           placeholder={t("logs_list.search_placeholder")}
-          value={search}
+          value={searchText}
           onChange={(e) => {
-            setSearch(e.target.value);
+            setSearchText(e.target.value);
             setCurrentPage(1);
           }}
           className="w-full max-w-sm rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-gold focus:outline-none"
         />
         <select
-          value={search}
+          value={actionFilter}
           onChange={(e) => {
-            setSearch(e.target.value);
+            setActionFilter(e.target.value);
             setCurrentPage(1);
           }}
           className="rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary"
@@ -93,6 +100,23 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
             </option>
           ))}
         </select>
+        <button
+          onClick={() => router.refresh()}
+          className="rounded-sm border border-border-default bg-bg-tertiary p-2 text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+          title={t("logs_list.refresh")}
+        >
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 12a9 9 0 11-2.2-6M21 3v6h-6" />
+          </svg>
+        </button>
       </div>
 
       {/* Table */}

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -18,7 +19,6 @@ interface TierFormState {
   max_leverage: string;
   allowed_symbols: string;
   saving: boolean;
-  message: { type: "success" | "error"; text: string } | null;
 }
 
 function createInitialState(config: RiskConfig | undefined): TierFormState {
@@ -28,21 +28,45 @@ function createInitialState(config: RiskConfig | undefined): TierFormState {
     max_leverage: config?.max_leverage?.toString() ?? "",
     allowed_symbols: config?.allowed_symbols?.join(", ") ?? "",
     saving: false,
-    message: null,
   };
+}
+
+function isTierDirty(current: TierFormState, initial: TierFormState): boolean {
+  return (
+    current.max_order_amount !== initial.max_order_amount ||
+    current.max_daily_orders !== initial.max_daily_orders ||
+    current.max_leverage !== initial.max_leverage ||
+    current.allowed_symbols !== initial.allowed_symbols
+  );
 }
 
 export function RiskEditor({ configs }: RiskEditorProps) {
   const router = useRouter();
   const t = useTranslations("admin");
+  const { toast } = useToast();
+
   const freeConfig = configs.find((c) => c.tier === "free");
   const proConfig = configs.find((c) => c.tier === "pro");
 
-  const [free, setFree] = useState<TierFormState>(() => createInitialState(freeConfig));
-  const [pro, setPro] = useState<TierFormState>(() => createInitialState(proConfig));
+  const initialFree = useRef(createInitialState(freeConfig));
+  const initialPro = useRef(createInitialState(proConfig));
+
+  const [free, setFreeState] = useState<TierFormState>(() => createInitialState(freeConfig));
+  const [pro, setProState] = useState<TierFormState>(() => createInitialState(proConfig));
+
+  const freeDirty = isTierDirty(free, initialFree.current);
+  const proDirty = isTierDirty(pro, initialPro.current);
+
+  const updateFree = useCallback((partial: Partial<TierFormState>) => {
+    setFreeState((prev) => ({ ...prev, ...partial }));
+  }, []);
+
+  const updatePro = useCallback((partial: Partial<TierFormState>) => {
+    setProState((prev) => ({ ...prev, ...partial }));
+  }, []);
 
   const saveTier = async (tier: "free" | "pro", state: TierFormState, setState: (s: TierFormState) => void) => {
-    setState({ ...state, saving: true, message: null });
+    setState({ ...state, saving: true });
 
     try {
       const body: Record<string, unknown> = { tier };
@@ -67,13 +91,22 @@ export function RiskEditor({ configs }: RiskEditorProps) {
       const json = await res.json();
 
       if (res.ok) {
-        setState({ ...state, saving: false, message: { type: "success", text: t("risk_list.saved_success") } });
+        toast(t("risk_list.saved_success"), "success");
+        setState({ ...state, saving: false });
         router.refresh();
+        // Update initial ref so the form resets to "not dirty"
+        if (tier === "free") {
+          initialFree.current = { ...state, saving: false };
+        } else {
+          initialPro.current = { ...state, saving: false };
+        }
       } else {
-        setState({ ...state, saving: false, message: { type: "error", text: json.error ?? t("risk_list.save_failed") } });
+        toast(json.error ?? t("risk_list.save_failed"), "error");
+        setState({ ...state, saving: false });
       }
     } catch {
-      setState({ ...state, saving: false, message: { type: "error", text: t("risk_list.network_error") } });
+      toast(t("risk_list.network_error"), "error");
+      setState({ ...state, saving: false });
     }
   };
 
@@ -98,21 +131,21 @@ export function RiskEditor({ configs }: RiskEditorProps) {
             step="any"
             placeholder="e.g. 5000"
             value={free.max_order_amount}
-            onChange={(e) => setFree({ ...free, max_order_amount: e.target.value, message: null })}
+            onChange={(e) => updateFree({ max_order_amount: e.target.value })}
           />
           <Input
             label={t("risk_list.max_daily_orders")}
             type="number"
             placeholder="e.g. 10"
             value={free.max_daily_orders}
-            onChange={(e) => setFree({ ...free, max_daily_orders: e.target.value, message: null })}
+            onChange={(e) => updateFree({ max_daily_orders: e.target.value })}
           />
           <Input
             label={t("risk_list.max_leverage")}
             type="number"
             placeholder="e.g. 5"
             value={free.max_leverage}
-            onChange={(e) => setFree({ ...free, max_leverage: e.target.value, message: null })}
+            onChange={(e) => updateFree({ max_leverage: e.target.value })}
           />
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-text-secondary">
@@ -122,26 +155,15 @@ export function RiskEditor({ configs }: RiskEditorProps) {
               className="w-full rounded-sm border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold hover:border-border-hover min-h-[80px] resize-y"
               placeholder="e.g. BTCUSDT, ETHUSDT, BNBUSDT"
               value={free.allowed_symbols}
-              onChange={(e) => setFree({ ...free, allowed_symbols: e.target.value, message: null })}
+              onChange={(e) => updateFree({ allowed_symbols: e.target.value })}
             />
             <p className="text-xs text-text-muted">{t("risk_list.symbols_hint")}</p>
           </div>
 
-          {free.message && (
-            <p
-              className={`rounded-sm px-3 py-2 text-sm ${
-                free.message.type === "success"
-                  ? "bg-success-bg text-success"
-                  : "bg-danger-bg text-danger"
-              }`}
-            >
-              {free.message.text}
-            </p>
-          )}
-
           <Button
-            onClick={() => saveTier("free", free, setFree)}
+            onClick={() => saveTier("free", free, setFreeState)}
             loading={free.saving}
+            disabled={!freeDirty}
             className="w-full"
           >
             {t("risk_list.save_free")}
@@ -168,14 +190,14 @@ export function RiskEditor({ configs }: RiskEditorProps) {
             step="any"
             placeholder="e.g. 50000"
             value={pro.max_order_amount}
-            onChange={(e) => setPro({ ...pro, max_order_amount: e.target.value, message: null })}
+            onChange={(e) => updatePro({ max_order_amount: e.target.value })}
           />
           <Input
             label={t("risk_list.max_daily_orders")}
             type="number"
             placeholder="e.g. 100"
             value={pro.max_daily_orders}
-            onChange={(e) => setPro({ ...pro, max_daily_orders: e.target.value, message: null })}
+            onChange={(e) => updatePro({ max_daily_orders: e.target.value })}
           />
           <Input
             label={t("risk_list.max_leverage")}
@@ -183,7 +205,7 @@ export function RiskEditor({ configs }: RiskEditorProps) {
             hint={t("risk_list.pro_leverage_hint")}
             placeholder="e.g. 125"
             value={pro.max_leverage}
-            onChange={(e) => setPro({ ...pro, max_leverage: e.target.value, message: null })}
+            onChange={(e) => updatePro({ max_leverage: e.target.value })}
           />
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-text-secondary">
@@ -193,26 +215,15 @@ export function RiskEditor({ configs }: RiskEditorProps) {
               className="w-full rounded-sm border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold hover:border-border-hover min-h-[80px] resize-y"
               placeholder="e.g. BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, DOGEUSDT"
               value={pro.allowed_symbols}
-              onChange={(e) => setPro({ ...pro, allowed_symbols: e.target.value, message: null })}
+              onChange={(e) => updatePro({ allowed_symbols: e.target.value })}
             />
             <p className="text-xs text-text-muted">{t("risk_list.symbols_hint")}</p>
           </div>
 
-          {pro.message && (
-            <p
-              className={`rounded-sm px-3 py-2 text-sm ${
-                pro.message.type === "success"
-                  ? "bg-success-bg text-success"
-                  : "bg-danger-bg text-danger"
-              }`}
-            >
-              {pro.message.text}
-            </p>
-          )}
-
           <Button
-            onClick={() => saveTier("pro", pro, setPro)}
+            onClick={() => saveTier("pro", pro, setProState)}
             loading={pro.saving}
+            disabled={!proDirty}
             className="w-full"
           >
             {t("risk_list.save_pro")}

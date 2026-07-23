@@ -320,6 +320,7 @@
     "back_to_site": "返回网站",
     "sign_out": "退出登录",
     "dashboard": "仪表盘",
+    "refresh": "刷新",
     "users": "用户管理",
     "videos": "视频管理",
     "features": "功能开关",
@@ -364,7 +365,12 @@
       "no": "否",
       "page": "第 {page}/{total} 页",
       "prev": "上一页",
-      "next": "下一页"
+      "next": "下一页",
+      "add_user": "+ 添加用户",
+      "password_label": "密码",
+      "create_user": "创建用户",
+      "user_created": "用户已创建",
+      "date_updated": "日期已更新"
     },
     "logs_list": {
       "title": "操作日志",
@@ -385,6 +391,7 @@
       "old_value": "旧值",
       "new_value": "新值",
       "no_logs": "未找到日志。",
+      "refresh": "刷新",
       "prev": "上一页",
       "next": "下一页",
       "page": "第 {page}/{total} 页"
@@ -399,7 +406,19 @@
       "save_changes": "保存更改",
       "save": "保存",
       "save_failed": "保存失败",
-      "no_pricing": "未找到定价方案。"
+      "no_pricing": "未找到定价方案。",
+      "add_plan": "+ 添加方案",
+      "plan_type": "方案类型",
+      "active": "启用",
+      "create_plan": "创建方案",
+      "delete_plan": "删除方案",
+      "delete_confirm": "确定要删除此定价方案吗？",
+      "created": "方案已创建",
+      "deleted": "方案已删除",
+      "saved": "已保存更改",
+      "create": "创建",
+      "plan_price": "价格",
+      "plan_original_price": "原价"
     },
     "features_list": {
       "title": "功能开关",
@@ -409,7 +428,14 @@
       "free": "免费",
       "pro": "Pro",
       "general": "通用",
-      "no_features": "未找到功能开关。"
+      "no_features": "未找到功能开关。",
+      "add_feature": "+ 添加功能",
+      "create_feature": "创建功能",
+      "delete_feature": "删除功能",
+      "delete_confirm": "确定要删除此功能开关吗？",
+      "created": "功能已创建",
+      "deleted": "功能已删除",
+      "create": "创建"
     },
     "risk_list": {
       "title": "风控管理",
@@ -427,7 +453,8 @@
       "pro_leverage_hint": "Pro 版杠杆应显著高于免费版",
       "saved_success": "保存成功",
       "save_failed": "保存失败",
-      "network_error": "网络错误"
+      "network_error": "网络错误",
+      "no_changes": "没有需要保存的更改"
     },
     "settings_list": {
       "title": "站点设置",
@@ -448,7 +475,9 @@
       "key_required_error": "键名不能为空",
       "value_invalid_json": "值的 JSON 格式无效",
       "add_failed": "添加失败",
-      "delete_confirm": "确定要删除此设置吗？"
+      "delete_confirm": "确定要删除此设置吗？",
+      "delete_confirm_title": "删除设置",
+      "delete_confirm_button": "删除设置"
     },
     "videos_list": {
       "title": "视频管理",
@@ -493,7 +522,17 @@
       "upload_video": "上传视频",
       "please_select_file": "请选择视频文件",
       "title_required_error": "至少需要填写一个标题",
-      "upload_failed": "上传失败"
+      "upload_failed": "上传失败",
+      "search_placeholder": "搜索视频...",
+      "page": "第 {page}/{total} 页",
+      "prev": "上一页",
+      "next": "下一页",
+      "delete_confirm": "确定要删除此视频吗？",
+      "restored": "视频已恢复",
+      "deleted": "视频已删除",
+      "hard_deleted": "视频已永久删除",
+      "tier_updated": "等级已更新",
+      "upload_success": "视频上传成功"
     }
   }
 }

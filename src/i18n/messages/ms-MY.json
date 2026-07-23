@@ -318,6 +318,7 @@
     "back_to_site": "Kembali ke Laman",
     "sign_out": "Log Keluar",
     "dashboard": "Papan Pemuka",
+    "refresh": "Segar Semula",
     "users": "Pengguna",
     "videos": "Video",
     "features": "Ciri",
@@ -362,7 +363,12 @@
       "no": "Tidak",
       "page": "Halaman {page} daripada {total}",
       "prev": "Sebelumnya",
-      "next": "Seterusnya"
+      "next": "Seterusnya",
+      "add_user": "+ Tambah Pengguna",
+      "password_label": "Kata Laluan",
+      "create_user": "Cipta Pengguna",
+      "user_created": "Pengguna dicipta",
+      "date_updated": "Tarikh dikemaskini"
     },
     "logs_list": {
       "title": "Log Aktiviti",
@@ -383,6 +389,7 @@
       "old_value": "Nilai Lama",
       "new_value": "Nilai Baru",
       "no_logs": "Tiada log ditemui.",
+      "refresh": "Segar Semula",
       "prev": "Sebelumnya",
       "next": "Seterusnya",
       "page": "Halaman {page} daripada {total}"
@@ -397,7 +404,19 @@
       "save_changes": "Simpan",
       "save": "Simpan",
       "save_failed": "Simpan gagal",
-      "no_pricing": "Tiada pelan harga ditemui."
+      "no_pricing": "Tiada pelan harga ditemui.",
+      "add_plan": "+ Tambah Pelan",
+      "plan_type": "Jenis Pelan",
+      "active": "Aktif",
+      "create_plan": "Cipta Pelan",
+      "delete_plan": "Padam Pelan",
+      "delete_confirm": "Padam pelan harga ini?",
+      "created": "Pelan dicipta",
+      "deleted": "Pelan dipadam",
+      "saved": "Perubahan disimpan",
+      "create": "Cipta",
+      "plan_price": "Harga",
+      "plan_original_price": "Harga Asal"
     },
     "features_list": {
       "title": "Ciri Bendera",
@@ -407,7 +426,14 @@
       "free": "Percuma",
       "pro": "Pro",
       "general": "Umum",
-      "no_features": "Tiada ciri bendera ditemui."
+      "no_features": "Tiada ciri bendera ditemui.",
+      "add_feature": "+ Tambah Ciri",
+      "create_feature": "Cipta Ciri",
+      "delete_feature": "Padam Ciri",
+      "delete_confirm": "Padam ciri bendera ini?",
+      "created": "Ciri dicipta",
+      "deleted": "Ciri dipadam",
+      "create": "Cipta"
     },
     "risk_list": {
       "title": "Kawalan Risiko",
@@ -425,7 +451,8 @@
       "pro_leverage_hint": "Leveraj peringkat Pro sepatutnya lebih tinggi daripada peringkat percuma",
       "saved_success": "Berjaya disimpan",
       "save_failed": "Simpan gagal",
-      "network_error": "Ralat rangkaian"
+      "network_error": "Ralat rangkaian",
+      "no_changes": "Tiada perubahan untuk disimpan"
     },
     "settings_list": {
       "title": "Tetapan Laman",
@@ -446,7 +473,9 @@
       "key_required_error": "Kunci diperlukan",
       "value_invalid_json": "JSON tidak sah untuk nilai",
       "add_failed": "Tambah gagal",
-      "delete_confirm": "Padam tetapan ini?"
+      "delete_confirm": "Padam tetapan ini?",
+      "delete_confirm_title": "Padam Tetapan",
+      "delete_confirm_button": "Padam Tetapan"
     },
     "videos_list": {
       "title": "Video",
@@ -491,7 +520,17 @@
       "upload_video": "Muat Naik Video",
       "please_select_file": "Sila pilih fail video",
       "title_required_error": "Sekurang-kurangnya satu tajuk diperlukan",
-      "upload_failed": "Muat naik gagal"
+      "upload_failed": "Muat naik gagal",
+      "search_placeholder": "Cari video...",
+      "page": "Halaman {page} daripada {total}",
+      "prev": "Sebelumnya",
+      "next": "Seterusnya",
+      "delete_confirm": "Padam video ini?",
+      "restored": "Video dipulihkan",
+      "deleted": "Video dipadam",
+      "hard_deleted": "Video dipadam kekal",
+      "tier_updated": "Peringkat dikemaskini",
+      "upload_success": "Video berjaya dimuat naik"
     }
   }
 }

@@ -318,6 +318,7 @@
     "back_to_site": "Back to Site",
     "sign_out": "Sign Out",
     "dashboard": "Dashboard",
+    "refresh": "Refresh",
     "users": "Users",
     "videos": "Videos",
     "features": "Features",
@@ -362,7 +363,12 @@
       "no": "No",
       "page": "Page {page} of {total}",
       "prev": "Prev",
-      "next": "Next"
+      "next": "Next",
+      "add_user": "+ Add User",
+      "password_label": "Password",
+      "create_user": "Create User",
+      "user_created": "User created",
+      "date_updated": "Date updated"
     },
     "logs_list": {
       "title": "Activity Logs",
@@ -383,6 +389,7 @@
       "old_value": "Old Value",
       "new_value": "New Value",
       "no_logs": "No logs found.",
+      "refresh": "Refresh",
       "prev": "Prev",
       "next": "Next",
       "page": "Page {page} of {total}"
@@ -397,7 +404,19 @@
       "save_changes": "Save Changes",
       "save": "Save",
       "save_failed": "Save failed",
-      "no_pricing": "No pricing plans found."
+      "no_pricing": "No pricing plans found.",
+      "add_plan": "+ Add Plan",
+      "plan_type": "Plan Type",
+      "active": "Active",
+      "create_plan": "Create Plan",
+      "delete_plan": "Delete Plan",
+      "delete_confirm": "Delete this pricing plan?",
+      "created": "Plan created",
+      "deleted": "Plan deleted",
+      "saved": "Changes saved",
+      "create": "Create",
+      "plan_price": "Price",
+      "plan_original_price": "Original Price"
     },
     "features_list": {
       "title": "Feature Flags",
@@ -407,7 +426,14 @@
       "free": "Free",
       "pro": "Pro",
       "general": "General",
-      "no_features": "No feature flags found."
+      "no_features": "No feature flags found.",
+      "add_feature": "+ Add Feature",
+      "create_feature": "Create Feature",
+      "delete_feature": "Delete Feature",
+      "delete_confirm": "Delete this feature flag?",
+      "created": "Feature created",
+      "deleted": "Feature deleted",
+      "create": "Create"
     },
     "risk_list": {
       "title": "Risk Control",
@@ -425,7 +451,8 @@
       "pro_leverage_hint": "Pro tier should have significantly higher leverage than free tier",
       "saved_success": "Saved successfully",
       "save_failed": "Save failed",
-      "network_error": "Network error"
+      "network_error": "Network error",
+      "no_changes": "No changes to save"
     },
     "settings_list": {
       "title": "Site Settings",
@@ -446,7 +473,9 @@
       "key_required_error": "Key is required",
       "value_invalid_json": "Invalid JSON for value",
       "add_failed": "Add failed",
-      "delete_confirm": "Delete this setting?"
+      "delete_confirm": "Delete this setting?",
+      "delete_confirm_title": "Delete Setting",
+      "delete_confirm_button": "Delete Setting"
     },
     "videos_list": {
       "title": "Videos",
@@ -491,7 +520,17 @@
       "upload_video": "Upload Video",
       "please_select_file": "Please select a video file",
       "title_required_error": "At least one title is required",
-      "upload_failed": "Upload failed"
+      "upload_failed": "Upload failed",
+      "search_placeholder": "Search videos...",
+      "page": "Page {page} of {total}",
+      "prev": "Prev",
+      "next": "Next",
+      "delete_confirm": "Delete this video?",
+      "restored": "Video restored",
+      "deleted": "Video deleted",
+      "hard_deleted": "Video permanently deleted",
+      "tier_updated": "Tier updated",
+      "upload_success": "Video uploaded successfully"
     }
   }
 }

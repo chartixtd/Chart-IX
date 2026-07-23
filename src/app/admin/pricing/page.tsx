@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { PricingEditor } from "./PricingEditor";
+import { PricingHeading } from "./PricingHeading";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export default async function AdminPricingPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-text-primary">Pricing</h1>
+      <PricingHeading />
       <PricingEditor pricing={(pricing ?? []) as PricingConfig[]} />
     </div>
   );

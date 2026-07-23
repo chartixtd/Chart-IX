@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { SettingsEditor } from "./SettingsEditor";
+import { AdminPageHeading } from "../AdminPageHeading";
 
 export const dynamic = "force-dynamic";
 
@@ -19,14 +20,14 @@ export default async function AdminSettingsPage() {
     .select("*")
     .order("key", { ascending: true });
 
-  if (error) {
-    return <div className="text-red-400">Error loading settings: {error.message}</div>;
-  }
-
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-text-primary">Site Settings</h1>
-      <SettingsEditor settings={(settings ?? []) as AdminSetting[]} />
+      <AdminPageHeading
+        titleKey="settings_list.title"
+        resource="settings"
+        errorMessage={error?.message}
+      />
+      {!error && <SettingsEditor settings={(settings ?? []) as AdminSetting[]} />}
     </div>
   );
 }

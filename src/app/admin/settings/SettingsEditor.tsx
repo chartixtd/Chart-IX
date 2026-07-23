@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 
@@ -15,6 +16,7 @@ interface AdminSetting {
 
 export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
   const router = useRouter();
+  const t = useTranslations("admin");
   const [editingValues, setEditingValues] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      setError(`Invalid JSON for "${setting.key}"`);
+      setError(t("settings_list.invalid_json", { key: setting.key }));
       return;
     }
 
@@ -67,13 +69,13 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
       router.refresh();
     } else {
       const data = await res.json();
-      setError(data.error ?? "Save failed");
+      setError(data.error ?? t("settings_list.save_failed"));
     }
     setSaving((prev) => ({ ...prev, [setting.id]: false }));
   };
 
   const deleteSetting = async (id: number) => {
-    if (!confirm("Delete this setting?")) return;
+    if (!confirm(t("settings_list.delete_confirm"))) return;
     const res = await fetch("/api/admin/settings", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -84,14 +86,14 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
 
   const addSetting = async () => {
     if (!newKey.trim()) {
-      setError("Key is required");
+      setError(t("settings_list.key_required_error"));
       return;
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(newValue || "null");
     } catch {
-      setError("Invalid JSON for value");
+      setError(t("settings_list.value_invalid_json"));
       return;
     }
     setAdding(true);
@@ -115,7 +117,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
       router.refresh();
     } else {
       const data = await res.json();
-      setError(data.error ?? "Add failed");
+      setError(data.error ?? t("settings_list.add_failed"));
     }
     setAdding(false);
   };
@@ -150,7 +152,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
                   rows={3}
                 />
                 <p className="mt-1 text-xs text-text-muted">
-                  Updated: {new Date(setting.updated_at).toLocaleString()}
+                  {t("settings_list.updated")}: {new Date(setting.updated_at).toLocaleString()}
                 </p>
               </div>
               <div className="flex flex-col gap-2 pt-7">
@@ -160,7 +162,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
                   loading={saving[setting.id]}
                   onClick={() => saveSetting(setting)}
                 >
-                  Save
+                  {t("settings_list.save")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -168,7 +170,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
                   className="text-danger"
                   onClick={() => deleteSetting(setting.id)}
                 >
-                  Delete
+                  {t("settings_list.delete")}
                 </Button>
               </div>
             </div>
@@ -177,25 +179,25 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
       </div>
 
       {settings.length === 0 && (
-        <p className="text-center text-text-muted">No settings found.</p>
+        <p className="text-center text-text-muted">{t("settings_list.no_settings")}</p>
       )}
 
       {/* Add new */}
       {!showAdd ? (
         <div className="mt-6">
           <Button variant="outline" size="sm" onClick={() => setShowAdd(true)}>
-            + Add Setting
+            {t("settings_list.add_setting")}
           </Button>
         </div>
       ) : (
         <Card padding="md" className="mt-6 border-gold/30">
           <h3 className="text-sm font-semibold text-text-primary mb-3">
-            New Setting
+            {t("settings_list.new_setting")}
           </h3>
           <div className="space-y-3">
             <div>
               <label className="block text-xs text-text-secondary mb-1">
-                Key *
+                {t("settings_list.key_required")}
               </label>
               <input
                 type="text"
@@ -207,7 +209,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
             </div>
             <div>
               <label className="block text-xs text-text-secondary mb-1">
-                Value (JSON)
+                {t("settings_list.value_json")}
               </label>
               <textarea
                 value={newValue}
@@ -219,7 +221,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
             </div>
             <div>
               <label className="block text-xs text-text-secondary mb-1">
-                Description
+                {t("settings_list.description")}
               </label>
               <input
                 type="text"
@@ -236,7 +238,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
                 loading={adding}
                 onClick={addSetting}
               >
-                Add
+                {t("settings_list.add")}
               </Button>
               <Button
                 variant="ghost"
@@ -249,7 +251,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
                   setError(null);
                 }}
               >
-                Cancel
+                {t("settings_list.cancel")}
               </Button>
             </div>
           </div>

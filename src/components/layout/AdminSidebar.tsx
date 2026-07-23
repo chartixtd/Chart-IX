@@ -1,31 +1,25 @@
 "use client";
 
-import { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useTranslations, useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
-
-/** Read the persisted locale cookie, falling back to en-US */
-function getSavedLocale(): string {
-  if (typeof document === "undefined") return "en-US";
-  const match = document.cookie.match(/(?:^|;\s*)NEXT_LOCALE=([^;]*)/);
-  return match?.[1] || "en-US";
-}
-
-const ADMIN_NAV = [
-  { href: "/admin", label: "Dashboard", icon: "📊" },
-  { href: "/admin/users", label: "Users", icon: "👥" },
-  { href: "/admin/videos", label: "Videos", icon: "🎬" },
-  { href: "/admin/features", label: "Features", icon: "⚙️" },
-  { href: "/admin/pricing", label: "Pricing", icon: "💰" },
-  { href: "/admin/risk", label: "Risk Control", icon: "🛡️" },
-  { href: "/admin/settings", label: "Settings", icon: "🔧" },
-  { href: "/admin/logs", label: "Logs", icon: "📝" },
-];
 
 export function AdminSidebar() {
   const pathname = usePathname();
-  const [locale] = useState(getSavedLocale);
+  const t = useTranslations("admin");
+  const locale = useLocale();
+
+  const ADMIN_NAV = [
+    { href: "/admin", label: t("dashboard"), icon: "📊" },
+    { href: "/admin/users", label: t("users"), icon: "👥" },
+    { href: "/admin/videos", label: t("videos"), icon: "🎬" },
+    { href: "/admin/features", label: t("features"), icon: "⚙️" },
+    { href: "/admin/pricing", label: t("pricing"), icon: "💰" },
+    { href: "/admin/risk", label: t("risk_control"), icon: "🛡️" },
+    { href: "/admin/settings", label: t("settings"), icon: "🔧" },
+    { href: "/admin/logs", label: t("logs"), icon: "📝" },
+  ];
 
   return (
     <aside className="fixed left-0 top-14 h-[calc(100vh-3.5rem)] w-56 border-r border-border-default glass overflow-y-auto flex flex-col">
@@ -59,7 +53,7 @@ export function AdminSidebar() {
           className="flex items-center gap-2 rounded-sm px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
         >
           <span className="text-base">←</span>
-          <span>Back to Site</span>
+          <span>{t("back_to_site")}</span>
         </Link>
       </div>
     </aside>

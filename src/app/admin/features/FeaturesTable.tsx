@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 interface FeatureFlag {
   id: number;
@@ -24,6 +25,7 @@ function getDescription(desc: Record<string, string> | null): string | null {
 }
 
 export function FeaturesTable({ features }: { features: FeatureFlag[] }) {
+  const t = useTranslations("admin");
   const router = useRouter();
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
 
@@ -51,7 +53,7 @@ export function FeaturesTable({ features }: { features: FeatureFlag[] }) {
   // Group by feature_group
   const groups = new Map<string, FeatureFlag[]>();
   for (const f of features) {
-    const group = f.feature_group || "General";
+    const group = f.feature_group || t("features_list.general");
     const list = groups.get(group) ?? [];
     list.push(f);
     groups.set(group, list);
@@ -68,11 +70,11 @@ export function FeaturesTable({ features }: { features: FeatureFlag[] }) {
             <table className="w-full text-sm">
               <thead className="bg-bg-tertiary text-left">
                 <tr>
-                  <th className="px-4 py-3 text-text-muted">Feature Key</th>
-                  <th className="px-4 py-3 text-text-muted">Display Name</th>
-                  <th className="px-4 py-3 text-text-muted">Description</th>
-                  <th className="px-4 py-3 text-text-muted text-center">Free</th>
-                  <th className="px-4 py-3 text-text-muted text-center">Pro</th>
+                  <th className="px-4 py-3 text-text-muted">{t("features_list.feature_key")}</th>
+                  <th className="px-4 py-3 text-text-muted">{t("features_list.display_name")}</th>
+                  <th className="px-4 py-3 text-text-muted">{t("features_list.description")}</th>
+                  <th className="px-4 py-3 text-text-muted text-center">{t("features_list.free")}</th>
+                  <th className="px-4 py-3 text-text-muted text-center">{t("features_list.pro")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -125,7 +127,7 @@ export function FeaturesTable({ features }: { features: FeatureFlag[] }) {
       ))}
 
       {features.length === 0 && (
-        <p className="mt-4 text-center text-text-muted">No feature flags found.</p>
+        <p className="mt-4 text-center text-text-muted">{t("features_list.no_features")}</p>
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { RiskEditor } from "./RiskEditor";
+import { AdminPageHeading } from "../AdminPageHeading";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +12,14 @@ export default async function AdminRiskPage() {
     .select("*")
     .order("id", { ascending: true });
 
-  if (error) {
-    return <div className="text-red-400">Error loading risk configs: {error.message}</div>;
-  }
-
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-text-primary">Risk Control</h1>
-      <RiskEditor configs={configs ?? []} />
+      <AdminPageHeading
+        titleKey="risk_list.title"
+        resource="risk configs"
+        errorMessage={error?.message}
+      />
+      {!error && <RiskEditor configs={configs ?? []} />}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 
@@ -17,6 +18,7 @@ interface PricingConfig {
 }
 
 export function PricingEditor({ pricing }: { pricing: PricingConfig[] }) {
+  const t = useTranslations("admin");
   const router = useRouter();
   const [editing, setEditing] = useState<Record<number, Partial<PricingConfig>>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
@@ -67,7 +69,7 @@ export function PricingEditor({ pricing }: { pricing: PricingConfig[] }) {
       router.refresh();
     } else {
       const data = await res.json();
-      setError(data.error ?? "Save failed");
+      setError(data.error ?? t("pricing_list.save_failed"));
     }
     setSaving((prev) => ({ ...prev, [item.id]: false }));
   };
@@ -108,7 +110,7 @@ export function PricingEditor({ pricing }: { pricing: PricingConfig[] }) {
                 {/* Currency Symbol */}
                 <div>
                   <label className="block text-xs text-text-secondary mb-1">
-                    Currency Symbol
+                    {t("pricing_list.currency_symbol")}
                   </label>
                   <input
                     type="text"
@@ -123,7 +125,7 @@ export function PricingEditor({ pricing }: { pricing: PricingConfig[] }) {
                 {/* Price */}
                 <div>
                   <label className="block text-xs text-text-secondary mb-1">
-                    Price
+                    {t("pricing_list.price")}
                   </label>
                   <input
                     type="number"
@@ -139,7 +141,7 @@ export function PricingEditor({ pricing }: { pricing: PricingConfig[] }) {
                 {/* Original Price */}
                 <div>
                   <label className="block text-xs text-text-secondary mb-1">
-                    Original Price
+                    {t("pricing_list.original_price")}
                   </label>
                   <input
                     type="number"
@@ -157,7 +159,7 @@ export function PricingEditor({ pricing }: { pricing: PricingConfig[] }) {
                 </div>
 
                 <div className="text-xs text-text-muted">
-                  Currency: {item.currency} &middot; Updated:{" "}
+                  {t("pricing_list.currency")}: {item.currency} &middot; {t("pricing_list.updated")}:{" "}
                   {new Date(item.updated_at).toLocaleDateString()}
                 </div>
 
@@ -169,7 +171,7 @@ export function PricingEditor({ pricing }: { pricing: PricingConfig[] }) {
                     onClick={() => handleSave(item)}
                     className="w-full"
                   >
-                    {isDirty ? "Save Changes" : "Save"}
+                    {isDirty ? t("pricing_list.save_changes") : t("pricing_list.save")}
                   </Button>
                 </div>
               </div>
@@ -179,7 +181,7 @@ export function PricingEditor({ pricing }: { pricing: PricingConfig[] }) {
       </div>
 
       {pricing.length === 0 && (
-        <p className="mt-4 text-center text-text-muted">No pricing plans found.</p>
+        <p className="mt-4 text-center text-text-muted">{t("pricing_list.no_pricing")}</p>
       )}
     </div>
   );

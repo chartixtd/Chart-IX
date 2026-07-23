@@ -1,9 +1,12 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
+import { getTranslations } from "next-intl/server";
 import { VideosManager } from "./VideosManager";
+import { VideosHeading } from "./VideosHeading";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminVideosPage() {
+  const t = await getTranslations("admin");
   const client = createServiceRoleClient();
 
   const [videosRes, categoriesRes] = await Promise.all([
@@ -23,9 +26,9 @@ export default async function AdminVideosPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-text-primary">Videos</h1>
+      <VideosHeading />
       {error ? (
-        <div className="text-red-400">Error loading data: {error}</div>
+        <div className="text-red-400">{t("error_loading", { resource: "videos" })}</div>
       ) : (
         <VideosManager videos={videos} categories={categories} />
       )}

@@ -3,20 +3,15 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useTranslations, useLocale } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
-/** Read the persisted locale cookie, falling back to en-US */
-function getSavedLocale(): string {
-  if (typeof document === "undefined") return "en-US";
-  const match = document.cookie.match(/(?:^|;\s*)NEXT_LOCALE=([^;]*)/);
-  return match?.[1] || "en-US";
-}
-
 export function AdminHeader() {
   const router = useRouter();
+  const t = useTranslations("admin");
+  const locale = useLocale();
   const [user, setUser] = useState<User | null>(null);
-  const [locale] = useState(getSavedLocale);
 
   useEffect(() => {
     const supabase = createClient();
@@ -50,7 +45,7 @@ export function AdminHeader() {
           className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary transition-colors"
         >
           <span>←</span>
-          <span>Back to Site</span>
+          <span>{t("back_to_site")}</span>
         </Link>
 
         {user && (
@@ -62,7 +57,7 @@ export function AdminHeader() {
               onClick={handleLogout}
               className="text-sm text-text-secondary hover:text-red-400 transition-colors"
             >
-              Sign Out
+              {t("sign_out")}
             </button>
           </>
         )}

@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations, useLocale } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -14,11 +15,12 @@ interface VideosManagerProps {
   categories: VideoCategory[];
 }
 
-type Locale = "zh-CN" | "en-US" | "ms-MY";
-
 export function VideosManager({ videos, categories }: VideosManagerProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const t = useTranslations("admin");
+  const tc = useTranslations();
+  const locale = useLocale();
 
   // Upload modal state
   const [showUpload, setShowUpload] = useState(false);
@@ -65,11 +67,11 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
 
   const handleUpload = async () => {
     if (!videoFile) {
-      setUploadError("Please select a video file");
+      setUploadError(t("videos_list.please_select_file"));
       return;
     }
     if (!titleEn.trim() && !titleZh.trim() && !titleMs.trim()) {
-      setUploadError("At least one title is required");
+      setUploadError(t("videos_list.title_required_error"));
       return;
     }
 
@@ -91,7 +93,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
         .createSignedUploadUrl(fileName, { upsert: false });
 
       if (signedErr || !signedData?.signedUrl) {
-        setUploadError(`Failed to get upload URL: ${signedErr?.message ?? "Unknown error"}`);
+        setUploadError(`${t("videos_list.upload_failed")}: ${signedErr?.message ?? "Unknown error"}`);
         setUploading(false);
         return;
       }
@@ -108,7 +110,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
       if (!uploadResponse.ok) {
         const errText = await uploadResponse.text();
         console.error("Signed URL upload failed:", uploadResponse.status, errText);
-        setUploadError(`Upload failed: ${errText || uploadResponse.statusText}`);
+        setUploadError(`${t("videos_list.upload_failed")}: ${errText || uploadResponse.statusText}`);
         setUploading(false);
         return;
       }
@@ -147,7 +149,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error ?? "Failed to create video record");
+        throw new Error(data.error ?? t("videos_list.upload_failed"));
       }
 
       setUploadProgress(100);
@@ -155,7 +157,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
       setShowUpload(false);
       router.refresh();
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
+      setUploadError(err instanceof Error ? err.message : t("videos_list.upload_failed"));
     } finally {
       setUploading(false);
     }
@@ -186,21 +188,21 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
   };
 
   const getTitle = (video: Video): string => {
-    return video.title?.["en-US"] ?? video.title?.["zh-CN"] ?? video.title?.["ms-MY"] ?? "Untitled";
+    return video.title?.[locale as keyof typeof video.title] ?? video.title?.["en-US"] ?? video.title?.["zh-CN"] ?? video.title?.["ms-MY"] ?? t("videos_list.untitled");
   };
 
   const getCategoryName = (cat: VideoCategory | undefined): string => {
     if (!cat) return "-";
-    return cat.name?.["en-US"] ?? cat.name?.["zh-CN"] ?? cat.name?.["ms-MY"] ?? cat.slug;
+    return cat.name?.[locale as keyof typeof cat.name] ?? cat.name?.["en-US"] ?? cat.name?.["zh-CN"] ?? cat.name?.["ms-MY"] ?? cat.slug;
   };
 
   return (
     <div>
       {/* Top bar */}
       <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm text-text-secondary">{videos.length} videos total</p>
+        <p className="text-sm text-text-secondary">{t("videos_list.videos_total", { count: videos.length })}</p>
         <Button variant="primary" size="sm" onClick={() => setShowUpload(true)}>
-          + Add Video
+          {t("videos_list.add_video")}
         </Button>
       </div>
 
@@ -209,13 +211,13 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
         <table className="w-full text-sm">
           <thead className="bg-bg-tertiary text-left">
             <tr>
-              <th className="px-4 py-3 text-text-muted">Title</th>
-              <th className="px-4 py-3 text-text-muted">Category</th>
-              <th className="px-4 py-3 text-text-muted">Duration</th>
-              <th className="px-4 py-3 text-text-muted">Tier</th>
-              <th className="px-4 py-3 text-text-muted">Views</th>
-              <th className="px-4 py-3 text-text-muted">Status</th>
-              <th className="px-4 py-3 text-text-muted">Actions</th>
+              <th className="px-4 py-3 text-text-muted">{t("videos_list.title_col")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("videos_list.category")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("videos_list.duration")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("videos_list.tier")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("videos_list.views")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("videos_list.status")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("videos_list.actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -232,14 +234,14 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                     onChange={(e) => updateVideo(v.id, { tier_required: e.target.value })}
                     className="rounded border border-border-default bg-bg-tertiary px-2 py-1 text-xs text-text-primary"
                   >
-                    <option value="free">free</option>
-                    <option value="pro">pro</option>
+                    <option value="free">{t("videos_list.free")}</option>
+                    <option value="pro">{t("videos_list.pro")}</option>
                   </select>
                 </td>
                 <td className="px-4 py-3 text-text-secondary">{v.view_count}</td>
                 <td className="px-4 py-3">
                   <Badge variant={v.is_deleted ? "red" : "green"}>
-                    {v.is_deleted ? "Deleted" : "Active"}
+                    {v.is_deleted ? t("videos_list.deleted") : t("videos_list.active")}
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
@@ -251,7 +253,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                         onClick={() => updateVideo(v.id, { is_deleted: false })}
                         className="text-green-400"
                       >
-                        Restore
+                        {t("videos_list.restore")}
                       </Button>
                     ) : (
                       <Button
@@ -260,20 +262,20 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                         onClick={() => updateVideo(v.id, { is_deleted: true })}
                         className="text-red-400"
                       >
-                        Delete
+                        {t("videos_list.delete")}
                       </Button>
                     )}
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => {
-                        if (confirm("Permanently delete this video?")) {
+                        if (confirm(t("videos_list.hard_delete_confirm"))) {
                           deleteVideo(v.id);
                         }
                       }}
                       className="text-red-500"
                     >
-                      Hard Delete
+                      {t("videos_list.hard_delete")}
                     </Button>
                   </div>
                 </td>
@@ -284,16 +286,16 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
       </div>
 
       {videos.length === 0 && (
-        <p className="mt-4 text-center text-text-muted">No videos found.</p>
+        <p className="mt-4 text-center text-text-muted">{t("videos_list.no_videos")}</p>
       )}
 
       {/* Upload Modal */}
-      <Modal open={showUpload} onClose={() => { setShowUpload(false); resetForm(); }} title="Add New Video" size="lg">
+      <Modal open={showUpload} onClose={() => { setShowUpload(false); resetForm(); }} title={t("videos_list.modal_title")} size="lg">
         <div className="space-y-4">
           {/* Video File Upload */}
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1.5">
-              Video File *
+              {t("videos_list.video_file_required")}
             </label>
             <input
               ref={fileInputRef}
@@ -320,8 +322,8 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                     </svg>
                   </div>
-                  <p className="text-sm text-text-secondary">Click to select video file</p>
-                  <p className="text-xs text-text-muted">MP4, WebM, MOV supported</p>
+                  <p className="text-sm text-text-secondary">{t("videos_list.click_to_select")}</p>
+                  <p className="text-xs text-text-muted">{t("videos_list.supported_formats")}</p>
                 </div>
               )}
             </div>
@@ -331,7 +333,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                 onClick={(e) => { e.stopPropagation(); setVideoFile(null); }}
                 className="mt-1 text-xs text-red-400 hover:text-red-300"
               >
-                Remove file
+                {t("videos_list.remove_file")}
               </button>
             )}
           </div>
@@ -340,7 +342,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
           {uploading && uploadProgress > 0 && (
             <div>
               <div className="flex items-center justify-between text-xs text-text-muted mb-1">
-                <span>Uploading...</span>
+                <span>{t("videos_list.uploading")}</span>
                 <span>{uploadProgress}%</span>
               </div>
               <div className="h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
@@ -354,7 +356,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
 
           {/* Thumbnail URL */}
           <Input
-            label="Thumbnail URL (optional)"
+            label={t("videos_list.thumbnail_url")}
             placeholder="https://..."
             value={thumbnailUrl}
             onChange={(e) => setThumbnailUrl(e.target.value)}
@@ -362,7 +364,7 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
 
           {/* Duration */}
           <Input
-            label="Duration (seconds)"
+            label={t("videos_list.duration_seconds")}
             type="number"
             placeholder="300"
             value={duration}
@@ -372,13 +374,13 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
           {/* Category & Tier row */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-text-secondary">Category</label>
+              <label className="block text-sm font-medium text-text-secondary">{t("videos_list.category_label")}</label>
               <select
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
                 className="w-full rounded-sm border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold"
               >
-                <option value="">None</option>
+                <option value="">{t("videos_list.none")}</option>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {getCategoryName(c)}
@@ -388,36 +390,36 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
             </div>
 
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-text-secondary">Tier Required</label>
+              <label className="block text-sm font-medium text-text-secondary">{t("videos_list.tier_required")}</label>
               <select
                 value={tier}
                 onChange={(e) => setTier(e.target.value)}
                 className="w-full rounded-sm border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold"
               >
-                <option value="free">Free</option>
-                <option value="pro">Pro</option>
+                <option value="free">{t("videos_list.tier_free_option")}</option>
+                <option value="pro">{t("videos_list.tier_pro_option")}</option>
               </select>
             </div>
           </div>
 
           {/* Title fields */}
           <div className="space-y-3">
-            <p className="text-sm font-medium text-text-secondary">Title (at least one required)</p>
+            <p className="text-sm font-medium text-text-secondary">{t("videos_list.title_required")}</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Input
-                label="中文 (zh-CN)"
+                label={t("videos_list.locale_zh")}
                 placeholder="视频标题"
                 value={titleZh}
                 onChange={(e) => setTitleZh(e.target.value)}
               />
               <Input
-                label="English (en-US)"
+                label={t("videos_list.locale_en")}
                 placeholder="Video title"
                 value={titleEn}
                 onChange={(e) => setTitleEn(e.target.value)}
               />
               <Input
-                label="Bahasa (ms-MY)"
+                label={t("videos_list.locale_ms")}
                 placeholder="Tajuk video"
                 value={titleMs}
                 onChange={(e) => setTitleMs(e.target.value)}
@@ -427,22 +429,22 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
 
           {/* Description fields */}
           <div className="space-y-3">
-            <p className="text-sm font-medium text-text-secondary">Description (optional)</p>
+            <p className="text-sm font-medium text-text-secondary">{t("videos_list.description_optional")}</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Input
-                label="中文 (zh-CN)"
+                label={t("videos_list.locale_zh")}
                 placeholder="视频描述"
                 value={descZh}
                 onChange={(e) => setDescZh(e.target.value)}
               />
               <Input
-                label="English (en-US)"
+                label={t("videos_list.locale_en")}
                 placeholder="Video description"
                 value={descEn}
                 onChange={(e) => setDescEn(e.target.value)}
               />
               <Input
-                label="Bahasa (ms-MY)"
+                label={t("videos_list.locale_ms")}
                 placeholder="Penerangan video"
                 value={descMs}
                 onChange={(e) => setDescMs(e.target.value)}
@@ -460,10 +462,10 @@ export function VideosManager({ videos, categories }: VideosManagerProps) {
                 resetForm();
               }}
             >
-              Cancel
+              {tc("common.cancel")}
             </Button>
             <Button variant="primary" loading={uploading} onClick={handleUpload}>
-              Upload Video
+              {t("videos_list.upload_video")}
             </Button>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { FeaturesTable } from "./FeaturesTable";
+import { FeaturesHeading } from "./FeaturesHeading";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export default async function AdminFeaturesPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-text-primary">Feature Flags</h1>
+      <FeaturesHeading />
       <FeaturesTable features={(features ?? []) as FeatureFlag[]} />
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 
 interface LogEntry {
   id: string;
@@ -15,20 +16,7 @@ interface LogEntry {
   users: { email: string } | null;
 }
 
-function formatTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHr = Math.floor(diffMs / 3600000);
-  const diffDay = Math.floor(diffMs / 86400000);
-
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString();
-}
+const ITEMS_PER_PAGE = 20;
 
 function formatJson(value: Record<string, unknown> | null): string {
   if (!value) return "-";
@@ -40,8 +28,10 @@ function formatJson(value: Record<string, unknown> | null): string {
 }
 
 export function LogsTable({ logs }: { logs: LogEntry[] }) {
+  const t = useTranslations("admin");
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const uniqueActions = [...new Set(logs.map((l) => l.action))].sort();
 
@@ -50,8 +40,29 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
       (!search || l.action.toLowerCase().includes(search.toLowerCase()) || l.target_type.toLowerCase().includes(search.toLowerCase()))
   );
 
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+  const paginated = filtered.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   const hasChanges = (log: LogEntry) =>
     log.old_value !== null || log.new_value !== null;
+
+  function formatTime(dateStr: string): string {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHr = Math.floor(diffMs / 3600000);
+    const diffDay = Math.floor(diffMs / 86400000);
+
+    if (diffMin < 1) return t("logs_list.just_now");
+    if (diffMin < 60) return t("logs_list.minutes_ago", { n: diffMin });
+    if (diffHr < 24) return t("logs_list.hours_ago", { n: diffHr });
+    if (diffDay < 7) return t("logs_list.days_ago", { n: diffDay });
+    return date.toLocaleDateString();
+  }
 
   return (
     <div>
@@ -59,17 +70,23 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <input
           type="text"
-          placeholder="Search by action or target type..."
+          placeholder={t("logs_list.search_placeholder")}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setCurrentPage(1);
+          }}
           className="w-full max-w-sm rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-gold focus:outline-none"
         />
         <select
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setCurrentPage(1);
+          }}
           className="rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary"
         >
-          <option value="">All Actions</option>
+          <option value="">{t("logs_list.all_actions")}</option>
           {uniqueActions.map((a) => (
             <option key={a} value={a}>
               {a}
@@ -83,16 +100,16 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
         <table className="w-full text-sm">
           <thead className="bg-bg-tertiary text-left">
             <tr>
-              <th className="px-4 py-3 text-text-muted">Time</th>
-              <th className="px-4 py-3 text-text-muted">Admin</th>
-              <th className="px-4 py-3 text-text-muted">Action</th>
-              <th className="px-4 py-3 text-text-muted">Target Type</th>
-              <th className="px-4 py-3 text-text-muted">Target ID</th>
-              <th className="px-4 py-3 text-text-muted">Details</th>
+              <th className="px-4 py-3 text-text-muted">{t("logs_list.time")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("logs_list.admin")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("logs_list.action")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("logs_list.target_type")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("logs_list.target_id")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("logs_list.details")}</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((log) => (
+            {paginated.map((log) => (
               <>
                 <tr
                   key={log.id}
@@ -117,7 +134,7 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
                         }
                         className="text-gold text-xs hover:underline"
                       >
-                        {expandedId === log.id ? "Hide" : "View"}
+                        {expandedId === log.id ? t("logs_list.hide") : t("logs_list.view")}
                       </button>
                     ) : (
                       <span className="text-text-muted text-xs">-</span>
@@ -130,7 +147,7 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <p className="text-xs font-medium text-text-muted mb-1 uppercase">
-                            Old Value
+                            {t("logs_list.old_value")}
                           </p>
                           <pre className="text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto rounded bg-bg-primary p-2 border border-border-default">
                             {formatJson(log.old_value)}
@@ -138,7 +155,7 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
                         </div>
                         <div>
                           <p className="text-xs font-medium text-text-muted mb-1 uppercase">
-                            New Value
+                            {t("logs_list.new_value")}
                           </p>
                           <pre className="text-xs text-success font-mono whitespace-pre-wrap max-h-48 overflow-y-auto rounded bg-bg-primary p-2 border border-border-default">
                             {formatJson(log.new_value)}
@@ -154,8 +171,31 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
         </table>
       </div>
 
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-center gap-4 text-sm">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="rounded border border-border-default px-3 py-1 text-text-primary hover:bg-bg-tertiary disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {t("logs_list.prev")}
+          </button>
+          <span className="text-text-muted">
+            {t("logs_list.page", { page: currentPage, total: totalPages })}
+          </span>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="rounded border border-border-default px-3 py-1 text-text-primary hover:bg-bg-tertiary disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {t("logs_list.next")}
+          </button>
+        </div>
+      )}
+
       {filtered.length === 0 && (
-        <p className="mt-4 text-center text-text-muted">No logs found.</p>
+        <p className="mt-4 text-center text-text-muted">{t("logs_list.no_logs")}</p>
       )}
     </div>
   );

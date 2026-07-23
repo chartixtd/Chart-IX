@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
+import { logAdminAction } from "@/lib/supabase/admin-log";
+import { createClient } from "@/lib/supabase/server";
 
 // POST - Create a new video
 export async function POST(request: NextRequest) {
@@ -43,6 +45,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Audit log (fire-and-forget)
+    try {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const adminId = user?.id ?? "unknown";
+      await logAdminAction({
+        adminId,
+        action: "create_video",
+        targetType: "video",
+        targetId: data?.id,
+        oldValue: null,
+        newValue: body,
+      });
+    } catch {
+      // Logging failure should never break the response
+    }
+
     return NextResponse.json({ success: true, data });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
@@ -79,10 +98,31 @@ export async function PATCH(request: NextRequest) {
     }
 
     const client = createServiceRoleClient();
+
+    // Fetch old video data for audit logging
+    const { data: oldData } = await client.from("videos").select("*").eq("id", id).single();
+
     const { error } = await client.from("videos").update(allowedFields).eq("id", id);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Audit log (fire-and-forget)
+    try {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const adminId = user?.id ?? "unknown";
+      await logAdminAction({
+        adminId,
+        action: "update_video",
+        targetType: "video",
+        targetId: id,
+        oldValue: oldData,
+        newValue: updates,
+      });
+    } catch {
+      // Logging failure should never break the response
     }
 
     return NextResponse.json({ success: true });
@@ -101,10 +141,31 @@ export async function DELETE(request: NextRequest) {
     }
 
     const client = createServiceRoleClient();
+
+    // Fetch old video data for audit logging
+    const { data: oldData } = await client.from("videos").select("*").eq("id", id).single();
+
     const { error } = await client.from("videos").delete().eq("id", id);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Audit log (fire-and-forget)
+    try {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const adminId = user?.id ?? "unknown";
+      await logAdminAction({
+        adminId,
+        action: "delete_video",
+        targetType: "video",
+        targetId: id,
+        oldValue: oldData,
+        newValue: null,
+      });
+    } catch {
+      // Logging failure should never break the response
     }
 
     return NextResponse.json({ success: true });

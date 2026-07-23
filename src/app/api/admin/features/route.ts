@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
+import { logAdminAction } from "@/lib/supabase/admin-log";
+import { createClient } from "@/lib/supabase/server";
 
 // PATCH - Update a feature flag by id
 export async function PATCH(request: NextRequest) {
@@ -19,12 +21,33 @@ export async function PATCH(request: NextRequest) {
     updates.updated_at = new Date().toISOString();
 
     const client = createServiceRoleClient();
+
+    // Fetch old feature flag data for audit logging
+    const { data: oldData } = await client.from("feature_flags").select("*").eq("id", id).single();
+
     const { error } = await client
       .from("feature_flags")
       .update(updates)
       .eq("id", id);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // Audit log (fire-and-forget)
+    try {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const adminId = user?.id ?? "unknown";
+      await logAdminAction({
+        adminId,
+        action: "update_feature",
+        targetType: "feature",
+        targetId: id,
+        oldValue: oldData,
+        newValue: updates,
+      });
+    } catch {
+      // Logging failure should never break the response
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {

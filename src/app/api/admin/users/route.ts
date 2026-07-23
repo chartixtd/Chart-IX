@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
+import { logAdminAction } from "@/lib/supabase/admin-log";
+import { createClient } from "@/lib/supabase/server";
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -7,9 +9,30 @@ export async function PATCH(request: NextRequest) {
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
     const client = createServiceRoleClient();
+
+    // Fetch old user data for audit logging
+    const { data: oldData } = await client.from("users").select("*").eq("id", id).single();
+
     const { error } = await client.from("users").update(updates).eq("id", id);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // Audit log (fire-and-forget)
+    try {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const adminId = user?.id ?? "unknown";
+      await logAdminAction({
+        adminId,
+        action: "update_user",
+        targetType: "user",
+        targetId: id,
+        oldValue: oldData,
+        newValue: updates,
+      });
+    } catch {
+      // Logging failure should never break the response
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -23,9 +46,30 @@ export async function DELETE(request: NextRequest) {
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
     const client = createServiceRoleClient();
+
+    // Fetch old user data for audit logging
+    const { data: oldData } = await client.from("users").select("*").eq("id", id).single();
+
     const { error } = await client.from("users").delete().eq("id", id);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // Audit log (fire-and-forget)
+    try {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const adminId = user?.id ?? "unknown";
+      await logAdminAction({
+        adminId,
+        action: "delete_user",
+        targetType: "user",
+        targetId: id,
+        oldValue: oldData,
+        newValue: null,
+      });
+    } catch {
+      // Logging failure should never break the response
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -72,6 +116,23 @@ export async function POST(request: NextRequest) {
       if (upsertError) {
         return NextResponse.json({ error: upsertError.message }, { status: 500 });
       }
+    }
+
+    // Audit log (fire-and-forget)
+    try {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const adminId = user?.id ?? "unknown";
+      await logAdminAction({
+        adminId,
+        action: "create_user",
+        targetType: "user",
+        targetId: authData?.user?.id,
+        oldValue: null,
+        newValue: { email, password: "[REDACTED]", display_name, tier, role },
+      });
+    } catch {
+      // Logging failure should never break the response
     }
 
     return NextResponse.json({ success: true });

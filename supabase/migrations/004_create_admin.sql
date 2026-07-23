@@ -53,22 +53,7 @@ INSERT INTO public.feature_flags (feature_key, feature_group, display_name, free
   ('advanced_chart',     'trading', '{"zh-CN":"高级K线图", "en-US":"Advanced Chart", "ms-MY":"Carta Lanjutan"}', false, true),
   ('video_download',     'content', '{"zh-CN":"视频下载", "en-US":"Video Download", "ms-MY":"Muat Turun Video"}', false, true);
 
--- 4. 风控配置
-CREATE TABLE public.risk_config (
-  id                  SERIAL PRIMARY KEY,
-  tier                TEXT NOT NULL CHECK (tier IN ('free', 'pro')),
-  max_order_amount    NUMERIC(10, 2) NOT NULL,
-  max_daily_orders    INTEGER NOT NULL,
-  allowed_symbols     TEXT[] NOT NULL DEFAULT '{}',
-  max_leverage        INTEGER NOT NULL DEFAULT 1,
-  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (tier)
-);
-INSERT INTO public.risk_config (tier, max_order_amount, max_daily_orders, allowed_symbols, max_leverage) VALUES
-  ('free', 1000.00, 10, ARRAY['BTC-USDT', 'ETH-USDT'], 1),
-  ('pro',  10000.00, 100, ARRAY['BTC-USDT','ETH-USDT','BNB-USDT','SOL-USDT','XRP-USDT','DOGE-USDT','ADA-USDT','AVAX-USDT'], 125);
-
--- 5. 网站设置
+-- 4. 网站设置
 CREATE TABLE public.admin_settings (
   id          SERIAL PRIMARY KEY,
   key         TEXT NOT NULL UNIQUE,
@@ -84,7 +69,7 @@ INSERT INTO public.admin_settings (key, value, description) VALUES
   ('footer_text',      '"© 2026 Chart-IX. All rights reserved."', '页脚文本'),
   ('social_links',     '{"twitter":"","discord":"","youtube":""}','社交媒体链接');
 
--- 6. 管理员操作日志
+-- 5. 管理员操作日志
 CREATE TABLE public.admin_logs (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   admin_id      UUID NOT NULL REFERENCES public.users(id),

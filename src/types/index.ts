@@ -127,16 +127,6 @@ export interface PricingConfig {
   updated_at: string;
 }
 
-export interface RiskConfig {
-  id: number;
-  tier: UserTier;
-  max_order_amount: number;
-  max_daily_orders: number;
-  allowed_symbols: string[];
-  max_leverage: number;
-  updated_at: string;
-}
-
 export interface AdminSetting {
   id: number;
   key: string;

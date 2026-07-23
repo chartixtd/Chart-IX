@@ -3,12 +3,32 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { logAdminAction } from "@/lib/supabase/admin-log";
 import { createClient } from "@/lib/supabase/server";
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Generate a URL-safe slug from the English title (or first available title). */
+function generateSlug(title: Record<string, string>): string {
+  // Prefer English, then fall back to the first available locale
+  const source = title["en-US"] ?? title["zh-CN"] ?? title["ms-MY"] ?? "";
+  return source
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+// ---------------------------------------------------------------------------
 // POST - Create a new article
+// ---------------------------------------------------------------------------
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      slug,
+      slug: rawSlug,
       title,
       content,
       category_id,
@@ -17,16 +37,52 @@ export async function POST(request: NextRequest) {
       is_published,
     } = body;
 
-    if (!slug || typeof slug !== "string") {
-      return NextResponse.json({ error: "slug is required (string)" }, { status: 400 });
-    }
+    // --- Validation ---
+
     if (!title || typeof title !== "object" || Object.keys(title).length === 0) {
-      return NextResponse.json({ error: "title is required (non-empty JSON object)" }, { status: 400 });
+      return NextResponse.json(
+        { error: "title is required (non-empty JSON object)" },
+        { status: 400 }
+      );
+    }
+
+    const slug =
+      rawSlug && typeof rawSlug === "string" && rawSlug.length > 0
+        ? rawSlug
+        : generateSlug(title as Record<string, string>);
+
+    if (!slug || slug.length === 0) {
+      return NextResponse.json(
+        { error: "Could not generate a valid slug from the title" },
+        { status: 400 }
+      );
     }
 
     if (tier_required && !["free", "pro"].includes(tier_required)) {
-      return NextResponse.json({ error: "tier_required must be 'free' or 'pro'" }, { status: 400 });
+      return NextResponse.json(
+        { error: "tier_required must be 'free' or 'pro'" },
+        { status: 400 }
+      );
     }
+
+    // --- Get the current admin user ---
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const author_id = user.id;
+
+    // --- Insert ---
 
     const published_at =
       is_published === true ? new Date().toISOString() : null;
@@ -40,6 +96,7 @@ export async function POST(request: NextRequest) {
         content: content ?? null,
         category_id: category_id ?? null,
         cover_image: cover_image ?? null,
+        author_id,
         tier_required: tier_required ?? "free",
         is_published: is_published ?? false,
         published_at,
@@ -48,16 +105,21 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
+      // Handle duplicate slug
+      if (error.code === "23505") {
+        return NextResponse.json(
+          { error: `An article with the slug "${slug}" already exists` },
+          { status: 409 }
+        );
+      }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Audit log (fire-and-forget)
+    // --- Audit log (fire-and-forget) ---
+
     try {
-      const supabase = await createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      const adminId = user?.id ?? "unknown";
       await logAdminAction({
-        adminId,
+        adminId: author_id,
         action: "create_article",
         targetType: "article",
         targetId: data?.id,
@@ -70,11 +132,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Unexpected error" },
+      { status: 500 }
+    );
   }
 }
 
+// ---------------------------------------------------------------------------
 // PATCH - Update an article
+// ---------------------------------------------------------------------------
+
 export async function PATCH(request: NextRequest) {
   try {
     const { id, ...updates } = await request.json();
@@ -86,9 +154,25 @@ export async function PATCH(request: NextRequest) {
     const allowedFields: Record<string, unknown> = {};
 
     if ("slug" in updates) {
+      if (typeof updates.slug !== "string" || updates.slug.length === 0) {
+        return NextResponse.json(
+          { error: "slug must be a non-empty string" },
+          { status: 400 }
+        );
+      }
       allowedFields.slug = updates.slug;
     }
     if ("title" in updates) {
+      if (
+        typeof updates.title !== "object" ||
+        updates.title === null ||
+        Object.keys(updates.title).length === 0
+      ) {
+        return NextResponse.json(
+          { error: "title must be a non-empty JSON object" },
+          { status: 400 }
+        );
+      }
       allowedFields.title = updates.title;
     }
     if ("content" in updates) {
@@ -102,7 +186,10 @@ export async function PATCH(request: NextRequest) {
     }
     if ("tier_required" in updates) {
       if (!["free", "pro"].includes(updates.tier_required)) {
-        return NextResponse.json({ error: "tier_required must be 'free' or 'pro'" }, { status: 400 });
+        return NextResponse.json(
+          { error: "tier_required must be 'free' or 'pro'" },
+          { status: 400 }
+        );
       }
       allowedFields.tier_required = updates.tier_required;
     }
@@ -111,13 +198,27 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (Object.keys(allowedFields).length === 0) {
-      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No valid fields to update" },
+        { status: 400 }
+      );
     }
 
     const client = createServiceRoleClient();
 
     // Fetch old article data for audit logging and published_at logic
-    const { data: oldData } = await client.from("articles").select("*").eq("id", id).single();
+    const { data: oldData, error: fetchError } = await client
+      .from("articles")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (fetchError) {
+      return NextResponse.json(
+        { error: fetchError.code === "PGRST116" ? "Article not found" : fetchError.message },
+        { status: fetchError.code === "PGRST116" ? 404 : 500 }
+      );
+    }
 
     // If is_published is being set to true and published_at is null, set it
     if (
@@ -128,16 +229,28 @@ export async function PATCH(request: NextRequest) {
       allowedFields.published_at = new Date().toISOString();
     }
 
-    const { error } = await client.from("articles").update(allowedFields).eq("id", id);
+    const { error } = await client
+      .from("articles")
+      .update(allowedFields)
+      .eq("id", id);
 
     if (error) {
+      if (error.code === "23505") {
+        return NextResponse.json(
+          { error: `An article with that slug already exists` },
+          { status: 409 }
+        );
+      }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Audit log (fire-and-forget)
+    // --- Audit log (fire-and-forget) ---
+
     try {
       const supabase = await createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       const adminId = user?.id ?? "unknown";
       await logAdminAction({
         adminId,
@@ -153,23 +266,40 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Unexpected error" },
+      { status: 500 }
+    );
   }
 }
 
+// ---------------------------------------------------------------------------
 // DELETE - Hard delete an article
+// ---------------------------------------------------------------------------
+
 export async function DELETE(request: NextRequest) {
   try {
     const id = request.nextUrl.searchParams.get("id");
 
     if (!id) {
-      return NextResponse.json({ error: "id query parameter is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "id query parameter is required" },
+        { status: 400 }
+      );
     }
 
     const client = createServiceRoleClient();
 
     // Fetch old article data for audit logging
-    const { data: oldData } = await client.from("articles").select("*").eq("id", id).single();
+    const { data: oldData, error: fetchError } = await client
+      .from("articles")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (fetchError && fetchError.code !== "PGRST116") {
+      return NextResponse.json({ error: fetchError.message }, { status: 500 });
+    }
 
     const { error } = await client.from("articles").delete().eq("id", id);
 
@@ -177,10 +307,13 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Audit log (fire-and-forget)
+    // --- Audit log (fire-and-forget) ---
+
     try {
       const supabase = await createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       const adminId = user?.id ?? "unknown";
       await logAdminAction({
         adminId,
@@ -196,6 +329,9 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Unexpected error" },
+      { status: 500 }
+    );
   }
 }

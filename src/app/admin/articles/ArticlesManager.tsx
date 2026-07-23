@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
@@ -26,6 +26,11 @@ const LOCALE_LABELS: Record<Locale, string> = {
   "en-US": "English",
   "ms-MY": "Bahasa Melayu",
 };
+
+/* ────────── Helper: strip HTML tags ────────── */
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").trim();
+}
 
 /* ────────── Toolbar button ────────── */
 function ToolbarBtn({
@@ -181,11 +186,12 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
   const [editingId, setEditingId] = useState<string | null>(null);
 
   /* Form fields */
-  const [slug, setSlug] = useState("");
   const [titleZh, setTitleZh] = useState("");
   const [titleEn, setTitleEn] = useState("");
   const [titleMs, setTitleMs] = useState("");
   const [coverImage, setCoverImage] = useState("");
+  const [coverImageUploading, setCoverImageUploading] = useState(false);
+  const coverImageInputRef = useRef<HTMLInputElement>(null);
   const [categoryId, setCategoryId] = useState("");
   const [tier, setTier] = useState("free");
   const [isPublished, setIsPublished] = useState(false);
@@ -200,6 +206,9 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
   const [contentZhInitial, setContentZhInitial] = useState("");
   const [contentEnInitial, setContentEnInitial] = useState("");
   const [contentMsInitial, setContentMsInitial] = useState("");
+
+  /* Auto-translate state */
+  const [translating, setTranslating] = useState(false);
 
   /* Three TipTap editors */
   const editorZh = useEditor({
@@ -273,7 +282,6 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
   };
 
   const resetForm = () => {
-    setSlug("");
     setTitleZh("");
     setTitleEn("");
     setTitleMs("");
@@ -296,7 +304,6 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
 
   const openEdit = (article: Article) => {
     setEditingId(article.id);
-    setSlug(article.slug);
     setTitleZh(article.title?.["zh-CN"] ?? "");
     setTitleEn(article.title?.["en-US"] ?? "");
     setTitleMs(article.title?.["ms-MY"] ?? "");
@@ -312,16 +319,122 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
     setShowModal(true);
   };
 
+  /* ── Cover image upload ── */
+  const handleCoverImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCoverImageUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/admin/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Upload failed");
+      }
+
+      const data = await res.json();
+      setCoverImage(data.url);
+      toast("Image uploaded", "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Upload failed", "error");
+    } finally {
+      setCoverImageUploading(false);
+    }
+  };
+
+  /* ── Auto-translate ── */
+  const handleAutoTranslate = async () => {
+    setTranslating(true);
+    try {
+      const sourceLocale = activeTab;
+      const sourceTitle =
+        sourceLocale === "zh-CN"
+          ? titleZh
+          : sourceLocale === "en-US"
+          ? titleEn
+          : titleMs;
+      const sourceEditor = editorMap[sourceLocale];
+      const sourceContent = sourceEditor?.getHTML();
+
+      if (
+        (!sourceTitle || !sourceTitle.trim()) &&
+        (!sourceContent || sourceContent === "<p></p>")
+      ) {
+        toast("No content to translate from", "error");
+        return;
+      }
+
+      const targetLocales = LOCALES.filter((l) => l !== sourceLocale);
+
+      for (const target of targetLocales) {
+        const targetTitle =
+          target === "zh-CN" ? titleZh : target === "en-US" ? titleEn : titleMs;
+        const targetEditor = editorMap[target];
+        const targetContent = targetEditor?.getHTML();
+
+        /* Translate title */
+        if (sourceTitle?.trim() && !targetTitle?.trim()) {
+          const res = await fetch("/api/admin/articles/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: sourceTitle.trim(),
+              from: sourceLocale,
+              to: target,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (target === "zh-CN") setTitleZh(data.translated);
+            else if (target === "en-US") setTitleEn(data.translated);
+            else setTitleMs(data.translated);
+          }
+        }
+
+        /* Translate content */
+        if (
+          sourceContent &&
+          sourceContent !== "<p></p>" &&
+          (!targetContent || targetContent === "<p></p>")
+        ) {
+          const res = await fetch("/api/admin/articles/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: stripHtml(sourceContent),
+              from: sourceLocale,
+              to: target,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const htmlContent = `<p>${data.translated}</p>`;
+            targetEditor?.commands.setContent(htmlContent);
+          }
+        }
+      }
+      toast("Translation complete", "success");
+    } catch {
+      toast("Translation failed", "error");
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  /* ── Save ── */
   const handleSave = async () => {
     const title: Record<string, string> = {};
     if (titleZh.trim()) title["zh-CN"] = titleZh.trim();
     if (titleEn.trim()) title["en-US"] = titleEn.trim();
     if (titleMs.trim()) title["ms-MY"] = titleMs.trim();
 
-    if (!slug.trim()) {
-      toast(t("articles_list.article_created"), "error");
-      return;
-    }
     if (Object.keys(title).length === 0) {
       toast(t("articles_list.article_created"), "error");
       return;
@@ -341,7 +454,6 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
       const url = "/api/admin/articles";
       const method = isEdit ? "PATCH" : "POST";
       const body: Record<string, unknown> = {
-        slug: slug.trim(),
         title,
         content: Object.keys(content).length > 0 ? content : null,
         category_id: categoryId ? parseInt(categoryId) : null,
@@ -565,21 +677,107 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
         size="lg"
       >
         <div className="space-y-4">
-          {/* Slug */}
-          <Input
-            label={t("articles_list.slug")}
-            placeholder="my-article-slug"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-          />
+          {/* Locale tabs */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-text-secondary">
+                {t("articles_list.title_col")} &amp; {t("articles_list.content_label")}
+              </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleAutoTranslate}
+                loading={translating}
+                disabled={translating}
+                className="text-xs"
+              >
+                {translating ? "Translating..." : "Translate All"}
+              </Button>
+            </div>
 
-          {/* Cover image */}
-          <Input
-            label={t("articles_list.cover_image")}
-            placeholder="https://..."
-            value={coverImage}
-            onChange={(e) => setCoverImage(e.target.value)}
-          />
+            {/* Slug hint */}
+            <p className="text-xs text-text-muted mb-2">
+              Slug is auto-generated from the English title.
+            </p>
+
+            <div className="flex gap-1 mb-3 border-b border-border-default">
+              {LOCALES.map((loc) => (
+                <button
+                  key={loc}
+                  type="button"
+                  onClick={() => setActiveTab(loc)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors border-b-2 -mb-px ${
+                    activeTab === loc
+                      ? "border-gold text-gold"
+                      : "border-transparent text-text-muted hover:text-text-secondary"
+                  }`}
+                >
+                  {LOCALE_LABELS[loc]}
+                </button>
+              ))}
+            </div>
+
+            {/* Title input for active locale */}
+            <Input
+              placeholder={t("articles_list.title_col")}
+              value={
+                activeTab === "zh-CN"
+                  ? titleZh
+                  : activeTab === "en-US"
+                  ? titleEn
+                  : titleMs
+              }
+              onChange={(e) => {
+                if (activeTab === "zh-CN") setTitleZh(e.target.value);
+                else if (activeTab === "en-US") setTitleEn(e.target.value);
+                else setTitleMs(e.target.value);
+              }}
+              className="mb-3"
+            />
+
+            {/* TipTap editors - only show active */}
+            <div key={editorKey}>
+              {LOCALES.map((loc) => (
+                <div key={loc} className={activeTab === loc ? "" : "hidden"}>
+                  <TiptapEditorBlock editor={editorMap[loc]} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Cover image: file upload with preview + URL fallback */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-text-secondary">
+              {t("articles_list.cover_image")}
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                ref={coverImageInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleCoverImageUpload}
+                className="block w-full text-sm text-text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-sm file:border-0 file:text-sm file:font-medium file:bg-bg-tertiary file:text-text-primary hover:file:bg-bg-secondary file:cursor-pointer"
+              />
+              {coverImageUploading && (
+                <span className="text-xs text-text-muted whitespace-nowrap">Uploading...</span>
+              )}
+            </div>
+            {coverImage && (
+              <div className="mt-2">
+                <img
+                  src={coverImage}
+                  alt="Cover preview"
+                  className="h-24 w-auto rounded-sm object-cover border border-border-default"
+                />
+              </div>
+            )}
+            <Input
+              placeholder="Or paste image URL..."
+              value={coverImage}
+              onChange={(e) => setCoverImage(e.target.value)}
+              className="mt-2"
+            />
+          </div>
 
           {/* Category & Tier row */}
           <div className="grid grid-cols-2 gap-4">
@@ -628,56 +826,6 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
               {t("articles_list.published")}
             </span>
           </label>
-
-          {/* Locale tabs */}
-          <div>
-            <p className="text-sm font-medium text-text-secondary mb-2">
-              {t("articles_list.title_col")} &amp; {t("articles_list.content_label")}
-            </p>
-            <div className="flex gap-1 mb-3 border-b border-border-default">
-              {LOCALES.map((loc) => (
-                <button
-                  key={loc}
-                  type="button"
-                  onClick={() => setActiveTab(loc)}
-                  className={`px-3 py-1.5 text-xs font-medium transition-colors border-b-2 -mb-px ${
-                    activeTab === loc
-                      ? "border-gold text-gold"
-                      : "border-transparent text-text-muted hover:text-text-secondary"
-                  }`}
-                >
-                  {LOCALE_LABELS[loc]}
-                </button>
-              ))}
-            </div>
-
-            {/* Title input for active locale */}
-            <Input
-              placeholder={t("articles_list.title_col")}
-              value={
-                activeTab === "zh-CN"
-                  ? titleZh
-                  : activeTab === "en-US"
-                  ? titleEn
-                  : titleMs
-              }
-              onChange={(e) => {
-                if (activeTab === "zh-CN") setTitleZh(e.target.value);
-                else if (activeTab === "en-US") setTitleEn(e.target.value);
-                else setTitleMs(e.target.value);
-              }}
-              className="mb-3"
-            />
-
-            {/* TipTap editors - only show active */}
-            <div key={editorKey}>
-              {LOCALES.map((loc) => (
-                <div key={loc} className={activeTab === loc ? "" : "hidden"}>
-                  <TiptapEditorBlock editor={editorMap[loc]} />
-                </div>
-              ))}
-            </div>
-          </div>
 
           {/* Actions */}
           <div className="flex justify-end gap-3 pt-2">

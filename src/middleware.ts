@@ -49,7 +49,8 @@ export async function middleware(request: NextRequest) {
       .single();
 
     if (!profile || profile.role !== "admin") {
-      return NextResponse.redirect(new URL("/en-US", request.url));
+      const cookieLocale = request.cookies.get("NEXT_LOCALE")?.value || routing.defaultLocale;
+      return NextResponse.redirect(new URL(`/${cookieLocale}`, request.url));
     }
 
     if (profile.is_disabled) {

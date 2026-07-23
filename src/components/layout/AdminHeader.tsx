@@ -6,9 +6,17 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
+/** Read the persisted locale cookie, falling back to en-US */
+function getSavedLocale(): string {
+  if (typeof document === "undefined") return "en-US";
+  const match = document.cookie.match(/(?:^|;\s*)NEXT_LOCALE=([^;]*)/);
+  return match?.[1] || "en-US";
+}
+
 export function AdminHeader() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [locale] = useState(getSavedLocale);
 
   useEffect(() => {
     const supabase = createClient();
@@ -20,7 +28,7 @@ export function AdminHeader() {
   const handleLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/en-US");
+    router.push(`/${locale}`);
     router.refresh();
   };
 
@@ -38,7 +46,7 @@ export function AdminHeader() {
 
       <div className="flex items-center gap-3">
         <Link
-          href="/en-US"
+          href={`/${locale}`}
           className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary transition-colors"
         >
           <span>←</span>

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { useOrderBook } from "@/hooks/useMarketData";
 import { formatPrice } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -8,7 +9,7 @@ interface OrderBookProps {
   symbol: string;
 }
 
-export function OrderBook({ symbol }: OrderBookProps) {
+export const OrderBook = memo(function OrderBook({ symbol }: OrderBookProps) {
   const { data, isLoading } = useOrderBook(symbol, 8);
 
   if (isLoading) {
@@ -84,4 +85,4 @@ export function OrderBook({ symbol }: OrderBookProps) {
       })}
     </div>
   );
-}
+});

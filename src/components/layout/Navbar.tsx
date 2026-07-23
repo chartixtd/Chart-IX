@@ -3,92 +3,56 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
-import { useEffect, useState } from "react";
+import { useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { User } from "@supabase/supabase-js";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = ["home", "videos", "trade", "upgrade"] as const;
+const NAV_ITEMS = ["home", "videos", "trade"] as const;
 
 export function Navbar() {
   const t = useTranslations("nav");
   const locale = useLocale();
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const auth = useAuth();
 
-  const checkAdmin = async (userId: string, supabaseClient: ReturnType<typeof createClient>) => {
-    try {
-      // 先尝试 API 路由
-      const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const json = await res.json();
-        setIsAdmin(json.user?.role === "admin");
-        return;
-      }
-    } catch {
-      // API 失败，尝试客户端直接查询 (RLS 允许读自己的行)
-    }
+  const isPro = auth.tier === "pro";
+  const isAdmin = auth.role === "admin";
 
-    try {
-      const { data: profile } = await supabaseClient
-        .from("users")
-        .select("role")
-        .eq("id", userId)
-        .single();
-      setIsAdmin(profile?.role === "admin");
-    } catch {
-      setIsAdmin(false);
-    }
-  };
+  const segments = useMemo(() => pathname.split("/").filter(Boolean), [pathname]);
 
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(async ({ data }) => {
-      const authUser = data.user ?? null;
-      setUser(authUser);
-
-      if (authUser) {
-        await checkAdmin(authUser.id, supabase);
-      }
-
-      setLoading(false);
+  const navLinks = useMemo(() => {
+    return NAV_ITEMS.map((item) => {
+      const active = item === "home"
+        ? segments.length === 1 || segments[0] === locale
+        : segments.includes(item);
+      return (
+        <Link
+          key={item}
+          href={`/${locale}${item === "home" ? "" : `/${item}`}`}
+          className={cn(
+            "px-3 py-1.5 text-sm rounded-sm transition-colors",
+            active ? "text-gold bg-gold/10" : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
+          )}
+        >
+          {t(item)}
+        </Link>
+      );
     });
+  }, [segments, locale, t]);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const authUser = session?.user ?? null;
-      setUser(authUser);
-      if (authUser) {
-        checkAdmin(authUser.id, supabase);
-      } else {
-        setIsAdmin(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    setUser(null);
-    setIsAdmin(false);
     router.push(`/${locale}`);
     router.refresh();
-  };
-
-  const isActive = (item: string) => {
-    const segments = pathname.split("/").filter(Boolean);
-    if (item === "home") return segments.length === 1 || (segments.length === 1 && segments[0] === locale);
-    return segments.includes(item);
-  };
+  }, [locale, router]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border-default bg-bg-primary/80 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-border-default bg-bg-primary/80 backdrop-blur-md gpu">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         {/* Logo */}
         <Link href={`/${locale}`} className="flex items-center gap-2 shrink-0">
@@ -100,28 +64,24 @@ export function Navbar() {
 
         {/* Desktop Nav */}
         <nav className="hidden md:flex items-center gap-1">
-          {NAV_ITEMS.map((item) => (
+          {navLinks}
+          {!isPro && (
             <Link
-              key={item}
-              href={`/${locale}${item === "home" ? "" : `/${item}`}`}
+              href={`/${locale}/upgrade`}
               className={cn(
                 "px-3 py-1.5 text-sm rounded-sm transition-colors",
-                isActive(item)
-                  ? "text-gold bg-gold/10"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
+                segments.includes("upgrade") ? "text-gold bg-gold/10" : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
               )}
             >
-              {t(item)}
+              {t("upgrade")}
             </Link>
-          ))}
+          )}
           {isAdmin && (
             <Link
               href="/admin"
               className={cn(
                 "px-3 py-1.5 text-sm rounded-sm transition-colors",
-                isActive("admin")
-                  ? "text-gold bg-gold/10"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
+                segments[0] === "admin" ? "text-gold bg-gold/10" : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
               )}
             >
               {t("admin")}
@@ -132,13 +92,13 @@ export function Navbar() {
         {/* Right Section */}
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
-          {loading ? (
+          {auth.loading ? (
             <div className="h-8 w-20 animate-pulse rounded bg-bg-tertiary" />
-          ) : user ? (
+          ) : auth.userId ? (
             <>
               <Link href={`/${locale}/settings`}>
                 <Button variant="ghost" size="sm">
-                  {user.email?.split("@")[0]}
+                  {auth.email?.split("@")[0]}
                 </Button>
               </Link>
               <Button variant="ghost" size="sm" onClick={handleLogout}>
@@ -148,9 +108,7 @@ export function Navbar() {
           ) : (
             <>
               <Link href={`/${locale}/login`}>
-                <Button variant="ghost" size="sm">
-                  {t("sign_in")}
-                </Button>
+                <Button variant="ghost" size="sm">{t("sign_in")}</Button>
               </Link>
               <Link href={`/${locale}/register`}>
                 <Button size="sm">{t("sign_up")}</Button>

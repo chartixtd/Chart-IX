@@ -61,6 +61,10 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
     volume: number;
   } | null>(null);
 
+  // rAF throttling refs for live price updates
+  const rafRef = useRef<number | null>(null);
+  const pendingPriceRef = useRef<number | undefined>(undefined);
+
   const { data: klines, isLoading } = useKlines(symbol, interval);
   // Live price from WebSocket ticker (drives the current candle in real time)
   const livePrice = useMarketStore((s) => {
@@ -194,61 +198,79 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
     }
   }, [klines]);
 
-  // ---- Drive the current candle with live ticker price ----
+  // ---- Drive the current candle with live ticker price (rAF-throttled) ----
+  // Store latest price in a ref, only flush to chart on animation frames
   useEffect(() => {
-    if (livePrice === undefined || isNaN(livePrice)) return;
-    if (!candleSeriesRef.current) return;
+    pendingPriceRef.current = livePrice;
+  }, [livePrice]);
 
-    const durationSec = INTERVAL_SECONDS[interval] ?? 3600;
-    const nowSec = Math.floor(Date.now() / 1000);
-    const bucketStart = (Math.floor(nowSec / durationSec) * durationSec) as UTCTimestamp;
+  // rAF loop: flushes the latest price to the chart at most ~60fps
+  useEffect(() => {
+    let disposed = false;
 
-    const prev = lastCandleRef.current;
+    function tick() {
+      if (disposed) return;
+      rafRef.current = requestAnimationFrame(tick);
 
-    // New candle bucket started → open a fresh candle at the live price
-    if (!prev || bucketStart > prev.time) {
-      const fresh = {
-        time: bucketStart,
-        open: livePrice,
-        high: livePrice,
-        low: livePrice,
-        close: livePrice,
-        volume: 0,
-      };
-      lastCandleRef.current = fresh;
+      const price = pendingPriceRef.current;
+      if (price === undefined || isNaN(price)) return;
+      if (!candleSeriesRef.current) return;
+
+      const durationSec = INTERVAL_SECONDS[interval] ?? 3600;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const bucketStart = (Math.floor(nowSec / durationSec) * durationSec) as UTCTimestamp;
+
+      const prev = lastCandleRef.current;
+
+      if (!prev || bucketStart > prev.time) {
+        const fresh = {
+          time: bucketStart,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
+          volume: 0,
+        };
+        lastCandleRef.current = fresh;
+        try {
+          candleSeriesRef.current.update({
+            time: fresh.time,
+            open: fresh.open,
+            high: fresh.high,
+            low: fresh.low,
+            close: fresh.close,
+          });
+        } catch { /* chart may not be ready */ }
+        return;
+      }
+
+      if (bucketStart < prev.time) return;
+
+      prev.close = price;
+      if (price > prev.high) prev.high = price;
+      if (price < prev.low) prev.low = price;
+
       try {
         candleSeriesRef.current.update({
-          time: fresh.time,
-          open: fresh.open,
-          high: fresh.high,
-          low: fresh.low,
-          close: fresh.close,
+          time: prev.time,
+          open: prev.open,
+          high: prev.high,
+          low: prev.low,
+          close: prev.close,
         });
-      } catch {
-        /* chart may not be ready yet */
+      } catch { /* ignore transient update errors */ }
+    }
+
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      disposed = true;
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
       }
-      return;
-    }
-
-    // Only extend the current bucket (never mutate a past candle)
-    if (bucketStart < prev.time) return;
-
-    prev.close = livePrice;
-    if (livePrice > prev.high) prev.high = livePrice;
-    if (livePrice < prev.low) prev.low = livePrice;
-
-    try {
-      candleSeriesRef.current.update({
-        time: prev.time,
-        open: prev.open,
-        high: prev.high,
-        low: prev.low,
-        close: prev.close,
-      });
-    } catch {
-      /* ignore transient update errors */
-    }
-  }, [livePrice, interval]);
+    };
+  }, [interval]);
 
   return (
     <div className={cn("relative", className)}>

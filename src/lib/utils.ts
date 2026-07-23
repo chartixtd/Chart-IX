@@ -5,17 +5,28 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
+// Cache Intl.NumberFormat instances — avoids allocation on every price update
+const formatterCache = new Map<number, Intl.NumberFormat>();
+function getFormatter(decimals: number): Intl.NumberFormat {
+  let fmt = formatterCache.get(decimals);
+  if (!fmt) {
+    fmt = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+    formatterCache.set(decimals, fmt);
+  }
+  return fmt;
+}
+
 export function formatNumber(value: number, decimals = 2): string {
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
+  return getFormatter(decimals).format(value);
 }
 
 export function formatPrice(price: number): string {
-  if (price >= 1) return formatNumber(price, 2);
-  if (price >= 0.01) return formatNumber(price, 4);
-  return formatNumber(price, 8);
+  if (price >= 1) return getFormatter(2).format(price);
+  if (price >= 0.01) return getFormatter(4).format(price);
+  return getFormatter(8).format(price);
 }
 
 export function formatPercent(value: number): string {

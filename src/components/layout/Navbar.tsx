@@ -63,7 +63,7 @@ export function Navbar() {
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         {/* Logo */}
         <Link href={auth.userId ? `/${locale}/dashboard` : `/${locale}`} className="flex items-center gap-2 shrink-0">
-          <img src="/logo.png" alt="Chart-IX" className="h-9 w-auto" />
+          <img src="/logo.png" alt="Chart-IX" className="h-10 w-auto" />
         </Link>
 
         {/* Desktop Nav */}

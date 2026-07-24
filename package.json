@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.67.0",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.49.4",
     "@tanstack/react-query": "^5.101.4",

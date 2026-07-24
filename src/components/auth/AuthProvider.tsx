@@ -85,6 +85,10 @@ export function AuthProvider({
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
         fetchAuth();
+        if (event === "SIGNED_IN") {
+          // Idempotent (grant_achievement no-ops if already earned) — safe to call every sign-in.
+          supabase.rpc("grant_achievement", { p_key: "first_login" }).then(() => {});
+        }
       } else if (event === "SIGNED_OUT") {
         setAuth({ userId: null, email: null, tier: null, role: null, loading: false });
       }

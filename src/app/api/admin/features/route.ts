@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { logAdminAction } from "@/lib/supabase/admin-log";
 import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/supabase/admin-auth";
 
 // PATCH - Update a feature flag by id
 export async function PATCH(request: NextRequest) {
   try {
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
+
     const { id, free_enabled, pro_enabled } = await request.json();
 
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });

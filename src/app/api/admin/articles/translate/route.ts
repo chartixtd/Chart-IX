@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Locale } from "@/types";
+import { requireAdmin } from "@/lib/supabase/admin-auth";
 
 // ---------------------------------------------------------------------------
 // Plain-text translation via Google Translate's public endpoint
@@ -67,6 +68,9 @@ async function translateText(
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
+
     const body = (await request.json()) as TranslateRequest;
 
     if (!body.text || typeof body.text !== "string" || !body.text.trim()) {

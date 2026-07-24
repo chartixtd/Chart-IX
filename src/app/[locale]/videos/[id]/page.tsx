@@ -9,6 +9,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { VideoQuiz } from "@/components/video/VideoQuiz";
 import type { Video, Locale } from "@/types";
 
 const supabase = createClient();
@@ -313,6 +314,8 @@ export default function VideoDetailPage() {
             </p>
           </div>
         )}
+
+        <VideoQuiz videoId={video.id} />
       </div>
     </div>
   );

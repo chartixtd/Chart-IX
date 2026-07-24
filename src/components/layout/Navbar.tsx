@@ -7,10 +7,12 @@ import { useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { PriceAlertBell } from "@/components/alerts/PriceAlertBell";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = ["home", "videos", "articles", "trade"] as const;
+const GUEST_NAV_ITEMS = ["home", "videos", "articles", "trade"] as const;
+const USER_NAV_ITEMS = ["dashboard", "videos", "articles", "trade"] as const;
 
 export function Navbar() {
   const t = useTranslations("nav");
@@ -28,8 +30,8 @@ export function Navbar() {
 
   const navLinks = useMemo(() => {
     // Logged-in users land on their dashboard, not the marketing homepage —
-    // the "home" nav item is only meaningful for signed-out visitors.
-    const items = auth.userId ? NAV_ITEMS.filter((item) => item !== "home") : NAV_ITEMS;
+    // "home" only makes sense for signed-out visitors.
+    const items = auth.userId ? USER_NAV_ITEMS : GUEST_NAV_ITEMS;
     return items.map((item) => {
       const active = item === "home"
         ? segments.length === 1 || segments[0] === locale
@@ -60,7 +62,7 @@ export function Navbar() {
     <header className="sticky top-0 z-40 border-b border-border-default bg-bg-primary/80 backdrop-blur-md gpu">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         {/* Logo */}
-        <Link href={`/${locale}`} className="flex items-center gap-2 shrink-0">
+        <Link href={auth.userId ? `/${locale}/dashboard` : `/${locale}`} className="flex items-center gap-2 shrink-0">
           <span className="text-xl font-bold tracking-tight">
             <span className="gold-text">Chart</span>
             <span className="text-text-primary">-IX</span>
@@ -96,6 +98,7 @@ export function Navbar() {
 
         {/* Right Section */}
         <div className="flex items-center gap-3">
+          <PriceAlertBell />
           <LanguageSwitcher />
           {auth.loading ? (
             <div className="h-8 w-20 animate-pulse rounded bg-bg-tertiary" />

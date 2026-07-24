@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 interface PricingPlan {
   id: number;
@@ -21,6 +22,7 @@ export default function UpgradePage() {
   const locale = useLocale();
   const auth = useAuth();
   const [plans, setPlans] = useState<PricingPlan[]>([]);
+  const [telegramUrl, setTelegramUrl] = useState<string | null>(null);
 
   const isPro = auth.tier === "pro";
 
@@ -33,6 +35,15 @@ export default function UpgradePage() {
       .order("price", { ascending: true })
       .then(({ data }) => {
         if (data) setPlans(data);
+      });
+
+    supabase
+      .from("admin_settings")
+      .select("value")
+      .eq("key", "telegram_group")
+      .maybeSingle()
+      .then(({ data }) => {
+        if (typeof data?.value === "string") setTelegramUrl(data.value);
       });
   }, []);
 
@@ -118,6 +129,19 @@ export default function UpgradePage() {
               </>
             )}
           </div>
+
+          {telegramUrl && (
+            <div className="mt-8 text-center">
+              <a href={telegramUrl} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="lg">
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9.036 15.803l-.396 5.57c.567 0 .812-.244 1.108-.537l2.66-2.545 5.513 4.03c1.01.556 1.73.264 1.99-.933L23.94 3.94c.36-1.464-.53-2.037-1.51-1.68L1.11 10.44c-1.44.556-1.42 1.35-.245 1.708l5.462 1.704L18.9 6.297c.545-.36 1.04-.16.633.2z" />
+                  </svg>
+                  {t("telegram_cta")}
+                </Button>
+              </a>
+            </div>
+          )}
         </>
       )}
     </div>

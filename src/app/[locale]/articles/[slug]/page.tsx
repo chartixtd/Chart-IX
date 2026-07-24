@@ -1,7 +1,46 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { ArticleDetailClient } from "./ArticleDetailClient";
-import type { Article } from "@/types";
+import type { Article, Locale } from "@/types";
+
+function stripHtml(html: string, maxLength = 160): string {
+  const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? text.slice(0, maxLength - 1) + "…" : text;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string; locale: string }>;
+}): Promise<Metadata> {
+  const { slug, locale } = await params;
+  const supabase = await createClient();
+  const { data: article } = await supabase
+    .from("articles")
+    .select("title, content, cover_image")
+    .eq("slug", slug)
+    .eq("is_published", true)
+    .single();
+
+  if (!article) return {};
+
+  const title = article.title[locale as Locale] ?? article.title["en-US"];
+  const rawContent = article.content?.[locale as Locale] ?? article.content?.["en-US"] ?? "";
+  const description = rawContent ? stripHtml(rawContent) : undefined;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "article",
+      images: article.cover_image ? [article.cover_image] : undefined,
+    },
+    twitter: { title, description },
+  };
+}
 
 function truncateHtmlAtMidpoint(html: string): string {
   const midpoint = Math.floor(html.length / 2);

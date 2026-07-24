@@ -28,6 +28,7 @@
   },
   "nav": {
     "home": "Laman Utama",
+    "dashboard": "Papan Pemuka",
     "videos": "Perpustakaan Video",
     "articles": "Artikel",
     "trade": "Dagangan",
@@ -87,22 +88,45 @@
     }
   },
   "home": {
+    "hero_eyebrow": "Mesra pemula · Langkah demi langkah",
     "hero_title": "Belajar Berniaga, Kuasai Masa Depan",
-    "hero_subtitle": "Platform pendidikan dagangan mata wang kripto yang menyeluruh dengan dagangan langsung bersepadu",
-    "hero_cta": "Mula Belajar",
-    "hero_secondary": "Ketahui Lebih Lanjut",
+    "hero_subtitle": "Belajar dagangan mata wang kripto dari asas, kemudian berdagang secara langsung tanpa bertukar platform — setiap langkah kekal jelas dan terkawal.",
+    "hero_cta": "Daftar Percuma",
+    "hero_secondary": "Lihat Kursus",
+    "risk_caption": "Dagangan melibatkan risiko. Ini bukan nasihat pelaburan — berdagang mengikut kemampuan anda.",
     "continue_watching": "Teruskan Menonton",
     "recommended": "Video Disyorkan",
     "market_overview": "Gambaran Pasaran",
     "view_full_trading": "Lihat Dagangan Penuh",
     "quick_trade": "Dagangan Pantas",
+    "trust_title": "Mengapa anda boleh mula dengan yakin",
+    "trust_1_title": "Dana anda kekal di bursa",
+    "trust_1_desc": "Kami tidak menyimpan atau menyentuh dana anda — setiap dagangan diselesaikan terus dalam akaun BingX anda sendiri.",
+    "trust_2_title": "Direka untuk pemula sepenuhnya",
+    "trust_2_desc": "Kurikulum langkah demi langkah direka untuk mereka yang tiada pengalaman dagangan.",
+    "trust_3_title": "Kandungan pelbagai bahasa",
+    "trust_3_desc": "Liputan penuh dalam bahasa Cina, Inggeris dan Melayu — belajar tanpa halangan bahasa.",
+    "trust_4_title": "Risiko kekal terkawal",
+    "trust_4_desc": "Had dagangan boleh disesuaikan membantu anda bermula dalam lingkup yang mampu ditanggung.",
+    "how_title": "Tiga langkah untuk mula berdagang",
+    "how_1_title": "Cipta akaun anda",
+    "how_1_desc": "Daftar akaun Chart-IX hanya dalam beberapa minit.",
+    "how_2_title": "Pelajari asasnya",
+    "how_2_desc": "Ikuti kursus tersusun kami untuk membina asas yang kukuh.",
+    "how_3_title": "Sambung dan berdagang",
+    "how_3_desc": "Pautkan akaun BingX anda dan ambil langkah pertama dalam persekitaran yang biasa.",
     "features_title": "Mengapa Pilih Chart-IX?",
     "feature_learn_title": "Pembelajaran Sistematik",
     "feature_learn_desc": "Perpustakaan video dagangan yang menyeluruh dari peringkat pemula hingga lanjutan",
     "feature_trade_title": "Dagangan Langsung",
     "feature_trade_desc": "Sambung ke bursa BingX dan buat pesanan terus dalam pelayar",
     "feature_control_title": "Kawalan Risiko Fleksibel",
-    "feature_control_desc": "Had dagangan boleh disesuaikan untuk melindungi aset anda"
+    "feature_control_desc": "Had dagangan boleh disesuaikan untuk melindungi aset anda",
+    "final_cta_title": "Bersedia untuk bermula?",
+    "final_cta_subtitle": "Daftar sekarang dan mulakan perjalanan tersusun ke dunia dagangan kripto.",
+    "final_cta_button": "Daftar Percuma",
+    "risk_title": "Pendedahan Risiko",
+    "risk_body": "Dagangan mata wang kripto membawa risiko besar, termasuk potensi kerugian keseluruhan modal. Platform ini hanya menyediakan kandungan pendidikan dan alat dagangan — ia bukan nasihat pelaburan. Sila berdagang dengan bertanggungjawab dan mengikut tahap toleransi risiko anda."
   },
   "video": {
     "player": {
@@ -238,7 +262,8 @@
     "features_included": "Pro termasuk ciri-ciri berikut",
     "current_plan": "Pelan Semasa",
     "you_are_pro": "Anda adalah pengguna Pro",
-    "expires_at": "Tamat Tempoh"
+    "expires_at": "Tamat Tempoh",
+    "telegram_cta": "Hubungi kami melalui Telegram untuk naik taraf"
   },
   "settings": {
     "title": "Tetapan",
@@ -309,6 +334,7 @@
     "go_back": "Kembali"
   },
   "footer": {
+    "join_telegram": "Sertai komuniti Telegram kami",
     "copyright": "© 2026 Chart-IX. Hak cipta terpelihara.",
     "terms": "Terma Perkhidmatan",
     "privacy": "Dasar Privasi",
@@ -323,6 +349,8 @@
     "refresh": "Segar Semula",
     "users": "Pengguna",
     "videos": "Video",
+    "learning_paths": "Laluan Pembelajaran",
+    "quizzes": "Kuiz",
     "features": "Ciri",
     "pricing": "Harga",
     "risk_control": "Kawalan Risiko",
@@ -584,5 +612,33 @@
     "by": "Oleh",
     "all_categories": "Semua",
     "empty_search": "Tiada artikel ditemui."
+  },
+  "dashboard": {
+    "welcome": "Selamat kembali",
+    "continue_learning_title": "Teruskan Pembelajaran",
+    "continue_learning_empty": "Belum ada rekod pembelajaran — lihat kursus kami",
+    "continue_learning_cta": "Lihat Kursus",
+    "progress_percent": "{percent}% selesai",
+    "paper_title": "Prestasi Dagangan Simulasi",
+    "paper_balance": "Baki Tersedia",
+    "paper_total_value": "Jumlah Nilai",
+    "paper_pnl": "Jumlah Untung/Rugi",
+    "paper_cta": "Ke Dagangan Simulasi",
+    "favorites_title": "Senarai Pantauan",
+    "favorites_empty": "Belum ada pasangan kegemaran",
+    "favorites_cta": "Tambah sekarang",
+    "latest_videos_title": "Video Terkini",
+    "latest_articles_title": "Artikel Terkini",
+    "achievements_title": "Pencapaian Saya"
+  },
+  "quiz": {
+    "submit": "Hantar",
+    "passed": "Lulus! Syabas",
+    "failed": "Belum lagi — cuba sekali lagi",
+    "retry": "Cuba Lagi"
+  },
+  "seo": {
+    "title": "Platform Pendidikan Dagangan Kripto & Dagangan Langsung",
+    "description": "Belajar dagangan mata wang kripto dari asas bersama Chart-IX, kemudian berdagang secara langsung dengan menyambung terus ke bursa BingX — laluan tersusun dari pemula kepada peniaga yang yakin."
   }
 }

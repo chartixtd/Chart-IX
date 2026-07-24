@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
+import { requireAdmin } from "@/lib/supabase/admin-auth";
 
 export async function GET() {
   try {
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
+
     const client = createServiceRoleClient();
 
     const [total, free, pro, today, disabled] = await Promise.all([

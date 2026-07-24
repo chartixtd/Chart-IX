@@ -28,6 +28,7 @@
   },
   "nav": {
     "home": "Home",
+    "dashboard": "Dashboard",
     "videos": "Video Library",
     "articles": "Articles",
     "trade": "Trade",
@@ -87,22 +88,45 @@
     }
   },
   "home": {
+    "hero_eyebrow": "Beginner-friendly · Step by step",
     "hero_title": "Learn to Trade, Master the Future",
-    "hero_subtitle": "A comprehensive cryptocurrency trading education and live trading platform",
-    "hero_cta": "Start Learning",
-    "hero_secondary": "Learn More",
+    "hero_subtitle": "Learn cryptocurrency trading from scratch, then trade live without switching tools — every step stays clear and in your control.",
+    "hero_cta": "Sign Up Free",
+    "hero_secondary": "Browse Courses",
+    "risk_caption": "Trading involves risk. This is not investment advice — trade within your means.",
     "continue_watching": "Continue Watching",
     "recommended": "Recommended Videos",
     "market_overview": "Market Overview",
     "view_full_trading": "View Full Trading",
     "quick_trade": "Quick Trade",
+    "trust_title": "Why you can start with confidence",
+    "trust_1_title": "Your funds stay on the exchange",
+    "trust_1_desc": "We never custody or touch your funds — every trade settles directly in your own BingX account.",
+    "trust_2_title": "Built for complete beginners",
+    "trust_2_desc": "A step-by-step curriculum designed for people with zero trading experience.",
+    "trust_3_title": "Multilingual content",
+    "trust_3_desc": "Full coverage in Chinese, English, and Malay — learn without a language barrier.",
+    "trust_4_title": "Risk stays in your control",
+    "trust_4_desc": "Customizable trading limits help you start within what you can afford to risk.",
+    "how_title": "Three steps to start trading",
+    "how_1_title": "Create your account",
+    "how_1_desc": "Sign up for Chart-IX in just a couple of minutes.",
+    "how_2_title": "Learn the basics",
+    "how_2_desc": "Follow our structured courses to build the fundamentals.",
+    "how_3_title": "Connect and trade",
+    "how_3_desc": "Link your BingX account and take your first step in a familiar environment.",
     "features_title": "Why Choose Chart-IX?",
     "feature_learn_title": "Systematic Learning",
     "feature_learn_desc": "Comprehensive trading video library from beginner to advanced",
     "feature_trade_title": "Live Trading",
     "feature_trade_desc": "Connect to BingX exchange and place orders directly in the browser",
     "feature_control_title": "Flexible Risk Control",
-    "feature_control_desc": "Customizable trading limits to protect your assets"
+    "feature_control_desc": "Customizable trading limits to protect your assets",
+    "final_cta_title": "Ready to get started?",
+    "final_cta_subtitle": "Sign up now and begin a structured path into crypto trading.",
+    "final_cta_button": "Sign Up Free",
+    "risk_title": "Risk Disclosure",
+    "risk_body": "Cryptocurrency trading carries substantial risk, including the potential loss of your entire principal. This platform provides educational content and trading tools only — it does not constitute investment advice. Please trade responsibly and within your risk tolerance."
   },
   "video": {
     "player": {
@@ -238,7 +262,8 @@
     "features_included": "Pro includes the following features",
     "current_plan": "Current Plan",
     "you_are_pro": "You are a Pro user",
-    "expires_at": "Expires"
+    "expires_at": "Expires",
+    "telegram_cta": "Contact us on Telegram to upgrade"
   },
   "settings": {
     "title": "Settings",
@@ -309,6 +334,7 @@
     "go_back": "Go Back"
   },
   "footer": {
+    "join_telegram": "Join our Telegram community",
     "copyright": "© 2026 Chart-IX. All rights reserved.",
     "terms": "Terms of Service",
     "privacy": "Privacy Policy",
@@ -323,6 +349,8 @@
     "refresh": "Refresh",
     "users": "Users",
     "videos": "Videos",
+    "learning_paths": "Learning Paths",
+    "quizzes": "Quizzes",
     "features": "Features",
     "pricing": "Pricing",
     "risk_control": "Risk Control",
@@ -584,5 +612,33 @@
     "by": "By",
     "all_categories": "All",
     "empty_search": "No articles found."
+  },
+  "dashboard": {
+    "welcome": "Welcome back",
+    "continue_learning_title": "Continue Learning",
+    "continue_learning_empty": "No learning history yet — check out the courses",
+    "continue_learning_cta": "Browse Courses",
+    "progress_percent": "{percent}% complete",
+    "paper_title": "Paper Trading Performance",
+    "paper_balance": "Available Balance",
+    "paper_total_value": "Total Value",
+    "paper_pnl": "Total P&L",
+    "paper_cta": "Go to Paper Trading",
+    "favorites_title": "Watchlist",
+    "favorites_empty": "No favorite pairs yet",
+    "favorites_cta": "Add some",
+    "latest_videos_title": "Latest Videos",
+    "latest_articles_title": "Latest Articles",
+    "achievements_title": "My Achievements"
+  },
+  "quiz": {
+    "submit": "Submit",
+    "passed": "Passed! Nice work",
+    "failed": "Not quite — give it another try",
+    "retry": "Retry"
+  },
+  "seo": {
+    "title": "Crypto Trading Education & Live Trading Platform",
+    "description": "Learn cryptocurrency trading from the ground up with Chart-IX, then trade live by connecting directly to the BingX exchange — a structured path from beginner to confident trader."
   }
 }

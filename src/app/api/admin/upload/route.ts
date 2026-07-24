@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
-import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/supabase/admin-auth";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,18 +42,8 @@ export async function POST(request: NextRequest) {
   try {
     // --- Auth check ---
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: "Authentication required" },
-        { status: 401 }
-      );
-    }
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
 
     // --- Parse FormData ---
 

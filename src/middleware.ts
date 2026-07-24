@@ -66,11 +66,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 静态资源
+  // 静态资源 + Next.js 元数据路由 (favicon/OG 图, 定义在 src/app/ 根目录, 不带 locale 前缀)
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname.startsWith("/logo") ||
+    pathname.match(/^\/(icon|apple-icon|opengraph-image|twitter-image)(\.[a-z0-9]+)?$/) ||
+    pathname === "/sitemap.xml" ||
+    pathname === "/robots.txt" ||
     pathname.match(/\.(svg|png|jpg|jpeg|gif|ico|webp)$/)
   ) {
     return NextResponse.next();

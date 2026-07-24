@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { logAdminAction } from "@/lib/supabase/admin-log";
 import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/supabase/admin-auth";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,6 +27,9 @@ function generateSlug(title: Record<string, string>): string {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
+
     const body = await request.json();
     const {
       slug: rawSlug,
@@ -65,22 +69,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- Get the current admin user ---
-
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: "Authentication required" },
-        { status: 401 }
-      );
-    }
-
-    const author_id = user.id;
+    const author_id = auth.user.id;
 
     // --- Insert ---
 
@@ -145,6 +134,9 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
+
     const { id, ...updates } = await request.json();
 
     if (!id) {
@@ -279,6 +271,9 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
+
     const id = request.nextUrl.searchParams.get("id");
 
     if (!id) {

@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { logAdminAction } from "@/lib/supabase/admin-log";
 import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/supabase/admin-auth";
 
 // POST - Create a new video
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
+
     const body = await request.json();
     const {
       title,
@@ -71,6 +75,9 @@ export async function POST(request: NextRequest) {
 // PATCH - Update video (tier_required, is_deleted)
 export async function PATCH(request: NextRequest) {
   try {
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
+
     const { id, ...updates } = await request.json();
 
     if (!id) {
@@ -134,6 +141,9 @@ export async function PATCH(request: NextRequest) {
 // DELETE - Hard delete a video
 export async function DELETE(request: NextRequest) {
   try {
+    const auth = await requireAdmin();
+    if ("error" in auth) return auth.error;
+
     const { id } = await request.json();
 
     if (!id) {

@@ -5,36 +5,45 @@ import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
 import { MarketOverview } from "@/components/trade/MarketOverview";
 import { KlineChart } from "@/components/trade/KlineChart";
 import { TradeForm } from "@/components/trade/TradeForm";
 import { OrdersPanel } from "@/components/trade/OrdersPanel";
+import { PaperOrdersPanel } from "@/components/trade/PaperOrdersPanel";
 import { OrderBook } from "@/components/trade/OrderBook";
 import { FuturesTradeForm } from "@/components/trade/FuturesTradeForm";
 import { FuturesInfoPanel } from "@/components/trade/FuturesInfoPanel";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 import { useSpotTicker } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
+import { usePriceAlertsStore } from "@/stores/priceAlerts";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_SYMBOL = "BTC-USDT";
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"];
-type MarketType = "spot" | "futures";
+type MarketType = "spot" | "paper" | "futures";
 
 // Memoized top bar — isolates ticker-driven re-renders from the rest of the page
 const TickerBar = memo(function TickerBar({
   symbol,
   market,
   onMarketChange,
+  onPickSymbol,
   locale,
   isPro,
+  isLoggedIn,
   authLoading,
 }: {
   symbol: string;
   market: MarketType;
   onMarketChange: (m: MarketType) => void;
+  onPickSymbol?: () => void;
   locale: string;
   isPro: boolean;
+  isLoggedIn: boolean;
   authLoading: boolean;
 }) {
   const t = useTranslations("trade");
@@ -42,8 +51,8 @@ const TickerBar = memo(function TickerBar({
   const isPositive = ticker ? parseFloat(ticker.priceChangePercent) >= 0 : false;
 
   return (
-    <div className="flex items-center gap-4 border-b border-border-default px-4 py-3">
-      <div className="flex rounded-xs bg-bg-tertiary p-0.5">
+    <div className="flex items-center gap-4 border-b border-border-default px-4 py-3 overflow-x-auto">
+      <div className="flex shrink-0 rounded-xs bg-bg-tertiary p-0.5">
         <button
           onClick={() => onMarketChange("spot")}
           className={cn(
@@ -53,6 +62,28 @@ const TickerBar = memo(function TickerBar({
         >
           Spot
         </button>
+        {!authLoading && (
+          isLoggedIn ? (
+            <button
+              onClick={() => onMarketChange("paper")}
+              className={cn(
+                "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
+                market === "paper" ? "bg-bg-primary text-gold" : "text-text-muted hover:text-text-secondary"
+              )}
+            >
+              模拟盘
+            </button>
+          ) : (
+            <Link
+              href={`/${locale}/login`}
+              className="rounded-xs px-3 py-1 text-xs font-medium text-text-muted hover:text-gold transition-colors"
+              title="登录后可用"
+            >
+              模拟盘
+              <span className="ml-1 opacity-60">&#x1F512;</span>
+            </Link>
+          )
+        )}
         {!authLoading && (
           isPro ? (
             <button
@@ -77,18 +108,25 @@ const TickerBar = memo(function TickerBar({
         )}
       </div>
 
-      <div className="w-px h-4 bg-border-default" />
+      <div className="hidden h-4 w-px bg-border-default sm:block" />
 
-      <h2 className="text-lg font-bold">{symbol}</h2>
+      <button
+        onClick={onPickSymbol}
+        className={cn("flex shrink-0 items-center gap-3", onPickSymbol && "lg:pointer-events-none")}
+      >
+        <h2 className="text-lg font-bold">{symbol}</h2>
+        {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">切换 ▾</span>}
+      </button>
       {ticker && (
         <>
-          <span className={cn("text-xl font-bold tabular-nums", isPositive ? "text-success" : "text-danger")}>
+          <span className={cn("shrink-0 text-xl font-bold tabular-nums", isPositive ? "text-success" : "text-danger")}>
             {formatPrice(parseFloat(ticker.lastPrice))}
           </span>
           <Badge variant={isPositive ? "green" : "red"}>
             {formatPercent(parseFloat(ticker.priceChangePercent))}
           </Badge>
-          <div className="ml-auto flex items-center gap-4 text-xs text-text-secondary">
+          <SetAlertButton symbol={symbol} currentPrice={parseFloat(ticker.lastPrice)} />
+          <div className="ml-auto hidden shrink-0 items-center gap-4 text-xs text-text-secondary lg:flex">
             <span>24h High: <span className="text-text-primary">{formatPrice(parseFloat(ticker.highPrice))}</span></span>
             <span>24h Low: <span className="text-text-primary">{formatPrice(parseFloat(ticker.lowPrice))}</span></span>
             <span>Vol: <span className="text-text-primary">{formatNumber(parseFloat(ticker.volume), 0)}</span></span>
@@ -96,6 +134,62 @@ const TickerBar = memo(function TickerBar({
         </>
       )}
     </div>
+  );
+});
+
+// Set a price alert for the current symbol
+const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { symbol: string; currentPrice: number }) {
+  const [open, setOpen] = useState(false);
+  const [price, setPrice] = useState("");
+  const [direction, setDirection] = useState<"above" | "below">("above");
+  const addAlert = usePriceAlertsStore((s) => s.addAlert);
+
+  const handleOpen = () => {
+    setPrice(currentPrice > 0 ? currentPrice.toString() : "");
+    setOpen(true);
+  };
+
+  const handleConfirm = () => {
+    const target = parseFloat(price);
+    if (!target || target <= 0) return;
+    addAlert(symbol, target, direction);
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <button
+        onClick={handleOpen}
+        className="shrink-0 rounded-xs px-1.5 py-1 text-text-muted hover:bg-bg-tertiary hover:text-gold"
+        title="设置价格提醒"
+      >
+        🔔
+      </button>
+      <Modal open={open} onClose={() => setOpen(false)} title={`价格提醒 · ${symbol}`} size="sm">
+        <div className="space-y-3">
+          <div className="flex rounded-xs bg-bg-tertiary p-0.5 text-xs">
+            <button
+              onClick={() => setDirection("above")}
+              className={cn("flex-1 rounded-xs py-1.5", direction === "above" ? "bg-bg-primary text-success" : "text-text-muted")}
+            >
+              涨到以上
+            </button>
+            <button
+              onClick={() => setDirection("below")}
+              className={cn("flex-1 rounded-xs py-1.5", direction === "below" ? "bg-bg-primary text-danger" : "text-text-muted")}
+            >
+              跌到以下
+            </button>
+          </div>
+          <Input placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)} />
+          <p className="text-xs text-text-muted">提醒只在你打开网站时以站内通知的形式出现，不会发邮件或推送。</p>
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>取消</Button>
+            <Button variant="primary" size="sm" onClick={handleConfirm}>设置提醒</Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 });
 
@@ -167,15 +261,29 @@ export default function TradePage() {
   const [interval, setInterval] = useState("1h");
   const [market, setMarket] = useState<MarketType>("spot");
   const [rightTab, setRightTab] = useState<"trade" | "orders" | "book">("trade");
+  const [mobileTab, setMobileTab] = useState<"chart" | "trade" | "book">("chart");
+  const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
 
   useBingXWebSocket([symbol]);
 
   const isPro = auth.tier === "pro";
+  const isLoggedIn = !!auth.userId;
 
-  const handleSymbolSelect = useCallback((s: string) => setSymbol(s), []);
+  const handleSymbolSelect = useCallback((s: string) => { setSymbol(s); setSymbolPickerOpen(false); }, []);
   const handleIntervalChange = useCallback((i: string) => setInterval(i), []);
   const handleMarketChange = useCallback((m: MarketType) => setMarket(m), []);
   const handleTabChange = useCallback((t: string) => setRightTab(t as typeof rightTab), []);
+  const openSymbolPicker = useCallback(() => setSymbolPickerOpen(true), []);
+
+  const tradePanel =
+    market === "spot" ? <TradeForm symbol={symbol} mode="live" />
+    : market === "paper" ? <TradeForm symbol={symbol} mode="paper" />
+    : <FuturesTradeForm symbol={symbol} />;
+
+  const ordersPanel =
+    market === "spot" ? <OrdersPanel symbol={symbol} />
+    : market === "paper" ? <PaperOrdersPanel symbol={symbol} />
+    : <FuturesInfoPanel symbol={symbol} />;
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
@@ -183,19 +291,19 @@ export default function TradePage() {
         symbol={symbol}
         market={market}
         onMarketChange={handleMarketChange}
+        onPickSymbol={openSymbolPicker}
         locale={locale}
         isPro={isPro}
+        isLoggedIn={isLoggedIn}
         authLoading={auth.loading}
       />
 
-      {/* Main grid */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left */}
-        <div className="hidden w-60 shrink-0 border-r border-border-default lg:block">
+      {/* Desktop layout: fixed 3-column grid */}
+      <div className="hidden flex-1 overflow-hidden lg:flex">
+        <div className="w-60 shrink-0 border-r border-border-default">
           <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} />
         </div>
 
-        {/* Center: Chart */}
         <div className="flex flex-1 flex-col overflow-hidden">
           <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
           <div className="flex-1">
@@ -203,25 +311,64 @@ export default function TradePage() {
           </div>
         </div>
 
-        {/* Right Panel */}
         <div className="w-64 shrink-0 border-l border-border-default flex flex-col overflow-hidden">
           <RightTabs tab={rightTab} onTabChange={handleTabChange} />
-
           <div className="flex-1 overflow-hidden">
-            {rightTab === "trade" && (
-              market === "spot"
-                ? <TradeForm symbol={symbol} />
-                : <FuturesTradeForm symbol={symbol} />
-            )}
-            {rightTab === "orders" && (
-              market === "spot"
-                ? <OrdersPanel symbol={symbol} />
-                : <FuturesInfoPanel symbol={symbol} />
-            )}
+            {rightTab === "trade" && tradePanel}
+            {rightTab === "orders" && ordersPanel}
             {rightTab === "book" && <OrderBook symbol={symbol} />}
           </div>
         </div>
       </div>
+
+      {/* Mobile layout: tab-switched single column */}
+      <div className="flex flex-1 flex-col overflow-hidden lg:hidden">
+        <div className="flex border-b border-border-default">
+          {([
+            { key: "chart", label: "图表" },
+            { key: "trade", label: "下单" },
+            { key: "book", label: "订单簿" },
+          ] as const).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setMobileTab(key)}
+              className={cn(
+                "flex-1 py-2.5 text-sm font-medium transition-colors",
+                mobileTab === key
+                  ? "text-text-primary border-b-2 border-gold bg-bg-tertiary"
+                  : "text-text-muted hover:text-text-secondary"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          {mobileTab === "chart" && (
+            <div className="flex h-full flex-col">
+              <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+              <div className="flex-1">
+                <KlineChart symbol={symbol} interval={interval} className="h-full" />
+              </div>
+            </div>
+          )}
+          {mobileTab === "trade" && (
+            <div className="flex h-full flex-col divide-y divide-border-default">
+              <div className="shrink-0">{tradePanel}</div>
+              <div className="min-h-[16rem] flex-1">{ordersPanel}</div>
+            </div>
+          )}
+          {mobileTab === "book" && <OrderBook symbol={symbol} />}
+        </div>
+      </div>
+
+      {/* Mobile symbol picker */}
+      <Modal open={symbolPickerOpen} onClose={() => setSymbolPickerOpen(false)} title="选择交易对" size="sm" className="lg:hidden">
+        <div className="-m-6 h-[70vh]">
+          <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} />
+        </div>
+      </Modal>
     </div>
   );
 }

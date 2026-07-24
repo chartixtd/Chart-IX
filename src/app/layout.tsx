@@ -1,9 +1,22 @@
 import type { Metadata } from "next";
+import { SITE_URL } from "@/lib/constants";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Chart-IX",
-  description: "Cryptocurrency trading education platform",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Chart-IX",
+    template: "%s | Chart-IX",
+  },
+  description: "Cryptocurrency trading education and live trading platform",
+  robots: { index: true, follow: true },
+  openGraph: {
+    siteName: "Chart-IX",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 };
 
 export default function RootLayout({

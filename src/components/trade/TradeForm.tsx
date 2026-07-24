@@ -2,13 +2,17 @@
 
 import { useState } from "react";
 import { useSpotTicker } from "@/hooks/useMarketData";
+import { usePaperAccount, usePlacePaperOrder } from "@/hooks/usePaperTrading";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { OrderConfirmModal } from "@/components/trade/OrderConfirmModal";
 import { formatPrice } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 interface TradeFormProps {
   symbol: string;
+  /** "live" places real BingX orders, "paper" uses the risk-free simulator */
+  mode?: "live" | "paper";
 }
 
 type OrderType = "MARKET" | "LIMIT" | "TAKE_STOP_MARKET" | "TAKE_STOP_LIMIT" | "TRIGGER_MARKET" | "TRIGGER_LIMIT" | "OCO";
@@ -25,12 +29,20 @@ const ORDER_TYPES: { key: OrderType; label: string; desc: string }[] = [
   { key: "OCO", label: "OCO", desc: "One Cancels Other (limit + stop)" },
 ];
 
+const SIMPLE_ORDER_TYPES = ORDER_TYPES.filter((t) => t.key === "MARKET" || t.key === "LIMIT");
 const TIF_OPTIONS: TIF[] = ["GTC", "IOC", "FOK", "PostOnly"];
 
-export function TradeForm({ symbol }: TradeFormProps) {
+export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
+  const isPaper = mode === "paper";
   const { data: ticker } = useSpotTicker(symbol);
   const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
 
+  const { data: paperData } = usePaperAccount(isPaper);
+  const placePaperOrder = usePlacePaperOrder();
+
+  // Paper trading only supports market orders (see supabase/migrations/010_paper_trading.sql) —
+  // simple/pro mode only applies to live trading's order type selection.
+  const [uiMode, setUiMode] = useState<"simple" | "pro">("simple");
   const [side, setSide] = useState<OrderSide>("BUY");
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
   const [tif, setTif] = useState<TIF>("GTC");
@@ -41,67 +53,96 @@ export function TradeForm({ symbol }: TradeFormProps) {
   const [percent, setPercent] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const isLimitType = orderType === "LIMIT" || orderType === "TAKE_STOP_LIMIT" || orderType === "TRIGGER_LIMIT";
-  const isStopType = orderType.startsWith("TAKE_STOP") || orderType.startsWith("TRIGGER");
-  const isOco = orderType === "OCO";
+  const effectiveOrderType = isPaper ? "MARKET" : orderType;
+  const visibleOrderTypes = uiMode === "simple" ? SIMPLE_ORDER_TYPES : ORDER_TYPES;
+  const isLimitType = effectiveOrderType === "LIMIT" || effectiveOrderType === "TAKE_STOP_LIMIT" || effectiveOrderType === "TRIGGER_LIMIT";
+  const isStopType = effectiveOrderType.startsWith("TAKE_STOP") || effectiveOrderType.startsWith("TRIGGER");
+  const isOco = effectiveOrderType === "OCO";
 
   const handlePercent = (pct: number) => {
     setPercent(pct);
-    if (orderType === "MARKET") setAmount(String(pct));
-    else setAmount(pct.toString());
+    if (isPaper) {
+      const balance = paperData?.account.balance_usdt ?? 0;
+      setAmount(((balance * pct) / 100).toFixed(2));
+    } else if (effectiveOrderType === "MARKET") {
+      setAmount(String(pct));
+    } else {
+      setAmount(pct.toString());
+    }
   };
 
-  const handleSubmit = async () => {
+  const canOpenConfirm = () => {
     const qty = parseFloat(amount);
-    if (!qty || qty <= 0) return;
-    if (isLimitType && (!price || parseFloat(price) <= 0)) return;
-    if (isStopType && (!stopPrice || parseFloat(stopPrice) <= 0)) return;
-    if (isOco && (!price || !stopPrice)) return;
+    if (!qty || qty <= 0) return false;
+    if (!isPaper) {
+      if (isLimitType && (!price || parseFloat(price) <= 0)) return false;
+      if (isStopType && (!stopPrice || parseFloat(stopPrice) <= 0)) return false;
+      if (isOco && (!price || !stopPrice)) return false;
+    }
+    return true;
+  };
 
+  const executeOrder = async () => {
     setSubmitting(true);
     setResult(null);
 
     try {
-      let endpoint = "/api/bingx/trade/order";
-      let body: Record<string, unknown>;
-
-      if (isOco) {
-        endpoint = "/api/bingx/trade/oco-order";
-        body = {
-          symbol, side, quantity: amount,
-          limitPrice: price,
-          triggerPrice: stopPrice,
-          orderPrice: ocoLimitPrice || price,
-        };
-      } else if (orderType === "MARKET") {
-        body = { symbol, side, type: orderType, quoteOrderQty: amount };
+      if (isPaper) {
+        const order = await placePaperOrder.mutateAsync({
+          symbol,
+          side: side === "BUY" ? "buy" : "sell",
+          quoteAmount: parseFloat(amount),
+        });
+        setResult({ ok: true, message: `${side} ${symbol} · 成交价 ${formatPrice(order.price)}` });
+        setAmount(""); setPercent(0);
       } else {
-        body = { symbol, side, type: orderType, quantity: amount };
-        if (isLimitType) body = { ...body, price, timeInForce: tif };
-        if (isStopType) body = { ...body, stopPrice };
-      }
+        let endpoint = "/api/bingx/trade/order";
+        let body: Record<string, unknown>;
 
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+        if (isOco) {
+          endpoint = "/api/bingx/trade/oco-order";
+          body = {
+            symbol, side, quantity: amount,
+            limitPrice: price,
+            triggerPrice: stopPrice,
+            orderPrice: ocoLimitPrice || price,
+          };
+        } else if (orderType === "MARKET") {
+          body = { symbol, side, type: orderType, quoteOrderQty: amount };
+        } else {
+          body = { symbol, side, type: orderType, quantity: amount };
+          if (isLimitType) body = { ...body, price, timeInForce: tif };
+          if (isStopType) body = { ...body, stopPrice };
+        }
 
-      const json = await res.json();
-      if (json.success) {
-        const id = json.data?.orderId || json.data?.orderListId || "";
-        setResult({ ok: true, message: `${side} ${orderType} ${amount} ${symbol} · ${id}` });
-        setAmount(""); setPrice(""); setStopPrice(""); setOcoLimitPrice(""); setPercent(0);
-      } else {
-        setResult({ ok: false, message: json.error?.message || "Order failed" });
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        const json = await res.json();
+        if (json.success) {
+          const id = json.data?.orderId || json.data?.orderListId || "";
+          setResult({ ok: true, message: `${side} ${orderType} ${amount} ${symbol} · ${id}` });
+          setAmount(""); setPrice(""); setStopPrice(""); setOcoLimitPrice(""); setPercent(0);
+        } else {
+          setResult({ ok: false, message: json.error?.message || "Order failed" });
+        }
       }
-    } catch {
-      setResult({ ok: false, message: "Network error" });
+    } catch (err) {
+      setResult({ ok: false, message: err instanceof Error ? err.message : "Network error" });
     } finally {
       setSubmitting(false);
+      setConfirmOpen(false);
     }
   };
+
+  const amountUsdtForConfirm = isPaper || effectiveOrderType === "MARKET"
+    ? parseFloat(amount) || 0
+    : (parseFloat(amount) || 0) * (isLimitType && price ? parseFloat(price) : currentPrice);
 
   return (
     <div className="flex flex-col h-full overflow-auto">
@@ -118,23 +159,45 @@ export function TradeForm({ symbol }: TradeFormProps) {
       </div>
 
       <div className="flex-1 space-y-2.5 p-3">
-        {/* Order Type */}
-        <div>
-          <div className="text-xs text-text-muted mb-1">Type</div>
-          <div className="grid grid-cols-2 gap-1">
-            {ORDER_TYPES.map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setOrderType(key)}
-                className={cn("rounded-xs py-1 text-xs font-medium", orderType === key ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary")}
-              >{label}</button>
-            ))}
+        {isPaper ? (
+          <div className="rounded-xs bg-gold/10 px-2.5 py-1.5 text-xs text-gold">
+            模拟盘目前仅支持市价单，按最新价立即成交 / Paper trading supports market orders only
           </div>
-          <p className="text-xs text-text-muted/60 mt-1">{ORDER_TYPES.find(t => t.key === orderType)?.desc}</p>
-        </div>
+        ) : (
+          <>
+            {/* Simple / Pro toggle */}
+            <div className="flex items-center justify-end gap-1">
+              <div className="flex rounded-xs bg-bg-tertiary p-0.5 text-xs">
+                <button
+                  onClick={() => { setUiMode("simple"); if (orderType !== "MARKET" && orderType !== "LIMIT") setOrderType("MARKET"); }}
+                  className={cn("rounded-xs px-2 py-0.5", uiMode === "simple" ? "bg-bg-primary text-text-primary" : "text-text-muted")}
+                >简单</button>
+                <button
+                  onClick={() => setUiMode("pro")}
+                  className={cn("rounded-xs px-2 py-0.5", uiMode === "pro" ? "bg-bg-primary text-text-primary" : "text-text-muted")}
+                >专业</button>
+              </div>
+            </div>
+
+            {/* Order Type */}
+            <div>
+              <div className="text-xs text-text-muted mb-1">Type</div>
+              <div className="grid grid-cols-2 gap-1">
+                {visibleOrderTypes.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setOrderType(key)}
+                    className={cn("rounded-xs py-1 text-xs font-medium", orderType === key ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary")}
+                  >{label}</button>
+                ))}
+              </div>
+              <p className="text-xs text-text-muted/60 mt-1">{ORDER_TYPES.find(t => t.key === orderType)?.desc}</p>
+            </div>
+          </>
+        )}
 
         {/* TIF */}
-        {isLimitType && (
+        {!isPaper && isLimitType && (
           <div className="flex gap-1">
             {TIF_OPTIONS.map((t) => (
               <button key={t} onClick={() => setTif(t)}
@@ -145,17 +208,25 @@ export function TradeForm({ symbol }: TradeFormProps) {
         )}
 
         {/* Price */}
-        <div>
-          <div className="flex items-center justify-between text-xs text-text-muted mb-1">
-            <span>{isOco ? "Limit Price" : "Price"}</span>
-            <span>≈ {formatPrice(currentPrice)}</span>
+        {!isPaper && (
+          <div>
+            <div className="flex items-center justify-between text-xs text-text-muted mb-1">
+              <span>{isOco ? "Limit Price" : "Price"}</span>
+              <span>≈ {formatPrice(currentPrice)}</span>
+            </div>
+            <Input placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)}
+              className="text-sm" disabled={orderType === "MARKET"} />
           </div>
-          <Input placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)}
-            className="text-sm" disabled={orderType === "MARKET"} />
-        </div>
+        )}
+        {isPaper && (
+          <div className="flex items-center justify-between text-xs text-text-muted">
+            <span>Market Price</span>
+            <span className="text-text-primary">≈ {formatPrice(currentPrice)}</span>
+          </div>
+        )}
 
         {/* Stop Price */}
-        {isStopType && (
+        {!isPaper && isStopType && (
           <div>
             <div className="text-xs text-text-muted mb-1">Stop Price</div>
             <Input placeholder="0.00" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} className="text-sm" />
@@ -163,7 +234,7 @@ export function TradeForm({ symbol }: TradeFormProps) {
         )}
 
         {/* OCO Stop Price + Limit */}
-        {isOco && (
+        {!isPaper && isOco && (
           <>
             <div>
               <div className="text-xs text-text-muted mb-1">Stop Price</div>
@@ -179,7 +250,7 @@ export function TradeForm({ symbol }: TradeFormProps) {
         {/* Amount */}
         <div>
           <div className="flex items-center justify-between text-xs text-text-muted mb-1">
-            <span>{orderType === "MARKET" ? "Amount (USDT)" : "Quantity"}</span>
+            <span>{isPaper || effectiveOrderType === "MARKET" ? "Amount (USDT)" : "Quantity"}</span>
             <div className="flex gap-1">
               {[25, 50, 75, 100].map((p) => (
                 <button key={p} onClick={() => handlePercent(p)}
@@ -190,10 +261,20 @@ export function TradeForm({ symbol }: TradeFormProps) {
           </div>
           <Input placeholder="0.00" value={amount} onChange={(e) => { setAmount(e.target.value); setPercent(0); }}
             className="text-sm" />
+          {isPaper && (
+            <p className="mt-1 text-xs text-text-muted">
+              可用 {formatPrice(paperData?.account.balance_usdt ?? 0)} USDT
+            </p>
+          )}
         </div>
 
-        <Button className="w-full" variant={side === "BUY" ? "green" : "red"} loading={submitting} onClick={handleSubmit}>
-          {submitting ? "Placing..." : `${side} ${symbol.split("-")[0]}`}
+        <Button
+          className="w-full"
+          variant={side === "BUY" ? "green" : "red"}
+          disabled={!canOpenConfirm()}
+          onClick={() => setConfirmOpen(true)}
+        >
+          {`${side} ${symbol.split("-")[0]}`}
         </Button>
 
         {result && (
@@ -202,6 +283,20 @@ export function TradeForm({ symbol }: TradeFormProps) {
           </div>
         )}
       </div>
+
+      <OrderConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={executeOrder}
+        loading={submitting}
+        side={side}
+        symbol={symbol}
+        orderTypeLabel={isPaper ? "Market" : ORDER_TYPES.find((t) => t.key === orderType)?.label ?? orderType}
+        amountUsdt={amountUsdtForConfirm}
+        price={isLimitType && price ? parseFloat(price) : currentPrice}
+        balanceUsdt={isPaper ? paperData?.account.balance_usdt : undefined}
+        isPaper={isPaper}
+      />
     </div>
   );
 }

@@ -28,6 +28,7 @@
   },
   "nav": {
     "home": "首页",
+    "dashboard": "我的主页",
     "videos": "视频库",
     "articles": "文章",
     "trade": "交易",
@@ -87,22 +88,45 @@
     }
   },
   "home": {
+    "hero_eyebrow": "零基础也能学 · 循序渐进",
     "hero_title": "学习交易，掌握未来",
-    "hero_subtitle": "系统化的加密货币交易教学 + 实盘交易一体化平台",
-    "hero_cta": "开始学习",
-    "hero_secondary": "了解更多",
+    "hero_subtitle": "从零开始学习加密货币交易，实盘交易无缝衔接，每一步都清晰可控。",
+    "hero_cta": "免费注册",
+    "hero_secondary": "查看教学内容",
+    "risk_caption": "交易涉及风险，我们不提供投资建议。请理性决策，量力而行。",
     "continue_watching": "继续观看",
     "recommended": "推荐视频",
     "market_overview": "市场概览",
     "view_full_trading": "查看完整交易界面",
     "quick_trade": "快速交易",
+    "trust_title": "为什么可以放心开始",
+    "trust_1_title": "资金留在交易所",
+    "trust_1_desc": "我们不托管、不接触你的资金，交易始终在你自己的 BingX 账户内完成。",
+    "trust_2_title": "零基础友好",
+    "trust_2_desc": "循序渐进的课程设计，专为完全新手打造，不需要任何交易经验。",
+    "trust_3_title": "多语言支持",
+    "trust_3_desc": "中文、英文、马来文内容全覆盖，学习无障碍。",
+    "trust_4_title": "风险可控",
+    "trust_4_desc": "可自定义的交易限额，帮助你在能承受的范围内稳健起步。",
+    "how_title": "三步开始你的交易之旅",
+    "how_1_title": "注册账号",
+    "how_1_desc": "创建 Chart-IX 账号，几分钟即可完成。",
+    "how_2_title": "学习基础",
+    "how_2_desc": "跟随系统化课程，掌握交易必备知识。",
+    "how_3_title": "连接交易，开始实践",
+    "how_3_desc": "绑定 BingX 账号，在熟悉的环境里迈出第一步。",
     "features_title": "为什么选择 Chart-IX？",
     "feature_learn_title": "系统化学习",
     "feature_learn_desc": "从入门到高级，系统化的交易教学视频库",
     "feature_trade_title": "实盘交易",
     "feature_trade_desc": "连接 BingX 交易所，在网页内直接下单交易",
     "feature_control_title": "灵活风控",
-    "feature_control_desc": "可自定义的交易限制，保护您的资产安全"
+    "feature_control_desc": "可自定义的交易限制，保护您的资产安全",
+    "final_cta_title": "准备好开始了吗？",
+    "final_cta_subtitle": "现在注册，开启系统化的交易学习之旅。",
+    "final_cta_button": "立即免费注册",
+    "risk_title": "风险提示",
+    "risk_body": "加密货币交易涉及重大风险，可能导致本金全部损失。本平台仅提供教育内容与交易工具，不构成投资建议。请根据自身风险承受能力谨慎决策。"
   },
   "video": {
     "player": {
@@ -240,7 +264,8 @@
     "features_included": "Pro 包含以下功能",
     "current_plan": "当前方案",
     "you_are_pro": "您已是 Pro 用户",
-    "expires_at": "到期时间"
+    "expires_at": "到期时间",
+    "telegram_cta": "通过 Telegram 联系我们升级"
   },
   "settings": {
     "title": "个人设置",
@@ -311,6 +336,7 @@
     "go_back": "返回上一页"
   },
   "footer": {
+    "join_telegram": "加入 Telegram 社群",
     "copyright": "© 2026 Chart-IX. All rights reserved.",
     "terms": "服务条款",
     "privacy": "隐私政策",
@@ -325,6 +351,8 @@
     "refresh": "刷新",
     "users": "用户管理",
     "videos": "视频管理",
+    "learning_paths": "学习路径",
+    "quizzes": "随堂小测",
     "features": "功能开关",
     "pricing": "定价管理",
     "risk_control": "风控管理",
@@ -586,5 +614,33 @@
     "by": "作者",
     "all_categories": "全部",
     "empty_search": "未找到文章。"
+  },
+  "dashboard": {
+    "welcome": "欢迎回来",
+    "continue_learning_title": "继续学习",
+    "continue_learning_empty": "还没有学习记录，去看看课程吧",
+    "continue_learning_cta": "浏览课程",
+    "progress_percent": "已完成 {percent}%",
+    "paper_title": "模拟盘战绩",
+    "paper_balance": "可用余额",
+    "paper_total_value": "总资产",
+    "paper_pnl": "总盈亏",
+    "paper_cta": "去模拟交易",
+    "favorites_title": "自选行情",
+    "favorites_empty": "还没有自选交易对",
+    "favorites_cta": "去添加",
+    "latest_videos_title": "最新视频",
+    "latest_articles_title": "最新文章",
+    "achievements_title": "我的成就"
+  },
+  "quiz": {
+    "submit": "提交",
+    "passed": "通过！继续加油",
+    "failed": "还差一点，再试一次吧",
+    "retry": "重新作答"
+  },
+  "seo": {
+    "title": "加密货币交易教育与实盘交易平台",
+    "description": "从零基础到实盘交易，Chart-IX 提供系统化的加密货币交易课程，并可直接连接 BingX 交易所下单，助你稳健开启交易之旅。"
   }
 }

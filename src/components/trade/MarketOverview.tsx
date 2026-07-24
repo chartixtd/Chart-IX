@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, memo } from "react";
 import { useSpotTickers } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { useMarketStore } from "@/stores/market";
+import { useFavoritesStore } from "@/stores/favorites";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
@@ -34,27 +35,49 @@ const TickerRow = memo(function TickerRow({
   const live = useMarketStore((s) => s.tickers[symbol]);
   const ticker = live ?? fallback;
   const isPositive = parseFloat(ticker.priceChangePercent) >= 0;
+  const isFavorite = useFavoritesStore((s) => s.favorites.includes(symbol));
+  const toggleFavorite = useFavoritesStore((s) => s.toggleFavorite);
   const handleClick = useCallback(() => onSelect(symbol), [onSelect, symbol]);
+  const handleStarClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      toggleFavorite(symbol);
+    },
+    [toggleFavorite, symbol]
+  );
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={(e) => { if (e.key === "Enter") handleClick(); }}
       className={cn(
-        "grid w-full grid-cols-3 gap-1 px-3 py-1.5 text-xs transition-colors hover:bg-bg-tertiary",
+        "grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-1 px-3 py-1.5 text-xs transition-colors hover:bg-bg-tertiary cursor-pointer",
         isActive && "bg-gold/10 border-l-2 border-l-gold"
       )}
     >
+      <button
+        onClick={handleStarClick}
+        className={cn(
+          "shrink-0 text-sm leading-none",
+          isFavorite ? "text-gold" : "text-text-muted/40 hover:text-text-muted"
+        )}
+        aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+      >
+        {isFavorite ? "★" : "☆"}
+      </button>
       <span className="truncate text-left font-medium">{ticker.symbol}</span>
       <span className="text-right tabular-nums">{formatPrice(parseFloat(ticker.lastPrice))}</span>
       <span
         className={cn(
-          "text-right tabular-nums font-medium",
+          "w-16 text-right tabular-nums font-medium",
           isPositive ? "text-success" : "text-danger"
         )}
       >
         {formatPercent(parseFloat(ticker.priceChangePercent))}
       </span>
-    </button>
+    </div>
   );
 });
 
@@ -72,6 +95,7 @@ const LoadingDummy = memo(function LoadingDummy() {
 export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOverviewProps) {
   const [search, setSearch] = useState("");
   const { data: tickers, isLoading } = useSpotTickers();
+  const favorites = useFavoritesStore((s) => s.favorites);
 
   const wsSymbols = useMemo(() => {
     if (!tickers) return [];
@@ -83,9 +107,16 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOver
   const searchLower = search.toLowerCase();
   const filtered = useMemo(() => {
     if (!tickers) return [];
-    if (!searchLower) return tickers.slice(0, VISIBLE_LIMIT);
-    return tickers.filter((t) => t.symbol.toLowerCase().includes(searchLower)).slice(0, VISIBLE_LIMIT);
-  }, [tickers, searchLower]);
+    const matches = searchLower
+      ? tickers.filter((t) => t.symbol.toLowerCase().includes(searchLower))
+      : tickers;
+    // Pin favorited symbols to the top, otherwise keep the incoming (REST) order
+    const favSet = new Set(favorites);
+    const sorted = favSet.size
+      ? [...matches].sort((a, b) => Number(favSet.has(b.symbol)) - Number(favSet.has(a.symbol)))
+      : matches;
+    return sorted.slice(0, VISIBLE_LIMIT);
+  }, [tickers, searchLower, favorites]);
 
   const handleSelect = useCallback(
     (symbol: string) => onSelectSymbol?.(symbol),
@@ -103,10 +134,11 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOver
         />
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="grid grid-cols-3 gap-1 px-3 pb-2 text-xs text-text-muted">
+        <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-1 px-3 pb-2 text-xs text-text-muted">
+          <span className="w-4" />
           <span>Symbol</span>
           <span className="text-right">Price</span>
-          <span className="text-right">24h</span>
+          <span className="w-16 text-right">24h</span>
         </div>
         {isLoading && <LoadingDummy />}
         {filtered.map((ticker) => (

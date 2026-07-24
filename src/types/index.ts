@@ -46,6 +46,73 @@ export interface VideoCategory {
   sort_order: number;
 }
 
+// ==================== 学习路径 ====================
+export interface LearningPath {
+  id: number;
+  slug: string;
+  title: Record<Locale, string>;
+  description: Record<Locale, string> | null;
+  cover_image: string | null;
+  level: "beginner" | "intermediate" | "advanced";
+  sort_order: number;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LearningPathStep {
+  id: number;
+  path_id: number;
+  video_id: string;
+  sort_order: number;
+  created_at: string;
+  video?: Video;
+}
+
+// ==================== 小测 ====================
+export interface Quiz {
+  id: number;
+  video_id: string;
+  title: Record<Locale, string>;
+  created_at: string;
+}
+
+export interface QuizQuestion {
+  id: number;
+  quiz_id: number;
+  question: Record<Locale, string>;
+  options: Record<Locale, string[]>;
+  correct_index: number;
+  sort_order: number;
+}
+
+export interface QuizAttempt {
+  id: string;
+  user_id: string;
+  quiz_id: number;
+  score: number;
+  total: number;
+  passed: boolean;
+  created_at: string;
+}
+
+// ==================== 成就 ====================
+export interface Achievement {
+  key: string;
+  title: Record<Locale, string>;
+  description: Record<Locale, string> | null;
+  icon: string;
+  sort_order: number;
+}
+
+export interface UserAchievement {
+  id: string;
+  user_id: string;
+  achievement_key: string;
+  earned_at: string;
+  achievement?: Achievement;
+}
+
 export interface VideoProgress {
   id: string;
   user_id: string;
@@ -92,6 +159,37 @@ export type OrderStatus =
   | "canceled"
   | "rejected"
   | "expired";
+
+// ==================== 模拟盘 ====================
+export interface PaperAccount {
+  id: string;
+  user_id: string;
+  balance_usdt: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaperHolding {
+  id: string;
+  account_id: string;
+  symbol: string;
+  quantity: number;
+  avg_entry_price: number;
+  updated_at: string;
+}
+
+export interface PaperOrder {
+  id: string;
+  account_id: string;
+  symbol: string;
+  side: OrderSide;
+  quantity: number;
+  price: number;
+  total_value: number;
+  realized_pnl: number | null;
+  balance_after: number;
+  created_at: string;
+}
 
 export interface ApiKey {
   id: string;

@@ -1,19 +1,25 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   ColorType,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
   type IChartApi,
   type ISeriesApi,
   type CandlestickData,
   type HistogramData,
+  type LineData,
   type UTCTimestamp,
 } from "lightweight-charts";
+import Link from "next/link";
+import { useLocale } from "next-intl";
 import { useKlines } from "@/hooks/useMarketData";
 import { useMarketStore } from "@/stores/market";
+import { useFeatureAccess } from "@/hooks/useFeatureFlags";
+import { computeMA, computeRSI } from "@/lib/indicators";
 import { cn } from "@/lib/utils";
 
 interface KlineChartProps {
@@ -43,12 +49,19 @@ const UP = "#22c55e";
 const DOWN = "#ef4444";
 const VOL_UP = "rgba(34, 197, 94, 0.2)";
 const VOL_DOWN = "rgba(239, 68, 68, 0.2)";
+const MA7_COLOR = "#60a5fa";
+const MA25_COLOR = "#f59e0b";
+const RSI_COLOR = "#c084fc";
 
 export function KlineChart({ symbol, interval = "1h", className }: KlineChartProps) {
+  const locale = useLocale();
   const chartRef = useRef<HTMLDivElement>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const ma7SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ma25SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const isFirstDataRef = useRef(true);
 
   // Last candle state, kept in sync so ticker updates can mutate it live
@@ -71,6 +84,11 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
     const t = s.tickers[symbol];
     return t ? parseFloat(t.lastPrice) : undefined;
   });
+
+  const { hasAccess: hasAdvancedChart, loading: accessLoading } = useFeatureAccess("advanced_chart");
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const [showMA, setShowMA] = useState(false);
+  const [bottomPane, setBottomPane] = useState<"volume" | "rsi">("volume");
 
   // ---- Create chart once ----
   useEffect(() => {
@@ -113,14 +131,31 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       priceFormat: { type: "volume" },
       priceScaleId: "volume",
     });
-
     chart.priceScale("volume").applyOptions({
       scaleMargins: { top: 0.85, bottom: 0 },
+    });
+
+    const ma7Series = chart.addSeries(LineSeries, {
+      color: MA7_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const ma25Series = chart.addSeries(LineSeries, {
+      color: MA25_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const rsiSeries = chart.addSeries(LineSeries, {
+      color: RSI_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "rsi", visible: false,
+    });
+    chart.priceScale("rsi").applyOptions({
+      scaleMargins: { top: 0.85, bottom: 0 },
+      autoScale: true,
     });
 
     chartApiRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
+    ma7SeriesRef.current = ma7Series;
+    ma25SeriesRef.current = ma25Series;
+    rsiSeriesRef.current = rsiSeries;
 
     const ro = new ResizeObserver(() => {
       if (chartRef.current) {
@@ -138,6 +173,9 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       chartApiRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      ma7SeriesRef.current = null;
+      ma25SeriesRef.current = null;
+      rsiSeriesRef.current = null;
       isFirstDataRef.current = true;
       lastCandleRef.current = null;
     };
@@ -181,6 +219,28 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
     candleSeriesRef.current.setData(candleData);
     volumeSeriesRef.current.setData(volumeData);
 
+    // Indicators (Pro only, but harmless to compute — visibility is gated separately)
+    const closes = valid.map((k) => k.close);
+    const times = valid.map((k) => (k.openTime / 1000) as UTCTimestamp);
+
+    type Point = { time: UTCTimestamp; value: number };
+    const toLineData = (values: (number | null)[]): Point[] => {
+      const points: Point[] = [];
+      for (let i = 0; i < values.length; i++) {
+        const v = values[i];
+        if (v !== null) points.push({ time: times[i], value: v });
+      }
+      return points;
+    };
+
+    const ma7Data = toLineData(computeMA(closes, 7));
+    const ma25Data = toLineData(computeMA(closes, 25));
+    ma7SeriesRef.current?.setData(ma7Data as LineData[]);
+    ma25SeriesRef.current?.setData(ma25Data as LineData[]);
+
+    const rsiData = toLineData(computeRSI(closes, 14));
+    rsiSeriesRef.current?.setData(rsiData as LineData[]);
+
     // Track the last candle so live prices can extend it
     const last = valid[valid.length - 1];
     lastCandleRef.current = {
@@ -197,6 +257,20 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       isFirstDataRef.current = false;
     }
   }, [klines]);
+
+  // ---- Toggle indicator visibility ----
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
+    ma7SeriesRef.current?.applyOptions({ visible: canShow && showMA });
+    ma25SeriesRef.current?.applyOptions({ visible: canShow && showMA });
+  }, [showMA, hasAdvancedChart]);
+
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
+    const wantRsi = canShow && bottomPane === "rsi";
+    volumeSeriesRef.current?.applyOptions({ visible: !wantRsi });
+    rsiSeriesRef.current?.applyOptions({ visible: wantRsi });
+  }, [bottomPane, hasAdvancedChart]);
 
   // ---- Drive the current candle with live ticker price (rAF-throttled) ----
   // Store latest price in a ref, only flush to chart on animation frames
@@ -279,6 +353,62 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-gold/30 border-t-gold" />
         </div>
       )}
+
+      {/* Indicators toggle */}
+      <div className="absolute left-2 top-2 z-10">
+        <button
+          onClick={() => setIndicatorsOpen((o) => !o)}
+          className={cn(
+            "flex items-center gap-1 rounded-xs border px-2 py-1 text-xs backdrop-blur-sm transition-colors",
+            hasAdvancedChart
+              ? "border-border-default bg-bg-secondary/80 text-text-secondary hover:text-text-primary"
+              : "border-gold/30 bg-bg-secondary/80 text-gold"
+          )}
+        >
+          📊 指标 {!hasAdvancedChart && !accessLoading && "🔒"}
+        </button>
+
+        {indicatorsOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setIndicatorsOpen(false)} />
+            <div className="absolute left-0 top-9 z-20 w-56 rounded-md border border-border-default bg-bg-secondary p-3 text-xs shadow-modal">
+              {hasAdvancedChart ? (
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-text-secondary">MA 均线 (7 / 25)</span>
+                    <input type="checkbox" checked={showMA} onChange={(e) => setShowMA(e.target.checked)} />
+                  </label>
+                  <div>
+                    <p className="mb-1 text-text-secondary">底部副图</p>
+                    <div className="flex rounded-xs bg-bg-tertiary p-0.5">
+                      <button
+                        onClick={() => setBottomPane("volume")}
+                        className={cn("flex-1 rounded-xs py-1", bottomPane === "volume" ? "bg-bg-primary text-text-primary" : "text-text-muted")}
+                      >
+                        成交量
+                      </button>
+                      <button
+                        onClick={() => setBottomPane("rsi")}
+                        className={cn("flex-1 rounded-xs py-1", bottomPane === "rsi" ? "bg-bg-primary text-text-primary" : "text-text-muted")}
+                      >
+                        RSI(14)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2 text-center">
+                  <p className="text-text-secondary">MA 均线、RSI 等高级指标为 Pro 专属功能</p>
+                  <Link href={`/${locale}/upgrade`} className="inline-block font-medium text-gold hover:underline">
+                    升级 Pro 解锁 →
+                  </Link>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
       <div ref={chartRef} className="h-full w-full" />
     </div>
   );

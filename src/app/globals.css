@@ -3,6 +3,14 @@
 @tailwind utilities;
 
 @layer base {
+  /* View Transitions — cross-route fade for supported browsers */
+  ::view-transition-old(root) {
+    animation: none;
+  }
+  ::view-transition-new(root) {
+    animation: fade-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
   html {
     scrollbar-width: thin;
     scrollbar-color: #3a3325 transparent;
@@ -171,5 +179,18 @@
 
   .foil-sheen:hover::before {
     animation: sheen 1.1s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Skeleton shimmer — a directional sweep, not a flat pulse */
+  .skeleton-shimmer {
+    background: linear-gradient(
+      105deg,
+      #1c1913 30%,
+      #2c271c 45%,
+      #262117 55%,
+      #1c1913 70%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
   }
 }

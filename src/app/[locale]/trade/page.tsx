@@ -244,13 +244,16 @@ const RightTabs = memo(function RightTabs({
           key={key}
           onClick={() => onTabChange(key)}
           className={cn(
-            "flex-1 py-2 text-xs font-medium transition-colors",
+            "relative flex-1 py-2 text-xs font-medium transition-colors duration-200",
             tab === key
-              ? "text-text-primary border-b border-gold bg-bg-tertiary"
+              ? "text-text-primary"
               : "text-text-muted hover:text-text-secondary"
           )}
         >
           {label}
+          {tab === key && (
+            <span className="absolute inset-x-0 -bottom-px h-px animate-scale-in bg-gold" />
+          )}
         </button>
       ))}
     </div>

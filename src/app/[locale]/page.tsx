@@ -151,7 +151,7 @@ export default function HomePage() {
         {/* Oversized monogram watermark */}
         <span
           aria-hidden
-          className="pointer-events-none absolute -right-8 top-1/2 -translate-y-1/2 select-none font-display text-[38vw] leading-none text-gold/[0.04] sm:text-[28rem]"
+          className="pointer-events-none absolute -right-8 top-1/2 -translate-y-1/2 select-none font-display text-[38vw] leading-none text-gold/[0.04] sm:text-[28rem] animate-breathe"
         >
           IX
         </span>

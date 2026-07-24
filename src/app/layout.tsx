@@ -39,6 +39,7 @@ export default function RootLayout({
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Marcellus&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
         />
+        <meta name="view-transition" content="same-origin" />
       </head>
       <body className="min-h-screen bg-bg-primary text-text-primary antialiased">
         {children}

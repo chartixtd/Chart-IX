@@ -88,6 +88,26 @@ const config: Config = {
           "0%": { transform: "translateX(-120%)" },
           "60%, 100%": { transform: "translateX(220%)" },
         },
+        shimmer: {
+          "0%": { backgroundPosition: "200% 0" },
+          "100%": { backgroundPosition: "-200% 0" },
+        },
+        "price-up": {
+          "0%": { backgroundColor: "rgba(52, 199, 123, 0.18)" },
+          "100%": { backgroundColor: "transparent" },
+        },
+        "price-down": {
+          "0%": { backgroundColor: "rgba(229, 72, 77, 0.18)" },
+          "100%": { backgroundColor: "transparent" },
+        },
+        "ring-expand": {
+          "0%": { boxShadow: "0 0 0 0 rgba(201, 162, 75, 0.4)" },
+          "100%": { boxShadow: "0 0 0 4px rgba(201, 162, 75, 0)" },
+        },
+        breathe: {
+          "0%, 100%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.03)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.4s ease-out",
@@ -96,6 +116,11 @@ const config: Config = {
         "scale-in": "scale-in 0.18s ease-out",
         "rise-in": "rise-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both",
         sheen: "sheen 1.1s cubic-bezier(0.16, 1, 0.3, 1)",
+        shimmer: "shimmer 2s linear infinite",
+        "price-up": "price-up 0.8s ease-out",
+        "price-down": "price-down 0.8s ease-out",
+        "ring-expand": "ring-expand 0.6s ease-out",
+        breathe: "breathe 8s ease-in-out infinite",
       },
     },
   },

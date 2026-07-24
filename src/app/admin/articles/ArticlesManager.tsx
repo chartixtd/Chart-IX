@@ -27,11 +27,6 @@ const LOCALE_LABELS: Record<Locale, string> = {
   "ms-MY": "Bahasa Melayu",
 };
 
-/* ────────── Helper: strip HTML tags ────────── */
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").trim();
-}
-
 /* ────────── Toolbar button ────────── */
 function ToolbarBtn({
   active,
@@ -223,7 +218,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
           "prose prose-invert prose-sm max-w-none min-h-[200px] px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50",
       },
     },
-  });
+  }, [editorKey]);
 
   const editorEn = useEditor({
     extensions: [
@@ -237,7 +232,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
           "prose prose-invert prose-sm max-w-none min-h-[200px] px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50",
       },
     },
-  });
+  }, [editorKey]);
 
   const editorMs = useEditor({
     extensions: [
@@ -251,7 +246,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
           "prose prose-invert prose-sm max-w-none min-h-[200px] px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50",
       },
     },
-  });
+  }, [editorKey]);
 
   const editorMap: Record<Locale, Editor | null> = {
     "zh-CN": editorZh,
@@ -350,6 +345,12 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
   };
 
   /* ── Auto-translate ── */
+  /**
+   * Translates content from the active locale tab into the other two locales.
+   * Uses the browser's DOMParser to parse the source HTML, translates every
+   * text node individually, and reassembles. HTML structure (headings,
+   * paragraphs, bold, lists, spacers, line-breaks etc.) is never touched.
+   */
   const handleAutoTranslate = async () => {
     setTranslating(true);
     try {
@@ -361,11 +362,11 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
           ? titleEn
           : titleMs;
       const sourceEditor = editorMap[sourceLocale];
-      const sourceContent = sourceEditor?.getHTML();
+      const sourceHTML = sourceEditor?.getHTML();
 
       if (
         (!sourceTitle || !sourceTitle.trim()) &&
-        (!sourceContent || sourceContent === "<p></p>")
+        (!sourceHTML || sourceHTML === "<p></p>")
       ) {
         toast("No content to translate from", "error");
         return;
@@ -377,9 +378,8 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
         const targetTitle =
           target === "zh-CN" ? titleZh : target === "en-US" ? titleEn : titleMs;
         const targetEditor = editorMap[target];
-        const targetContent = targetEditor?.getHTML();
 
-        /* Translate title */
+        // --- Translate title (plain text) ---
         if (sourceTitle?.trim() && !targetTitle?.trim()) {
           const res = await fetch("/api/admin/articles/translate", {
             method: "POST",
@@ -398,27 +398,48 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
           }
         }
 
-        /* Translate content */
-        if (
-          sourceContent &&
-          sourceContent !== "<p></p>" &&
-          (!targetContent || targetContent === "<p></p>")
-        ) {
+        // --- Translate content (HTML with structure preservation) ---
+        if (!sourceHTML || sourceHTML === "<p></p>") continue;
+
+        // Skip if target already has content
+        const targetHTML = targetEditor?.getHTML();
+        if (targetHTML && targetHTML !== "<p></p>") continue;
+
+        // Parse source HTML into a DOM tree
+        const parser = new DOMParser();
+        const dom = parser.parseFromString(sourceHTML, "text/html");
+
+        // Collect all text nodes via TreeWalker
+        const walker = dom.createTreeWalker(dom.body, NodeFilter.SHOW_TEXT);
+        const textNodes: Text[] = [];
+        while (walker.nextNode()) {
+          textNodes.push(walker.currentNode as Text);
+        }
+
+        // Translate each text node individually
+        for (const node of textNodes) {
+          const text = node.textContent;
+          if (!text || !text.trim()) continue;
+
           const res = await fetch("/api/admin/articles/translate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              text: stripHtml(sourceContent),
+              text,
               from: sourceLocale,
               to: target,
             }),
           });
+
           if (res.ok) {
             const data = await res.json();
-            const htmlContent = `<p>${data.translated}</p>`;
-            targetEditor?.commands.setContent(htmlContent);
+            node.textContent = data.translated;
           }
         }
+
+        // Serialize back to HTML and set on target editor
+        const translatedHTML = dom.body.innerHTML;
+        targetEditor?.commands.setContent(translatedHTML);
       }
       toast("Translation complete", "success");
     } catch {

@@ -27,7 +27,10 @@ export function Navbar() {
   const segments = useMemo(() => pathname.split("/").filter(Boolean), [pathname]);
 
   const navLinks = useMemo(() => {
-    return NAV_ITEMS.map((item) => {
+    // Logged-in users land on their dashboard, not the marketing homepage —
+    // the "home" nav item is only meaningful for signed-out visitors.
+    const items = auth.userId ? NAV_ITEMS.filter((item) => item !== "home") : NAV_ITEMS;
+    return items.map((item) => {
       const active = item === "home"
         ? segments.length === 1 || segments[0] === locale
         : segments.includes(item);
@@ -44,7 +47,7 @@ export function Navbar() {
         </Link>
       );
     });
-  }, [segments, locale, t]);
+  }, [segments, locale, t, auth.userId]);
 
   const handleLogout = useCallback(async () => {
     const supabase = createClient();

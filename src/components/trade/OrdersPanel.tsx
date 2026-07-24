@@ -75,7 +75,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
       }
 
       if (tradesJson.success) {
-        setTrades(tradesJson.data.trades || []);
+        setTrades(tradesJson.data.fills || []);
       }
     } catch {
       // silently ignore

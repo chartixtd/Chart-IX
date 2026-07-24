@@ -12,11 +12,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { data: apiKeys, error: keyError } = await supabase
-      .from("api_keys")
-      .select("api_key_encrypted, secret_encrypted")
-      .eq("user_id", authData.user.id)
-      .eq("is_valid", true)
-      .limit(1);
+      .from("api_keys").select("api_key_encrypted, secret_encrypted")
+      .eq("user_id", authData.user.id).eq("is_valid", true).limit(1);
 
     if (keyError || !apiKeys?.length) {
       return NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 });
@@ -27,9 +24,9 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = request.nextUrl;
     const symbol = searchParams.get("symbol") || undefined;
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limit = parseInt(searchParams.get("limit") || "500");
 
-    const data = await getMyTrades(apiKey, secret, symbol, limit);
+    const data = await getMyTrades(apiKey, secret, { symbol, limit });
     return NextResponse.json({ success: true, data });
   } catch (error) {
     return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });

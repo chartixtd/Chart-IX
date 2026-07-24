@@ -20,7 +20,11 @@ export async function POST(request: NextRequest) {
     }
 
     const VALID_SIDES: OrderSide[] = ["BUY", "SELL"];
-    const VALID_TYPES: OrderType[] = ["MARKET", "LIMIT", "TAKE_STOP_LIMIT", "TAKE_STOP_MARKET", "TRIGGER_LIMIT", "TRIGGER_MARKET"];
+    const VALID_TYPES: OrderType[] = [
+      "MARKET", "LIMIT",
+      "TAKE_STOP_LIMIT", "TAKE_STOP_MARKET",
+      "TRIGGER_LIMIT", "TRIGGER_MARKET",
+    ];
     const VALID_TIF: TimeInForce[] = ["GTC", "IOC", "FOK", "PostOnly"];
 
     if (!VALID_SIDES.includes(side)) {

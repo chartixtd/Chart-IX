@@ -25,23 +25,15 @@ export function useSpotSymbols(symbol?: string) {
   });
 }
 
-// 24h行情 (批量) — WebSocket 实时数据优先
+// 24h行情 (批量) — 仅提供列表结构/排序，实时价格由各行自行订阅 WebSocket store
 export function useSpotTickers() {
-  const wsTickers = useMarketStore((s) => s.tickers);
-
-  const query = useQuery({
+  return useQuery({
     queryKey: ["bingx", "tickers", "spot"],
     queryFn: () => fetchApi<BingXTicker[]>("ticker"),
-    refetchInterval: 5_000,
-    staleTime: 2_000,
+    // WebSocket 已实时推送价格，这里只需低频刷新以捕获新上架/下架的交易对
+    refetchInterval: 30_000,
+    staleTime: 10_000,
   });
-
-  // REST 数据提供完整列表，WebSocket 数据覆盖实时价格
-  const data = query.data && Object.keys(wsTickers).length > 0
-    ? query.data.map((t) => wsTickers[t.symbol] ?? t)
-    : query.data;
-
-  return { ...query, data };
 }
 
 // 单个行情 — WebSocket 实时数据优先

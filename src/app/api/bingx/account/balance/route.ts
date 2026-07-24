@@ -12,11 +12,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { data: apiKeys, error: keyError } = await supabase
-      .from("api_keys")
-      .select("api_key_encrypted, secret_encrypted")
-      .eq("user_id", authData.user.id)
-      .eq("is_valid", true)
-      .limit(1);
+      .from("api_keys").select("api_key_encrypted, secret_encrypted")
+      .eq("user_id", authData.user.id).eq("is_valid", true).limit(1);
 
     if (keyError || !apiKeys?.length) {
       return NextResponse.json(
@@ -29,7 +26,6 @@ export async function GET(request: NextRequest) {
     const secret = decrypt(apiKeys[0].secret_encrypted);
 
     const data = await getBalance(apiKey, secret);
-
     return NextResponse.json({ success: true, data });
   } catch (error) {
     return NextResponse.json(

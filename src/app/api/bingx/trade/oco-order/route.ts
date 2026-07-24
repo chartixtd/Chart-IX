@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
-import { placeOcoOrder } from "@/lib/bingx/trade";
+import { placeOcoOrder, cancelOcoOrder, queryOcoOrderList } from "@/lib/bingx/trade";
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,13 +20,33 @@ export async function POST(request: NextRequest) {
     const apiKey = decrypt(apiKeys[0].api_key_encrypted);
     const secret = decrypt(apiKeys[0].secret_encrypted);
 
-    const { symbol, side, quantity, price, stopPrice, stopLimitPrice } = await request.json();
-    if (!symbol || !side || !quantity || !price || !stopPrice) {
-      return NextResponse.json({ success: false, error: { message: "Missing fields" } }, { status: 400 });
+    const body = await request.json();
+    const { action, symbol, side, quantity, limitPrice, triggerPrice, orderPrice, orderId, clientOrderId } = body;
+
+    // Place OCO order
+    if (action !== "cancel" && action !== "query") {
+      if (!symbol || !side || !quantity || !limitPrice || !triggerPrice || !orderPrice) {
+        return NextResponse.json({ success: false, error: { message: "Missing fields: symbol, side, quantity, limitPrice, triggerPrice, orderPrice" } }, { status: 400 });
+      }
+      const result = await placeOcoOrder(apiKey, secret, {
+        symbol, side, quantity, limitPrice, triggerPrice, orderPrice,
+      });
+      return NextResponse.json({ success: true, data: result });
     }
 
-    const result = await placeOcoOrder(apiKey, secret, { symbol, side, quantity, price, stopPrice, stopLimitPrice });
-    return NextResponse.json({ success: true, data: result });
+    // Cancel OCO order
+    if (action === "cancel") {
+      const result = await cancelOcoOrder(apiKey, secret, { orderId, clientOrderId });
+      return NextResponse.json({ success: true, data: result });
+    }
+
+    // Query OCO order
+    if (action === "query") {
+      const result = await queryOcoOrderList(apiKey, secret, { orderListId: orderId, clientOrderId });
+      return NextResponse.json({ success: true, data: result });
+    }
+
+    return NextResponse.json({ success: false, error: { message: "Invalid action" } }, { status: 400 });
   } catch (error) {
     return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
   }

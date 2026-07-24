@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
-import { getOpenOrders, cancelOrder, cancelAllOrders, getMyTrades } from "@/lib/bingx/trade";
+import { getOpenOrders, cancelOrder, cancelAllOrders } from "@/lib/bingx/trade";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,11 +12,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { data: apiKeys, error: keyError } = await supabase
-      .from("api_keys")
-      .select("api_key_encrypted, secret_encrypted")
-      .eq("user_id", authData.user.id)
-      .eq("is_valid", true)
-      .limit(1);
+      .from("api_keys").select("api_key_encrypted, secret_encrypted")
+      .eq("user_id", authData.user.id).eq("is_valid", true).limit(1);
 
     if (keyError || !apiKeys?.length) {
       return NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 });
@@ -44,11 +41,8 @@ export async function POST(request: NextRequest) {
     }
 
     const { data: apiKeys, error: keyError } = await supabase
-      .from("api_keys")
-      .select("api_key_encrypted, secret_encrypted")
-      .eq("user_id", authData.user.id)
-      .eq("is_valid", true)
-      .limit(1);
+      .from("api_keys").select("api_key_encrypted, secret_encrypted")
+      .eq("user_id", authData.user.id).eq("is_valid", true).limit(1);
 
     if (keyError || !apiKeys?.length) {
       return NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 });
@@ -64,7 +58,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, data });
     }
 
-    if (action === "cancelAll" && symbol) {
+    if (action === "cancelAll") {
       const data = await cancelAllOrders(apiKey, secret, symbol);
       return NextResponse.json({ success: true, data });
     }

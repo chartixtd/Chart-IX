@@ -48,18 +48,29 @@ export function AuthProvider({
       return;
     }
 
-    // Single direct DB query (RLS allows reading own row)
-    const { data: profile } = await supabase
-      .from("users")
-      .select("tier, role")
-      .eq("id", user.id)
-      .single();
+    // tier/role are synced onto app_metadata by a DB trigger (see
+    // supabase/migrations/009_sync_tier_role_to_jwt_claims.sql), so getUser()
+    // usually already has them. Fall back to a direct DB query (RLS allows
+    // reading own row) if that migration hasn't been applied yet.
+    let tier = user.app_metadata?.tier as "free" | "pro" | undefined;
+    let role = user.app_metadata?.role as "user" | "admin" | undefined;
+
+    if (tier === undefined || role === undefined) {
+      const { data: profile } = await supabase
+        .from("users")
+        .select("tier, role")
+        .eq("id", user.id)
+        .single();
+
+      tier = (profile?.tier as "free" | "pro") ?? "free";
+      role = (profile?.role as "user" | "admin") ?? "user";
+    }
 
     setAuth({
       userId: user.id,
       email: user.email ?? null,
-      tier: (profile?.tier as "free" | "pro") ?? "free",
-      role: (profile?.role as "user" | "admin") ?? "user",
+      tier,
+      role,
       loading: false,
     });
   }, []);

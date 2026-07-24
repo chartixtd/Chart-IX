@@ -64,7 +64,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const handleCancel = async (orderId: string) => {
     setCancelling(orderId);
     await fetch("/api/bingx/futures/open-orders", {
-      method: "POST",
+      method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "cancel", symbol, orderId }),
     });
@@ -143,7 +143,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
             <button
               onClick={async () => {
                 await fetch("/api/bingx/futures/open-orders", {
-                  method: "POST",
+                  method: "DELETE",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ action: "cancelAll", symbol }),
                 });

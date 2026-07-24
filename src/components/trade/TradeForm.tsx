@@ -68,8 +68,12 @@ export function TradeForm({ symbol }: TradeFormProps) {
 
       if (isOco) {
         endpoint = "/api/bingx/trade/oco-order";
-        body = { symbol, side, quantity: amount, price, stopPrice };
-        if (ocoLimitPrice) body = { ...body, stopLimitPrice: ocoLimitPrice };
+        body = {
+          symbol, side, quantity: amount,
+          limitPrice: price,
+          triggerPrice: stopPrice,
+          orderPrice: ocoLimitPrice || price,
+        };
       } else if (orderType === "MARKET") {
         body = { symbol, side, type: orderType, quoteOrderQty: amount };
       } else {

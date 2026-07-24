@@ -10,7 +10,7 @@ interface FuturesTradeFormProps {
   symbol: string;
 }
 
-type OrderType = "MARKET" | "LIMIT" | "STOP_MARKET" | "STOP_LIMIT" | "TAKE_PROFIT_MARKET" | "TAKE_PROFIT_LIMIT" | "TRAILING_STOP_MARKET";
+type OrderType = "MARKET" | "LIMIT" | "STOP_MARKET" | "STOP" | "TAKE_PROFIT_MARKET" | "TAKE_PROFIT" | "TRAILING_STOP_MARKET" | "TRAILING_TP_SL";
 
 const LEVERAGE_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 25, 33, 50, 75, 100, 125, 150, 200, 300];
 
@@ -18,10 +18,11 @@ const ORDER_TYPES: { key: OrderType; label: string; desc: string }[] = [
   { key: "MARKET", label: "Market", desc: "Fill immediately at best price" },
   { key: "LIMIT", label: "Limit", desc: "Fill at specified price or better" },
   { key: "STOP_MARKET", label: "Stop MKT", desc: "Market order when stop price is reached" },
-  { key: "STOP_LIMIT", label: "Stop LMT", desc: "Limit order when stop price is reached" },
+  { key: "STOP", label: "Stop LMT", desc: "Limit order when stop price is reached" },
   { key: "TAKE_PROFIT_MARKET", label: "TP Market", desc: "Take profit at market when price reached" },
-  { key: "TAKE_PROFIT_LIMIT", label: "TP Limit", desc: "Take profit with limit when price reached" },
+  { key: "TAKE_PROFIT", label: "TP Limit", desc: "Take profit with limit when price reached" },
   { key: "TRAILING_STOP_MARKET", label: "Trail Stop", desc: "Dynamic stop following price at callback rate" },
+  { key: "TRAILING_TP_SL", label: "TP/SL Trail", desc: "Trailing TP/SL for existing position" },
 ];
 
 export function FuturesTradeForm({ symbol }: FuturesTradeFormProps) {
@@ -44,9 +45,9 @@ export function FuturesTradeForm({ symbol }: FuturesTradeFormProps) {
 
   const actualLeverage = customLeverage ? parseInt(customLeverage) : leverage;
 
-  const isStopType = orderType.startsWith("STOP") || orderType.startsWith("TAKE_PROFIT");
-  const isLimitType = orderType.endsWith("LIMIT");
-  const isTrailingStop = orderType === "TRAILING_STOP_MARKET";
+  const isStopType = orderType.startsWith("STOP") || orderType.startsWith("TAKE_PROFIT") || orderType === "TRAILING_TP_SL";
+  const isLimitType = orderType === "LIMIT" || orderType === "STOP" || orderType === "TAKE_PROFIT";
+  const isTrailingStop = orderType === "TRAILING_STOP_MARKET" || orderType === "TRAILING_TP_SL";
 
   useEffect(() => {
     if (!symbol || actualLeverage <= 0) return;
@@ -77,9 +78,10 @@ export function FuturesTradeForm({ symbol }: FuturesTradeFormProps) {
       if (isStopType) body.stopPrice = stopPrice;
       if (isTrailingStop) body.callbackRate = parseFloat(callbackRate);
 
-      if (usePositionTpSl && (slPrice || tpPrice)) {
-        body.stopLossPrice = slPrice || undefined;
-        body.takeProfitPrice = tpPrice || undefined;
+      // stopLoss/takeProfit as nested objects for MARKET/LIMIT orders
+      if (usePositionTpSl && (slPrice || tpPrice) && (orderType === "MARKET" || orderType === "LIMIT")) {
+        if (slPrice) body.stopLoss = JSON.stringify({ type: "STOP_MARKET", stopPrice: parseFloat(slPrice), workingType: "MARK_PRICE" });
+        if (tpPrice) body.takeProfit = JSON.stringify({ type: "TAKE_PROFIT_MARKET", stopPrice: parseFloat(tpPrice), workingType: "MARK_PRICE" });
       }
 
       const res = await fetch("/api/bingx/futures/order", {
@@ -90,8 +92,8 @@ export function FuturesTradeForm({ symbol }: FuturesTradeFormProps) {
 
       const json = await res.json();
       if (json.success) {
-        // Also set position TP/SL if requested
-        if (usePositionTpSl && json.data?.orderId && (slPrice || tpPrice)) {
+        // Set position TP/SL for non-MARKET/LIMIT orders or if not attached inline
+        if (usePositionTpSl && (slPrice || tpPrice) && !(orderType === "MARKET" || orderType === "LIMIT")) {
           fetch("/api/bingx/futures/positions", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

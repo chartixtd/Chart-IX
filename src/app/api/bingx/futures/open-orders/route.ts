@@ -30,11 +30,22 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function DELETE(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { data: authData } = await supabase.auth.getUser();
     if (!authData.user) return NextResponse.json({ success: false, error: { message: "Unauthorized" } }, { status: 401 });
+
+    // Tier check: futures management requires pro
+    const { data: profile } = await supabase
+      .from("users")
+      .select("tier")
+      .eq("id", authData.user.id)
+      .single();
+
+    if (!profile || profile.tier !== "pro") {
+      return NextResponse.json({ success: false, error: { message: "Futures trading requires Pro subscription" } }, { status: 403 });
+    }
 
     const { data: apiKeys, error: keyError } = await supabase
       .from("api_keys").select("api_key_encrypted, secret_encrypted")
@@ -47,12 +58,13 @@ export async function POST(request: NextRequest) {
     const apiKey = decrypt(apiKeys[0].api_key_encrypted);
     const secret = decrypt(apiKeys[0].secret_encrypted);
 
-    const { action, symbol, orderId } = await request.json();
+    const body = await request.json();
+    const { action, symbol, orderId } = body;
 
     if (action === "cancel" && symbol && orderId) {
       return NextResponse.json({ success: true, data: await cancelFuturesOrder(apiKey, secret, symbol, orderId) });
     }
-    if (action === "cancelAll" && symbol) {
+    if (action === "cancelAll") {
       return NextResponse.json({ success: true, data: await cancelAllFuturesOrders(apiKey, secret, symbol) });
     }
 

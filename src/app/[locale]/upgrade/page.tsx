@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 
 interface PricingPlan {
   id: number;
@@ -19,8 +19,10 @@ interface PricingPlan {
 export default function UpgradePage() {
   const t = useTranslations("upgrade");
   const locale = useLocale();
+  const auth = useAuth();
   const [plans, setPlans] = useState<PricingPlan[]>([]);
-  const [userTier, setUserTier] = useState<string | null>(null);
+
+  const isPro = auth.tier === "pro";
 
   useEffect(() => {
     const supabase = createClient();
@@ -32,19 +34,6 @@ export default function UpgradePage() {
       .then(({ data }) => {
         if (data) setPlans(data);
       });
-
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        supabase
-          .from("users")
-          .select("tier")
-          .eq("id", data.user.id)
-          .single()
-          .then(({ data: profile }) => {
-            if (profile) setUserTier(profile.tier);
-          });
-      }
-    });
   }, []);
 
   const planLabel = (plan: string) => {
@@ -63,71 +52,74 @@ export default function UpgradePage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-16">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-text-primary">{t("banner_title")}</h1>
-        <p className="mt-3 text-text-secondary">{t("banner_subtitle")}</p>
-      </div>
-
-      {userTier === "pro" && (
-        <div className="mt-6 rounded-lg border border-gold/30 bg-gold/5 p-4 text-center">
-          <p className="text-gold font-semibold">{t("already_pro")}</p>
+      {isPro ? (
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-text-primary">{t("already_pro")}</h1>
+          <p className="mt-3 text-text-secondary">{t("already_pro_desc")}</p>
         </div>
-      )}
+      ) : (
+        <>
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-text-primary">{t("banner_title")}</h1>
+            <p className="mt-3 text-text-secondary">{t("banner_subtitle")}</p>
+          </div>
 
-      <div className="mt-12 grid gap-6 md:grid-cols-2">
-        {plans.length > 0 ? (
-          plans.map((plan) => {
-            const d = discount(plan);
-            return (
-              <Card
-                key={plan.id}
-                className="text-center"
-                padding="lg"
-              >
-                {d && (
-                  <div className="-mt-10 mb-2">
-                    <span className="inline-block rounded-full gold-gradient px-3 py-1 text-xs font-semibold text-black">
-                      {t("save_percent", { percent: d })}
-                    </span>
+          <div className="mt-12 grid gap-6 md:grid-cols-2">
+            {plans.length > 0 ? (
+              plans.map((plan) => {
+                const d = discount(plan);
+                return (
+                  <Card
+                    key={plan.id}
+                    className="text-center"
+                    padding="lg"
+                  >
+                    {d && (
+                      <div className="-mt-10 mb-2">
+                        <span className="inline-block rounded-full gold-gradient px-3 py-1 text-xs font-semibold text-black">
+                          {t("save_percent", { percent: d })}
+                        </span>
+                      </div>
+                    )}
+                    <h3 className="text-lg font-semibold text-text-primary">
+                      {planLabel(plan.plan_type)}
+                    </h3>
+                    <div className="mt-4">
+                      <span className="text-4xl font-bold text-text-primary">
+                        {plan.currency_symbol}{plan.price}
+                      </span>
+                      <span className="text-text-muted"> {period(plan.plan_type)}</span>
+                    </div>
+                    {plan.original_price && (
+                      <p className="mt-1 text-sm text-text-muted line-through">
+                        {plan.currency_symbol}{plan.original_price}
+                      </p>
+                    )}
+                    <p className="mt-6 text-sm text-text-secondary">{t("contact_admin")}</p>
+                  </Card>
+                );
+              })
+            ) : (
+              <>
+                <Card className="text-center" padding="lg">
+                  <h3 className="text-lg font-semibold text-text-primary">{t("monthly")}</h3>
+                  <div className="mt-4">
+                    <span className="text-4xl font-bold text-text-primary">-</span>
                   </div>
-                )}
-                <h3 className="text-lg font-semibold text-text-primary">
-                  {planLabel(plan.plan_type)}
-                </h3>
-                <div className="mt-4">
-                  <span className="text-4xl font-bold text-text-primary">
-                    {plan.currency_symbol}{plan.price}
-                  </span>
-                  <span className="text-text-muted"> {period(plan.plan_type)}</span>
-                </div>
-                {plan.original_price && (
-                  <p className="mt-1 text-sm text-text-muted line-through">
-                    {plan.currency_symbol}{plan.original_price}
-                  </p>
-                )}
-                <p className="mt-6 text-sm text-text-secondary">{t("contact_admin")}</p>
-              </Card>
-            );
-          })
-        ) : (
-          <>
-            <Card className="text-center" padding="lg">
-              <h3 className="text-lg font-semibold text-text-primary">{t("monthly")}</h3>
-              <div className="mt-4">
-                <span className="text-4xl font-bold text-text-primary">-</span>
-              </div>
-              <p className="mt-6 text-sm text-text-secondary">{t("loading")}</p>
-            </Card>
-            <Card className="text-center" padding="lg">
-              <h3 className="text-lg font-semibold text-text-primary">{t("yearly")}</h3>
-              <div className="mt-4">
-                <span className="text-4xl font-bold text-text-primary">-</span>
-              </div>
-              <p className="mt-6 text-sm text-text-secondary">{t("loading")}</p>
-            </Card>
-          </>
-        )}
-      </div>
+                  <p className="mt-6 text-sm text-text-secondary">{t("loading")}</p>
+                </Card>
+                <Card className="text-center" padding="lg">
+                  <h3 className="text-lg font-semibold text-text-primary">{t("yearly")}</h3>
+                  <div className="mt-4">
+                    <span className="text-4xl font-bold text-text-primary">-</span>
+                  </div>
+                  <p className="mt-6 text-sm text-text-secondary">{t("loading")}</p>
+                </Card>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

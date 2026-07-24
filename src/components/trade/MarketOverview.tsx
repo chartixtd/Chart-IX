@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback, memo } from "react";
 import { useSpotTickers } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
+import { useMarketStore } from "@/stores/market";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
@@ -16,20 +17,28 @@ interface MarketOverviewProps {
   activeSymbol?: string;
 }
 
-// Memoized ticker row — only re-renders when its own ticker data changes
+// Subscribes to its own symbol's live price — a tick only re-renders this one
+// row, never the rest of the list. `fallback` (REST) is used until the first
+// WebSocket update for this symbol arrives.
 const TickerRow = memo(function TickerRow({
-  ticker,
+  symbol,
+  fallback,
   isActive,
-  onClick,
+  onSelect,
 }: {
-  ticker: BingXTicker;
+  symbol: string;
+  fallback: BingXTicker;
   isActive: boolean;
-  onClick: () => void;
+  onSelect: (symbol: string) => void;
 }) {
+  const live = useMarketStore((s) => s.tickers[symbol]);
+  const ticker = live ?? fallback;
   const isPositive = parseFloat(ticker.priceChangePercent) >= 0;
+  const handleClick = useCallback(() => onSelect(symbol), [onSelect, symbol]);
+
   return (
     <button
-      onClick={onClick}
+      onClick={handleClick}
       className={cn(
         "grid w-full grid-cols-3 gap-1 px-3 py-1.5 text-xs transition-colors hover:bg-bg-tertiary",
         isActive && "bg-gold/10 border-l-2 border-l-gold"
@@ -103,9 +112,10 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOver
         {filtered.map((ticker) => (
           <TickerRow
             key={ticker.symbol}
-            ticker={ticker}
+            symbol={ticker.symbol}
+            fallback={ticker}
             isActive={ticker.symbol === activeSymbol}
-            onClick={() => handleSelect(ticker.symbol)}
+            onSelect={handleSelect}
           />
         ))}
       </div>

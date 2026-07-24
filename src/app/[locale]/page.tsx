@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -8,6 +8,7 @@ import { MarketOverview } from "@/components/trade/MarketOverview";
 
 export default function HomePage() {
   const t = useTranslations("home");
+  const locale = useLocale();
 
   return (
     <div>
@@ -22,7 +23,7 @@ export default function HomePage() {
             {t("hero_subtitle")}
           </p>
           <div className="mt-10 flex items-center justify-center gap-4">
-            <Link href="/videos">
+            <Link href={`/${locale}/videos`}>
               <Button size="lg">{t("hero_cta")}</Button>
             </Link>
             <Link href="#features">
@@ -73,7 +74,7 @@ export default function HomePage() {
             <MarketOverview />
           </div>
           <div className="mt-6 text-center">
-            <Link href="/trade">
+            <Link href={`/${locale}/trade`}>
               <Button variant="outline">{t("view_full_trading")}</Button>
             </Link>
           </div>

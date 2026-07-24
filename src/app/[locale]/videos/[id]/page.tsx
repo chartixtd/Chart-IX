@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -22,9 +23,8 @@ export default function VideoDetailPage() {
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userTier, setUserTier] = useState<"free" | "pro" | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
   const [previewEnded, setPreviewEnded] = useState(false);
+  const auth = useAuth();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -53,22 +53,19 @@ export default function VideoDetailPage() {
     return () => window.removeEventListener("keydown", handler, { capture: true });
   }, []);
 
-  // Fetch video and user data
+  // Fetch video data
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       setError(null);
 
       try {
-        const [videoRes, userRes] = await Promise.all([
-          supabase
-            .from("videos")
-            .select("*, category:video_categories(id, name, slug)")
-            .eq("id", videoId)
-            .eq("is_deleted", false)
-            .single(),
-          supabase.auth.getUser(),
-        ]);
+        const videoRes = await supabase
+          .from("videos")
+          .select("*, category:video_categories(id, name, slug)")
+          .eq("id", videoId)
+          .eq("is_deleted", false)
+          .single();
 
         if (videoRes.error) {
           setError(videoRes.error.message);
@@ -77,21 +74,6 @@ export default function VideoDetailPage() {
         }
 
         setVideo(videoRes.data as Video);
-
-        if (userRes.data.user) {
-          setUserId(userRes.data.user.id);
-
-          // Fetch user profile for tier
-          const { data: profile } = await supabase
-            .from("users")
-            .select("tier")
-            .eq("id", userRes.data.user.id)
-            .single();
-
-          setUserTier((profile?.tier as "free" | "pro") ?? "free");
-        } else {
-          setUserTier("free");
-        }
       } catch (err) {
         setError(String(err));
       }
@@ -120,7 +102,7 @@ export default function VideoDetailPage() {
 
   // Progress tracking: every 10s
   useEffect(() => {
-    if (!video || !userId) return;
+    if (!video || !auth.userId) return;
 
     progressIntervalRef.current = setInterval(() => {
       const el = videoRef.current;
@@ -131,7 +113,7 @@ export default function VideoDetailPage() {
 
       supabase.from("video_progress").upsert(
         {
-          user_id: userId,
+          user_id: auth.userId,
           video_id: videoId,
           progress_seconds: currentTime,
         },
@@ -144,11 +126,11 @@ export default function VideoDetailPage() {
         clearInterval(progressIntervalRef.current);
       }
     };
-  }, [video, videoId, userId]);
+  }, [video, videoId, auth.userId]);
 
   // 60s preview check for free users on pro videos
   const isProVideo = video?.tier_required === "pro";
-  const isFreeUser = userTier === "free";
+  const isFreeUser = auth.tier === "free";
   const needsPreview = isProVideo && isFreeUser;
 
   const handleTimeUpdate = useCallback(() => {

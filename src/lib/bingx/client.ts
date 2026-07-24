@@ -29,7 +29,10 @@ export class BingXClient {
 
     const response = await fetch(url.toString(), {
       method: "GET",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-SOURCE-KEY": "BX-AI-SKILL",
+      },
       cache: "no-store",
     });
 

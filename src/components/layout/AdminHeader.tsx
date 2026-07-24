@@ -30,7 +30,7 @@ export function AdminHeader() {
   return (
     <header className="sticky top-0 z-40 h-14 border-b border-border-default bg-bg-primary/80 backdrop-blur-xl flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
-        <img src="/logo.png" alt="Chart-IX" className="h-7 w-auto mix-blend-screen" />
+        <img src="/logo.png" alt="Chart-IX" className="h-8 w-auto" />
         <span className="rounded-sm border border-gold/30 bg-gold/10 px-2 py-0.5 text-xs font-medium text-gold">
           Admin
         </span>

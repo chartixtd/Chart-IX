@@ -41,11 +41,8 @@ export function Navbar() {
           key={item}
           href={`/${locale}${item === "home" ? "" : `/${item}`}`}
           className={cn(
-            "relative px-3 py-1.5 text-sm transition-colors",
-            "after:absolute after:inset-x-3 after:-bottom-0.5 after:h-px after:origin-left after:bg-gold after:transition-transform after:duration-300",
-            active
-              ? "text-gold after:scale-x-100"
-              : "text-text-secondary hover:text-text-primary after:scale-x-0 hover:after:scale-x-100 hover:after:bg-gold/40"
+            "px-3 py-1.5 text-sm rounded-sm transition-colors",
+            active ? "text-gold bg-gold/10" : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
           )}
         >
           {t(item)}
@@ -62,33 +59,24 @@ export function Navbar() {
   }, [locale, router]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border-default bg-bg-primary/85 shadow-nav backdrop-blur-xl gpu">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-        {/* Logo + wordmark */}
-        <Link
-          href={auth.userId ? `/${locale}/dashboard` : `/${locale}`}
-          className="group flex items-center gap-2.5 shrink-0"
-        >
+    <header className="sticky top-0 z-40 border-b border-border-default bg-bg-primary/80 backdrop-blur-md gpu">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
+        {/* Logo */}
+        <Link href={auth.userId ? `/${locale}/dashboard` : `/${locale}`} className="flex items-center gap-2 shrink-0">
           <img src="/logo.png" alt="Chart-IX" className="h-9 w-auto" />
-          <span className="hidden font-display text-lg leading-none tracking-tight text-text-primary sm:inline">
-            Chart<span className="text-gold">-IX</span>
-          </span>
         </Link>
 
         {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-0.5">
+        <nav className="hidden md:flex items-center gap-1">
           {navLinks}
           {showUpgrade && (
             <Link
               href={`/${locale}/upgrade`}
               className={cn(
-                "ml-1 inline-flex items-center gap-1.5 rounded-sm border px-3 py-1.5 text-sm transition-all duration-200",
-                segments.includes("upgrade")
-                  ? "border-gold/50 bg-gold/10 text-gold"
-                  : "border-gold/25 text-gold/90 hover:border-gold/50 hover:bg-gold/5"
+                "px-3 py-1.5 text-sm rounded-sm transition-colors",
+                segments.includes("upgrade") ? "text-gold bg-gold/10" : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
               )}
             >
-              <span className="text-[10px]">★</span>
               {t("upgrade")}
             </Link>
           )}

@@ -51,14 +51,16 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
-      <Card className="w-full max-w-sm" padding="lg">
+    <div className="hero-ground grain flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+      <Card className="w-full max-w-md shadow-card-lg" padding="lg">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">
-            <span className="gold-text">Chart</span>
-            <span className="text-text-primary">-IX</span>
+          <img src="/logo.png" alt="Chart-IX" className="mx-auto h-11 w-auto" />
+          <h1 className="mt-5 font-display text-3xl tracking-tight">
+            <span className="text-text-primary">Chart</span>
+            <span className="text-gold">-IX</span>
           </h1>
-          <p className="mt-1 text-sm text-text-secondary">{t("subtitle")}</p>
+          <div className="hairline-gold mx-auto mt-4 w-14" />
+          <p className="mt-4 text-sm text-text-secondary">{t("subtitle")}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">

@@ -10,9 +10,9 @@ interface CardProps {
 
 const paddings = {
   none: "",
-  sm: "p-3",
-  md: "p-4",
-  lg: "p-6",
+  sm: "p-3.5",
+  md: "p-5",
+  lg: "p-7",
 };
 
 export function Card({ children, className, hover = false, padding = "md" }: CardProps) {
@@ -20,7 +20,8 @@ export function Card({ children, className, hover = false, padding = "md" }: Car
     <div
       className={cn(
         "rounded-md border border-border-default bg-bg-secondary shadow-card",
-        hover && "transition-all duration-200 hover:border-border-hover hover:shadow-lg hover:-translate-y-0.5",
+        hover &&
+          "transition-all duration-300 hover:border-gold/40 hover:shadow-card-lg hover:-translate-y-0.5",
         paddings[padding],
         className
       )}

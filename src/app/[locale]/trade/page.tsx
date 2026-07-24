@@ -114,12 +114,12 @@ const TickerBar = memo(function TickerBar({
         onClick={onPickSymbol}
         className={cn("flex shrink-0 items-center gap-3", onPickSymbol && "lg:pointer-events-none")}
       >
-        <h2 className="text-lg font-bold">{symbol}</h2>
+        <h2 className="font-display text-lg tracking-tight">{symbol}</h2>
         {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">切换 ▾</span>}
       </button>
       {ticker && (
         <>
-          <span className={cn("shrink-0 text-xl font-bold tabular-nums", isPositive ? "text-success" : "text-danger")}>
+          <span className={cn("shrink-0 font-mono text-xl font-semibold tabular-nums", isPositive ? "text-success" : "text-danger")}>
             {formatPrice(parseFloat(ticker.lastPrice))}
           </span>
           <Badge variant={isPositive ? "green" : "red"}>
@@ -127,9 +127,9 @@ const TickerBar = memo(function TickerBar({
           </Badge>
           <SetAlertButton symbol={symbol} currentPrice={parseFloat(ticker.lastPrice)} />
           <div className="ml-auto hidden shrink-0 items-center gap-4 text-xs text-text-secondary lg:flex">
-            <span>24h High: <span className="text-text-primary">{formatPrice(parseFloat(ticker.highPrice))}</span></span>
-            <span>24h Low: <span className="text-text-primary">{formatPrice(parseFloat(ticker.lowPrice))}</span></span>
-            <span>Vol: <span className="text-text-primary">{formatNumber(parseFloat(ticker.volume), 0)}</span></span>
+            <span>24h High: <span className="font-mono text-text-primary tabular-nums">{formatPrice(parseFloat(ticker.highPrice))}</span></span>
+            <span>24h Low: <span className="font-mono text-text-primary tabular-nums">{formatPrice(parseFloat(ticker.lowPrice))}</span></span>
+            <span>Vol: <span className="font-mono text-text-primary tabular-nums">{formatNumber(parseFloat(ticker.volume), 0)}</span></span>
           </div>
         </>
       )}
@@ -163,7 +163,10 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
         className="shrink-0 rounded-xs px-1.5 py-1 text-text-muted hover:bg-bg-tertiary hover:text-gold"
         title="设置价格提醒"
       >
-        🔔
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+          <path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.7 21a2 2 0 01-3.4 0" />
+        </svg>
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title={`价格提醒 · ${symbol}`} size="sm">
         <div className="space-y-3">
@@ -286,7 +289,7 @@ export default function TradePage() {
     : <FuturesInfoPanel symbol={symbol} />;
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+    <div className="flex h-[calc(100vh-4rem)] flex-col">
       <TickerBar
         symbol={symbol}
         market={market}

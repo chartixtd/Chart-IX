@@ -98,7 +98,12 @@ export default function DashboardPage() {
     return (
       <div className="mx-auto max-w-7xl px-4 py-16">
         <EmptyState
-          icon={<span className="text-4xl">🔒</span>}
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className="h-10 w-10 text-gold">
+              <rect x="4" y="10" width="16" height="10" rx="2" />
+              <path d="M8 10V7a4 4 0 018 0v3" />
+            </svg>
+          }
           title="请先登录"
           description="登录后即可查看你的学习进度、模拟盘战绩与自选行情。"
           action={
@@ -112,15 +117,16 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10">
-      <h1 className="text-2xl font-bold text-text-primary">
+    <div className="mx-auto max-w-7xl px-4 py-12">
+      <h1 className="font-display text-3xl tracking-tight text-text-primary">
         {t("welcome")}{auth.email ? `, ${auth.email.split("@")[0]}` : ""}
       </h1>
+      <div className="hairline-gold mt-5 w-full max-w-[220px] opacity-60" />
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-3">
+      <div className="mt-10 grid gap-6 lg:grid-cols-3">
         {/* Paper trading performance */}
         <Card>
-          <h2 className="text-sm font-semibold text-text-secondary">{t("paper_title")}</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">{t("paper_title")}</h2>
           {paperLoading ? (
             <Skeleton className="mt-3 h-16" />
           ) : (
@@ -142,7 +148,11 @@ export default function DashboardPage() {
             </Link>
             {paperData && (
               <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)}>
-                📤 分享
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                  <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                  <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+                </svg>
+                分享
               </Button>
             )}
           </div>
@@ -150,7 +160,7 @@ export default function DashboardPage() {
 
         {/* Favorites */}
         <Card>
-          <h2 className="text-sm font-semibold text-text-secondary">{t("favorites_title")}</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">{t("favorites_title")}</h2>
           {favorites.length === 0 ? (
             <div className="mt-3">
               <p className="text-xs text-text-muted">{t("favorites_empty")}</p>
@@ -169,7 +179,7 @@ export default function DashboardPage() {
 
         {/* Continue learning */}
         <Card>
-          <h2 className="text-sm font-semibold text-text-secondary">{t("continue_learning_title")}</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">{t("continue_learning_title")}</h2>
           {continueWatching === null ? (
             <Skeleton className="mt-3 h-16" />
           ) : continueWatching.length === 0 ? (
@@ -207,7 +217,7 @@ export default function DashboardPage() {
       <div className="mt-10 grid gap-6 lg:grid-cols-2">
         <div>
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-text-primary">{t("latest_videos_title")}</h2>
+            <h2 className="font-display text-xl tracking-tight text-text-primary">{t("latest_videos_title")}</h2>
             <Link href={`/${locale}/videos`} className="text-xs text-text-muted hover:text-gold">→</Link>
           </div>
           <div className="mt-3 space-y-2">
@@ -232,7 +242,7 @@ export default function DashboardPage() {
 
         <div>
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-text-primary">{t("latest_articles_title")}</h2>
+            <h2 className="font-display text-xl tracking-tight text-text-primary">{t("latest_articles_title")}</h2>
             <Link href={`/${locale}/articles`} className="text-xs text-text-muted hover:text-gold">→</Link>
           </div>
           <div className="mt-3 space-y-2">
@@ -254,7 +264,7 @@ export default function DashboardPage() {
       {/* Achievements */}
       {achievements && achievements.some((a) => a.earned) && (
         <div className="mt-10">
-          <h2 className="text-lg font-semibold text-text-primary">{t("achievements_title")}</h2>
+          <h2 className="font-display text-xl tracking-tight text-text-primary">{t("achievements_title")}</h2>
           <div className="mt-3 flex flex-wrap gap-3">
             {achievements.map((a) => (
               <div

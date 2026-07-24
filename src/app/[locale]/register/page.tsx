@@ -64,12 +64,17 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
-        <Card className="w-full max-w-sm text-center" padding="lg">
-          <div className="mb-4 text-3xl">✉️</div>
-          <h1 className="text-xl font-semibold">{t("title")}</h1>
-          <p className="mt-2 text-sm text-text-secondary">{success}</p>
-          <Link href={`/${locale}/login`} className="mt-6 inline-block">
+      <div className="hero-ground grain flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+        <Card className="w-full max-w-md text-center shadow-card-lg" padding="lg">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-gold/30 bg-gold/5">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7 text-gold">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="M3 7l9 6 9-6" />
+            </svg>
+          </div>
+          <h1 className="mt-5 font-display text-2xl tracking-tight text-text-primary">{t("title")}</h1>
+          <p className="mt-3 text-sm leading-relaxed text-text-secondary">{success}</p>
+          <Link href={`/${locale}/login`} className="mt-7 inline-block">
             <Button variant="outline">{t("login_link")}</Button>
           </Link>
         </Card>
@@ -78,14 +83,16 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
-      <Card className="w-full max-w-sm" padding="lg">
+    <div className="hero-ground grain flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+      <Card className="w-full max-w-md shadow-card-lg" padding="lg">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">
-            <span className="gold-text">Chart</span>
-            <span className="text-text-primary">-IX</span>
+          <img src="/logo.png" alt="Chart-IX" className="mx-auto h-11 w-auto" />
+          <h1 className="mt-5 font-display text-3xl tracking-tight">
+            <span className="text-text-primary">Chart</span>
+            <span className="text-gold">-IX</span>
           </h1>
-          <p className="mt-1 text-sm text-text-secondary">{t("subtitle")}</p>
+          <div className="hairline-gold mx-auto mt-4 w-14" />
+          <p className="mt-4 text-sm text-text-secondary">{t("subtitle")}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">

@@ -37,22 +37,28 @@ export default function ForgotPasswordPage() {
 
   if (success) {
     return (
-      <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
-        <Card className="w-full max-w-sm text-center" padding="lg">
-          <div className="mb-4 text-3xl">📧</div>
-          <h1 className="text-xl font-semibold">{t("title")}</h1>
-          <p className="mt-2 text-sm text-text-secondary">{t("success")}</p>
+      <div className="hero-ground grain flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+        <Card className="w-full max-w-md text-center shadow-card-lg" padding="lg">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-gold/30 bg-gold/5">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7 text-gold">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="M3 7l9 6 9-6" />
+            </svg>
+          </div>
+          <h1 className="mt-5 font-display text-2xl tracking-tight text-text-primary">{t("title")}</h1>
+          <p className="mt-3 text-sm leading-relaxed text-text-secondary">{t("success")}</p>
         </Card>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
-      <Card className="w-full max-w-sm" padding="lg">
-        <h1 className="text-center text-xl font-semibold">{t("title")}</h1>
-        <p className="mt-2 text-center text-sm text-text-secondary">{t("description")}</p>
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+    <div className="hero-ground grain flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+      <Card className="w-full max-w-md shadow-card-lg" padding="lg">
+        <h1 className="text-center font-display text-2xl tracking-tight text-text-primary">{t("title")}</h1>
+        <div className="hairline-gold mx-auto mt-4 w-14" />
+        <p className="mt-4 text-center text-sm leading-relaxed text-text-secondary">{t("description")}</p>
+        <form onSubmit={handleSubmit} className="mt-7 space-y-4">
           <Input
             id="email"
             type="email"

@@ -205,6 +205,11 @@ export function QuizzesManager({ videos, quizzes, questions }: QuizzesManagerPro
           </tbody>
         </table>
       </div>
+      {videos.length === 0 && (
+        <p className="mt-4 text-center text-text-muted">
+          还没有视频，请先去"视频管理"上传视频，再回来给视频挂小测。
+        </p>
+      )}
 
       <ConfirmDialog
         open={confirmDelete !== null}

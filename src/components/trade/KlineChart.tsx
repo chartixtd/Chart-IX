@@ -19,7 +19,7 @@ import { useLocale } from "next-intl";
 import { useKlines } from "@/hooks/useMarketData";
 import { useMarketStore } from "@/stores/market";
 import { useFeatureAccess } from "@/hooks/useFeatureFlags";
-import { computeMA, computeRSI } from "@/lib/indicators";
+import { computeMA, computeEMA, computeRSI, computeMACD, computeBollingerBands, computeVWAP } from "@/lib/indicators";
 import { cn } from "@/lib/utils";
 
 interface KlineChartProps {
@@ -52,6 +52,14 @@ const VOL_DOWN = "rgba(239, 68, 68, 0.2)";
 const MA7_COLOR = "#60a5fa";
 const MA25_COLOR = "#f59e0b";
 const RSI_COLOR = "#c084fc";
+const EMA12_COLOR = "#c084fc";
+const EMA26_COLOR = "#22d3ee";
+const BB_COLOR = "rgba(200,160,80,0.4)";
+const VWAP_COLOR = "#fbbf24";
+const MACD_COLOR = "#60a5fa";
+const SIGNAL_COLOR = "#f59e0b";
+const HIST_GREEN = "#22c55e";
+const HIST_RED = "#ef4444";
 
 export function KlineChart({ symbol, interval = "1h", className }: KlineChartProps) {
   const locale = useLocale();
@@ -62,6 +70,14 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
   const ma7SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const ma25SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema12SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema26SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const macdSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const signalSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const histogramSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const isFirstDataRef = useRef(true);
 
   // Last candle state, kept in sync so ticker updates can mutate it live
@@ -88,7 +104,10 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
   const { hasAccess: hasAdvancedChart, loading: accessLoading } = useFeatureAccess("advanced_chart");
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [showMA, setShowMA] = useState(false);
-  const [bottomPane, setBottomPane] = useState<"volume" | "rsi">("volume");
+  const [showEMA, setShowEMA] = useState(false);
+  const [showBB, setShowBB] = useState(false);
+  const [showVWAP, setShowVWAP] = useState(false);
+  const [bottomPane, setBottomPane] = useState<"volume" | "rsi" | "macd">("volume");
 
   // ---- Create chart once ----
   useEffect(() => {
@@ -150,12 +169,53 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       autoScale: true,
     });
 
+    const ema12Series = chart.addSeries(LineSeries, {
+      color: EMA12_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const ema26Series = chart.addSeries(LineSeries, {
+      color: EMA26_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const bbUpperSeries = chart.addSeries(LineSeries, {
+      color: BB_COLOR, lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const bbLowerSeries = chart.addSeries(LineSeries, {
+      color: BB_COLOR, lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const vwapSeries = chart.addSeries(LineSeries, {
+      color: VWAP_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+
+    const macdSeries = chart.addSeries(LineSeries, {
+      color: MACD_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "macd", visible: false,
+    });
+    const signalSeries = chart.addSeries(LineSeries, {
+      color: SIGNAL_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "macd", visible: false,
+    });
+    const histogramSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "macd", visible: false,
+    });
+    chart.priceScale("macd").applyOptions({
+      scaleMargins: { top: 0.85, bottom: 0 },
+      autoScale: true,
+    });
+
     chartApiRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
     ma7SeriesRef.current = ma7Series;
     ma25SeriesRef.current = ma25Series;
     rsiSeriesRef.current = rsiSeries;
+    ema12SeriesRef.current = ema12Series;
+    ema26SeriesRef.current = ema26Series;
+    bbUpperSeriesRef.current = bbUpperSeries;
+    bbLowerSeriesRef.current = bbLowerSeries;
+    vwapSeriesRef.current = vwapSeries;
+    macdSeriesRef.current = macdSeries;
+    signalSeriesRef.current = signalSeries;
+    histogramSeriesRef.current = histogramSeries;
 
     const ro = new ResizeObserver(() => {
       if (chartRef.current) {
@@ -176,6 +236,14 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       ma7SeriesRef.current = null;
       ma25SeriesRef.current = null;
       rsiSeriesRef.current = null;
+      ema12SeriesRef.current = null;
+      ema26SeriesRef.current = null;
+      bbUpperSeriesRef.current = null;
+      bbLowerSeriesRef.current = null;
+      vwapSeriesRef.current = null;
+      macdSeriesRef.current = null;
+      signalSeriesRef.current = null;
+      histogramSeriesRef.current = null;
       isFirstDataRef.current = true;
       lastCandleRef.current = null;
     };
@@ -241,6 +309,47 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
     const rsiData = toLineData(computeRSI(closes, 14));
     rsiSeriesRef.current?.setData(rsiData as LineData[]);
 
+    // EMA
+    const ema12Data = toLineData(computeEMA(closes, 12));
+    const ema26Data = toLineData(computeEMA(closes, 26));
+    ema12SeriesRef.current?.setData(ema12Data as LineData[]);
+    ema26SeriesRef.current?.setData(ema26Data as LineData[]);
+
+    // Bollinger Bands
+    const bb = computeBollingerBands(closes, 20);
+    const bbUpperData = toLineData(bb.upper);
+    const bbLowerData = toLineData(bb.lower);
+    bbUpperSeriesRef.current?.setData(bbUpperData as LineData[]);
+    bbLowerSeriesRef.current?.setData(bbLowerData as LineData[]);
+
+    // VWAP
+    const highs = valid.map((k) => k.high);
+    const lows = valid.map((k) => k.low);
+    const volumes = valid.map((k) => k.volume);
+    const vwapData = toLineData(computeVWAP(highs, lows, closes, volumes));
+    vwapSeriesRef.current?.setData(vwapData as LineData[]);
+
+    // MACD
+    const macdResult = computeMACD(closes);
+    const macdLineData = toLineData(macdResult.macd);
+    const signalLineData = toLineData(macdResult.signal);
+    macdSeriesRef.current?.setData(macdLineData as LineData[]);
+    signalSeriesRef.current?.setData(signalLineData as LineData[]);
+
+    // Histogram with colored bars
+    const histData: HistogramData[] = [];
+    for (let i = 0; i < macdResult.histogram.length; i++) {
+      const v = macdResult.histogram[i];
+      if (v !== null) {
+        histData.push({
+          time: times[i],
+          value: Math.abs(v),
+          color: v >= 0 ? HIST_GREEN : HIST_RED,
+        });
+      }
+    }
+    histogramSeriesRef.current?.setData(histData);
+
     // Track the last candle so live prices can extend it
     const last = valid[valid.length - 1];
     lastCandleRef.current = {
@@ -267,9 +376,30 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
 
   useEffect(() => {
     const canShow = hasAdvancedChart;
+    ema12SeriesRef.current?.applyOptions({ visible: canShow && showEMA });
+    ema26SeriesRef.current?.applyOptions({ visible: canShow && showEMA });
+  }, [showEMA, hasAdvancedChart]);
+
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
+    bbUpperSeriesRef.current?.applyOptions({ visible: canShow && showBB });
+    bbLowerSeriesRef.current?.applyOptions({ visible: canShow && showBB });
+  }, [showBB, hasAdvancedChart]);
+
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
+    vwapSeriesRef.current?.applyOptions({ visible: canShow && showVWAP });
+  }, [showVWAP, hasAdvancedChart]);
+
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
     const wantRsi = canShow && bottomPane === "rsi";
-    volumeSeriesRef.current?.applyOptions({ visible: !wantRsi });
+    const wantMacd = canShow && bottomPane === "macd";
+    volumeSeriesRef.current?.applyOptions({ visible: !wantRsi && !wantMacd });
     rsiSeriesRef.current?.applyOptions({ visible: wantRsi });
+    macdSeriesRef.current?.applyOptions({ visible: wantMacd });
+    signalSeriesRef.current?.applyOptions({ visible: wantMacd });
+    histogramSeriesRef.current?.applyOptions({ visible: wantMacd });
   }, [bottomPane, hasAdvancedChart]);
 
   // ---- Drive the current candle with live ticker price (rAF-throttled) ----
@@ -378,6 +508,18 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
                     <span className="text-text-secondary">MA 均线 (7 / 25)</span>
                     <input type="checkbox" checked={showMA} onChange={(e) => setShowMA(e.target.checked)} />
                   </label>
+                  <label className="flex items-center justify-between">
+                    <span className="text-text-secondary">EMA (12 / 26)</span>
+                    <input type="checkbox" checked={showEMA} onChange={(e) => setShowEMA(e.target.checked)} />
+                  </label>
+                  <label className="flex items-center justify-between">
+                    <span className="text-text-secondary">Bollinger Bands (20)</span>
+                    <input type="checkbox" checked={showBB} onChange={(e) => setShowBB(e.target.checked)} />
+                  </label>
+                  <label className="flex items-center justify-between">
+                    <span className="text-text-secondary">VWAP</span>
+                    <input type="checkbox" checked={showVWAP} onChange={(e) => setShowVWAP(e.target.checked)} />
+                  </label>
                   <div>
                     <p className="mb-1 text-text-secondary">底部副图</p>
                     <div className="flex rounded-xs bg-bg-tertiary p-0.5">
@@ -392,6 +534,12 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
                         className={cn("flex-1 rounded-xs py-1", bottomPane === "rsi" ? "bg-bg-primary text-text-primary" : "text-text-muted")}
                       >
                         RSI(14)
+                      </button>
+                      <button
+                        onClick={() => setBottomPane("macd")}
+                        className={cn("flex-1 rounded-xs py-1", bottomPane === "macd" ? "bg-bg-primary text-text-primary" : "text-text-muted")}
+                      >
+                        MACD
                       </button>
                     </div>
                   </div>

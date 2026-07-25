@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { VideoQuiz } from "@/components/video/VideoQuiz";
+import { VideoNotes } from "@/components/video/VideoNotes";
 import type { Video, Locale } from "@/types";
 
 const supabase = createClient();
@@ -314,6 +315,8 @@ export default function VideoDetailPage() {
             </p>
           </div>
         )}
+
+        <VideoNotes videoId={video.id} videoRef={videoRef} />
 
         <VideoQuiz videoId={video.id} />
       </div>

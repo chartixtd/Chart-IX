@@ -8,6 +8,7 @@ import { useFavoritesStore } from "@/stores/favorites";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
+import { MarketHeatmap } from "@/components/trade/MarketHeatmap";
 import type { BingXTicker } from "@/types/bingx";
 
 const WS_SUBSCRIBE_LIMIT = 30;
@@ -94,6 +95,7 @@ const LoadingDummy = memo(function LoadingDummy() {
 
 export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOverviewProps) {
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "heatmap">("list");
   const { data: tickers, isLoading } = useSpotTickers();
   const favorites = useFavoritesStore((s) => s.favorites);
 
@@ -125,31 +127,57 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOver
 
   return (
     <div className="flex h-full flex-col">
-      <div className="p-3">
+      <div className="p-3 space-y-2">
         <Input
           placeholder="Search symbol..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="text-xs"
         />
+        <div className="flex rounded-xs bg-bg-tertiary p-0.5">
+          <button
+            onClick={() => setViewMode("list")}
+            className={cn(
+              "flex-1 rounded-xs py-1 text-xs font-medium transition-colors",
+              viewMode === "list" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            列表
+          </button>
+          <button
+            onClick={() => setViewMode("heatmap")}
+            className={cn(
+              "flex-1 rounded-xs py-1 text-xs font-medium transition-colors",
+              viewMode === "heatmap" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            热力图
+          </button>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-1 px-3 pb-2 text-xs text-text-muted">
-          <span className="w-4" />
-          <span>Symbol</span>
-          <span className="text-right">Price</span>
-          <span className="w-16 text-right">24h</span>
-        </div>
-        {isLoading && <LoadingDummy />}
-        {filtered.map((ticker) => (
-          <TickerRow
-            key={ticker.symbol}
-            symbol={ticker.symbol}
-            fallback={ticker}
-            isActive={ticker.symbol === activeSymbol}
-            onSelect={handleSelect}
-          />
-        ))}
+        {viewMode === "heatmap" ? (
+          <MarketHeatmap />
+        ) : (
+          <>
+            <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-1 px-3 pb-2 text-xs text-text-muted">
+              <span className="w-4" />
+              <span>Symbol</span>
+              <span className="text-right">Price</span>
+              <span className="w-16 text-right">24h</span>
+            </div>
+            {isLoading && <LoadingDummy />}
+            {filtered.map((ticker) => (
+              <TickerRow
+                key={ticker.symbol}
+                symbol={ticker.symbol}
+                fallback={ticker}
+                isActive={ticker.symbol === activeSymbol}
+                onSelect={handleSelect}
+              />
+            ))}
+          </>
+        )}
       </div>
     </div>
   );

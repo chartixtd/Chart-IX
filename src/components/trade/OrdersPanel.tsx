@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
+import { formatPrice } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 interface OrdersPanelProps {
@@ -37,6 +38,14 @@ interface BingXTradeRecord {
   isMaker: boolean;
 }
 
+interface BingXBalanceItem {
+  asset: string;
+  free: string;
+  locked: string;
+}
+
+const PRIORITY_ASSETS = ["USDT", "BTC", "ETH"];
+
 const STATUS_COLORS: Record<string, string> = {
   NEW: "text-blue-400",
   PARTIALLY_FILLED: "text-gold",
@@ -53,6 +62,8 @@ function formatTime(ts: number) {
 export function OrdersPanel({ symbol }: OrdersPanelProps) {
   const [orders, setOrders] = useState<BingXOrder[]>([]);
   const [trades, setTrades] = useState<BingXTradeRecord[]>([]);
+  const [balances, setBalances] = useState<BingXBalanceItem[]>([]);
+  const [balancesOpen, setBalancesOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [cancellingAll, setCancellingAll] = useState(false);
@@ -60,13 +71,15 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [ordersRes, tradesRes] = await Promise.all([
+      const [ordersRes, tradesRes, balanceRes] = await Promise.all([
         fetch(`/api/bingx/trade/open-orders?symbol=${symbol}`),
         fetch(`/api/bingx/trade/my-trades?symbol=${symbol}&limit=20`),
+        fetch(`/api/bingx/account/balance`),
       ]);
 
       const ordersJson = await ordersRes.json();
       const tradesJson = await tradesRes.json();
+      const balanceJson = await balanceRes.json();
 
       if (ordersJson.success) {
         setOrders(ordersJson.data.orders || []);
@@ -76,6 +89,21 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
 
       if (tradesJson.success) {
         setTrades(tradesJson.data.fills || []);
+      }
+
+      if (balanceJson.success && balanceJson.data?.balances) {
+        const filtered = (balanceJson.data.balances as BingXBalanceItem[]).filter(
+          (b) => parseFloat(b.free) > 0
+        );
+        filtered.sort((a, b) => {
+          const ia = PRIORITY_ASSETS.indexOf(a.asset);
+          const ib = PRIORITY_ASSETS.indexOf(b.asset);
+          if (ia !== -1 && ib !== -1) return ia - ib;
+          if (ia !== -1) return -1;
+          if (ib !== -1) return 1;
+          return a.asset.localeCompare(b.asset);
+        });
+        setBalances(filtered);
       }
     } catch {
       // silently ignore
@@ -118,14 +146,14 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     fetchData();
   };
 
-  const formatQty = (v: string) => {
+  const formatQtyLocal = (v: string) => {
     const n = parseFloat(v);
     if (n >= 1) return n.toFixed(2);
     if (n >= 0.001) return n.toFixed(4);
     return n.toFixed(8);
   };
 
-  const formatPrice = (v: string) => {
+  const formatPriceLocal = (v: string) => {
     const n = parseFloat(v);
     if (n >= 1) return n.toFixed(2);
     return n.toFixed(n < 0.01 ? 8 : 4);
@@ -149,6 +177,40 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* Balances */}
+      {balances.length > 0 && (
+        <div className="border-b border-border-default">
+          <button
+            onClick={() => setBalancesOpen(!balancesOpen)}
+            className="w-full flex items-center justify-between px-3 py-2 hover:bg-bg-hover/50 text-xs"
+          >
+            <span className="font-medium text-text-secondary">
+              Balances ({balances.length})
+            </span>
+            <span className="text-text-muted">{balancesOpen ? "▲" : "▼"}</span>
+          </button>
+          {balancesOpen && (
+            <div className="divide-y divide-border-default/50 max-h-40 overflow-auto">
+              {balances.map((b) => (
+                <div key={b.asset} className="px-3 py-1.5 flex items-center justify-between text-xs">
+                  <span className="font-medium text-text-primary">{b.asset}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-text-muted">
+                      Free: <span className="text-text-primary">{formatPriceLocal(b.free)}</span>
+                    </span>
+                    {parseFloat(b.locked) > 0 && (
+                      <span className="text-text-muted">
+                        Locked: <span className="text-text-primary">{formatPriceLocal(b.locked)}</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Active Orders */}
       <div className="flex-1 overflow-auto">
         <div className="flex items-center justify-between px-3 py-2 border-b border-border-default">
@@ -194,8 +256,8 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-text-muted">
-                    {order.type === "LIMIT" && `${formatPrice(order.price)} · `}
-                    {formatQty(order.executedQty)}/{formatQty(order.origQty)}
+                    {order.type === "LIMIT" && `${formatPriceLocal(order.price)} · `}
+                    {formatQtyLocal(order.executedQty)}/{formatQtyLocal(order.origQty)}
                   </span>
                   <span className={STATUS_COLORS[order.status] || "text-text-muted"}>
                     {order.status.replace("_", " ")}
@@ -227,10 +289,10 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
                   >
                     {trade.isBuyer ? "B" : "S"}
                   </span>
-                  <span className="text-text-primary">{formatQty(trade.qty)}</span>
+                  <span className="text-text-primary">{formatQtyLocal(trade.qty)}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-text-muted">{formatPrice(trade.price)}</span>
+                  <span className="text-text-muted">{formatPriceLocal(trade.price)}</span>
                   <span className="text-text-muted w-12 text-right">{formatTime(trade.time)}</span>
                 </div>
               </div>

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { MarketOverview } from "@/components/trade/MarketOverview";
 import { KlineChart } from "@/components/trade/KlineChart";
+import { FearGreedIndex } from "@/components/trade/FearGreedIndex";
 import { TradeForm } from "@/components/trade/TradeForm";
 import { OrdersPanel } from "@/components/trade/OrdersPanel";
 import { PaperOrdersPanel } from "@/components/trade/PaperOrdersPanel";
@@ -205,7 +206,7 @@ const IntervalBar = memo(function IntervalBar({
   onIntervalChange: (i: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 border-b border-border-default px-3 py-1.5">
+    <div className="flex items-center gap-1 px-3 py-1.5">
       {INTERVALS.map((int) => (
         <button
           key={int}
@@ -311,7 +312,12 @@ export default function TradePage() {
         </div>
 
         <div className="flex flex-1 flex-col overflow-hidden">
-          <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+          <div className="flex items-center border-b border-border-default">
+            <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+            <div className="ml-auto pr-2">
+              <FearGreedIndex compact />
+            </div>
+          </div>
           <div className="flex-1">
             <KlineChart symbol={symbol} interval={interval} className="h-full" />
           </div>
@@ -353,7 +359,12 @@ export default function TradePage() {
         <div className="flex-1 overflow-auto">
           {mobileTab === "chart" && (
             <div className="flex h-full flex-col">
-              <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+              <div className="flex items-center border-b border-border-default">
+                <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+                <div className="ml-auto pr-2">
+                  <FearGreedIndex compact />
+                </div>
+              </div>
               <div className="flex-1">
                 <KlineChart symbol={symbol} interval={interval} className="h-full" />
               </div>

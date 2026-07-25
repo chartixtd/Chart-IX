@@ -30,12 +30,12 @@ export function usePaperOrders(symbol?: string, enabled = true) {
   });
 }
 
-// 下单 (市价，quoteAmount = USDT 金额)
+// 下单 (市价或限价)
 export function usePlacePaperOrder() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { symbol: string; side: "buy" | "sell"; quoteAmount: number }) =>
+    mutationFn: (input: { symbol: string; side: "buy" | "sell"; quoteAmount: number; orderType?: "market" | "limit"; price?: number }) =>
       fetchJson<PaperOrder>("/api/paper/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

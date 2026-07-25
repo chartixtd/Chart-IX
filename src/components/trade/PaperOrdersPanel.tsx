@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState, useCallback } from "react";
 import { usePaperAccount, usePaperOrders } from "@/hooks/usePaperTrading";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatPrice, formatNumber, cn } from "@/lib/utils";
@@ -7,6 +8,18 @@ import { useSpotTicker } from "@/hooks/useMarketData";
 
 interface PaperOrdersPanelProps {
   symbol: string;
+}
+
+interface PaperLimitOrderRow {
+  id: string;
+  account_id: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  price: number;
+  status: "pending" | "filled" | "canceled";
+  created_at: string;
+  filled_at: string | null;
 }
 
 function HoldingRow({ symbol, quantity, avgEntryPrice }: { symbol: string; quantity: number; avgEntryPrice: number }) {
@@ -40,6 +53,43 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const { data, isLoading } = usePaperAccount();
   const { data: orders, isLoading: ordersLoading } = usePaperOrders(symbol);
 
+  const [limitOrders, setLimitOrders] = useState<PaperLimitOrderRow[]>([]);
+  const [limitLoading, setLimitLoading] = useState(true);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+
+  const fetchLimitOrders = useCallback(async () => {
+    try {
+      const res = await fetch("/api/paper/limit-orders");
+      const json = await res.json();
+      if (json.success) {
+        setLimitOrders((json.data as PaperLimitOrderRow[]) ?? []);
+      }
+    } catch {
+      // silently ignore
+    } finally {
+      setLimitLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLimitOrders();
+    const interval = setInterval(fetchLimitOrders, 5_000);
+    return () => clearInterval(interval);
+  }, [fetchLimitOrders]);
+
+  const handleCancelLimit = async (orderId: string) => {
+    setCancelling(orderId);
+    try {
+      await fetch("/api/paper/limit-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel", orderId }),
+      });
+    } catch { /* ignore */ }
+    setCancelling(null);
+    fetchLimitOrders();
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -61,7 +111,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
       </div>
 
       {/* Holdings */}
-      <div className="flex-1 overflow-auto">
+      <div className="overflow-auto">
         <div className="px-3 py-2 border-b border-border-default">
           <span className="text-xs font-medium text-text-secondary">Holdings ({holdings.length})</span>
         </div>
@@ -74,8 +124,48 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
         )}
       </div>
 
-      {/* Trade history for this symbol */}
+      {/* Limit Orders */}
       <div className="border-t border-border-default">
+        <div className="px-3 py-2 border-b border-border-default">
+          <span className="text-xs font-medium text-text-secondary">
+            Limit Orders ({limitOrders.length})
+          </span>
+        </div>
+        {limitLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <Spinner className="h-4 w-4" />
+          </div>
+        ) : limitOrders.length === 0 ? (
+          <p className="px-3 py-4 text-xs text-text-muted text-center">No pending limit orders</p>
+        ) : (
+          <div className="max-h-40 overflow-auto divide-y divide-border-default/50">
+            {limitOrders.map((lo) => (
+              <div key={lo.id} className="px-3 py-1.5 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("font-semibold", lo.side === "buy" ? "text-success" : "text-danger")}>
+                    {lo.side === "buy" ? "B" : "S"}
+                  </span>
+                  <span className="text-text-primary">{lo.symbol}</span>
+                  <span className="text-text-muted">{formatPrice(lo.price)}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-text-muted">{formatNumber(lo.quantity, 6)}</span>
+                  <button
+                    onClick={() => handleCancelLimit(lo.id)}
+                    disabled={cancelling === lo.id}
+                    className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
+                  >
+                    {cancelling === lo.id ? "×" : "Cancel"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Trade history for this symbol */}
+      <div className="border-t border-border-default flex-1 overflow-auto">
         <div className="px-3 py-2 border-b border-border-default">
           <span className="text-xs font-medium text-text-secondary">Recent Fills</span>
         </div>

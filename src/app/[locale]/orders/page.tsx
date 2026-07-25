@@ -119,6 +119,39 @@ export default function OrdersPage() {
     });
   };
 
+  const exportCSV = useCallback(() => {
+    const BOM = "\uFEFF";
+    const headers = ["时间", "市场类型", "交易对", "方向", "类型", "数量", "价格", "状态", "总金额", "手续费"];
+    const rows = filteredOrders.map((o) => [
+      formatDate(o.created_at),
+      o.market_type === "futures" ? "Futures" : "Spot",
+      o.symbol,
+      o.side === "buy" ? "Buy" : "Sell",
+      ORDER_TYPE_LABEL_MAP[o.order_type] || o.order_type,
+      String(o.quantity),
+      o.price !== null ? String(o.price) : "-",
+      o.status,
+      o.total_value !== null ? String(o.total_value) : "-",
+      o.fee !== null ? String(o.fee) : "-",
+    ]);
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map((cell) => {
+        const escaped = String(cell).replace(/"/g, '""');
+        return `"${escaped}"`;
+      }).join(","))
+      .join("\n");
+    const today = new Date().toISOString().slice(0, 10);
+    const blob = new Blob([BOM + csvContent], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `chart-ix-orders-${today}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [filteredOrders]);
+
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-12">
@@ -191,7 +224,7 @@ export default function OrdersPage() {
       )}
 
       {/* Filter Tabs */}
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         {FILTER_TABS.map((tab) => (
           <button
             key={tab}
@@ -205,6 +238,16 @@ export default function OrdersPage() {
             {t(tab)}
           </button>
         ))}
+        {filteredOrders.length > 0 && (
+          <Button variant="outline" size="sm" onClick={exportCSV} className="ml-auto">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            导出 CSV
+          </Button>
+        )}
       </div>
 
       {filteredOrders.length === 0 ? (

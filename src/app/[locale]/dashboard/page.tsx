@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -16,9 +16,9 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ShareCardModal } from "@/components/dashboard/ShareCardModal";
-import { formatPrice, formatPercent } from "@/lib/utils";
+import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import type { Video, Article, Locale } from "@/types";
+import type { Video, Article, Locale, Order } from "@/types";
 
 interface ContinueWatchingItem {
   video_id: string;
@@ -37,6 +37,7 @@ export default function DashboardPage() {
   const [latestVideos, setLatestVideos] = useState<Video[] | null>(null);
   const [latestArticles, setLatestArticles] = useState<Article[] | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [orders, setOrders] = useState<Order[] | null>(null);
 
   const { data: paperData, isLoading: paperLoading } = usePaperAccount(!!auth.userId);
   const { data: achievements } = useAchievements(auth.userId);
@@ -72,6 +73,17 @@ export default function DashboardPage() {
       .then(({ data }) => setLatestArticles((data as Article[]) ?? []));
   }, [auth.userId]);
 
+  useEffect(() => {
+    if (!auth.userId) return;
+    const supabase = createClient();
+    supabase
+      .from("orders")
+      .select("*")
+      .eq("user_id", auth.userId)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setOrders((data as unknown as Order[]) ?? []));
+  }, [auth.userId]);
+
   const paperHoldingsValue = (paperData?.holdings ?? []).reduce((sum, h) => {
     const ticker = useMarketStore.getState().tickers[h.symbol];
     const markPrice = ticker ? parseFloat(ticker.lastPrice) : h.avg_entry_price;
@@ -80,6 +92,36 @@ export default function DashboardPage() {
   const paperTotalValue = (paperData?.account.balance_usdt ?? 0) + paperHoldingsValue;
   const paperPnl = paperData ? paperTotalValue - 10000 : 0;
   const paperPnlPct = paperData ? (paperPnl / 10000) * 100 : 0;
+
+  const filledOrders = useMemo(() => {
+    if (!orders) return [];
+    return orders.filter((o) => o.status === "filled" || o.status === "partially_filled");
+  }, [orders]);
+
+  const tradeStats = useMemo(() => {
+    const filled = filledOrders;
+    const allOrders = orders ?? [];
+    const totalTrades = filled.length;
+    const totalVolume = filled.reduce((sum, o) => sum + (o.total_value ?? 0), 0);
+    const totalFees = filled.reduce((sum, o) => sum + (o.fee ?? 0), 0);
+    const totalOrders = allOrders.length;
+    const fillRate = totalOrders > 0 ? (totalTrades / totalOrders) * 100 : 0;
+    const sellTotal = filled.filter((o) => o.side === "sell").reduce((sum, o) => sum + (o.total_value ?? 0), 0);
+    const buyTotal = filled.filter((o) => o.side === "buy").reduce((sum, o) => sum + (o.total_value ?? 0), 0);
+    const netPnl = sellTotal - buyTotal - totalFees;
+    const winningTrades = filled.filter((o) => o.side === "sell").length;
+    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
+    const pairCounts: Record<string, number> = {};
+    filled.forEach((o) => {
+      pairCounts[o.symbol] = (pairCounts[o.symbol] ?? 0) + 1;
+    });
+    let mostTradedPair = "";
+    let maxCount = 0;
+    for (const [pair, count] of Object.entries(pairCounts)) {
+      if (count > maxCount) { maxCount = count; mostTradedPair = pair; }
+    }
+    return { totalTrades, totalVolume, totalFees, netPnl, winRate, fillRate, totalOrders, mostTradedPair, maxCount };
+  }, [filledOrders, orders]);
 
   if (auth.loading) {
     return (
@@ -123,7 +165,7 @@ export default function DashboardPage() {
       </h1>
       <div className="hairline-gold mt-5 w-full max-w-[220px] opacity-60" />
 
-      <div className="mt-10 grid gap-6 lg:grid-cols-3">
+      <div className="mt-10 grid gap-6 lg:grid-cols-4">
         {/* Paper trading performance */}
         <Card>
           <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">{t("paper_title")}</h2>
@@ -155,6 +197,36 @@ export default function DashboardPage() {
                 分享
               </Button>
             )}
+          </div>
+        </Card>
+
+        {/* Trade P&L */}
+        <Card>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">交易盈亏</h2>
+          {orders === null ? (
+            <Skeleton className="mt-3 h-16" />
+          ) : filledOrders.length === 0 ? (
+            <div className="mt-3">
+              <p className="text-sm text-text-muted">暂无交易数据</p>
+            </div>
+          ) : (
+            <>
+              <div className="mt-3 text-2xl font-bold text-text-primary">
+                {formatPrice(tradeStats.totalVolume)} <span className="text-sm font-normal text-text-muted">USDT</span>
+              </div>
+              <div className={cn("mt-1 text-sm font-medium", tradeStats.netPnl >= 0 ? "text-success" : "text-danger")}>
+                净额 {tradeStats.netPnl >= 0 ? "+" : ""}{formatPrice(tradeStats.netPnl)} USDT
+              </div>
+              <div className="mt-3 space-y-0.5 text-xs text-text-muted">
+                <div>已成交 <span className="text-text-secondary font-medium">{tradeStats.totalTrades}</span> 笔</div>
+                <div>手续费 {formatPrice(tradeStats.totalFees)} USDT</div>
+              </div>
+            </>
+          )}
+          <div className="mt-4">
+            <Link href={`/${locale}/orders`} className="text-xs font-medium text-gold hover:underline">
+              查看订单 →
+            </Link>
           </div>
         </Card>
 
@@ -260,6 +332,62 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Trading Statistics */}
+      {orders !== null && filledOrders.length > 0 && (
+        <div className="mt-10">
+          <h2 className="font-display text-xl tracking-tight text-text-primary">交易统计</h2>
+          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Card padding="sm" className="flex items-center gap-3">
+              <span className="text-xl">📊</span>
+              <div>
+                <p className="text-xs text-text-muted">总交易次数</p>
+                <p className="text-lg font-bold text-text-primary">{tradeStats.totalTrades}</p>
+              </div>
+            </Card>
+            <Card padding="sm" className="flex items-center gap-3">
+              <span className="text-xl">✅</span>
+              <div>
+                <p className="text-xs text-text-muted">成交率</p>
+                <p className="text-lg font-bold text-text-primary">{formatNumber(tradeStats.fillRate, 1)}%</p>
+              </div>
+            </Card>
+            <Card padding="sm" className="flex items-center gap-3">
+              <span className="text-xl">🏆</span>
+              <div>
+                <p className="text-xs text-text-muted">胜率</p>
+                <p className="text-lg font-bold text-text-primary">{formatNumber(tradeStats.winRate, 1)}%</p>
+              </div>
+            </Card>
+            <Card padding="sm" className="flex items-center gap-3">
+              <span className="text-xl">💰</span>
+              <div>
+                <p className="text-xs text-text-muted">总成交量</p>
+                <p className="text-lg font-bold text-text-primary">{formatPrice(tradeStats.totalVolume)} USDT</p>
+              </div>
+            </Card>
+            <Card padding="sm" className="flex items-center gap-3">
+              <span className="text-xl">🧾</span>
+              <div>
+                <p className="text-xs text-text-muted">总手续费</p>
+                <p className="text-lg font-bold text-text-primary">{formatPrice(tradeStats.totalFees)} USDT</p>
+              </div>
+            </Card>
+            <Card padding="sm" className="flex items-center gap-3">
+              <span className="text-xl">🔥</span>
+              <div>
+                <p className="text-xs text-text-muted">最常交易对</p>
+                <p className="text-lg font-bold text-text-primary">
+                  {tradeStats.mostTradedPair || "—"}
+                  {tradeStats.maxCount > 0 && (
+                    <span className="ml-1 text-xs font-normal text-text-muted">×{tradeStats.maxCount}</span>
+                  )}
+                </p>
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
 
       {/* Achievements */}
       {achievements && achievements.some((a) => a.earned) && (

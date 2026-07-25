@@ -76,14 +76,16 @@ export function AuthProvider({
   }, []);
 
   useEffect(() => {
-    // Only fetch on mount if the server didn't already provide auth
-    if (!initialAuth) {
+    // Fetch auth on mount if server didn't provide a valid user identity.
+    // `initialAuth` is always an object (even when user is null), so check
+    // `userId` rather than truthiness of the prop itself.
+    if (!initialAuth?.userId) {
       fetchAuth();
     }
 
     const supabase = createClient();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
         fetchAuth();
         if (event === "SIGNED_IN") {
           // Idempotent (grant_achievement no-ops if already earned) — safe to call every sign-in.

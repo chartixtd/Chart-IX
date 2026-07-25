@@ -38,7 +38,7 @@ export function AdminHeader() {
 
       <div className="flex items-center gap-3">
         <Link
-          href={`/${locale}`}
+          href={`/${locale}/dashboard`}
           className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary transition-colors"
         >
           <span>←</span>

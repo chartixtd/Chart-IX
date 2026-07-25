@@ -51,7 +51,7 @@ export function AdminSidebar() {
 
       <div className="p-3 border-t border-border-default">
         <Link
-          href={`/${locale}`}
+          href={`/${locale}/dashboard`}
           className="flex items-center gap-2 rounded-sm px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
         >
           <span className="text-base">←</span>

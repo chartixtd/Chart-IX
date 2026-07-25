@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { usePaperAccount, usePaperOrders } from "@/hooks/usePaperTrading";
+import { usePaperAccount, usePaperOrders, usePlacePaperOrder } from "@/hooks/usePaperTrading";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatPrice, formatNumber, cn } from "@/lib/utils";
 import { useSpotTicker } from "@/hooks/useMarketData";
@@ -22,7 +22,10 @@ interface PaperLimitOrderRow {
   filled_at: string | null;
 }
 
-function HoldingRow({ symbol, quantity, avgEntryPrice }: { symbol: string; quantity: number; avgEntryPrice: number }) {
+function HoldingRow({ symbol, quantity, avgEntryPrice, onClose }: {
+  symbol: string; quantity: number; avgEntryPrice: number;
+  onClose: (symbol: string, quantity: number) => void;
+}) {
   const { data: ticker } = useSpotTicker(symbol);
   const markPrice = ticker ? parseFloat(ticker.lastPrice) : avgEntryPrice;
   const pnl = (markPrice - avgEntryPrice) * quantity;
@@ -33,7 +36,15 @@ function HoldingRow({ symbol, quantity, avgEntryPrice }: { symbol: string; quant
     <div className="px-3 py-2 border-b border-border-default/50 last:border-0">
       <div className="flex items-center justify-between text-xs">
         <span className="font-semibold text-text-primary">{symbol}</span>
-        <span className="text-text-muted">{formatNumber(quantity, 6)}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted">{formatNumber(quantity, 6)}</span>
+          <button
+            onClick={() => onClose(symbol, quantity)}
+            className="rounded-xs bg-danger/10 px-1.5 py-0.5 text-xs text-danger hover:bg-danger/20"
+          >
+            平仓
+          </button>
+        </div>
       </div>
       <div className="mt-1 flex items-center justify-between text-xs">
         <span className="text-text-muted">Avg. {formatPrice(avgEntryPrice)}</span>
@@ -52,10 +63,24 @@ function formatTime(ts: string) {
 export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const { data, isLoading } = usePaperAccount();
   const { data: orders, isLoading: ordersLoading } = usePaperOrders(symbol);
+  const placePaperOrder = usePlacePaperOrder();
 
   const [limitOrders, setLimitOrders] = useState<PaperLimitOrderRow[]>([]);
   const [limitLoading, setLimitLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [closing, setClosing] = useState<string | null>(null);
+
+  const handleClosePosition = async (hSymbol: string, quantity: number) => {
+    setClosing(hSymbol);
+    try {
+      await placePaperOrder.mutateAsync({
+        symbol: hSymbol,
+        side: "sell",
+        quoteAmount: quantity,
+      });
+    } catch { /* ignore */ }
+    setClosing(null);
+  };
 
   const fetchLimitOrders = useCallback(async () => {
     try {
@@ -119,8 +144,12 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
           <p className="px-3 py-4 text-xs text-text-muted text-center">暂无持仓 / No holdings yet</p>
         ) : (
           holdings.map((h) => (
-            <HoldingRow key={h.id} symbol={h.symbol} quantity={h.quantity} avgEntryPrice={h.avg_entry_price} />
+            <HoldingRow key={h.id} symbol={h.symbol} quantity={h.quantity} avgEntryPrice={h.avg_entry_price}
+              onClose={handleClosePosition} />
           ))
+        )}
+        {closing && (
+          <p className="px-3 py-1 text-xs text-text-muted text-center">平仓 {closing} 中...</p>
         )}
       </div>
 

@@ -41,6 +41,12 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
   const { data: paperData } = usePaperAccount(isPaper);
   const placePaperOrder = usePlacePaperOrder();
 
+  // 当前交易对的模拟持仓
+  const paperHolding = isPaper
+    ? paperData?.holdings?.find((h) => h.symbol === symbol)
+    : null;
+  const holdingQty = paperHolding ? parseFloat(String(paperHolding.quantity)) : 0;
+
   const [uiMode, setUiMode] = useState<"simple" | "pro">("simple");
   const [side, setSide] = useState<OrderSide>("BUY");
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
@@ -82,14 +88,19 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
   const handlePercent = (pct: number) => {
     setPercent(pct);
     if (isPaper) {
-      const balance = paperData?.account.balance_usdt ?? 0;
-      if (isPaperLimit) {
-        // 限价单: amount 是 quantity，按百分比算数量
+      if (side === "SELL") {
+        // 卖出时按持仓量计算
+        if (holdingQty > 0) {
+          setAmount(((holdingQty * pct) / 100).toFixed(6));
+        }
+      } else if (isPaperLimit) {
         const limitP = parseFloat(price) || currentPrice;
         if (limitP > 0) {
+          const balance = paperData?.account.balance_usdt ?? 0;
           setAmount(((balance * pct) / 100 / limitP).toFixed(6));
         }
       } else {
+        const balance = paperData?.account.balance_usdt ?? 0;
         setAmount(((balance * pct) / 100).toFixed(2));
       }
     } else if (effectiveOrderType === "MARKET") {
@@ -302,7 +313,10 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
             className="text-sm" />
           {isPaper && (
             <p className="mt-1 text-xs text-text-muted">
-              可用 {formatPrice(paperData?.account.balance_usdt ?? 0)} USDT
+              {side === "SELL" && holdingQty > 0
+                ? `持仓 ${formatPrice(holdingQty)} ${symbol.split("-")[0]}`
+                : `可用 ${formatPrice(paperData?.account.balance_usdt ?? 0)} USDT`
+              }
             </p>
           )}
         </div>

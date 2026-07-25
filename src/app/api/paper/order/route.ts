@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getSpotTicker } from "@/lib/bingx/market";
 import type { PaperOrder } from "@/types";
 
 export async function POST(request: NextRequest) {
@@ -69,9 +68,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: "quoteAmount must be a positive number" } }, { status: 400 });
     }
 
-    // 用交易所的最新真实价格执行，不信任客户端传的价格
-    const ticker = await getSpotTicker(symbol);
-    const price = parseFloat(ticker.lastPrice);
+    // 用交易所的最新真实价格执行，走自有 API 代理保证连通性
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const tickerRes = await fetch(`${siteUrl}/api/bingx/market/ticker?symbol=${encodeURIComponent(symbol)}`);
+    if (!tickerRes.ok) {
+      return NextResponse.json({ success: false, error: { message: `BingX ticker failed: ${tickerRes.status}` } }, { status: 502 });
+    }
+    const tickerJson = await tickerRes.json();
+    if (!tickerJson.success) {
+      return NextResponse.json({ success: false, error: { message: `BingX ticker error: ${tickerJson.error?.message || "unknown"}` } }, { status: 502 });
+    }
+    const price = tickerJson.data?.lastPrice ? parseFloat(tickerJson.data.lastPrice) : NaN;
     if (!Number.isFinite(price) || price <= 0) {
       return NextResponse.json({ success: false, error: { message: "Failed to fetch current price" } }, { status: 502 });
     }

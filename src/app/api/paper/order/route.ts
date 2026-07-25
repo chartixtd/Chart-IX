@@ -23,10 +23,12 @@ async function fetchBingXPrice(symbol: string): Promise<number> {
   const json = await res.json();
 
   // BingX wraps in { code: 0, data: ... }
-  const data = json.data ?? json;
-  const price = parseFloat(data.lastPrice);
+  // 单币种查询 data 也是数组形式 [{symbol, lastPrice, ...}]
+  const raw = json.data ?? json;
+  const ticker = Array.isArray(raw) ? raw[0] : raw;
+  const price = parseFloat(ticker?.lastPrice);
   if (!Number.isFinite(price) || price <= 0) {
-    throw new Error(`Invalid lastPrice: ${data.lastPrice}`);
+    throw new Error(`Invalid lastPrice: ${ticker?.lastPrice}`);
   }
 
   return price;

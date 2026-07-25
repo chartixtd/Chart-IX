@@ -64,6 +64,8 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const { data, isLoading } = usePaperAccount();
   const { data: orders, isLoading: ordersLoading } = usePaperOrders(symbol);
   const placePaperOrder = usePlacePaperOrder();
+  const { data: ticker } = useSpotTicker(symbol);
+  const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
 
   const [limitOrders, setLimitOrders] = useState<PaperLimitOrderRow[]>([]);
   const [limitLoading, setLimitLoading] = useState(true);
@@ -71,12 +73,15 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const [closing, setClosing] = useState<string | null>(null);
 
   const handleClosePosition = async (hSymbol: string, quantity: number) => {
+    if (currentPrice <= 0) return;
     setClosing(hSymbol);
     try {
+      // quoteAmount 是 USDT，所以传持仓的 USDT 价值
+      const usdtValue = quantity * currentPrice;
       await placePaperOrder.mutateAsync({
         symbol: hSymbol,
         side: "sell",
-        quoteAmount: quantity,
+        quoteAmount: usdtValue,
       });
     } catch { /* ignore */ }
     setClosing(null);

@@ -89,11 +89,12 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
     setPercent(pct);
     if (isPaper) {
       if (side === "SELL") {
-        // 卖出时按持仓量计算
-        if (holdingQty > 0) {
-          setAmount(((holdingQty * pct) / 100).toFixed(6));
-        }
-      } else if (isPaperLimit) {
+         // 卖出时按持仓量计算 USDT 价值
+         if (holdingQty > 0 && currentPrice > 0) {
+           const usdtValue = (holdingQty * pct) / 100 * currentPrice;
+           setAmount(usdtValue.toFixed(2));
+         }
+       } else if (isPaperLimit) {
         const limitP = parseFloat(price) || currentPrice;
         if (limitP > 0) {
           const balance = paperData?.account.balance_usdt ?? 0;

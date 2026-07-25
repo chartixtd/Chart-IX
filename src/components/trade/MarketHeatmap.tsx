@@ -41,7 +41,7 @@ export function MarketHeatmap() {
         const merged = wsTickers[t.symbol] ?? t;
         return {
           name: t.symbol,
-          size: parseFloat(t.volume),
+          size: Math.sqrt(parseFloat(t.volume)),
           changePercent: parseFloat(merged.priceChangePercent),
           lastPrice: parseFloat(merged.lastPrice),
         };

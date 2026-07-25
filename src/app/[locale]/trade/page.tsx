@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { useSpotTicker } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { usePriceAlertsStore } from "@/stores/priceAlerts";
+import { useChartOverlay } from "@/hooks/useChartOverlay";
 import { useTradePrefsStore, type TradeMarketType } from "@/stores/tradePrefs";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -277,6 +278,9 @@ export default function TradePage() {
 
   useBingXWebSocket([symbol]);
 
+  // 图表叠加：进出场标记 + 止盈止损/进场/强平价格线（按市场类型聚合）
+  const { tradeMarkers, priceLines } = useChartOverlay(symbol, market);
+
   const isPro = auth.tier === "pro";
   const isLoggedIn = !!auth.userId;
 
@@ -323,7 +327,7 @@ export default function TradePage() {
             </div>
           </div>
           <div className="flex-1">
-            <KlineChart symbol={symbol} interval={interval} className="h-full" />
+            <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
           </div>
         </div>
 
@@ -370,7 +374,7 @@ export default function TradePage() {
                 </div>
               </div>
               <div className="flex-1">
-                <KlineChart symbol={symbol} interval={interval} className="h-full" />
+                <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
               </div>
             </div>
           )}

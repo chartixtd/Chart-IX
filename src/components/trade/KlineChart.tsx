@@ -3,12 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import {
   createChart,
+  createSeriesMarkers,
   ColorType,
+  LineStyle,
   CandlestickSeries,
   HistogramSeries,
   LineSeries,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type IPriceLine,
+  type SeriesMarker,
+  type Time,
   type CandlestickData,
   type HistogramData,
   type LineData,
@@ -22,10 +28,32 @@ import { useFeatureAccess } from "@/hooks/useFeatureFlags";
 import { computeMA, computeEMA, computeRSI, computeMACD, computeBollingerBands, computeVWAP } from "@/lib/indicators";
 import { cn } from "@/lib/utils";
 
+/** 图表上的进出场箭头标记 */
+export interface ChartTradeMarker {
+  /** 成交时间（毫秒），会对齐到对应 K 线 */
+  time: number;
+  side: "buy" | "sell";
+  /** 悬浮/箭头文字，例如 "开多 0.5" */
+  text?: string;
+}
+
+/** 图表上的水平价格线（进场价 / 止盈 / 止损 / 强平价） */
+export interface ChartPriceLine {
+  price: number;
+  color: string;
+  title: string;
+  /** 虚线用于止盈止损/强平，实线用于进场价 */
+  dashed?: boolean;
+}
+
 interface KlineChartProps {
   symbol: string;
   interval?: string;
   className?: string;
+  /** 进出场成交标记 */
+  tradeMarkers?: ChartTradeMarker[];
+  /** 进场/止盈/止损/强平等价格线 */
+  priceLines?: ChartPriceLine[];
 }
 
 /** interval → duration in seconds */
@@ -61,11 +89,13 @@ const SIGNAL_COLOR = "#f59e0b";
 const HIST_GREEN = "#22c55e";
 const HIST_RED = "#ef4444";
 
-export function KlineChart({ symbol, interval = "1h", className }: KlineChartProps) {
+export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, priceLines }: KlineChartProps) {
   const locale = useLocale();
   const chartRef = useRef<HTMLDivElement>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const priceLinesRef = useRef<IPriceLine[]>([]);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const ma7SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const ma25SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -204,6 +234,7 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
 
     chartApiRef.current = chart;
     candleSeriesRef.current = candleSeries;
+    markersPluginRef.current = createSeriesMarkers(candleSeries, []);
     volumeSeriesRef.current = volumeSeries;
     ma7SeriesRef.current = ma7Series;
     ma25SeriesRef.current = ma25Series;
@@ -232,6 +263,8 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       chart.remove();
       chartApiRef.current = null;
       candleSeriesRef.current = null;
+      markersPluginRef.current = null;
+      priceLinesRef.current = [];
       volumeSeriesRef.current = null;
       ma7SeriesRef.current = null;
       ma25SeriesRef.current = null;
@@ -475,6 +508,57 @@ export function KlineChart({ symbol, interval = "1h", className }: KlineChartPro
       }
     };
   }, [interval]);
+
+  // ---- Entry/exit trade markers (arrows on the candles) ----
+  useEffect(() => {
+    if (!markersPluginRef.current) return;
+
+    const durationSec = INTERVAL_SECONDS[interval] ?? 3600;
+    const markers = (tradeMarkers ?? [])
+      .map((m): SeriesMarker<Time> => {
+        const isBuy = m.side === "buy";
+        // 对齐到成交时间所在的 K 线起点，避免落在两根蜡烛之间
+        const sec = Math.floor(m.time / 1000);
+        const bucket = (Math.floor(sec / durationSec) * durationSec) as UTCTimestamp;
+        return {
+          time: bucket as Time,
+          position: isBuy ? "belowBar" : "aboveBar",
+          color: isBuy ? UP : DOWN,
+          shape: isBuy ? "arrowUp" : "arrowDown",
+          text: m.text,
+        };
+      })
+      .sort((a, b) => (a.time as number) - (b.time as number));
+
+    markersPluginRef.current.setMarkers(markers);
+  }, [tradeMarkers, interval]);
+
+  // ---- Price lines (entry / take-profit / stop-loss / liquidation) ----
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+
+    // 清掉旧的价格线
+    for (const line of priceLinesRef.current) {
+      try { series.removePriceLine(line); } catch { /* ignore */ }
+    }
+    priceLinesRef.current = [];
+
+    for (const pl of priceLines ?? []) {
+      if (!isFinite(pl.price) || pl.price <= 0) continue;
+      try {
+        const line = series.createPriceLine({
+          price: pl.price,
+          color: pl.color,
+          lineWidth: 1,
+          lineStyle: pl.dashed ? LineStyle.Dashed : LineStyle.Solid,
+          axisLabelVisible: true,
+          title: pl.title,
+        });
+        priceLinesRef.current.push(line);
+      } catch { /* ignore */ }
+    }
+  }, [priceLines]);
 
   return (
     <div className={cn("relative", className)}>

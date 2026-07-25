@@ -2,6 +2,36 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { PaperOrder } from "@/types";
 
+/** 从 BingX 获取单个交易对的实时价格（直连，不依赖任何库函数） */
+async function fetchBingXPrice(symbol: string): Promise<number> {
+  const BINGX_BASE = process.env.NEXT_PUBLIC_BINGX_API_BASE_URL || "https://open-api.bingx.com";
+  const url = `${BINGX_BASE}/openApi/spot/v1/ticker/24hr?symbol=${encodeURIComponent(symbol)}`;
+
+  const res = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      "X-SOURCE-KEY": "BX-AI-SKILL",
+    },
+    signal: AbortSignal.timeout(8000),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`BingX HTTP ${res.status}`);
+  }
+
+  const json = await res.json();
+
+  // BingX wraps in { code: 0, data: ... }
+  const data = json.data ?? json;
+  const price = parseFloat(data.lastPrice);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error(`Invalid lastPrice: ${data.lastPrice}`);
+  }
+
+  return price;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -58,7 +88,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, data: order });
     }
 
-    // 市价单分支（原有逻辑）
+    // 市价单分支
     if (!quoteAmount) {
       return NextResponse.json({ success: false, error: { message: "Missing fields: quoteAmount" } }, { status: 400 });
     }
@@ -68,19 +98,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: "quoteAmount must be a positive number" } }, { status: 400 });
     }
 
-    // 用交易所的最新真实价格执行，走自有 API 代理保证连通性
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-    const tickerRes = await fetch(`${siteUrl}/api/bingx/market/ticker?symbol=${encodeURIComponent(symbol)}`);
-    if (!tickerRes.ok) {
-      return NextResponse.json({ success: false, error: { message: `BingX ticker failed: ${tickerRes.status}` } }, { status: 502 });
-    }
-    const tickerJson = await tickerRes.json();
-    if (!tickerJson.success) {
-      return NextResponse.json({ success: false, error: { message: `BingX ticker error: ${tickerJson.error?.message || "unknown"}` } }, { status: 502 });
-    }
-    const price = tickerJson.data?.lastPrice ? parseFloat(tickerJson.data.lastPrice) : NaN;
-    if (!Number.isFinite(price) || price <= 0) {
-      return NextResponse.json({ success: false, error: { message: "Failed to fetch current price" } }, { status: 502 });
+    // 直连 BingX 获取实时价格
+    let price: number;
+    try {
+      price = await fetchBingXPrice(symbol);
+    } catch (priceErr) {
+      return NextResponse.json({
+        success: false,
+        error: { message: `无法获取实时价格: ${String(priceErr)}` },
+      }, { status: 502 });
     }
 
     const quantity = amount / price;

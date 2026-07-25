@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { usePaperAccount, usePaperOrders, usePlacePaperOrder } from "@/hooks/usePaperTrading";
+import { usePaperAccount, usePaperOrders, useClosePaperPosition } from "@/hooks/usePaperTrading";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatPrice, formatNumber, cn } from "@/lib/utils";
 import { useSpotTicker } from "@/hooks/useMarketData";
@@ -77,9 +77,7 @@ function formatTime(ts: string) {
 export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const { data, isLoading } = usePaperAccount();
   const { data: orders, isLoading: ordersLoading } = usePaperOrders(symbol);
-  const placePaperOrder = usePlacePaperOrder();
-  const { data: ticker } = useSpotTicker(symbol);
-  const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
+  const closePaperPosition = useClosePaperPosition();
 
   const [limitOrders, setLimitOrders] = useState<PaperLimitOrderRow[]>([]);
   const [limitLoading, setLimitLoading] = useState(true);
@@ -89,19 +87,10 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const positions = data?.positions ?? [];
 
   const handleClosePosition = async (pSymbol: string) => {
-    if (currentPrice <= 0) return;
-    const pos = positions.find((p) => p.symbol === pSymbol);
-    if (!pos) return;
     setClosing(pSymbol);
     try {
-      // 平仓 = 反向市价单，数量为整个仓位的名义价值；杠杆传 1 仅用于关闭
-      const usdtValue = parseFloat(String(pos.quantity)) * currentPrice;
-      await placePaperOrder.mutateAsync({
-        symbol: pSymbol,
-        side: pos.side === "long" ? "sell" : "buy",
-        quoteAmount: usdtValue,
-        leverage: pos.leverage,
-      });
+      // 精确全平：后端按持仓量平仓，不经过名义值换算，一次清干净
+      await closePaperPosition.mutateAsync({ symbol: pSymbol });
     } catch { /* ignore */ }
     setClosing(null);
   };

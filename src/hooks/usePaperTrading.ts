@@ -47,3 +47,21 @@ export function usePlacePaperOrder() {
     },
   });
 }
+
+// 精确全平仓位（按持仓量平仓，避免名义值换算残留）
+export function useClosePaperPosition() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: { symbol: string }) =>
+      fetchJson<PaperOrder>("/api/paper/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["paper", "account"] });
+      queryClient.invalidateQueries({ queryKey: ["paper", "orders"] });
+    },
+  });
+}

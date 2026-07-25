@@ -41,15 +41,16 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
   const { data: paperData } = usePaperAccount(isPaper);
   const placePaperOrder = usePlacePaperOrder();
 
-  // 当前交易对的模拟持仓
-  const paperHolding = isPaper
-    ? paperData?.holdings?.find((h) => h.symbol === symbol)
+  // 当前交易对的模拟合约仓位（单向持仓，long 或 short）
+  const paperPosition = isPaper
+    ? paperData?.positions?.find((p) => p.symbol === symbol)
     : null;
-  const holdingQty = paperHolding ? parseFloat(String(paperHolding.quantity)) : 0;
+  const positionQty = paperPosition ? parseFloat(String(paperPosition.quantity)) : 0;
 
   const [uiMode, setUiMode] = useState<"simple" | "pro">("simple");
   const [side, setSide] = useState<OrderSide>("BUY");
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
+  const [leverage, setLeverage] = useState(1);
   const [tif, setTif] = useState<TIF>("GTC");
   const [price, setPrice] = useState("");
   const [stopPrice, setStopPrice] = useState("");
@@ -88,21 +89,18 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
   const handlePercent = (pct: number) => {
     setPercent(pct);
     if (isPaper) {
-      if (side === "SELL") {
-         // 卖出时按持仓量计算 USDT 价值
-         if (holdingQty > 0 && currentPrice > 0) {
-           const usdtValue = (holdingQty * pct) / 100 * currentPrice;
-           setAmount(usdtValue.toFixed(2));
-         }
-       } else if (isPaperLimit) {
+      // 合约：买卖都是开/加仓，可用购买力 = 可用余额 × 杠杆
+      const balance = paperData?.account.balance_usdt ?? 0;
+      const buyingPower = balance * leverage;
+      if (isPaperLimit) {
+        // 限价单 amount 是数量 = 名义 / 价格
         const limitP = parseFloat(price) || currentPrice;
         if (limitP > 0) {
-          const balance = paperData?.account.balance_usdt ?? 0;
-          setAmount(((balance * pct) / 100 / limitP).toFixed(6));
+          setAmount(((buyingPower * pct) / 100 / limitP).toFixed(6));
         }
       } else {
-        const balance = paperData?.account.balance_usdt ?? 0;
-        setAmount(((balance * pct) / 100).toFixed(2));
+        // 市价单 amount 是名义 USDT 价值
+        setAmount(((buyingPower * pct) / 100).toFixed(2));
       }
     } else if (effectiveOrderType === "MARKET") {
       setAmount(String(pct));
@@ -138,16 +136,20 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
             quoteAmount: parseFloat(amount),
             orderType: "limit",
             price: parseFloat(price),
+            leverage,
           });
-          setResult({ ok: true, message: `${side} LIMIT ${symbol} · ${formatPrice(parseFloat(price))} x ${amount}` });
+          const posDir = side === "BUY" ? "开多" : "开空";
+          setResult({ ok: true, message: `${posDir} LIMIT ${leverage}x ${symbol} · ${formatPrice(parseFloat(price))} x ${amount}` });
           setAmount(""); setPercent(0); setPrice("");
         } else {
           const order = await placePaperOrder.mutateAsync({
             symbol,
             side: side === "BUY" ? "buy" : "sell",
             quoteAmount: parseFloat(amount),
+            leverage,
           });
-          setResult({ ok: true, message: `${side} ${symbol} · 成交价 ${formatPrice(order.price)}` });
+          const posDir = side === "BUY" ? "开多/平空" : "开空/平多";
+          setResult({ ok: true, message: `${posDir} ${leverage}x ${symbol} · 成交价 ${formatPrice(order.price)}` });
           setAmount(""); setPercent(0);
         }
       } else {
@@ -208,11 +210,11 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
         <button
           onClick={() => setSide("BUY")}
           className={cn("flex-1 py-2.5 text-sm font-semibold", side === "BUY" ? "bg-success/10 text-success border-b-2 border-success" : "text-text-muted hover:text-text-secondary")}
-        >Buy</button>
+        >{isPaper ? "买入 / 做多" : "Buy"}</button>
         <button
           onClick={() => setSide("SELL")}
           className={cn("flex-1 py-2.5 text-sm font-semibold", side === "SELL" ? "bg-danger/10 text-danger border-b-2 border-danger" : "text-text-muted hover:text-text-secondary")}
-        >Sell</button>
+        >{isPaper ? "卖出 / 做空" : "Sell"}</button>
       </div>
 
       <div className="flex-1 space-y-2.5 p-3">
@@ -244,6 +246,28 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
           </div>
           <p className="text-xs text-text-muted/60 mt-1">{ORDER_TYPES.find(t => t.key === effectiveOrderType)?.desc}</p>
         </div>
+
+        {/* Leverage (paper futures only) */}
+        {isPaper && (
+          <div>
+            <div className="flex items-center justify-between text-xs text-text-muted mb-1">
+              <span>杠杆 / Leverage</span>
+              <span className="text-gold font-semibold">{leverage}x</span>
+            </div>
+            <div className="flex gap-1">
+              {[1, 3, 5, 10, 20, 50].map((lev) => (
+                <button
+                  key={lev}
+                  onClick={() => setLeverage(lev)}
+                  className={cn(
+                    "flex-1 rounded-xs py-1 text-xs font-medium",
+                    leverage === lev ? "bg-gold/20 text-gold" : "bg-bg-tertiary text-text-muted hover:text-text-secondary"
+                  )}
+                >{lev}x</button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* TIF */}
         {isLimitType && (
@@ -314,10 +338,10 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
             className="text-sm" />
           {isPaper && (
             <p className="mt-1 text-xs text-text-muted">
-              {side === "SELL" && holdingQty > 0
-                ? `持仓 ${formatPrice(holdingQty)} ${symbol.split("-")[0]}`
-                : `可用 ${formatPrice(paperData?.account.balance_usdt ?? 0)} USDT`
-              }
+              {paperPosition
+                ? `当前持仓 ${paperPosition.side === "long" ? "多" : "空"} ${formatPrice(positionQty)} ${symbol.split("-")[0]} @ ${formatPrice(paperPosition.entry_price)} · `
+                : ""}
+              可用 {formatPrice(paperData?.account.balance_usdt ?? 0)} USDT
             </p>
           )}
         </div>

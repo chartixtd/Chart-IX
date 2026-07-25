@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PaperAccount, PaperHolding, PaperOrder } from "@/types";
+import type { PaperAccount, PaperPosition, PaperOrder } from "@/types";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -14,7 +14,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 export function usePaperAccount(enabled = true) {
   return useQuery({
     queryKey: ["paper", "account"],
-    queryFn: () => fetchJson<{ account: PaperAccount; holdings: PaperHolding[] }>("/api/paper/account"),
+    queryFn: () => fetchJson<{ account: PaperAccount; positions: PaperPosition[] }>("/api/paper/account"),
     staleTime: 5_000,
     enabled,
   });
@@ -35,7 +35,7 @@ export function usePlacePaperOrder() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { symbol: string; side: "buy" | "sell"; quoteAmount: number; orderType?: "market" | "limit"; price?: number }) =>
+    mutationFn: (input: { symbol: string; side: "buy" | "sell"; quoteAmount: number; orderType?: "market" | "limit"; price?: number; leverage?: number }) =>
       fetchJson<PaperOrder>("/api/paper/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

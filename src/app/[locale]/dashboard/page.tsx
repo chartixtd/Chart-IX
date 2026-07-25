@@ -84,12 +84,17 @@ export default function DashboardPage() {
       .then(({ data }) => setOrders((data as unknown as Order[]) ?? []));
   }, [auth.userId]);
 
-  const paperHoldingsValue = (paperData?.holdings ?? []).reduce((sum, h) => {
-    const ticker = useMarketStore.getState().tickers[h.symbol];
-    const markPrice = ticker ? parseFloat(ticker.lastPrice) : h.avg_entry_price;
-    return sum + h.quantity * markPrice;
+  // 合约权益 = 可用余额 + Σ(占用保证金 + 未实现盈亏)
+  const paperPositionsEquity = (paperData?.positions ?? []).reduce((sum, p) => {
+    const ticker = useMarketStore.getState().tickers[p.symbol];
+    const entry = parseFloat(String(p.entry_price));
+    const qty = parseFloat(String(p.quantity));
+    const margin = parseFloat(String(p.margin));
+    const markPrice = ticker ? parseFloat(ticker.lastPrice) : entry;
+    const uPnl = p.side === "long" ? (markPrice - entry) * qty : (entry - markPrice) * qty;
+    return sum + margin + uPnl;
   }, 0);
-  const paperTotalValue = (paperData?.account.balance_usdt ?? 0) + paperHoldingsValue;
+  const paperTotalValue = (paperData?.account.balance_usdt ?? 0) + paperPositionsEquity;
   const paperPnl = paperData ? paperTotalValue - 10000 : 0;
   const paperPnlPct = paperData ? (paperPnl / 10000) * 100 : 0;
 

@@ -20,12 +20,12 @@ import { Button } from "@/components/ui/Button";
 import { useSpotTicker } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { usePriceAlertsStore } from "@/stores/priceAlerts";
+import { useTradePrefsStore, type TradeMarketType } from "@/stores/tradePrefs";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_SYMBOL = "BTC-USDT";
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"];
-type MarketType = "spot" | "paper" | "futures";
+type MarketType = TradeMarketType;
 
 // Memoized top bar — isolates ticker-driven re-renders from the rest of the page
 const TickerBar = memo(function TickerBar({
@@ -264,10 +264,14 @@ const RightTabs = memo(function RightTabs({
 export default function TradePage() {
   const locale = useLocale();
   const auth = useAuth();
-  const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
-  const [interval, setInterval] = useState("1h");
-  const [market, setMarket] = useState<MarketType>("spot");
-  const [rightTab, setRightTab] = useState<"trade" | "orders" | "book">("trade");
+  const symbol = useTradePrefsStore((s) => s.symbol);
+  const setSymbol = useTradePrefsStore((s) => s.setSymbol);
+  const interval = useTradePrefsStore((s) => s.interval);
+  const setInterval = useTradePrefsStore((s) => s.setInterval);
+  const market = useTradePrefsStore((s) => s.market);
+  const setMarket = useTradePrefsStore((s) => s.setMarket);
+  const rightTab = useTradePrefsStore((s) => s.rightTab);
+  const setRightTab = useTradePrefsStore((s) => s.setRightTab);
   const [mobileTab, setMobileTab] = useState<"chart" | "trade" | "book">("chart");
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
 

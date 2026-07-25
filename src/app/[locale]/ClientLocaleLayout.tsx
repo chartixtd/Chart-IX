@@ -9,6 +9,7 @@ import { QueryProvider } from "@/components/layout/QueryProvider";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { ToastProvider } from "@/components/ui/Toast";
 import { PriceAlertWatcher } from "@/components/alerts/PriceAlertWatcher";
+import { PreferencesSync } from "@/components/preferences/PreferencesSync";
 
 export function ClientLocaleLayout({
   children,
@@ -34,6 +35,7 @@ export function ClientLocaleLayout({
             </div>
             <OnboardingModal />
             <PriceAlertWatcher />
+            <PreferencesSync />
           </ToastProvider>
         </AuthProvider>
       </QueryProvider>

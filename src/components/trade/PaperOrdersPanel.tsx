@@ -22,35 +22,49 @@ interface PaperLimitOrderRow {
   filled_at: string | null;
 }
 
-function HoldingRow({ symbol, quantity, avgEntryPrice, onClose }: {
-  symbol: string; quantity: number; avgEntryPrice: number;
-  onClose: (symbol: string, quantity: number) => void;
+function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liquidationPrice, onClose, closing }: {
+  symbol: string; side: "long" | "short"; quantity: number; entryPrice: number;
+  leverage: number; margin: number; liquidationPrice: number;
+  onClose: (symbol: string) => void; closing: boolean;
 }) {
   const { data: ticker } = useSpotTicker(symbol);
-  const markPrice = ticker ? parseFloat(ticker.lastPrice) : avgEntryPrice;
-  const pnl = (markPrice - avgEntryPrice) * quantity;
-  const pnlPct = avgEntryPrice > 0 ? (pnl / (avgEntryPrice * quantity)) * 100 : 0;
+  const markPrice = ticker ? parseFloat(ticker.lastPrice) : entryPrice;
+  // 未实现盈亏按仓位方向计算
+  const pnl = side === "long"
+    ? (markPrice - entryPrice) * quantity
+    : (entryPrice - markPrice) * quantity;
+  // 收益率基于占用保证金（含杠杆放大）
+  const pnlPct = margin > 0 ? (pnl / margin) * 100 : 0;
   const isProfit = pnl >= 0;
+  const isLong = side === "long";
 
   return (
     <div className="px-3 py-2 border-b border-border-default/50 last:border-0">
       <div className="flex items-center justify-between text-xs">
-        <span className="font-semibold text-text-primary">{symbol}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-text-muted">{formatNumber(quantity, 6)}</span>
-          <button
-            onClick={() => onClose(symbol, quantity)}
-            className="rounded-xs bg-danger/10 px-1.5 py-0.5 text-xs text-danger hover:bg-danger/20"
-          >
-            平仓
-          </button>
+        <div className="flex items-center gap-1.5">
+          <span className={cn("rounded-xs px-1 py-0.5 text-[10px] font-bold", isLong ? "bg-success/15 text-success" : "bg-danger/15 text-danger")}>
+            {isLong ? "多 LONG" : "空 SHORT"}
+          </span>
+          <span className="font-semibold text-text-primary">{symbol}</span>
+          <span className="text-gold">{leverage}x</span>
         </div>
+        <button
+          onClick={() => onClose(symbol)}
+          disabled={closing}
+          className="rounded-xs bg-danger/10 px-1.5 py-0.5 text-xs text-danger hover:bg-danger/20 disabled:opacity-50"
+        >
+          {closing ? "平仓中" : "平仓"}
+        </button>
       </div>
       <div className="mt-1 flex items-center justify-between text-xs">
-        <span className="text-text-muted">Avg. {formatPrice(avgEntryPrice)}</span>
+        <span className="text-text-muted">{formatNumber(quantity, 6)} @ {formatPrice(entryPrice)}</span>
         <span className={cn("font-medium", isProfit ? "text-success" : "text-danger")}>
           {isProfit ? "+" : ""}{formatPrice(pnl)} ({isProfit ? "+" : ""}{pnlPct.toFixed(2)}%)
         </span>
+      </div>
+      <div className="mt-0.5 flex items-center justify-between text-[11px] text-text-muted/70">
+        <span>强平价 {formatPrice(liquidationPrice)}</span>
+        <span>保证金 {formatPrice(margin)} USDT</span>
       </div>
     </div>
   );
@@ -72,16 +86,21 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
 
-  const handleClosePosition = async (hSymbol: string, quantity: number) => {
+  const positions = data?.positions ?? [];
+
+  const handleClosePosition = async (pSymbol: string) => {
     if (currentPrice <= 0) return;
-    setClosing(hSymbol);
+    const pos = positions.find((p) => p.symbol === pSymbol);
+    if (!pos) return;
+    setClosing(pSymbol);
     try {
-      // quoteAmount 是 USDT，所以传持仓的 USDT 价值
-      const usdtValue = quantity * currentPrice;
+      // 平仓 = 反向市价单，数量为整个仓位的名义价值；杠杆传 1 仅用于关闭
+      const usdtValue = parseFloat(String(pos.quantity)) * currentPrice;
       await placePaperOrder.mutateAsync({
-        symbol: hSymbol,
-        side: "sell",
+        symbol: pSymbol,
+        side: pos.side === "long" ? "sell" : "buy",
         quoteAmount: usdtValue,
+        leverage: pos.leverage,
       });
     } catch { /* ignore */ }
     setClosing(null);
@@ -128,8 +147,6 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
     );
   }
 
-  const holdings = data?.holdings ?? [];
-
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Balance */}
@@ -140,21 +157,28 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
         </div>
       </div>
 
-      {/* Holdings */}
+      {/* Positions */}
       <div className="overflow-auto">
         <div className="px-3 py-2 border-b border-border-default">
-          <span className="text-xs font-medium text-text-secondary">Holdings ({holdings.length})</span>
+          <span className="text-xs font-medium text-text-secondary">Positions ({positions.length})</span>
         </div>
-        {holdings.length === 0 ? (
-          <p className="px-3 py-4 text-xs text-text-muted text-center">暂无持仓 / No holdings yet</p>
+        {positions.length === 0 ? (
+          <p className="px-3 py-4 text-xs text-text-muted text-center">暂无持仓 / No open positions</p>
         ) : (
-          holdings.map((h) => (
-            <HoldingRow key={h.id} symbol={h.symbol} quantity={h.quantity} avgEntryPrice={h.avg_entry_price}
-              onClose={handleClosePosition} />
+          positions.map((p) => (
+            <PositionRow
+              key={p.id}
+              symbol={p.symbol}
+              side={p.side}
+              quantity={parseFloat(String(p.quantity))}
+              entryPrice={parseFloat(String(p.entry_price))}
+              leverage={p.leverage}
+              margin={parseFloat(String(p.margin))}
+              liquidationPrice={parseFloat(String(p.liquidation_price))}
+              onClose={handleClosePosition}
+              closing={closing === p.symbol}
+            />
           ))
-        )}
-        {closing && (
-          <p className="px-3 py-1 text-xs text-text-muted text-center">平仓 {closing} 中...</p>
         )}
       </div>
 

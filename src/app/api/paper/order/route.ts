@@ -43,12 +43,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { symbol, side, quoteAmount, orderType, price: limitPrice } = body as {
+    const { symbol, side, quoteAmount, orderType, price: limitPrice, leverage } = body as {
       symbol?: string;
       side?: string;
       quoteAmount?: string | number;
       orderType?: string;
       price?: string | number;
+      leverage?: string | number;
     };
 
     if (!symbol || !side) {
@@ -56,6 +57,14 @@ export async function POST(request: NextRequest) {
     }
     if (side !== "buy" && side !== "sell") {
       return NextResponse.json({ success: false, error: { message: "side must be buy or sell" } }, { status: 400 });
+    }
+
+    // 杠杆倍数（1-125），默认 1x
+    const leverageNum = Math.round(
+      typeof leverage === "string" ? parseFloat(leverage) : (leverage as number) || 1
+    );
+    if (!Number.isFinite(leverageNum) || leverageNum < 1 || leverageNum > 125) {
+      return NextResponse.json({ success: false, error: { message: "leverage must be between 1 and 125" } }, { status: 400 });
     }
 
     // 限价单分支
@@ -76,13 +85,13 @@ export async function POST(request: NextRequest) {
           p_side: side,
           p_quantity: qtyNum,
           p_price: priceNum,
+          p_leverage: leverageNum,
         })
         .single();
 
       if (error) {
         const message =
-          error.message.includes("insufficient_balance") ? "余额不足 / Insufficient balance"
-          : error.message.includes("insufficient_holding") ? "持仓不足 / Insufficient holding"
+          error.message.includes("insufficient_balance") ? "保证金不足 / Insufficient margin"
           : error.message;
         return NextResponse.json({ success: false, error: { message } }, { status: 400 });
       }
@@ -119,13 +128,13 @@ export async function POST(request: NextRequest) {
         p_side: side,
         p_quantity: quantity,
         p_price: price,
+        p_leverage: leverageNum,
       })
       .single<PaperOrder>();
 
     if (error) {
       const message =
-        error.message.includes("insufficient_balance") ? "余额不足 / Insufficient balance"
-        : error.message.includes("insufficient_holding") ? "持仓不足 / Insufficient holding"
+        error.message.includes("insufficient_balance") ? "保证金不足 / Insufficient margin"
         : error.message;
       return NextResponse.json({ success: false, error: { message } }, { status: 400 });
     }

@@ -169,12 +169,18 @@ export interface PaperAccount {
   updated_at: string;
 }
 
-export interface PaperHolding {
+export type PositionSide = "long" | "short";
+
+export interface PaperPosition {
   id: string;
   account_id: string;
   symbol: string;
+  side: PositionSide;
   quantity: number;
-  avg_entry_price: number;
+  entry_price: number;
+  leverage: number;
+  margin: number;
+  liquidation_price: number;
   updated_at: string;
 }
 
@@ -188,6 +194,8 @@ export interface PaperOrder {
   total_value: number;
   realized_pnl: number | null;
   balance_after: number;
+  leverage: number;
+  margin: number;
   created_at: string;
 }
 

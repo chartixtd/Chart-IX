@@ -236,7 +236,7 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
         {/* TIF */}
         {isLimitType && (
           <div className="flex gap-1">
-            {(isPaper ? ["GTC"] : TIF_OPTIONS).map((t) => (
+            {(isPaper ? (["GTC"] as TIF[]) : TIF_OPTIONS).map((t) => (
               <button key={t} onClick={() => setTif(t)}
                 className={cn("flex-1 rounded-xs py-0.5 text-xs", tif === t ? "bg-gold/20 text-gold" : "bg-bg-tertiary text-text-muted")}
               >{t}</button>

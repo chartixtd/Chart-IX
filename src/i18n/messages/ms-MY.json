@@ -199,7 +199,7 @@
       "stop_loss": "Henti Rugi",
       "take_profit": "Ambil Untung",
       "liquidation_price": "Harga Kecairan",
-      "margin": "Margin",
+      "margin": "Margin Jaminan",
       "unrealized_pnl": "PnL Belum Terealisasi",
       "realized_pnl": "PnL Terealisasi"
     },
@@ -283,14 +283,14 @@
     "role": "Peranan",
     "tier": "Peringkat",
     "please_login": "Sila log masuk dahulu",
-    "api_keys": "API Keys",
+    "api_keys": "Kunci API",
     "api_keys_desc": "Urus kunci API BingX anda"
   },
   "api_keys": {
     "title": "Pengurusan Kunci API",
     "description": "Urus kunci API BingX anda di sini. Kunci anda disulitkan untuk keselamatan.",
     "add_key": "Tambah Kunci API",
-    "label": "Label",
+    "label": "Nama Label",
     "label_placeholder": "cth: Kunci Dagangan",
     "api_key_input": "API Key",
     "api_key_placeholder": "Masukkan BingX API Key anda",

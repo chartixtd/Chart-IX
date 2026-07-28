@@ -79,10 +79,23 @@
 - **阶段 0（Task 1）** — 测试基建
 - **阶段 1（Task 2–7）** — `src/lib/trading/` 纯函数层，全程 TDD
 - **阶段 2（Task 8–17）** — 数据库迁移与服务端下单链路
-- **阶段 3（Task 18–24）** — 前端表单重整、设置页与后台
-- **阶段 4（Task 25–26）** — 三语文案与验证脚本
+- **阶段 3（Task 25, 18, 19, 20+21, 22, 23, 24）** — 三语文案先行，然后前端表单重整、设置页与后台
+- **阶段 4（Task 26）** — 验证脚本与验收清单
 
-每个阶段结束后代码应处于可构建、可部署状态。
+### ⚠️ 执行顺序与编号不同
+
+任务编号保持原样（便于交叉引用），但**执行顺序经过调整**：
+
+```
+1 → 2 → … → 17 → 25 → 18 → 19 → [20 + 21 合并为一次] → 22 → 23 → 24 → 26
+```
+
+两条调整及其原因：
+
+1. **Task 25（三语文案）提到阶段 3 最前**。原顺序让 Task 19/21/23 先引用尚不存在的翻译 key，再靠占位文案撑到最后统一补齐；占位文案会横跨 5 个任务，与 Global Constraints 第一条（用户可见文案必须三语齐全）直接冲突。文案先行后，所有 UI 任务直接用真 key。
+2. **Task 20（确认弹窗）与 Task 21（OrderForm + 删旧表单）合并为一次实现**。改 `OrderConfirmModal` 的 props 会打断旧的 `TradeForm`，而旧表单在 Task 21 才删除——拆开做会让 Task 20 以红构建收尾。合并后每个任务都以绿构建收尾。
+
+每个任务结束时代码都应处于可构建状态。
 
 ---
 
@@ -3873,7 +3886,7 @@ function Row({ label, value, emphasis }: { label: string; value: string; emphasi
 - [ ] **Step 6: 确认构建通过**
 
 Run: `npm run build`
-Expected: 构建成功。若报缺失翻译 key，暂时忽略——Task 22 会补齐三语文案；`next-intl` 在缺 key 时抛错的话，先在 `zh-CN.json` 里加占位，Task 22 再统一整理。
+Expected: 构建成功。本任务用到的 `trading.*` 翻译 key 已在 Task 25 中补齐（见执行顺序说明），若报缺 key，说明该 key 在 Task 25 中被遗漏——回到 `src/i18n/messages/` 三份文件补上，不要用占位文案。
 
 - [ ] **Step 7: Commit**
 
@@ -4040,17 +4053,7 @@ function Row({
 }
 ```
 
-- [ ] **Step 2: 确认构建通过**
-
-Run: `npm run build`
-Expected: 构建报错，提示 `TradeForm.tsx` 传给 `OrderConfirmModal` 的 props 不匹配——这是预期的，Task 21 会用新的 `OrderForm` 取代它。若想让构建保持绿色，可先跳到 Task 21 再一起验证。
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/components/trade/OrderConfirmModal.tsx
-git commit -m "feat(trade): extend order confirm modal with leverage, margin and liquidation price"
-```
+> **本任务与 Task 21 合并执行。** 单独改完 `OrderConfirmModal` 会让旧的 `TradeForm` props 不匹配、构建变红；Task 21 删除旧表单后构建才恢复绿色。因此不要在这里单独 build/commit——完成本任务的 Step 1 后直接进入 Task 21，两者共用 Task 21 的验证与提交步骤。
 
 ---
 
@@ -4628,7 +4631,7 @@ interface ApiKeyRow {
 - [ ] **Step 5: 确认构建通过**
 
 Run: `npm run build`
-Expected: 构建成功。缺失的翻译 key 由 Task 24 统一补齐；若 next-intl 在缺 key 时抛错，先在 `zh-CN.json` 的 `api_keys` 下加占位。
+Expected: 构建成功。本任务用到的 `api_keys.*` 新 key 已在 Task 25 中补齐（见执行顺序说明），若报缺 key，说明该 key 在 Task 25 中被遗漏——回到 `src/i18n/messages/` 三份文件补上，不要用占位文案。
 
 - [ ] **Step 6: Commit**
 

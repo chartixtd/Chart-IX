@@ -24,8 +24,8 @@ export function hardFilter(ticker: BingXTicker, direction: "long" | "short"): bo
   if (isNaN(high) || isNaN(low) || isNaN(quoteVolume) || isNaN(priceChangePercent)) return true;
   if (low <= 0) return true;
 
-  // 1. 流动性不足：24h 合约成交量 < 1 亿美元
-  if (quoteVolume < 100_000_000) return true;
+  // 1. 流动性不足：24h 成交量 < 1 千万美元
+  if (quoteVolume < 10_000_000) return true;
 
   // 2. 死盘无波动：振幅 < 1.5%
   const amplitude = ((high - low) / low) * 100;

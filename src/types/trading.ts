@@ -18,3 +18,24 @@ export interface SymbolSpec {
   takerFeeRate?: number;
   tradable: boolean;
 }
+
+/** 一次名义额→数量换算的结果 */
+export interface OrderSizing {
+  /** 对齐精度后的币数量 */
+  qty: number;
+  /** 按对齐后数量重算的实际名义额（USDT），可能略低于用户输入 */
+  notional: number;
+  /** 换算用的参考价 */
+  price: number;
+}
+
+export type SizeValidationReason =
+  | "BELOW_MIN_QTY"
+  | "BELOW_MIN_NOTIONAL"
+  | "ZERO_AFTER_ROUNDING"
+  | "NOT_TRADABLE"
+  | "INVALID_INPUT";
+
+export type SizeValidation =
+  | { ok: true }
+  | { ok: false; reason: SizeValidationReason; limit?: number };

@@ -81,10 +81,13 @@ export interface PreflightInput {
   /** 换算参考价：限价单用限价，市价单用最新价 */
   referencePrice: number;
   leverage: number;
+  /** 该订单类型是否以限价成交（LIMIT / STOP / TAKE_PROFIT 等）。决定换算基准 */
+  isLimitOrder: boolean;
 }
 
 export type PreflightRejectCode =
   | "UNKNOWN_SYMBOL"
+  | "NO_MARKET_PRICE"
   | SizeValidationReason
   | LimitRejectReason;
 
@@ -96,5 +99,9 @@ export type PreflightResult =
       qty: string;
       sizing: OrderSizing;
       requiredMarginUsdt: number;
+      /** 服务端自行获取的市价，用于风控估值；绝不来自客户端 */
+      marketPrice: number;
+      /** 按服务端市价计算的真实敞口（USDT），风控校验用的就是这个数 */
+      riskNotionalUsdt: number;
     }
   | { ok: false; code: PreflightRejectCode; limit?: number | string };

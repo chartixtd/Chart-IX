@@ -59,7 +59,7 @@ src/lib/trading/
   account-mode.ts  持仓模式探测、杠杆读写、保证金模式读写
   limits.ts        风控限额读取与校验
   errors.ts        BingX 错误码 → 三语 i18n key
-  preflight.ts     编排层，输出规范化下单参数
+  preflight.ts     编排层，输出规范化下单参数；获取服务端市价用于风控估值
   persist.ts       订单落库 + 每日计数
 ```
 
@@ -81,6 +81,8 @@ OrderForm → POST /api/bingx/{spot|futures}/order
 ```
 
 安全性质：直接向 `/api/bingx/futures/order` 发请求同样受限额与精度校验约束，前端无法绕过。
+
+这条性质依赖一个具体做法：**风控估值使用服务端自行获取的市价，绝不使用客户端提交的价格**。若用客户端价格估值，`qty × 客户端价格` 恒等于客户端提交的名义额，风控看到的永远是调用方声称的数字——谎称 BTC 值 1 美元即可让「100 USDT」的订单换算出 100 BTC 并穿透任何名义额上限。真实敞口按服务端市价计算，与订单类型无关。
 
 ## 组件设计
 

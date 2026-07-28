@@ -4,7 +4,8 @@ import { getSymbolSpec } from "./spec";
 import { quoteToBase, validateOrderSize, formatQty, requiredMargin } from "./sizing";
 import { mergeLimits, checkLimits } from "./limits";
 import { countOrdersToday } from "./persist";
-import type { TradingLimits, PreflightInput, PreflightResult } from "@/types/trading";
+import { getSpotTicker, getFuturesTicker } from "@/lib/bingx/market";
+import type { TradingLimits, PreflightInput, PreflightResult, TradingMarket } from "@/types/trading";
 
 interface LimitsRow {
   max_notional_per_order: number | null;
@@ -68,7 +69,24 @@ export async function loadLimitsFor(
 }
 
 /**
- * 下单前置检查：规格 → 换算 → 尺寸校验 → 风控限额。
+ * 获取服务端市价。
+ *
+ * 风控估值绝不能用客户端提交的价格：调用方只要谎称 BTC 值 1 美元，
+ * 就能让「100 USDT」的订单换算出 100 BTC，而风控看到的名义额仍是 100 USDT
+ * （因为 qty × 客户端价格 恒等于 notionalUsdt）。价格必须由服务端自己取。
+ *
+ * 用的是公开行情接口，无需签名。
+ */
+async function fetchMarketPrice(symbol: string, market: TradingMarket): Promise<number> {
+  const ticker = market === "spot"
+    ? await getSpotTicker(symbol)
+    : await getFuturesTicker(symbol);
+  const price = parseFloat(ticker?.lastPrice ?? "");
+  return Number.isFinite(price) && price > 0 ? price : 0;
+}
+
+/**
+ * 下单前置检查：规格 → 市价 → 换算 → 尺寸校验 → 风控限额。
  * 返回 ok:true 时，qty 已经对齐精度、可直接发给 BingX。
  */
 export async function preflightOrder(
@@ -78,9 +96,18 @@ export async function preflightOrder(
   const spec = await getSymbolSpec(input.symbol, input.market, input.direction);
   if (!spec) return { ok: false, code: "UNKNOWN_SYMBOL" };
 
-  const sizing = quoteToBase(input.notionalUsdt, input.referencePrice, spec);
+  const marketPrice = await fetchMarketPrice(input.symbol, input.market);
+  if (!(marketPrice > 0)) return { ok: false, code: "NO_MARKET_PRICE" };
+
+  // 换算基准：市价单一律用服务端市价；限价单用用户的限价（那是用户的真实意图）
+  const sizingPrice = input.isLimitOrder ? input.referencePrice : marketPrice;
+  const sizing = quoteToBase(input.notionalUsdt, sizingPrice, spec);
   const sizeCheck = validateOrderSize(sizing, spec);
   if (!sizeCheck.ok) return { ok: false, code: sizeCheck.reason, limit: sizeCheck.limit };
+
+  // 真实敞口按服务端市价计算，而不是 sizing.notional——后者对市价单恒等于
+  // 用户提交的 notionalUsdt，对限价单则随用户的限价任意缩放，两者都不能用于风控
+  const riskNotionalUsdt = sizing.qty * marketPrice;
 
   // 交易所杠杆上限不在公开规格里（BingX 的公开合约接口不返回 maxLongLeverage /
   // maxShortLeverage，2026-07-29 实测 0/944），因此 spec.maxLeverage 实践中恒为
@@ -98,7 +125,7 @@ export async function preflightOrder(
   const limitCheck = checkLimits(
     {
       symbol: input.symbol,
-      notional: sizing.notional,
+      notional: riskNotionalUsdt,
       leverage: input.leverage,
       ordersToday,
     },
@@ -112,5 +139,7 @@ export async function preflightOrder(
     qty: formatQty(sizing.qty, spec),
     sizing,
     requiredMarginUsdt: requiredMargin(sizing.notional, input.leverage),
+    marketPrice,
+    riskNotionalUsdt,
   };
 }

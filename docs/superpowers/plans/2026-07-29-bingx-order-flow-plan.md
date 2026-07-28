@@ -2085,10 +2085,13 @@ export interface PreflightInput {
   /** 换算参考价：限价单用限价，市价单用最新价 */
   referencePrice: number;
   leverage: number;
+  /** 该订单类型是否以限价成交（LIMIT / STOP / TAKE_PROFIT 等）。决定换算基准 */
+  isLimitOrder: boolean;
 }
 
 export type PreflightRejectCode =
   | "UNKNOWN_SYMBOL"
+  | "NO_MARKET_PRICE"
   | SizeValidationReason
   | LimitRejectReason;
 
@@ -2100,11 +2103,19 @@ export type PreflightResult =
       qty: string;
       sizing: OrderSizing;
       requiredMarginUsdt: number;
+      /** 服务端自行获取的市价，用于风控估值；绝不来自客户端 */
+      marketPrice: number;
+      /** 按服务端市价计算的真实敞口（USDT），风控校验用的就是这个数 */
+      riskNotionalUsdt: number;
     }
   | { ok: false; code: PreflightRejectCode; limit?: number | string };
 ```
 
+> **12b（计划外修正）**：`preflightOrder` 用客户端提交的 `referencePrice` 同时做换算数量与风控估值，导致 `qty × referencePrice` 恒等于用户提交的 `notionalUsdt`——风控看到的名义额永远等于调用方声称的数字，与真实敞口无关（谎称 BTC 值 1 美元即可让「100 USDT」的订单换算出 100 BTC）。修正：风控估值一律用服务端自行获取的市价（`NO_MARKET_PRICE` 为新增拒绝码；取不到市价时直接拒单，绝不放行）；换算数量维持原语义——市价单用市价、限价单用用户的限价。详见 `preflight.ts` 里的 `fetchMarketPrice` 与 `PreflightInput.isLimitOrder`。
+
 - [ ] **Step 2: 创建 `src/lib/trading/preflight.ts`**
+
+> 下面这份代码片段已经是 **12b 修正后** 的版本（含服务端市价获取）；最初实现时用的是修正前的版本（换算与风控估值都直接用 `input.referencePrice`），那个版本有第 12b 节开头说的那个洞，已被取代。
 
 ```typescript
 import * as Sentry from "@sentry/nextjs";
@@ -2113,7 +2124,8 @@ import { getSymbolSpec } from "./spec";
 import { quoteToBase, validateOrderSize, formatQty, requiredMargin } from "./sizing";
 import { mergeLimits, checkLimits } from "./limits";
 import { countOrdersToday } from "./persist";
-import type { TradingLimits, PreflightInput, PreflightResult } from "@/types/trading";
+import { getSpotTicker, getFuturesTicker } from "@/lib/bingx/market";
+import type { TradingLimits, PreflightInput, PreflightResult, TradingMarket } from "@/types/trading";
 
 interface LimitsRow {
   max_notional_per_order: number | null;
@@ -2156,7 +2168,24 @@ export async function loadLimitsFor(
 }
 
 /**
- * 下单前置检查：规格 → 换算 → 尺寸校验 → 风控限额。
+ * 获取服务端市价。
+ *
+ * 风控估值绝不能用客户端提交的价格：调用方只要谎称 BTC 值 1 美元，
+ * 就能让「100 USDT」的订单换算出 100 BTC，而风控看到的名义额仍是 100 USDT
+ * （因为 qty × 客户端价格 恒等于 notionalUsdt）。价格必须由服务端自己取。
+ *
+ * 用的是公开行情接口，无需签名。
+ */
+async function fetchMarketPrice(symbol: string, market: TradingMarket): Promise<number> {
+  const ticker = market === "spot"
+    ? await getSpotTicker(symbol)
+    : await getFuturesTicker(symbol);
+  const price = parseFloat(ticker?.lastPrice ?? "");
+  return Number.isFinite(price) && price > 0 ? price : 0;
+}
+
+/**
+ * 下单前置检查：规格 → 市价 → 换算 → 尺寸校验 → 风控限额。
  * 返回 ok:true 时，qty 已经对齐精度、可直接发给 BingX。
  */
 export async function preflightOrder(
@@ -2166,9 +2195,18 @@ export async function preflightOrder(
   const spec = await getSymbolSpec(input.symbol, input.market, input.direction);
   if (!spec) return { ok: false, code: "UNKNOWN_SYMBOL" };
 
-  const sizing = quoteToBase(input.notionalUsdt, input.referencePrice, spec);
+  const marketPrice = await fetchMarketPrice(input.symbol, input.market);
+  if (!(marketPrice > 0)) return { ok: false, code: "NO_MARKET_PRICE" };
+
+  // 换算基准：市价单一律用服务端市价；限价单用用户的限价（那是用户的真实意图）
+  const sizingPrice = input.isLimitOrder ? input.referencePrice : marketPrice;
+  const sizing = quoteToBase(input.notionalUsdt, sizingPrice, spec);
   const sizeCheck = validateOrderSize(sizing, spec);
   if (!sizeCheck.ok) return { ok: false, code: sizeCheck.reason, limit: sizeCheck.limit };
+
+  // 真实敞口按服务端市价计算，而不是 sizing.notional——后者对市价单恒等于
+  // 用户提交的 notionalUsdt，对限价单则随用户的限价任意缩放，两者都不能用于风控
+  const riskNotionalUsdt = sizing.qty * marketPrice;
 
   // 交易所杠杆上限不在公开规格里（BingX 的公开合约接口不返回 maxLongLeverage /
   // maxShortLeverage，2026-07-29 实测 0/944），因此 spec.maxLeverage 实践中恒为
@@ -2186,7 +2224,7 @@ export async function preflightOrder(
   const limitCheck = checkLimits(
     {
       symbol: input.symbol,
-      notional: sizing.notional,
+      notional: riskNotionalUsdt,
       leverage: input.leverage,
       ordersToday,
     },
@@ -2200,6 +2238,8 @@ export async function preflightOrder(
     qty: formatQty(sizing.qty, spec),
     sizing,
     requiredMarginUsdt: requiredMargin(sizing.notional, input.leverage),
+    marketPrice,
+    riskNotionalUsdt,
   };
 }
 ```
@@ -2311,6 +2351,8 @@ export async function POST(request: NextRequest) {
   // outage surfaces to the user as a bare 500 with no readable message.
   let pre;
   try {
+    // 限价类的 refPrice 仍是换算基准；市价类的 refPrice 现在只用于展示，
+    // preflightOrder 内部风控估值一律用服务端市价，不再信任这里传的值。
     pre = await preflightOrder(supabase, {
       userId,
       market: "spot",
@@ -2319,6 +2361,7 @@ export async function POST(request: NextRequest) {
       notionalUsdt: notional,
       referencePrice: refPrice,
       leverage: 1,
+      isLimitOrder: LIMIT_TYPES.has(type),
     });
   } catch (error) {
     const described = describeBingXError(error);
@@ -2328,6 +2371,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // pre.code 也可能是 12b 引入的 NO_MARKET_PRICE（服务端取不到市价，直接拒单）
   if (!pre.ok) {
     await recordOrder(supabase, {
       userId, apiKeyId: null, market: "spot", symbol, side: sideLower, orderType: type,
@@ -2526,9 +2570,12 @@ export async function POST(request: NextRequest) {
   // outage surfaces to the user as a bare 500 with no readable message.
   let pre;
   try {
+    // 限价类的 refPrice 仍是换算基准；市价类的 refPrice 现在只用于展示，
+    // preflightOrder 内部风控估值一律用服务端市价，不再信任这里传的值。
     pre = await preflightOrder(supabase, {
       userId, market: "futures", symbol, direction,
       notionalUsdt: notional, referencePrice: refPrice, leverage: lev,
+      isLimitOrder: LIMIT_TYPES.has(type),
     });
   } catch (error) {
     const described = describeBingXError(error);
@@ -2539,6 +2586,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 落库用小写：既有 /orders 页面与 dashboard 统计都按 "buy"/"sell" 比较
+  // pre.code 也可能是 12b 引入的 NO_MARKET_PRICE（服务端取不到市价，直接拒单）
   const sideForLog = direction === "LONG" ? "buy" : "sell";
   if (!pre.ok) {
     await recordOrder(supabase, {

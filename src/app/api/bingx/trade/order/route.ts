@@ -77,6 +77,8 @@ export async function POST(request: NextRequest) {
   // outage surfaces to the user as a bare 500 with no readable message.
   let pre;
   try {
+    // 限价类的 refPrice 仍是换算基准；市价类的 refPrice 现在只用于展示，
+    // preflightOrder 内部风控估值一律用服务端市价，不再信任这里传的值。
     pre = await preflightOrder(supabase, {
       userId,
       market: "spot",
@@ -85,6 +87,7 @@ export async function POST(request: NextRequest) {
       notionalUsdt: notional,
       referencePrice: refPrice,
       leverage: 1,
+      isLimitOrder: LIMIT_TYPES.has(type),
     });
   } catch (error) {
     const described = describeBingXError(error);

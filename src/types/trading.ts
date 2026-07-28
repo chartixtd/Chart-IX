@@ -39,3 +39,28 @@ export type SizeValidationReason =
 export type SizeValidation =
   | { ok: true }
   | { ok: false; reason: SizeValidationReason; limit?: number };
+
+/** 风控限额配置。任一字段为 null 表示该项不限制 */
+export interface TradingLimits {
+  maxNotionalPerOrder: number | null;
+  maxOrdersPerDay: number | null;
+  maxLeverage: number | null;
+  allowedSymbols: string[] | null;
+}
+
+export interface LimitCheckInput {
+  symbol: string;
+  notional: number;
+  leverage: number;
+  ordersToday: number;
+}
+
+export type LimitRejectReason =
+  | "NOTIONAL_TOO_LARGE"
+  | "DAILY_LIMIT_REACHED"
+  | "LEVERAGE_TOO_HIGH"
+  | "SYMBOL_NOT_ALLOWED";
+
+export type LimitCheck =
+  | { ok: true }
+  | { ok: false; reason: LimitRejectReason; limit: number | string };

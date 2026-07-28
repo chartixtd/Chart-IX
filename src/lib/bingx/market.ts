@@ -7,6 +7,8 @@ import type {
   BingXDepth,
   BingXTrade,
   BingXContract,
+  BingXOpenInterest,
+  BingXFundingRate,
 } from "@/types/bingx";
 
 // ==================== 现货行情 ====================
@@ -106,6 +108,20 @@ export async function getFuturesKlines(
 /** 获取合约24小时行情 */
 export async function getFuturesTicker(symbol: string): Promise<BingXTicker> {
   return bingxClient.publicRequest<BingXTicker>("/openApi/swap/v2/quote/ticker", {
+    symbol,
+  });
+}
+
+/** 获取合约未平仓量 */
+export async function getFuturesOpenInterest(symbol: string): Promise<BingXOpenInterest> {
+  return bingxClient.publicRequest<BingXOpenInterest>("/openApi/swap/v2/quote/openInterest", {
+    symbol,
+  });
+}
+
+/** 获取合约溢价指数（含当前资金费率） */
+export async function getFuturesFundingRate(symbol: string): Promise<BingXFundingRate> {
+  return bingxClient.publicRequest<BingXFundingRate>("/openApi/swap/v2/quote/premiumIndex", {
     symbol,
   });
 }

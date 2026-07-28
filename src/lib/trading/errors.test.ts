@@ -25,6 +25,36 @@ describe("parseBingXError", () => {
     expect(parseBingXError("boom").rawMessage).toBe("boom");
     expect(parseBingXError(undefined).rawMessage).toBe("");
   });
+
+  it("handles the real missing-msg producer output with Unknown sentinel", () => {
+    const r = parseBingXError(new Error("BingX error 100001: Unknown"));
+    expect(r.code).toBe(100001);
+    expect(r.rawMessage).toBe("Unknown");
+  });
+
+  it("preserves embedded colons in the message body", () => {
+    const r = parseBingXError(new Error("BingX error 109400: invalid parameter: symbol required"));
+    expect(r.code).toBe(109400);
+    expect(r.rawMessage).toBe("invalid parameter: symbol required");
+  });
+
+  it("preserves embedded newlines in the message body via the s (dotAll) flag", () => {
+    const r = parseBingXError(new Error("BingX error 80014: line1\nline2"));
+    expect(r.code).toBe(80014);
+    expect(r.rawMessage).toBe("line1\nline2");
+  });
+
+  it("handles negative error codes", () => {
+    const r = parseBingXError(new Error("BingX error -1: something broke"));
+    expect(r.code).toBe(-1);
+    expect(r.rawMessage).toBe("something broke");
+  });
+
+  it("converts non-Error, non-string, non-null input to string", () => {
+    const r = parseBingXError({});
+    expect(r.code).toBeNull();
+    expect(r.rawMessage).toBe("[object Object]");
+  });
 });
 
 describe("bingxErrorI18nKey", () => {
@@ -34,11 +64,16 @@ describe("bingxErrorI18nKey", () => {
     expect(bingxErrorI18nKey(100413)).toBe("bingx_error.invalid_key");
     expect(bingxErrorI18nKey(101204)).toBe("bingx_error.insufficient_margin");
     expect(bingxErrorI18nKey(109400)).toBe("bingx_error.invalid_params");
+    expect(bingxErrorI18nKey(100400)).toBe("bingx_error.invalid_params");
     expect(bingxErrorI18nKey(80014)).toBe("bingx_error.invalid_params");
   });
 
   it("falls back to the generic key for unknown codes", () => {
     expect(bingxErrorI18nKey(999999)).toBe("bingx_error.unknown");
+  });
+
+  it("falls back to the generic key for negative codes", () => {
+    expect(bingxErrorI18nKey(-1)).toBe("bingx_error.unknown");
   });
 
   it("falls back to the network key when there is no code", () => {

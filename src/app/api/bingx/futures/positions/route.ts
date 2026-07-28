@@ -25,7 +25,8 @@ export async function GET(request: NextRequest) {
     const symbol = searchParams.get("symbol") || undefined;
 
     if (type === "balance") {
-      return NextResponse.json({ success: true, data: await getFuturesBalance(apiKey, secret) });
+      const balance = await getFuturesBalance(apiKey, secret);
+      return NextResponse.json({ success: true, data: balance });
     }
     return NextResponse.json({ success: true, data: await getFuturesPositions(apiKey, secret, symbol) });
   } catch (error) {
@@ -65,8 +66,18 @@ export async function POST(request: NextRequest) {
     const { action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice, amount, directionType } = body;
 
     switch (action) {
-      case "closePosition":
-        return NextResponse.json({ success: true, data: await closePosition(apiKey, secret, symbol, positionSide, positionId) });
+      case "closePosition": {
+        if (!positionId) {
+          return NextResponse.json(
+            { success: false, error: { message: "positionId is required to close a position" } },
+            { status: 400 }
+          );
+        }
+        return NextResponse.json({
+          success: true,
+          data: await closePosition(apiKey, secret, positionId),
+        });
+      }
       case "closeAllPositions":
         return NextResponse.json({ success: true, data: await closeAllPositions(apiKey, secret, symbol) });
       case "setLeverage":

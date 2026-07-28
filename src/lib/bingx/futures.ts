@@ -15,13 +15,16 @@ export type FuturesMarginType = "ISOLATED" | "CROSSED";
 
 // ==================== 响应类型 ====================
 
+/** 来源：GET /openApi/swap/v3/user/balance，返回的是数组 */
 export interface FuturesBalance {
+  userId: string;
   asset: string;
   balance: string;
-  crossWalletBalance: string;
-  crossUnPnl: string;
-  availableBalance: string;
-  maxWithdrawAmount: string;
+  equity: string;
+  unrealizedProfit: string;
+  realisedProfit: string;
+  availableMargin: string;
+  usedMargin: string;
 }
 
 export interface FuturesPosition {
@@ -44,8 +47,10 @@ export interface FuturesPosition {
 
 export interface FuturesOrderResult {
   symbol: string;
+  /** 数值型订单号，大数在 JS 中可能丢精度——优先用 orderIdStr */
   orderId?: number;
-  orderID?: string;
+  /** 字符串订单号。BingX 在不同端点分别用 orderID / orderId，此处统一为字符串 */
+  orderIdStr: string;
   clientOrderId?: string;
   side: string;
   positionSide: string;
@@ -53,13 +58,24 @@ export interface FuturesOrderResult {
   origQty: string;
   price: string;
   stopPrice?: string;
-  executedQty: string;
+  executedQty?: string;
   avgPrice?: string;
-  cumQuote?: string;
   status: string;
-  leverage?: number;
   workingType?: string;
-  updateTime: number;
+  updateTime?: number;
+}
+
+/** BingX 合约下单的原始响应包装 */
+interface FuturesOrderEnvelope {
+  order?: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+/** 解包 data.order，并把订单号统一成字符串 */
+function unwrapOrder(raw: FuturesOrderEnvelope): FuturesOrderResult {
+  const o = (raw?.order ?? raw) as Record<string, unknown>;
+  const idStr = o.orderID ?? o.orderId ?? "";
+  return { ...(o as unknown as FuturesOrderResult), orderIdStr: String(idStr) };
 }
 
 export interface FuturesOrder {
@@ -152,10 +168,15 @@ export interface FuturesTwapOrder {
 
 // ==================== 账户 ====================
 
+/** 取 USDT 结算账户余额。v3 返回数组，可能含多种结算币 */
 export async function getFuturesBalance(
-  apiKey: string, secret: string
-): Promise<FuturesBalance> {
-  return signedRequest(apiKey, secret, "GET", "/openApi/swap/v2/user/balance");
+  apiKey: string, secret: string, asset = "USDT"
+): Promise<FuturesBalance | null> {
+  const rows = await signedRequest<FuturesBalance[]>(
+    apiKey, secret, "GET", "/openApi/swap/v3/user/balance"
+  );
+  if (!Array.isArray(rows)) return null;
+  return rows.find((r) => r.asset === asset) ?? rows[0] ?? null;
 }
 
 // ==================== 仓位 ====================
@@ -286,8 +307,8 @@ export interface PlaceFuturesOrderParams {
   price?: string;
   stopPrice?: string;
   activationPrice?: string;
+  /** 追踪回撤率，小数形式，0 < x ≤ 1（0.05 = 5%）。TRAILING_STOP_MARKET / TRAILING_TP_SL 必填 */
   priceRate?: number;
-  callbackRate?: number;
   timeInForce?: FuturesTimeInForce;
   workingType?: FuturesWorkingType;
   clientOrderId?: string;
@@ -315,7 +336,6 @@ export async function placeFuturesOrder(
   if (params.stopPrice) body.stopPrice = params.stopPrice;
   if (params.activationPrice) body.activationPrice = params.activationPrice;
   if (params.priceRate !== undefined) body.priceRate = params.priceRate;
-  if (params.callbackRate !== undefined) body.priceRate = params.callbackRate;
   if (params.timeInForce) body.timeInForce = params.timeInForce;
   if (params.workingType) body.workingType = params.workingType;
   if (params.clientOrderId) body.clientOrderId = params.clientOrderId;
@@ -326,7 +346,10 @@ export async function placeFuturesOrder(
   if (params.stopLoss) body.stopLoss = params.stopLoss;
   if (params.takeProfit) body.takeProfit = params.takeProfit;
 
-  return signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/order", body);
+  const raw = await signedRequest<FuturesOrderEnvelope>(
+    apiKey, secret, "POST", "/openApi/swap/v2/trade/order", body
+  );
+  return unwrapOrder(raw);
 }
 
 // ==================== 测试下单（dry-run） ====================
@@ -354,7 +377,10 @@ export async function testFuturesOrder(
   if (params.stopLoss) body.stopLoss = params.stopLoss;
   if (params.takeProfit) body.takeProfit = params.takeProfit;
 
-  return signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/order/test", body);
+  const raw = await signedRequest<FuturesOrderEnvelope>(
+    apiKey, secret, "POST", "/openApi/swap/v2/trade/order/test", body
+  );
+  return unwrapOrder(raw);
 }
 
 // ==================== 批量下单 ====================
@@ -519,14 +545,13 @@ export async function cancelAllAfterFutures(
 
 // ==================== 平仓 ====================
 
+/** 按 positionId 市价全平单个仓位。positionId 从 getFuturesPositions() 取得 */
 export async function closePosition(
-  apiKey: string, secret: string,
-  symbol: string, positionSide: "LONG" | "SHORT", positionId?: string
-): Promise<FuturesOrderResult> {
-  const side = positionSide === "LONG" ? "SELL" : "BUY";
-  const body: Record<string, string> = { symbol, positionSide, side };
-  if (positionId) body.positionId = positionId;
-  return signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/closePosition", body);
+  apiKey: string, secret: string, positionId: string
+): Promise<Record<string, unknown>> {
+  return signedRequest(apiKey, secret, "POST", "/openApi/swap/v1/trade/closePosition", {
+    positionId,
+  });
 }
 
 export async function closeAllPositions(
@@ -756,8 +781,7 @@ export async function getFuturesVst(
 
 export async function verifyFuturesApiKey(apiKey: string, secret: string): Promise<boolean> {
   try {
-    await getFuturesBalance(apiKey, secret);
-    return true;
+    return (await getFuturesBalance(apiKey, secret)) !== null;
   } catch {
     return false;
   }

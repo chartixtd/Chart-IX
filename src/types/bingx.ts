@@ -1,13 +1,21 @@
 // BingX 行情数据类型 (公开接口)
 
-/** 交易对信息 */
+/** 现货交易对规格。来源：GET /openApi/spot/v1/common/symbols（响应嵌套在 data.symbols） */
 export interface BingXSymbol {
   symbol: string;
-  baseAsset: string;
-  quoteAsset: string;
-  baseAssetPrecision: number;
-  quoteAssetPrecision: number;
-  status: string;
+  minQty: number;
+  maxQty: number;
+  minNotional: number;
+  maxNotional: number;
+  tickSize: number;
+  stepSize: number;
+  /** 1 = 可交易，0 = 停用 */
+  status: number;
+}
+
+/** 现货规格接口的实际响应包装 */
+export interface BingXSpotSymbolsResponse {
+  symbols: BingXSymbol[];
 }
 
 /** 24小时行情 */
@@ -66,16 +74,24 @@ export interface BingXTrade {
   isBuyerMaker: boolean;
 }
 
-/** 合约信息 */
+/** 合约规格。来源：GET /openApi/swap/v2/quote/contracts */
 export interface BingXContract {
   symbol: string;
-  baseAsset: string;
-  quoteAsset: string;
-  contractSize: string;
+  asset: string;
+  currency: string;
+  size: string;
   pricePrecision: number;
   quantityPrecision: number;
-  maxLeverage: number;
-  status: string;
+  tradeMinQuantity: number;
+  tradeMinUSDT: number;
+  maxLongLeverage: number;
+  maxShortLeverage: number;
+  makerFeeRate: number;
+  takerFeeRate: number;
+  /** 1 = 可交易，0 = 停用 */
+  status: number;
+  apiStateOpen: string;
+  apiStateClose: string;
 }
 
 /** 合约未平仓量 */

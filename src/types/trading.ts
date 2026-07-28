@@ -1,0 +1,20 @@
+export type TradingMarket = "spot" | "futures";
+
+/** 归一化后的交易对规格，现货与合约共用同一形状 */
+export interface SymbolSpec {
+  symbol: string;
+  market: TradingMarket;
+  /** 价格小数位 */
+  pricePrecision: number;
+  /** 数量小数位 */
+  quantityPrecision: number;
+  /** 最小下单数量（基础币） */
+  minQty: number;
+  /** 最小下单名义额（USDT） */
+  minNotional: number;
+  /** 最大杠杆，仅合约有值 */
+  maxLeverage?: number;
+  /** taker 费率，用于预览估算手续费；无数据时为 undefined */
+  takerFeeRate?: number;
+  tradable: boolean;
+}

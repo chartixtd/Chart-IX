@@ -1,6 +1,7 @@
 import { bingxClient } from "./client";
 import type {
   BingXSymbol,
+  BingXSpotSymbolsResponse,
   BingXTicker,
   BingXKlineRow,
   BingXKline,
@@ -13,11 +14,13 @@ import type {
 
 // ==================== 现货行情 ====================
 
-/** 获取现货交易对列表 */
+/** 获取现货交易对列表。注意：BingX 把数组嵌在 data.symbols 里 */
 export async function getSpotSymbols(symbol?: string): Promise<BingXSymbol[]> {
-  return bingxClient.publicRequest<BingXSymbol[]>("/openApi/spot/v1/common/symbols", {
-    symbol,
-  });
+  const res = await bingxClient.publicRequest<BingXSpotSymbolsResponse>(
+    "/openApi/spot/v1/common/symbols",
+    { symbol }
+  );
+  return res.symbols ?? [];
 }
 
 /** 获取24小时行情 */

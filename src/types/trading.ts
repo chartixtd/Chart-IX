@@ -69,3 +69,32 @@ export type LimitRejectReason =
 export type LimitCheck =
   | { ok: true }
   | { ok: false; reason: LimitRejectReason; limit: number | string };
+
+export interface PreflightInput {
+  userId: string;
+  market: TradingMarket;
+  symbol: string;
+  /** 用户选的方向；现货 BUY/SELL 直接映射，合约 LONG/SHORT 在路由层转换 */
+  direction: "LONG" | "SHORT";
+  /** 用户输入的仓位名义额（USDT） */
+  notionalUsdt: number;
+  /** 换算参考价：限价单用限价，市价单用最新价 */
+  referencePrice: number;
+  leverage: number;
+}
+
+export type PreflightRejectCode =
+  | "UNKNOWN_SYMBOL"
+  | SizeValidationReason
+  | LimitRejectReason;
+
+export type PreflightResult =
+  | {
+      ok: true;
+      spec: SymbolSpec;
+      /** 已对齐精度、可直接发给 BingX 的数量字符串 */
+      qty: string;
+      sizing: OrderSizing;
+      requiredMarginUsdt: number;
+    }
+  | { ok: false; code: PreflightRejectCode; limit?: number | string };

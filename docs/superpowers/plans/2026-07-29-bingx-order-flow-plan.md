@@ -1936,7 +1936,11 @@ export interface RecordOrderInput {
   apiKeyId: string | null;
   market: TradingMarket;
   symbol: string;
-  side: "BUY" | "SELL";
+  /**
+   * 必须小写。既有的 /orders 页面与 /dashboard 统计都以 `side === "buy"` 比较，
+   * 写大写会让实盘单全部显示为 Sell 并污染胜率计算。
+   */
+  side: "buy" | "sell";
   orderType: string;
   quantity: number;
   price?: number | null;
@@ -2283,6 +2287,9 @@ export async function POST(request: NextRequest) {
   if (!(notional > 0)) return reject("INVALID_AMOUNT", "notionalUsdt must be positive", 400);
   if (!(refPrice > 0)) return reject("INVALID_PRICE", "referencePrice must be positive", 400);
 
+  // 落库用小写：既有 /orders 页面与 dashboard 统计都按 "buy"/"sell" 比较
+  const sideLower = side === "BUY" ? "buy" : "sell";
+
   const pre = await preflightOrder(supabase, {
     userId,
     market: "spot",
@@ -2295,7 +2302,7 @@ export async function POST(request: NextRequest) {
 
   if (!pre.ok) {
     await recordOrder(supabase, {
-      userId, apiKeyId: null, market: "spot", symbol, side, orderType: type,
+      userId, apiKeyId: null, market: "spot", symbol, side: sideLower, orderType: type,
       quantity: 0, status: "rejected", riskRejected: true, riskReason: pre.code,
     });
     return reject(pre.code, `Order rejected: ${pre.code}`, 400, pre.limit);
@@ -2327,7 +2334,7 @@ export async function POST(request: NextRequest) {
     });
 
     await recordOrder(supabase, {
-      userId, apiKeyId: apiKeys[0].id, market: "spot", symbol, side, orderType: type,
+      userId, apiKeyId: apiKeys[0].id, market: "spot", symbol, side: sideLower, orderType: type,
       quantity: pre.sizing.qty,
       price: LIMIT_TYPES.has(type) ? Number(price) : null,
       stopPrice: STOP_TYPES.has(type) ? Number(stopPrice) : null,
@@ -2341,7 +2348,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const described = describeBingXError(error);
     await recordOrder(supabase, {
-      userId, apiKeyId: apiKeys[0].id, market: "spot", symbol, side, orderType: type,
+      userId, apiKeyId: apiKeys[0].id, market: "spot", symbol, side: sideLower, orderType: type,
       quantity: pre.sizing.qty, status: "rejected",
       errorMessage: `${described.code ?? "-"}: ${described.rawMessage}`,
     });
@@ -2491,7 +2498,8 @@ export async function POST(request: NextRequest) {
     notionalUsdt: notional, referencePrice: refPrice, leverage: lev,
   });
 
-  const sideForLog = direction === "LONG" ? "BUY" : "SELL";
+  // 落库用小写：既有 /orders 页面与 dashboard 统计都按 "buy"/"sell" 比较
+  const sideForLog = direction === "LONG" ? "buy" : "sell";
   if (!pre.ok) {
     await recordOrder(supabase, {
       userId, apiKeyId: null, market: "futures", symbol, side: sideForLog, orderType: type,

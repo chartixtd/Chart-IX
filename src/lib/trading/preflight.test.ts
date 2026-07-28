@@ -61,9 +61,14 @@ const CAPPED_500 = [
   },
 ];
 
+/** 每次调用都取当前时间，避免测试执行耗时把 closeTime 拖出新鲜度窗口 */
+function freshTicker(lastPrice: string | number = "60000") {
+  return { lastPrice, closeTime: Date.now() };
+}
+
 beforeEach(() => {
-  getSpotTicker.mockReset().mockResolvedValue({ lastPrice: "60000" });
-  getFuturesTicker.mockReset().mockResolvedValue({ lastPrice: "60000" });
+  getSpotTicker.mockReset().mockImplementation(async () => freshTicker());
+  getFuturesTicker.mockReset().mockImplementation(async () => freshTicker());
   getSymbolSpec.mockReset().mockResolvedValue(SPEC);
   countOrdersToday.mockReset().mockResolvedValue(0);
 });
@@ -149,7 +154,87 @@ describe("preflightOrder — risk valuation must use the server-fetched market p
   });
 
   it("rejects when no market price is available", async () => {
-    getSpotTicker.mockResolvedValue({ lastPrice: "" });
+    getSpotTicker.mockResolvedValue({ lastPrice: "", closeTime: Date.now() });
+    const supabase = makeSupabase([]);
+    const result = await preflightOrder(supabase, {
+      userId: USER_ID,
+      market: "spot",
+      symbol: "BTC-USDT",
+      direction: "LONG",
+      notionalUsdt: 100,
+      referencePrice: 60000,
+      leverage: 1,
+      isLimitOrder: false,
+    });
+    expect(result).toEqual({ ok: false, code: "NO_MARKET_PRICE" });
+  });
+
+  it("rejects when the ticker is null (e.g. an unwrapped empty array)", async () => {
+    getSpotTicker.mockResolvedValue(null);
+    const supabase = makeSupabase([]);
+    const result = await preflightOrder(supabase, {
+      userId: USER_ID,
+      market: "spot",
+      symbol: "BTC-USDT",
+      direction: "LONG",
+      notionalUsdt: 100,
+      referencePrice: 60000,
+      leverage: 1,
+      isLimitOrder: false,
+    });
+    expect(result).toEqual({ ok: false, code: "NO_MARKET_PRICE" });
+  });
+
+  it("accepts a fresh quote", async () => {
+    getSpotTicker.mockResolvedValue({ lastPrice: "60000", closeTime: Date.now() - 500 });
+    const supabase = makeSupabase([]);
+    const result = await preflightOrder(supabase, {
+      userId: USER_ID,
+      market: "spot",
+      symbol: "BTC-USDT",
+      direction: "LONG",
+      notionalUsdt: 100,
+      referencePrice: 60000,
+      leverage: 1,
+      isLimitOrder: false,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a quote older than the freshness window", async () => {
+    getSpotTicker.mockResolvedValue({ lastPrice: "60000", closeTime: Date.now() - 60_000 }); // 60s old
+    const supabase = makeSupabase([]);
+    const result = await preflightOrder(supabase, {
+      userId: USER_ID,
+      market: "spot",
+      symbol: "BTC-USDT",
+      direction: "LONG",
+      notionalUsdt: 100,
+      referencePrice: 60000,
+      leverage: 1,
+      isLimitOrder: false,
+    });
+    expect(result).toEqual({ ok: false, code: "NO_MARKET_PRICE" });
+  });
+
+  it("rejects a quote with a missing closeTime", async () => {
+    getSpotTicker.mockResolvedValue({ lastPrice: "60000" });
+    const supabase = makeSupabase([]);
+    const result = await preflightOrder(supabase, {
+      userId: USER_ID,
+      market: "spot",
+      symbol: "BTC-USDT",
+      direction: "LONG",
+      notionalUsdt: 100,
+      referencePrice: 60000,
+      leverage: 1,
+      isLimitOrder: false,
+    });
+    expect(result).toEqual({ ok: false, code: "NO_MARKET_PRICE" });
+  });
+
+  it("rejects a quote with a closeTime far in the future beyond clock-skew allowance", async () => {
+    getSpotTicker.mockResolvedValue({ lastPrice: "60000", closeTime: Date.now() + 60_000 }); // 60s ahead
     const supabase = makeSupabase([]);
     const result = await preflightOrder(supabase, {
       userId: USER_ID,

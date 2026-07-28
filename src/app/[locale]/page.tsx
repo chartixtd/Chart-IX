@@ -25,7 +25,7 @@ function HotQuote({ symbol }: { symbol: string }) {
       {ticker ? (
         <>
           <span className="font-mono text-sm tabular-nums text-text-secondary">
-            {formatPrice(parseFloat(ticker.lastPrice))}
+            {formatPrice(Number(ticker.lastPrice))}
           </span>
           <span className={cn("font-mono text-xs tabular-nums", up ? "text-success" : "text-danger")}>
             {formatPercent(pct)}

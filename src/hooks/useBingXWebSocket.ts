@@ -20,6 +20,11 @@ function mapTicker(raw: Record<string, string>): BingXTicker {
     quoteVolume: raw.q || raw.quoteVolume || "0",
     priceChange: raw.p || raw.priceChange || "0",
     priceChangePercent: raw.P || raw.priceChangePercent || "0",
+    // WS pushes are live ticks with no separate snapshot timestamp in the
+    // payload we read here, so "now" (receipt time) is the accurate value —
+    // this is display-only data, not the REST-sourced price used for risk
+    // valuation in preflight.ts, which does its own closeTime freshness check.
+    closeTime: Date.now(),
   };
 }
 

@@ -90,7 +90,7 @@ export default function DashboardPage() {
     const entry = parseFloat(String(p.entry_price));
     const qty = parseFloat(String(p.quantity));
     const margin = parseFloat(String(p.margin));
-    const markPrice = ticker ? parseFloat(ticker.lastPrice) : entry;
+    const markPrice = ticker ? Number(ticker.lastPrice) : entry;
     const uPnl = p.side === "long" ? (markPrice - entry) * qty : (entry - markPrice) * qty;
     return sum + margin + uPnl;
   }, 0);
@@ -447,7 +447,7 @@ function FavoriteRow({ symbol, locale }: { symbol: string; locale: string }) {
     <Link href={`/${locale}/trade`} className="flex items-center justify-between text-xs hover:text-gold">
       <span className="font-medium text-text-primary">{symbol}</span>
       <span className="flex items-center gap-2">
-        <span className="tabular-nums text-text-secondary">{formatPrice(parseFloat(ticker.lastPrice))}</span>
+        <span className="tabular-nums text-text-secondary">{formatPrice(Number(ticker.lastPrice))}</span>
         <span className={cn("tabular-nums font-medium", isPositive ? "text-success" : "text-danger")}>
           {formatPercent(parseFloat(ticker.priceChangePercent))}
         </span>

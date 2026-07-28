@@ -68,6 +68,17 @@ export async function loadLimitsFor(
   return mergeLimits(global, user);
 }
 
+// 新鲜度窗口：实测（2026-07-29，直连 live 接口）现货 `/ticker/24hr` 与合约
+// `/quote/ticker` 的 `closeTime` 相对当时墙钟时间都在 1 秒以内——`closeTime`
+// 是这份 24 小时统计的快照时间，每次请求都会重新计算，与该交易对是否冷门、
+// 是否有人在交易无关，所以理论上任何交易对每次请求都应该拿到"刚刚"的时间戳。
+// 30 秒的窗口在此基础上留出充足的网络往返/CDN 余量，同时仍然远小于"响应被
+// 缓存/失败后返回陈旧数据"这类真实故障的量级（通常是分钟级）。
+const PRICE_FRESHNESS_WINDOW_MS = 30_000;
+// 时钟偏差容忍：服务器时钟略快于 BingX 时钟是正常的，但 closeTime 大幅领先
+// 本地时间说明时间戳本身不可信，同样应当拒绝而不是采信一个"来自未来"的价格。
+const PRICE_CLOCK_SKEW_MS = 5_000;
+
 /**
  * 获取服务端市价。
  *
@@ -77,20 +88,30 @@ export async function loadLimitsFor(
  *
  * 用的是公开行情接口，无需签名。
  *
- * 已知局限：`BingXTicker`（现货 `/ticker/24hr`、合约 `/quote/ticker`）不带时间戳字段
- * （见 `src/types/bingx.ts`），所以这里没有、也不能做"报价是否过期"的新鲜度校验——
- * 只要 `lastPrice` 能解析成正数就会被当作当前市价采信。冷门交易对长时间无成交，
- * 或 BingX 侧短暂返回陈旧缓存数据时，风控估值可能基于一个滞后的价格。这不会
- * 重新打开"客户端伪造价格"那个洞（调用方仍然无法控制这个数），但属于价格数据源
- * 本身的数据质量问题，未在本次修复范围内解决，需要后续任务跟进（例如改用带时间戳
- * 的接口，或在价格与最近K线/深度之间做合理性交叉校验）。
+ * 新鲜度校验：`BingXTicker.closeTime`（现货、合约均返回，见 `src/types/bingx.ts`
+ * 的实测记录）是行情快照时间，ms epoch。这里要求它落在
+ * `[now - PRICE_FRESHNESS_WINDOW_MS, now + PRICE_CLOCK_SKEW_MS]` 区间内，
+ * 缺失、非法或超出该区间一律当作取不到市价处理，绝不采信一个陈旧或时间戳
+ * 不可信的价格用于风控估值。
+ *
+ * `lastPrice` 类型在现货（number）与合约（string）两个接口之间不一致，
+ * 统一走 `Number()` 解析，不做任何字符串操作。
  */
 async function fetchMarketPrice(symbol: string, market: TradingMarket): Promise<number> {
   const ticker = market === "spot"
     ? await getSpotTicker(symbol)
     : await getFuturesTicker(symbol);
-  const price = parseFloat(ticker?.lastPrice ?? "");
-  return Number.isFinite(price) && price > 0 ? price : 0;
+  if (!ticker) return 0;
+
+  const price = Number(ticker.lastPrice);
+  if (!(Number.isFinite(price) && price > 0)) return 0;
+
+  const closeTime = Number(ticker.closeTime);
+  if (!Number.isFinite(closeTime)) return 0;
+  const age = Date.now() - closeTime;
+  if (age > PRICE_FRESHNESS_WINDOW_MS || age < -PRICE_CLOCK_SKEW_MS) return 0;
+
+  return price;
 }
 
 /**

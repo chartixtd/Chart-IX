@@ -43,7 +43,7 @@ export function MarketHeatmap() {
           name: t.symbol,
           size: Math.sqrt(parseFloat(t.volume)),
           changePercent: parseFloat(merged.priceChangePercent),
-          lastPrice: parseFloat(merged.lastPrice),
+          lastPrice: Number(merged.lastPrice),
         };
       })
       .sort((a, b) => b.size - a.size)

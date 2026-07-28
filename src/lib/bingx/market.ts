@@ -23,11 +23,24 @@ export async function getSpotSymbols(symbol?: string): Promise<BingXSymbol[]> {
   return res.symbols ?? [];
 }
 
-/** 获取24小时行情 */
-export async function getSpotTicker(symbol: string): Promise<BingXTicker> {
-  return bingxClient.publicRequest<BingXTicker>("/openApi/spot/v1/ticker/24hr", {
-    symbol,
-  });
+/**
+ * 获取24小时行情。
+ *
+ * 实测（2026-07-29）：带 symbol 查询单个交易对时，BingX 现货接口把 ticker
+ * 包在一个长度为 1 的数组里（`data: [ {...} ]`），不是像合约 `/quote/ticker`
+ * 那样直接返回对象；`bingxClient.publicRequest` 对此不做归一化，原样把
+ * `json.data` 吐出去。旧实现直接把返回值断言成 `BingXTicker`，实际拿到的是
+ * 数组，调用方读 `.lastPrice` 永远是 `undefined`。这里做与 `getSpotSymbols`
+ * （`data.symbols` 嵌套）同类的拆包：数组取第一个元素，对象直接用，
+ * 两者都拿不到时返回 null，调用方必须处理这个 null。
+ */
+export async function getSpotTicker(symbol: string): Promise<BingXTicker | null> {
+  const res = await bingxClient.publicRequest<BingXTicker | BingXTicker[]>(
+    "/openApi/spot/v1/ticker/24hr",
+    { symbol }
+  );
+  if (Array.isArray(res)) return res[0] ?? null;
+  return res ?? null;
 }
 
 /** 批量获取24小时行情 */

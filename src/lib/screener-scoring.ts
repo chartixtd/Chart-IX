@@ -48,7 +48,7 @@ export function scoreToken(
 ): number {
   const high = parseFloat(ticker.highPrice);
   const low = parseFloat(ticker.lowPrice);
-  const last = parseFloat(ticker.lastPrice);
+  const last = Number(ticker.lastPrice);
   const quoteVolume = parseFloat(ticker.quoteVolume);
 
   if (isNaN(high) || isNaN(low) || isNaN(last) || isNaN(quoteVolume)) return 0;
@@ -140,7 +140,7 @@ export function computeScreenerResults(
 
     results.push({
       symbol: ticker.symbol,
-      lastPrice: parseFloat(ticker.lastPrice),
+      lastPrice: Number(ticker.lastPrice),
       priceChangePercent: parseFloat(ticker.priceChangePercent),
       highPrice: high,
       lowPrice: low,

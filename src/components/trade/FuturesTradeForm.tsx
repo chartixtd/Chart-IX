@@ -27,7 +27,7 @@ const ORDER_TYPES: { key: OrderType; label: string; desc: string }[] = [
 
 export function FuturesTradeForm({ symbol }: FuturesTradeFormProps) {
   const { data: ticker } = useSpotTicker(symbol);
-  const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
+  const currentPrice = ticker ? Number(ticker.lastPrice) : 0;
 
   const [positionSide, setPositionSide] = useState<"LONG" | "SHORT">("LONG");
   const [orderType, setOrderType] = useState<OrderType>("MARKET");

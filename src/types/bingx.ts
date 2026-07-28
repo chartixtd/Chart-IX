@@ -18,17 +18,30 @@ export interface BingXSpotSymbolsResponse {
   symbols: BingXSymbol[];
 }
 
-/** 24小时行情 */
+/**
+ * 24小时行情。
+ *
+ * 实测（2026-07-29，直连 live 接口）：
+ * - 现货 `GET /openApi/spot/v1/ticker/24hr?symbol=...`：`lastPrice` 是 **number**
+ *   （如 `63923.02`），`closeTime` 与当时墙钟时间相差 -0.7s。
+ * - 合约 `GET /openApi/swap/v2/quote/ticker?symbol=...`：`lastPrice` 是
+ *   **string**（如 `"63899.4"`），`closeTime` 相差 -0.4s。
+ * 两边字段名一致但 `lastPrice` 类型不同，故声明为 `string | number`；所有读取
+ * 都必须过一次数值解析（`parseFloat`/`Number`），不能当字符串处理。
+ * `closeTime` 两边都存在，单位 ms epoch，可用于新鲜度校验。
+ */
 export interface BingXTicker {
   symbol: string;
   openPrice: string;
   highPrice: string;
   lowPrice: string;
-  lastPrice: string;
+  lastPrice: string | number;
   volume: string;
   quoteVolume: string;
   priceChange: string;
   priceChangePercent: string;
+  /** 行情快照时间，ms epoch。现货、合约均返回。用于风控估值的新鲜度校验 */
+  closeTime: number;
 }
 
 /** K线数据 */

@@ -69,7 +69,7 @@ const TickerRow = memo(function TickerRow({
         {isFavorite ? "★" : "☆"}
       </button>
       <span className="truncate text-left font-medium">{ticker.symbol}</span>
-      <span className="text-right tabular-nums">{formatPrice(parseFloat(ticker.lastPrice))}</span>
+      <span className="text-right tabular-nums">{formatPrice(Number(ticker.lastPrice))}</span>
       <span
         className={cn(
           "w-16 text-right tabular-nums font-medium",

@@ -18,7 +18,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data });
     }
 
+    // getSpotTicker can return null: BingX returns the ticker wrapped in a
+    // (possibly empty) array for single-symbol spot queries, and an unknown
+    // symbol legitimately yields nothing to unwrap.
     const data = await getSpotTicker(symbol);
+    if (!data) {
+      return NextResponse.json(
+        { success: false, error: { code: "TICKER_NOT_FOUND", message: `No ticker data for ${symbol}` } },
+        { status: 404 }
+      );
+    }
     return NextResponse.json({ success: true, data });
   } catch (error) {
     return NextResponse.json(

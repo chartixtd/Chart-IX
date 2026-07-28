@@ -128,7 +128,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   // Live price from WebSocket ticker (drives the current candle in real time)
   const livePrice = useMarketStore((s) => {
     const t = s.tickers[symbol];
-    return t ? parseFloat(t.lastPrice) : undefined;
+    return t ? Number(t.lastPrice) : undefined;
   });
 
   const { hasAccess: hasAdvancedChart, loading: accessLoading } = useFeatureAccess("advanced_chart");

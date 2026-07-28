@@ -25,7 +25,7 @@ export function PriceAlertWatcher() {
       for (const alert of pending) {
         const ticker = state.tickers[alert.symbol];
         if (!ticker) continue;
-        const price = parseFloat(ticker.lastPrice);
+        const price = Number(ticker.lastPrice);
         if (!Number.isFinite(price)) continue;
 
         const hit =

@@ -38,7 +38,7 @@ const TIF_OPTIONS: TIF[] = ["GTC", "IOC", "FOK", "PostOnly"];
 export function TradeForm({ symbol, mode = "live", initialSide }: TradeFormProps) {
   const isPaper = mode === "paper";
   const { data: ticker } = useSpotTicker(symbol);
-  const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
+  const currentPrice = ticker ? Number(ticker.lastPrice) : 0;
 
   const { data: paperData } = usePaperAccount(isPaper);
   const placePaperOrder = usePlacePaperOrder();

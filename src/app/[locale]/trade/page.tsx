@@ -123,12 +123,12 @@ const TickerBar = memo(function TickerBar({
       {ticker && (
         <>
           <span className={cn("shrink-0 font-mono text-xl font-semibold tabular-nums", isPositive ? "text-success" : "text-danger")}>
-            {formatPrice(parseFloat(ticker.lastPrice))}
+            {formatPrice(Number(ticker.lastPrice))}
           </span>
           <Badge variant={isPositive ? "green" : "red"}>
             {formatPercent(parseFloat(ticker.priceChangePercent))}
           </Badge>
-          <SetAlertButton symbol={symbol} currentPrice={parseFloat(ticker.lastPrice)} />
+          <SetAlertButton symbol={symbol} currentPrice={Number(ticker.lastPrice)} />
           <div className="ml-auto hidden shrink-0 items-center gap-4 text-xs text-text-secondary lg:flex">
             <span>24h High: <span className="font-mono text-text-primary tabular-nums">{formatPrice(parseFloat(ticker.highPrice))}</span></span>
             <span>24h Low: <span className="font-mono text-text-primary tabular-nums">{formatPrice(parseFloat(ticker.lowPrice))}</span></span>

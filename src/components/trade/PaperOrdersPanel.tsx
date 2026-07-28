@@ -28,7 +28,7 @@ function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liq
   onClose: (symbol: string) => void; closing: boolean;
 }) {
   const { data: ticker } = useSpotTicker(symbol);
-  const markPrice = ticker ? parseFloat(ticker.lastPrice) : entryPrice;
+  const markPrice = ticker ? Number(ticker.lastPrice) : entryPrice;
   // 未实现盈亏按仓位方向计算
   const pnl = side === "long"
     ? (markPrice - entryPrice) * quantity

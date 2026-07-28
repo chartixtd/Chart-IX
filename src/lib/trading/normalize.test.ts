@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeSpotSymbol, normalizeFuturesContract } from "./normalize";
+import { normalizeSpotSymbol, normalizeFuturesContract, precisionFromStep } from "./normalize";
 import type { BingXSymbol, BingXContract } from "@/types/bingx";
 
 const spotRaw: BingXSymbol = {
@@ -89,5 +89,33 @@ describe("normalizeFuturesContract", () => {
 
   it("carries the taker fee rate for preview estimates", () => {
     expect(normalizeFuturesContract(futuresRaw, "LONG").takerFeeRate).toBe(0.0005);
+  });
+});
+
+describe("precisionFromStep", () => {
+  it.each([
+    [1, 0],
+    [0.1, 1],
+    [0.01, 2],
+    [0.001, 3],
+    [0.0001, 4],
+    [0.00001, 5],
+    [0.000001, 6],
+    [0.0000001, 7],
+    [0.00000001, 8],
+  ])("treats %p (a power of ten) as precision %p", (step, expected) => {
+    expect(precisionFromStep(step)).toBe(expected);
+  });
+
+  it.each([
+    [0.25, 2],
+    [0.5, 1],
+    [0.05, 2],
+  ])("derives the true decimal-digit count for non-power-of-ten step %p", (step, expected) => {
+    expect(precisionFromStep(step)).toBe(expected);
+  });
+
+  it.each([0, -1, NaN, Infinity])("returns 0 for the guard case %p", (step) => {
+    expect(precisionFromStep(step)).toBe(0);
   });
 });

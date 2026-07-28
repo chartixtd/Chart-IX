@@ -97,7 +97,7 @@ type SymbolSpec = {
   minQty: number;         // 基础币最小量
   minNotional: number;    // 最小名义额 USDT（spot: minNotional / futures: tradeMinUSDT）
   maxLeverage?: number;   // 仅合约，来自签名接口
-  status: "trading" | "suspended";
+  tradable: boolean;
 };
 ```
 

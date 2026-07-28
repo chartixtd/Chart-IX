@@ -1,5 +1,18 @@
 -- 020: 交易风控限额 + 订单类型放宽 + API Key 元数据
 -- 依赖：006_trading_rls.sql（orders / api_keys / user_daily_trade_count）
+--
+-- 锁行为提示（手动在 SQL Editor 里整段粘贴执行前请知悉）：
+--   - 两条 `ALTER TABLE public.orders ADD CONSTRAINT ... CHECK (...)`
+--     （orders_order_type_check、orders_side_check）不会重写表，但 Postgres 默认会
+--     校验表内现有全部行，执行期间会对 orders 持有 ACCESS EXCLUSIVE 锁——
+--     期间对 orders 的读、写都会被阻塞，直到该条语句校验完成。这一步发生两次。
+--   - `CREATE UNIQUE INDEX api_keys_one_primary_per_user` 和
+--     `CREATE INDEX user_daily_trade_count_lookup` 都没有加 CONCURRENTLY，
+--     建索引期间会阻塞对应表的写入（不阻塞读）。
+--   - 以上都是当前上线前这几张表数据量还很小时的短暂阻塞，预期是"很快"而不是"零"，
+--     不要在这几条语句执行期间同时压测下单接口。
+--   - 整份文件在 SQL Editor 里作为一段粘贴执行时，Postgres 会把它当成隐式单一事务：
+--     任何一条语句失败，前面已执行的语句都会一并回滚，不会留下只执行一半的 schema。
 
 -- 1) 风控限额配置。user_id 为 NULL 的那一行是全局默认。
 --    任一字段为 NULL 表示该项不限制；本迁移刻意不预置任何数值，
@@ -27,7 +40,7 @@ ALTER TABLE public.trading_limits ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS trading_limits_select_own ON public.trading_limits;
 CREATE POLICY trading_limits_select_own ON public.trading_limits
-  FOR SELECT USING (user_id IS NULL OR user_id = auth.uid());
+  FOR SELECT TO authenticated USING (user_id IS NULL OR user_id = auth.uid());
 
 -- 2) 放宽 orders.order_type：现有 CHECK 只允许 5 种值（006_trading_rls.sql 里的小写枚举
 --    'market' / 'limit' / 'stop_loss' / 'take_profit' / 'stop_market'），

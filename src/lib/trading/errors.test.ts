@@ -38,7 +38,7 @@ describe("parseBingXError", () => {
     expect(r.rawMessage).toBe("invalid parameter: symbol required");
   });
 
-  it("preserves embedded newlines in the message body via the s (dotAll) flag", () => {
+  it("preserves embedded newlines in the message body via the [\\s\\S] class", () => {
     const r = parseBingXError(new Error("BingX error 80014: line1\nline2"));
     expect(r.code).toBe(80014);
     expect(r.rawMessage).toBe("line1\nline2");

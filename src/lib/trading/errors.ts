@@ -1,5 +1,9 @@
-/** signedRequest 抛出的形如 "BingX error 101204: msg" */
-const BINGX_ERROR_PATTERN = /^BingX error (-?\d+):\s?(.*)$/s;
+/**
+ * signedRequest 抛出的形如 "BingX error 101204: msg"。
+ * 用 [\s\S] 而非 dotAll 的 s 标志——tsconfig 的 target 是 ES2017，
+ * s 标志需要 ES2018（TS1501）。两者在这里行为等价：都能跨换行匹配。
+ */
+const BINGX_ERROR_PATTERN = /^BingX error (-?\d+):\s?([\s\S]*)$/;
 
 const CODE_TO_KEY: Record<number, string> = {
   100001: "bingx_error.signature",

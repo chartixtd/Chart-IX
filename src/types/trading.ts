@@ -12,7 +12,12 @@ export interface SymbolSpec {
   minQty: number;
   /** 最小下单名义额（USDT） */
   minNotional: number;
-  /** 最大杠杆，仅合约有值 */
+  /**
+   * 最大杠杆。**实践中对合约恒为 undefined**——BingX 公开合约接口不返回杠杆上限
+   * （2026-07-29 实测 0/944）。权威来源是需签名的 GET /openApi/swap/v2/trade/leverage，
+   * 前端通过 useFuturesAccount 取得，服务端 preflight 不据此校验。
+   * 保留该字段是为了 BingX 若恢复公开返回时能自动生效。
+   */
   maxLeverage?: number;
   /** taker 费率，用于预览估算手续费；无数据时为 undefined */
   takerFeeRate?: number;

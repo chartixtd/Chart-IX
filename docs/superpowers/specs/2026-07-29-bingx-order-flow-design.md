@@ -96,16 +96,21 @@ type SymbolSpec = {
   quantityPrecision: number;
   minQty: number;         // 基础币最小量
   minNotional: number;    // 最小名义额 USDT（spot: minNotional / futures: tradeMinUSDT）
-  maxLeverage?: number;   // 仅合约，来自签名接口
+  maxLeverage?: number;   // 仅合约；公开接口不返回，实践中恒为 undefined，见下
   tradable: boolean;
 };
 ```
 
-数据来源（**两者均为公开接口，无需签名**）：
-- 现货 `GET /openApi/spot/v1/common/symbols` → `minQty` / `minNotional` / `tickSize` / `stepSize` / `status`
-- 合约 `GET /openApi/swap/v2/quote/contracts` → `quantityPrecision` / `pricePrecision` / `tradeMinQuantity` / `tradeMinUSDT` / `maxLongLeverage` / `maxShortLeverage` / `status`
+数据来源：
+- 现货 `GET /openApi/spot/v1/common/symbols`（公开）→ `minQty` / `minNotional` / `tickSize` / `stepSize` / `status`
+- 合约 `GET /openApi/swap/v2/quote/contracts`（公开）→ `quantityPrecision` / `pricePrecision` / `tradeMinQuantity` / `tradeMinUSDT` / `takerFeeRate` / `status` / `apiStateOpen`
 
-`maxLeverage` 取 `maxLongLeverage` 与 `maxShortLeverage` 中对应方向的值——**不需要**调用需签名的 `GET /openApi/swap/v2/trade/leverage`。该签名接口仍用于读取用户**当前**杠杆设置（见 `account-mode.ts`），与最大值来源不同。
+**最大杠杆不在公开接口里。** BingX 文档列出 `maxLongLeverage` / `maxShortLeverage`，但 live 接口实际不返回（2026-07-29 实测：944 个合约中出现 0 次）。权威来源是**需签名**的 `GET /openApi/swap/v2/trade/leverage`，按交易对返回 `{ leverage, maxLeverage }`。
+
+由此产生的边界：
+- 下单界面的杠杆上限取自该签名接口（经 `useFuturesAccount`），是真实值
+- 服务端 `preflight` 在下单前不做交易所杠杆上限校验——它只强制管理员配置的 `trading_limits.max_leverage`。超出交易所上限的请求由交易所自身拒绝，错误经 `errors.ts` 映射为可读文案
+- `SymbolSpec.maxLeverage` 字段保留但实践中恒为 `undefined`，以便 BingX 恢复公开返回时自动生效
 
 缓存：服务端内存 Map，TTL 1 小时（规格几乎不变）。通过 `/api/trading/spec?symbol=&market=` 暴露给前端预览，无需鉴权。
 

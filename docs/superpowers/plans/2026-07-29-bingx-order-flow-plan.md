@@ -2170,7 +2170,10 @@ export async function preflightOrder(
   const sizeCheck = validateOrderSize(sizing, spec);
   if (!sizeCheck.ok) return { ok: false, code: sizeCheck.reason, limit: sizeCheck.limit };
 
-  // 交易对自身的最大杠杆也是一道硬限制，与管理员配置的风控限额取更严者
+  // 交易所杠杆上限不在公开规格里（BingX 的公开合约接口不返回 maxLongLeverage /
+  // maxShortLeverage，2026-07-29 实测 0/944），因此 spec.maxLeverage 实践中恒为
+  // undefined，这里只能强制管理员配置的上限。超出交易所上限的请求由交易所拒绝，
+  // 错误经 errors.ts 映射。若 BingX 日后恢复公开返回，下面这行会自动收紧为两者更严者。
   const limits = await loadLimitsFor(supabase, input.userId);
   const effectiveMaxLeverage =
     spec.maxLeverage === undefined

@@ -48,6 +48,14 @@ export function normalizeSpotSymbol(raw: BingXSymbol): SymbolSpec {
   };
 }
 
+/**
+ * 合约规格归一化。
+ *
+ * 注意：`side` 参数只用于选取 maxLongLeverage / maxShortLeverage，而 BingX 的
+ * live 公开接口并不返回这两个字段（2026-07-29 实测 0/944），因此当前
+ * `maxLeverage` 恒为 undefined。保留参数与字段是为了 BingX 恢复返回时自动生效；
+ * 需要真实杠杆上限的调用方必须走需签名的 getLeverage()。
+ */
 export function normalizeFuturesContract(
   raw: BingXContract,
   side: "LONG" | "SHORT"

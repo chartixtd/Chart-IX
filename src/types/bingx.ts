@@ -84,8 +84,13 @@ export interface BingXContract {
   quantityPrecision: number;
   tradeMinQuantity: number;
   tradeMinUSDT: number;
-  maxLongLeverage: number;
-  maxShortLeverage: number;
+  /**
+   * 最大杠杆。BingX 文档列出这两个字段，但 live 接口实际不返回
+   * （2026-07-29 实测：944 个合约中出现 0 次），故声明为可选。
+   * 权威来源是需签名的 GET /openApi/swap/v2/trade/leverage（见 futures.ts 的 getLeverage）。
+   */
+  maxLongLeverage?: number;
+  maxShortLeverage?: number;
   makerFeeRate: number;
   takerFeeRate: number;
   /** 1 = 可交易，0 = 停用 */

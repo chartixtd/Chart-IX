@@ -2,63 +2,153 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
 import { placeOrder } from "@/lib/bingx/trade";
+import { preflightOrder } from "@/lib/trading/preflight";
+import { recordOrder } from "@/lib/trading/persist";
+import { checkRateLimit } from "@/lib/trading/rate-limit";
+import { describeBingXError } from "@/lib/trading/errors";
+import { roundPrice } from "@/lib/trading/sizing";
+import { RATE_LIMITS } from "@/lib/constants";
 import type { OrderSide, OrderType, TimeInForce } from "@/lib/bingx/trade";
 
+const VALID_SIDES: OrderSide[] = ["BUY", "SELL"];
+const VALID_TYPES: OrderType[] = [
+  "MARKET", "LIMIT",
+  "TAKE_STOP_LIMIT", "TAKE_STOP_MARKET",
+  "TRIGGER_LIMIT", "TRIGGER_MARKET",
+];
+const VALID_TIF: TimeInForce[] = ["GTC", "IOC", "FOK", "PostOnly"];
+const LIMIT_TYPES = new Set<OrderType>(["LIMIT", "TAKE_STOP_LIMIT", "TRIGGER_LIMIT"]);
+const STOP_TYPES = new Set<OrderType>([
+  "TAKE_STOP_LIMIT", "TAKE_STOP_MARKET", "TRIGGER_LIMIT", "TRIGGER_MARKET",
+]);
+
+function reject(code: string, message: string, status: number, limit?: number | string) {
+  return NextResponse.json(
+    { success: false, error: { message, i18nKey: `trading.reject.${code.toLowerCase()}`, code, limit } },
+    { status }
+  );
+}
+
 export async function POST(request: NextRequest) {
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) {
+    return NextResponse.json({ success: false, error: { message: "Unauthorized" } }, { status: 401 });
+  }
+  const userId = authData.user.id;
+
+  const rl = checkRateLimit(`spot-order:${userId}`, RATE_LIMITS.SPOT_TRADE);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { success: false, error: { message: "Too many orders, slow down", i18nKey: "trading.reject.rate_limited" } },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
+    );
+  }
+
+  const body = await request.json();
+  const { symbol, side, type, notionalUsdt, referencePrice, price, stopPrice, timeInForce } = body;
+
+  if (!symbol || !side || !type) {
+    return reject("MISSING_FIELDS", "Missing fields: symbol, side, type", 400);
+  }
+  if (!VALID_SIDES.includes(side)) return reject("INVALID_SIDE", "side must be BUY or SELL", 400);
+  if (!VALID_TYPES.includes(type)) return reject("INVALID_TYPE", "Invalid order type", 400);
+  if (timeInForce && !VALID_TIF.includes(timeInForce)) {
+    return reject("INVALID_TIF", "Invalid timeInForce", 400);
+  }
+  if (LIMIT_TYPES.has(type) && !(Number(price) > 0)) {
+    return reject("MISSING_PRICE", "price is required for limit-type orders", 400);
+  }
+  if (STOP_TYPES.has(type) && !(Number(stopPrice) > 0)) {
+    return reject("MISSING_STOP_PRICE", "stopPrice is required for stop/trigger orders", 400);
+  }
+
+  const notional = Number(notionalUsdt);
+  // 限价类用限价换算，市价类用前端传来的最新成交价
+  const refPrice = LIMIT_TYPES.has(type) ? Number(price) : Number(referencePrice);
+  if (!(notional > 0)) return reject("INVALID_AMOUNT", "notionalUsdt must be positive", 400);
+  if (!(refPrice > 0)) return reject("INVALID_PRICE", "referencePrice must be positive", 400);
+
+  // 落库用小写：既有 /orders 页面与 dashboard 统计都按 "buy"/"sell" 比较
+  const sideLower = side === "BUY" ? "buy" : "sell";
+
+  // preflightOrder can THROW: getSymbolSpec deliberately does not cache failures and
+  // rethrows on a BingX network error. Without this wrapper a transient exchange
+  // outage surfaces to the user as a bare 500 with no readable message.
+  let pre;
   try {
-    const supabase = await createClient();
-    const { data: authData } = await supabase.auth.getUser();
-    if (!authData.user) {
-      return NextResponse.json({ success: false, error: { message: "Unauthorized" } }, { status: 401 });
-    }
+    pre = await preflightOrder(supabase, {
+      userId,
+      market: "spot",
+      symbol,
+      direction: side === "BUY" ? "LONG" : "SHORT",
+      notionalUsdt: notional,
+      referencePrice: refPrice,
+      leverage: 1,
+    });
+  } catch (error) {
+    const described = describeBingXError(error);
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
+  }
 
-    const body = await request.json();
-    const { symbol, side, type, quantity, quoteOrderQty, price, stopPrice, timeInForce } = body;
+  if (!pre.ok) {
+    await recordOrder(supabase, {
+      userId, apiKeyId: null, market: "spot", symbol, side: sideLower, orderType: type,
+      quantity: 0, status: "rejected", riskRejected: true, riskReason: pre.code,
+    });
+    return reject(pre.code, `Order rejected: ${pre.code}`, 400, pre.limit);
+  }
 
-    if (!symbol || !side || !type) {
-      return NextResponse.json({ success: false, error: { message: "Missing fields: symbol, side, type" } }, { status: 400 });
-    }
+  const { data: apiKeys, error: keyError } = await supabase
+    .from("api_keys")
+    .select("id, api_key_encrypted, secret_encrypted")
+    .eq("user_id", userId)
+    .eq("is_valid", true)
+    .order("is_primary", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(1);
 
-    const VALID_SIDES: OrderSide[] = ["BUY", "SELL"];
-    const VALID_TYPES: OrderType[] = [
-      "MARKET", "LIMIT",
-      "TAKE_STOP_LIMIT", "TAKE_STOP_MARKET",
-      "TRIGGER_LIMIT", "TRIGGER_MARKET",
-    ];
-    const VALID_TIF: TimeInForce[] = ["GTC", "IOC", "FOK", "PostOnly"];
+  if (keyError || !apiKeys?.length) {
+    return reject("NO_API_KEY", "No valid API key found", 400);
+  }
 
-    if (!VALID_SIDES.includes(side)) {
-      return NextResponse.json({ success: false, error: { message: "side must be BUY or SELL" } }, { status: 400 });
-    }
-    if (!VALID_TYPES.includes(type)) {
-      return NextResponse.json({ success: false, error: { message: "Invalid order type" } }, { status: 400 });
-    }
-    if (timeInForce && !VALID_TIF.includes(timeInForce)) {
-      return NextResponse.json({ success: false, error: { message: "Invalid timeInForce" } }, { status: 400 });
-    }
+  const apiKey = decrypt(apiKeys[0].api_key_encrypted);
+  const secret = decrypt(apiKeys[0].secret_encrypted);
 
-    const { data: apiKeys, error: keyError } = await supabase
-      .from("api_keys").select("api_key_encrypted, secret_encrypted")
-      .eq("user_id", authData.user.id).eq("is_valid", true).limit(1);
-
-    if (keyError || !apiKeys?.length) {
-      return NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 });
-    }
-
-    const apiKey = decrypt(apiKeys[0].api_key_encrypted);
-    const secret = decrypt(apiKeys[0].secret_encrypted);
-
+  try {
     const result = await placeOrder(apiKey, secret, {
       symbol, side, type,
-      quantity: quantity || undefined,
-      quoteOrderQty: quoteOrderQty || undefined,
-      price: price || undefined,
-      stopPrice: stopPrice || undefined,
-      timeInForce: timeInForce || undefined,
+      quantity: pre.qty,
+      price: LIMIT_TYPES.has(type) ? roundPrice(Number(price), pre.spec) : undefined,
+      stopPrice: STOP_TYPES.has(type) ? roundPrice(Number(stopPrice), pre.spec) : undefined,
+      timeInForce: LIMIT_TYPES.has(type) ? (timeInForce || "GTC") : undefined,
     });
 
-    return NextResponse.json({ success: true, data: result });
+    await recordOrder(supabase, {
+      userId, apiKeyId: apiKeys[0].id, market: "spot", symbol, side: sideLower, orderType: type,
+      quantity: pre.sizing.qty,
+      price: LIMIT_TYPES.has(type) ? Number(price) : null,
+      stopPrice: STOP_TYPES.has(type) ? Number(stopPrice) : null,
+      leverage: 1,
+      totalValue: pre.sizing.notional,
+      bingxOrderId: result.orderId ? String(result.orderId) : null,
+      status: "pending",
+    });
+
+    return NextResponse.json({ success: true, data: { ...result, estimatedQty: pre.qty } });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
+    const described = describeBingXError(error);
+    await recordOrder(supabase, {
+      userId, apiKeyId: apiKeys[0].id, market: "spot", symbol, side: sideLower, orderType: type,
+      quantity: pre.sizing.qty, status: "rejected",
+      errorMessage: `${described.code ?? "-"}: ${described.rawMessage}`,
+    });
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
   }
 }

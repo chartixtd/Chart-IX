@@ -45,7 +45,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const body = await request.json();
+  // request.json() throws a raw SyntaxError on a malformed or empty body, which would
+  // escape as a generic Next.js 500 instead of the documented error envelope.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return reject("INVALID_BODY", "Malformed JSON body", 400);
+  }
   const { symbol, side, type, notionalUsdt, referencePrice, price, stopPrice, timeInForce } = body;
 
   if (!symbol || !side || !type) {

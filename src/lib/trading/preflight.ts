@@ -76,6 +76,14 @@ export async function loadLimitsFor(
  * （因为 qty × 客户端价格 恒等于 notionalUsdt）。价格必须由服务端自己取。
  *
  * 用的是公开行情接口，无需签名。
+ *
+ * 已知局限：`BingXTicker`（现货 `/ticker/24hr`、合约 `/quote/ticker`）不带时间戳字段
+ * （见 `src/types/bingx.ts`），所以这里没有、也不能做"报价是否过期"的新鲜度校验——
+ * 只要 `lastPrice` 能解析成正数就会被当作当前市价采信。冷门交易对长时间无成交，
+ * 或 BingX 侧短暂返回陈旧缓存数据时，风控估值可能基于一个滞后的价格。这不会
+ * 重新打开"客户端伪造价格"那个洞（调用方仍然无法控制这个数），但属于价格数据源
+ * 本身的数据质量问题，未在本次修复范围内解决，需要后续任务跟进（例如改用带时间戳
+ * 的接口，或在价格与最近K线/深度之间做合理性交叉校验）。
  */
 async function fetchMarketPrice(symbol: string, market: TradingMarket): Promise<number> {
   const ticker = market === "spot"

@@ -101,12 +101,17 @@ type SymbolSpec = {
 };
 ```
 
-数据来源：
-- 现货 `GET /openApi/spot/v1/common/symbols` → `minQty` / `minNotional` / `tickSize` / `stepSize`
-- 合约 `GET /openApi/swap/v2/quote/contracts` → `quantityPrecision` / `pricePrecision` / `tradeMinQuantity` / `tradeMinUSDT`
-- `maxLeverage` 来自需签名的 `GET /openApi/swap/v2/trade/leverage`，仅在用户已绑 Key 时合并
+数据来源（**两者均为公开接口，无需签名**）：
+- 现货 `GET /openApi/spot/v1/common/symbols` → `minQty` / `minNotional` / `tickSize` / `stepSize` / `status`
+- 合约 `GET /openApi/swap/v2/quote/contracts` → `quantityPrecision` / `pricePrecision` / `tradeMinQuantity` / `tradeMinUSDT` / `maxLongLeverage` / `maxShortLeverage` / `status`
 
-缓存：服务端内存 Map，TTL 1 小时（规格几乎不变）。公开部分通过 `/api/trading/spec?symbol=&market=` 暴露给前端预览。
+`maxLeverage` 取 `maxLongLeverage` 与 `maxShortLeverage` 中对应方向的值——**不需要**调用需签名的 `GET /openApi/swap/v2/trade/leverage`。该签名接口仍用于读取用户**当前**杠杆设置（见 `account-mode.ts`），与最大值来源不同。
+
+缓存：服务端内存 Map，TTL 1 小时（规格几乎不变）。通过 `/api/trading/spec?symbol=&market=` 暴露给前端预览，无需鉴权。
+
+**同批修正两处既有类型缺陷**（`src/types/bingx.ts`）：
+- 现货规格接口的响应是 `data.symbols` 嵌套数组，但 `getSpotSymbols()` 把 `json.data` 直接当数组返回、`useSpotSymbols()` 按 `BingXSymbol[]` 声明——类型与运行时不符，需解包 `.symbols`
+- `BingXSymbol` 缺少 `minQty` / `maxQty` / `minNotional` / `maxNotional` / `tickSize` / `stepSize`；`BingXSymbol.status` 与 `BingXContract.status` 声明为 `string`，实际为整数（`1` = active）
 
 ### `sizing.ts`（纯函数，实盘与模拟盘共用）
 

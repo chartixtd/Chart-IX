@@ -21,6 +21,9 @@ export function hardFilter(ticker: BingXTicker, direction: "long" | "short"): bo
   const quoteVolume = parseFloat(ticker.quoteVolume);
   const priceChangePercent = parseFloat(ticker.priceChangePercent);
 
+  if (isNaN(high) || isNaN(low) || isNaN(quoteVolume) || isNaN(priceChangePercent)) return true;
+  if (low <= 0) return true;
+
   // 1. 流动性不足：24h 合约成交量 < 1 亿美元
   if (quoteVolume < 100_000_000) return true;
 
@@ -47,6 +50,10 @@ export function scoreToken(
   const low = parseFloat(ticker.lowPrice);
   const last = parseFloat(ticker.lastPrice);
   const quoteVolume = parseFloat(ticker.quoteVolume);
+
+  if (isNaN(high) || isNaN(low) || isNaN(last) || isNaN(quoteVolume)) return 0;
+  if (low <= 0 || isNaN(openInterest) || isNaN(fundingRate)) return 0;
+
   const amplitude = ((high - low) / low) * 100;
 
   // --- 振幅 (25%) ---

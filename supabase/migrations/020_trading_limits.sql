@@ -1,0 +1,85 @@
+-- 020: 交易风控限额 + 订单类型放宽 + API Key 元数据
+-- 依赖：006_trading_rls.sql（orders / api_keys / user_daily_trade_count）
+
+-- 1) 风控限额配置。user_id 为 NULL 的那一行是全局默认。
+--    任一字段为 NULL 表示该项不限制；本迁移刻意不预置任何数值，
+--    以免在无人配置时意外锁死所有用户下单。
+CREATE TABLE IF NOT EXISTS public.trading_limits (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id                 UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  max_notional_per_order  NUMERIC(20, 8),
+  max_orders_per_day      INTEGER,
+  max_leverage            INTEGER,
+  allowed_symbols         TEXT[],
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+COMMENT ON TABLE public.trading_limits IS '交易风控限额；user_id 为 NULL 的行为全局默认，字段为 NULL 表示不限制';
+
+-- 全局默认行唯一；每个用户至多一行覆盖配置
+CREATE UNIQUE INDEX IF NOT EXISTS trading_limits_global_uniq
+  ON public.trading_limits ((user_id IS NULL)) WHERE user_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS trading_limits_user_uniq
+  ON public.trading_limits (user_id) WHERE user_id IS NOT NULL;
+
+-- RLS：用户只能读自己的和全局默认，写入仅限服务端（service role 绕过 RLS）
+ALTER TABLE public.trading_limits ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS trading_limits_select_own ON public.trading_limits;
+CREATE POLICY trading_limits_select_own ON public.trading_limits
+  FOR SELECT USING (user_id IS NULL OR user_id = auth.uid());
+
+-- 2) 放宽 orders.order_type：现有 CHECK 只允许 5 种值，
+--    实际需要落库 14 种（现货 6 + 合约 8）
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_order_type_check;
+ALTER TABLE public.orders ADD CONSTRAINT orders_order_type_check
+  CHECK (order_type IN (
+    -- 现货
+    'MARKET', 'LIMIT',
+    'TAKE_STOP_LIMIT', 'TAKE_STOP_MARKET',
+    'TRIGGER_LIMIT', 'TRIGGER_MARKET',
+    -- 合约
+    'STOP_MARKET', 'STOP',
+    'TAKE_PROFIT_MARKET', 'TAKE_PROFIT',
+    'TRAILING_STOP_MARKET', 'TRAILING_TP_SL',
+    -- OCO（现货组合单）
+    'OCO',
+    -- 平仓
+    'CLOSE_POSITION'
+  ));
+
+-- 落库时统一用大写 BingX 原始类型名，与 side 的小写约定不同，
+-- 这里同时把 side 的 CHECK 放宽为大小写皆可，避免调用方来回转换出错
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_side_check;
+ALTER TABLE public.orders ADD CONSTRAINT orders_side_check
+  CHECK (upper(side) IN ('BUY', 'SELL'));
+
+-- 3) API Key 元数据
+ALTER TABLE public.api_keys ADD COLUMN IF NOT EXISTS api_key_masked TEXT;
+ALTER TABLE public.api_keys ADD COLUMN IF NOT EXISTS is_primary BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.api_keys ADD COLUMN IF NOT EXISTS spot_ok BOOLEAN;
+ALTER TABLE public.api_keys ADD COLUMN IF NOT EXISTS futures_ok BOOLEAN;
+
+COMMENT ON COLUMN public.api_keys.api_key_masked IS '写入时算好的前4后4掩码，避免列表页每次解密';
+COMMENT ON COLUMN public.api_keys.is_primary IS '交易路由选用的主密钥；每用户至多一个';
+COMMENT ON COLUMN public.api_keys.spot_ok IS '现货权限验证结果，NULL 表示尚未验证';
+COMMENT ON COLUMN public.api_keys.futures_ok IS '合约权限验证结果，NULL 表示尚未验证';
+
+-- 每用户至多一个主密钥
+CREATE UNIQUE INDEX IF NOT EXISTS api_keys_one_primary_per_user
+  ON public.api_keys (user_id) WHERE is_primary;
+
+-- 把每个用户现有最早创建的有效 Key 标为主密钥，避免升级后无 primary 可选
+UPDATE public.api_keys k SET is_primary = true
+WHERE k.id = (
+  SELECT id FROM public.api_keys
+  WHERE user_id = k.user_id AND is_valid
+  ORDER BY created_at ASC LIMIT 1
+)
+AND NOT EXISTS (
+  SELECT 1 FROM public.api_keys p WHERE p.user_id = k.user_id AND p.is_primary
+);
+
+-- 4) 按用户+日期查每日计数的索引（风控校验每次下单都要查）
+CREATE INDEX IF NOT EXISTS user_daily_trade_count_lookup
+  ON public.user_daily_trade_count (user_id, trade_date);

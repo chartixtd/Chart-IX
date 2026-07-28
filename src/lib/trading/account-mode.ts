@@ -41,7 +41,13 @@ export async function getDualSideMode(
   const request = (async () => {
     try {
       const res = await getPositionSideDual(apiKey, secret);
-      const dualSide = res?.dualSidePosition === true;
+      // BingX documents this field as bool, but the paired POST takes the string
+      // "true"/"false", and signedRequest casts the response without runtime
+      // validation. Accept both shapes: misreading hedge mode as one-way makes
+      // every order fail with 109400. Do not widen further — 1/"yes"/objects
+      // must NOT count as hedge mode.
+      const raw = res?.dualSidePosition as unknown;
+      const dualSide = raw === true || raw === "true";
       cache.set(userId, { dualSide, expiresAt: Date.now() + TTL_MS });
       return dualSide;
     } finally {

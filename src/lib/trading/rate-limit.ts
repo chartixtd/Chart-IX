@@ -23,7 +23,10 @@ export function checkRateLimit(
   if (recent.length >= config.max) {
     // 被拒的请求不计入窗口，否则持续刷会把封锁无限延长
     hits.set(key, recent);
-    const retryAfterMs = recent[0] + config.windowMs - now;
+    // When window is empty (e.g. max <= 0), use windowMs as retry time
+    const retryAfterMs = recent.length > 0
+      ? recent[0] + config.windowMs - now
+      : config.windowMs;
     return { ok: false, retryAfterMs: Math.max(0, retryAfterMs) };
   }
 

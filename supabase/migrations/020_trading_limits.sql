@@ -29,11 +29,18 @@ DROP POLICY IF EXISTS trading_limits_select_own ON public.trading_limits;
 CREATE POLICY trading_limits_select_own ON public.trading_limits
   FOR SELECT USING (user_id IS NULL OR user_id = auth.uid());
 
--- 2) 放宽 orders.order_type：现有 CHECK 只允许 5 种值，
---    实际需要落库 14 种（现货 6 + 合约 8）
+-- 2) 放宽 orders.order_type：现有 CHECK 只允许 5 种值（006_trading_rls.sql 里的小写枚举
+--    'market' / 'limit' / 'stop_loss' / 'take_profit' / 'stop_market'），
+--    实际需要落库 14 种 BingX 原始类型名（现货 6 + 合约 8），新写入统一用大写。
+--    这里用 upper(order_type) 包裹比较：一是让本迁移生效后，哪怕 orders 表里还留着
+--    006 的历史小写行，ADD CONSTRAINT 校验存量数据时也不会失败，不需要事先手工排查、
+--    清洗数据；二是让 order_type 和下面 side 的大小写策略保持一致（side 同样用 upper()
+--    包裹），避免同一张表里两种不同的大小写约定。因此列表里同时补上了 006 遗留值里
+--    唯一不在新 14 种 BingX 类型名单里的 'STOP_LOSS'（大写形式），其余遗留值
+--    MARKET/LIMIT/TAKE_PROFIT/STOP_MARKET 本就在新名单内，无需重复列出。
 ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_order_type_check;
 ALTER TABLE public.orders ADD CONSTRAINT orders_order_type_check
-  CHECK (order_type IN (
+  CHECK (upper(order_type) IN (
     -- 现货
     'MARKET', 'LIMIT',
     'TAKE_STOP_LIMIT', 'TAKE_STOP_MARKET',
@@ -45,7 +52,10 @@ ALTER TABLE public.orders ADD CONSTRAINT orders_order_type_check
     -- OCO（现货组合单）
     'OCO',
     -- 平仓
-    'CLOSE_POSITION'
+    'CLOSE_POSITION',
+    -- 兼容 006_trading_rls.sql 遗留的小写枚举值（此处已大写），
+    -- 新 BingX 类型名单里没有等价项，故单独保留
+    'STOP_LOSS'
   ));
 
 -- 落库时统一用大写 BingX 原始类型名，与 side 的小写约定不同，

@@ -50,6 +50,19 @@ describe("floorToPrecision", () => {
     expect(floorToPrecision(NaN, 2)).toBe(0);
     expect(floorToPrecision(Infinity, 2)).toBe(0);
   });
+
+  it("floors edge case with rounding carry at precision boundary", () => {
+    expect(floorToPrecision(4.99995, 0)).toBe(4);
+  });
+
+  it("handles carry-through rounding at target precision", () => {
+    expect(floorToPrecision(0.12349999951, 4)).toBe(0.1234);
+  });
+
+  it("clamps precision to 100 without throwing", () => {
+    expect(() => floorToPrecision(5.01, 101)).not.toThrow();
+    expect(floorToPrecision(5.01, 101)).toBe(5.01);
+  });
 });
 
 describe("quoteToBase", () => {
@@ -89,6 +102,11 @@ describe("quoteToBase", () => {
     const s = quoteToBase(100, 33333, btcSpot);
     expect(s.qty).toBe(0.003);
   });
+
+  it("never exceeds the budget with edge-case rounding", () => {
+    const s = quoteToBase(100.0349996031, 810, btcFutures);
+    expect(s.notional).toBeLessThanOrEqual(100.0349996031);
+  });
 });
 
 describe("validateOrderSize", () => {
@@ -121,6 +139,11 @@ describe("validateOrderSize", () => {
     const spec = { ...btcFutures, tradable: false };
     const r = validateOrderSize({ qty: 0, notional: 0, price: 0 }, spec);
     expect(r).toEqual({ ok: false, reason: "NOT_TRADABLE" });
+  });
+
+  it("rejects non-finite qty with INVALID_INPUT reason", () => {
+    const r = validateOrderSize({ qty: NaN, notional: 10, price: 1 }, btcFutures);
+    expect(r).toEqual({ ok: false, reason: "INVALID_INPUT" });
   });
 });
 

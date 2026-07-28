@@ -2,24 +2,14 @@ import type { SymbolSpec, OrderSizing, SizeValidation } from "@/types/trading";
 
 /**
  * 向下截断到指定小数位。
- * 先用 toFixed 把数字规整到比目标多几位的十进制表示，再做截断，
+ * 先乘以精度系数，再用 toFixed 把数字规整到6位小数表示，再截断，
  * 以消除 IEEE754 误差——否则 0.29 * 100 = 28.999999999999996 会被截成 0.28。
  */
 export function floorToPrecision(value: number, precision: number): number {
   if (!Number.isFinite(value)) return 0;
-  const p = Math.max(0, Math.floor(precision));
-  const valueAtP = Number(value.toFixed(p));
-
-  const normalized = Number(value.toFixed(Math.min(p + 4, 100)));
+  const p = Math.min(Math.max(0, Math.floor(precision)), 100);
   const factor = Math.pow(10, p);
-  const floored = Math.floor(normalized * factor) / factor;
-
-  // If the input value is already at p decimal places (within floating-point tolerance),
-  // return it as-is to avoid IEEE754 rounding errors
-  if (Math.abs(value - valueAtP) < 1e-14) {
-    return valueAtP;
-  }
-  return floored;
+  return Math.floor(Number((value * factor).toFixed(6))) / factor;
 }
 
 /** 把 USDT 名义额按参考价换算成对齐精度的币数量 */

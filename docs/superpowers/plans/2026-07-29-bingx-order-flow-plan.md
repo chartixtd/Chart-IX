@@ -78,9 +78,9 @@
 
 - **阶段 0（Task 1）** — 测试基建
 - **阶段 1（Task 2–7）** — `src/lib/trading/` 纯函数层，全程 TDD
-- **阶段 2（Task 8–14）** — 数据库迁移与服务端下单链路
-- **阶段 3（Task 15–21）** — 前端表单重整与设置页
-- **阶段 4（Task 22–23）** — 三语文案与验证脚本
+- **阶段 2（Task 8–17）** — 数据库迁移与服务端下单链路
+- **阶段 3（Task 18–24）** — 前端表单重整、设置页与后台
+- **阶段 4（Task 25–26）** — 三语文案与验证脚本
 
 每个阶段结束后代码应处于可构建、可部署状态。
 
@@ -3159,3 +3159,1901 @@ git commit -m "feat(admin): add trading limits configuration API"
 ```
 
 ---
+
+## Task 18: 前端数据 hooks（规格 / 账户 / 预览）
+
+**Files:**
+- Create: `src/hooks/useSymbolSpec.ts`
+- Create: `src/hooks/useTradingAccount.ts`
+- Create: `src/hooks/useOrderPreflight.ts`
+
+**Interfaces:**
+- Consumes: `SymbolSpec` / `OrderSizing`（`@/types/trading`）、`quoteToBase` / `validateOrderSize` / `requiredMargin`（`@/lib/trading/sizing`，纯函数可在浏览器端复用）
+- Produces:
+  - `useSymbolSpec(symbol, market, side?)` → React Query，`data: SymbolSpec`
+  - `useSpotBalances()` → `Array<{ asset, free, locked }>`
+  - `useFuturesAccount(symbol)` → `{ availableMargin, leverage, maxLeverage, marginType, dualSidePosition }`
+  - `useOrderPreflight({ spec, notionalUsdt, price, leverage })` → `{ sizing, validation, requiredMarginUsdt, estLiquidationPrice }`
+
+前端预览与服务端用**同一套** `sizing.ts` 纯函数，因此显示的数量与服务端实际下单的数量一致。
+
+- [ ] **Step 1: 创建 `src/hooks/useSymbolSpec.ts`**
+
+```typescript
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import type { SymbolSpec, TradingMarket } from "@/types/trading";
+
+async function fetchSpec(
+  symbol: string,
+  market: TradingMarket,
+  side: "LONG" | "SHORT"
+): Promise<SymbolSpec> {
+  const url = new URL("/api/trading/spec", window.location.origin);
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("market", market);
+  url.searchParams.set("side", side);
+  const res = await fetch(url.toString());
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error?.message || "Failed to load symbol spec");
+  return json.data as SymbolSpec;
+}
+
+/** 交易对规格几乎不变，缓存 1 小时，不做轮询 */
+export function useSymbolSpec(
+  symbol: string,
+  market: TradingMarket,
+  side: "LONG" | "SHORT" = "LONG"
+) {
+  return useQuery({
+    queryKey: ["trading", "spec", market, symbol, side],
+    queryFn: () => fetchSpec(symbol, market, side),
+    staleTime: 60 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    enabled: !!symbol,
+    retry: 1,
+  });
+}
+```
+
+- [ ] **Step 2: 创建 `src/hooks/useTradingAccount.ts`**
+
+```typescript
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+
+interface SpotBalance {
+  asset: string;
+  free: string;
+  locked: string;
+}
+
+interface FuturesAccount {
+  availableMargin: number;
+  equity: number;
+  leverage: number;
+  maxLeverage: number;
+  marginType: string;
+  dualSidePosition: boolean;
+}
+
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error?.message || "Request failed");
+  return json.data as T;
+}
+
+/** 现货可用余额。enabled=false 时（未登录/未绑 Key）不发请求 */
+export function useSpotBalances(enabled = true) {
+  return useQuery({
+    queryKey: ["trading", "spot-balances"],
+    queryFn: async () => {
+      const data = await getJson<{ balances: SpotBalance[] }>("/api/bingx/account/balance");
+      return data.balances ?? [];
+    },
+    refetchInterval: 15_000,
+    staleTime: 5_000,
+    enabled,
+    retry: false,
+  });
+}
+
+/** 单个交易对的合约账户状态：可用保证金 + 当前/最大杠杆 + 保证金模式 + 持仓模式 */
+export function useFuturesAccount(symbol: string, enabled = true) {
+  return useQuery<FuturesAccount>({
+    queryKey: ["trading", "futures-account", symbol],
+    queryFn: async () => {
+      const [balance, leverage, mode] = await Promise.all([
+        getJson<{ availableMargin: string; equity: string } | null>(
+          "/api/bingx/futures/positions?type=balance"
+        ),
+        getJson<{ leverage: number; maxLeverage: number; marginType: string }>(
+          `/api/bingx/futures/positions?type=leverage&symbol=${encodeURIComponent(symbol)}`
+        ),
+        getJson<{ dualSidePosition: boolean }>("/api/bingx/futures/positions?type=accountMode"),
+      ]);
+      return {
+        availableMargin: parseFloat(balance?.availableMargin ?? "0") || 0,
+        equity: parseFloat(balance?.equity ?? "0") || 0,
+        leverage: leverage.leverage,
+        maxLeverage: leverage.maxLeverage,
+        marginType: leverage.marginType,
+        dualSidePosition: mode.dualSidePosition,
+      };
+    },
+    refetchInterval: 15_000,
+    staleTime: 5_000,
+    enabled: enabled && !!symbol,
+    retry: false,
+  });
+}
+```
+
+- [ ] **Step 3: 创建 `src/hooks/useOrderPreflight.ts`**
+
+```typescript
+"use client";
+
+import { useMemo } from "react";
+import { quoteToBase, validateOrderSize, requiredMargin } from "@/lib/trading/sizing";
+import type { SymbolSpec, OrderSizing, SizeValidation } from "@/types/trading";
+
+interface PreflightArgs {
+  spec: SymbolSpec | undefined;
+  notionalUsdt: number;
+  price: number;
+  leverage: number;
+  direction: "LONG" | "SHORT";
+}
+
+export interface OrderPreflightPreview {
+  sizing: OrderSizing | null;
+  validation: SizeValidation | null;
+  requiredMarginUsdt: number;
+  estFee: number;
+  /** 逐仓近似强平价；仅作量级提示，交易所实际值以持仓面板为准 */
+  estLiquidationPrice: number | null;
+}
+
+/**
+ * 前端预览。复用服务端同一套 sizing 纯函数，
+ * 因此这里显示的数量与服务端最终下单的数量一致。
+ */
+export function useOrderPreflight({
+  spec, notionalUsdt, price, leverage, direction,
+}: PreflightArgs): OrderPreflightPreview {
+  return useMemo(() => {
+    if (!spec || !(notionalUsdt > 0) || !(price > 0)) {
+      return { sizing: null, validation: null, requiredMarginUsdt: 0, estFee: 0, estLiquidationPrice: null };
+    }
+
+    const sizing = quoteToBase(notionalUsdt, price, spec);
+    const validation = validateOrderSize(sizing, spec);
+    const margin = requiredMargin(sizing.notional, leverage);
+    const estFee = sizing.notional * (spec.takerFeeRate ?? 0);
+
+    // 逐仓近似：多头 P_liq ≈ P × (1 - 1/L)，空头 ≈ P × (1 + 1/L)。
+    // 未计入维持保证金率与手续费，真实强平价由交易所给出，这里只用于量级提示。
+    let estLiquidationPrice: number | null = null;
+    if (spec.market === "futures" && leverage >= 1) {
+      estLiquidationPrice =
+        direction === "LONG" ? price * (1 - 1 / leverage) : price * (1 + 1 / leverage);
+    }
+
+    return { sizing, validation, requiredMarginUsdt: margin, estFee, estLiquidationPrice };
+  }, [spec, notionalUsdt, price, leverage, direction]);
+}
+```
+
+- [ ] **Step 4: 确认构建通过**
+
+Run: `npm run build`
+Expected: 构建成功
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/hooks/useSymbolSpec.ts src/hooks/useTradingAccount.ts src/hooks/useOrderPreflight.ts
+git commit -m "feat(trade): add symbol spec, account and preflight preview hooks"
+```
+
+---
+
+## Task 19: 下单表单字段组件
+
+**Files:**
+- Create: `src/components/trade/order-form/config.ts`
+- Create: `src/components/trade/order-form/fields/AmountField.tsx`
+- Create: `src/components/trade/order-form/fields/LeverageField.tsx`
+- Create: `src/components/trade/order-form/fields/PriceFields.tsx`
+- Create: `src/components/trade/order-form/OrderPreview.tsx`
+
+**Interfaces:**
+- Consumes: `SymbolSpec`、`OrderPreflightPreview`（Task 18）、现有 `Input` / `Button` / `cn` / `formatPrice` / `formatNumber`
+- Produces:
+  - `MARKET_CONFIG: Record<OrderFormMarket, MarketConfig>`
+  - `<AmountField />`、`<LeverageField />`、`<PriceFields />`、`<OrderPreview />`
+
+- [ ] **Step 1: 创建 `src/components/trade/order-form/config.ts`**
+
+```typescript
+export type OrderFormMarket = "spot" | "futures" | "paper";
+
+export interface OrderTypeOption {
+  key: string;
+  label: string;
+  descKey: string;
+}
+
+export interface MarketConfig {
+  /** 是否显示杠杆选择 */
+  hasLeverage: boolean;
+  /** 是否走真实资金 */
+  isLive: boolean;
+  /** 方向按钮文案的 i18n key */
+  longLabelKey: string;
+  shortLabelKey: string;
+  /** 简单模式下可选的订单类型 */
+  simpleTypes: string[];
+  /** 专业模式下可选的订单类型 */
+  proTypes: string[];
+}
+
+const SPOT_TYPES = [
+  "MARKET", "LIMIT",
+  "TAKE_STOP_MARKET", "TAKE_STOP_LIMIT",
+  "TRIGGER_MARKET", "TRIGGER_LIMIT",
+];
+
+const FUTURES_TYPES = [
+  "MARKET", "LIMIT",
+  "STOP_MARKET", "STOP",
+  "TAKE_PROFIT_MARKET", "TAKE_PROFIT",
+  "TRAILING_STOP_MARKET", "TRAILING_TP_SL",
+];
+
+export const MARKET_CONFIG: Record<OrderFormMarket, MarketConfig> = {
+  spot: {
+    hasLeverage: false,
+    isLive: true,
+    longLabelKey: "trading.side.buy",
+    shortLabelKey: "trading.side.sell",
+    simpleTypes: ["MARKET", "LIMIT"],
+    proTypes: SPOT_TYPES,
+  },
+  futures: {
+    hasLeverage: true,
+    isLive: true,
+    longLabelKey: "trading.side.long",
+    shortLabelKey: "trading.side.short",
+    simpleTypes: ["MARKET", "LIMIT"],
+    proTypes: FUTURES_TYPES,
+  },
+  paper: {
+    hasLeverage: true,
+    isLive: false,
+    longLabelKey: "trading.side.long",
+    shortLabelKey: "trading.side.short",
+    simpleTypes: ["MARKET", "LIMIT"],
+    proTypes: ["MARKET", "LIMIT"],
+  },
+};
+
+export const LIMIT_TYPES = new Set([
+  "LIMIT", "TAKE_STOP_LIMIT", "TRIGGER_LIMIT", "STOP", "TAKE_PROFIT",
+]);
+export const STOP_TYPES = new Set([
+  "TAKE_STOP_MARKET", "TAKE_STOP_LIMIT", "TRIGGER_MARKET", "TRIGGER_LIMIT",
+  "STOP_MARKET", "STOP", "TAKE_PROFIT_MARKET", "TAKE_PROFIT",
+]);
+export const TRAILING_TYPES = new Set(["TRAILING_STOP_MARKET", "TRAILING_TP_SL"]);
+/** 只有市价/限价单能附带止盈止损对象（BingX 限制） */
+export const TPSL_ATTACHABLE = new Set(["MARKET", "LIMIT"]);
+```
+
+- [ ] **Step 2: 创建 `src/components/trade/order-form/fields/AmountField.tsx`**
+
+单位提示常驻，消除现货 MARKET/LIMIT 之间的语义跳变（缺陷 C4）；百分比按真实可用余额算（缺陷 A6）。
+
+```typescript
+"use client";
+
+import { useTranslations } from "next-intl";
+import { Input } from "@/components/ui/Input";
+import { formatNumber, formatPrice, cn } from "@/lib/utils";
+
+interface AmountFieldProps {
+  /** 用户输入的仓位名义额（USDT） */
+  value: string;
+  onChange: (v: string) => void;
+  /** 可用余额（USDT）。undefined 表示未知，隐藏百分比按钮 */
+  availableUsdt?: number;
+  /** 杠杆；名义额上限 = 可用余额 × 杠杆 */
+  leverage: number;
+  /** 换算出的币数量，用于「≈ 0.0012 BTC」提示 */
+  estQty?: number;
+  baseAsset: string;
+  disabled?: boolean;
+}
+
+const PERCENTS = [25, 50, 75, 100];
+
+export function AmountField({
+  value, onChange, availableUsdt, leverage, estQty, baseAsset, disabled,
+}: AmountFieldProps) {
+  const t = useTranslations();
+  const buyingPower = availableUsdt !== undefined ? availableUsdt * Math.max(1, leverage) : undefined;
+
+  const applyPercent = (pct: number) => {
+    if (buyingPower === undefined) return;
+    onChange(((buyingPower * pct) / 100).toFixed(2));
+  };
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs text-text-muted">
+        {/* 单位始终写明，不随订单类型切换语义 */}
+        <span>{t("trading.amount_label")}</span>
+        {buyingPower !== undefined && (
+          <div className="flex gap-1">
+            {PERCENTS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                disabled={disabled}
+                onClick={() => applyPercent(p)}
+                className="rounded-xs px-1 text-xs hover:text-gold disabled:opacity-50"
+              >
+                {p}%
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Input
+        placeholder="0.00"
+        inputMode="decimal"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className="text-sm"
+      />
+
+      <div className="mt-1 space-y-0.5 text-xs text-text-muted">
+        {estQty !== undefined && estQty > 0 && (
+          <div className={cn("flex justify-between")}>
+            <span>{t("trading.est_qty")}</span>
+            <span className="font-mono text-text-primary tabular-nums">
+              ≈ {formatNumber(estQty, 8)} {baseAsset}
+            </span>
+          </div>
+        )}
+        {availableUsdt !== undefined && (
+          <div className="flex justify-between">
+            <span>{t("trading.available")}</span>
+            <span className="font-mono tabular-nums">{formatPrice(availableUsdt)} USDT</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: 创建 `src/components/trade/order-form/fields/LeverageField.tsx`**
+
+杠杆改为显式动作：pending 期间禁用，失败回滚显示（缺陷 B2）；上限用交易对真实 `maxLeverage`（缺陷 B7）。
+
+```typescript
+"use client";
+
+import { useState } from "react";
+import { useTranslations } from "next-intl";
+import { cn } from "@/lib/utils";
+
+interface LeverageFieldProps {
+  value: number;
+  maxLeverage: number;
+  marginType?: string;
+  /** 提交到交易所；resolve 为交易所回读的实际杠杆，reject 表示失败 */
+  onApply: (leverage: number) => Promise<number>;
+  onApplyMarginType?: (marginType: "ISOLATED" | "CROSSED") => Promise<void>;
+  /** 模拟盘不打交易所，直接本地设置 */
+  localOnly?: boolean;
+  onLocalChange?: (leverage: number) => void;
+}
+
+const PRESETS = [1, 2, 3, 5, 10, 20, 50, 75, 100, 125];
+
+export function LeverageField({
+  value, maxLeverage, marginType, onApply, onApplyMarginType, localOnly, onLocalChange,
+}: LeverageFieldProps) {
+  const t = useTranslations();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [custom, setCustom] = useState("");
+
+  const presets = PRESETS.filter((p) => p <= maxLeverage);
+
+  const apply = async (lev: number) => {
+    if (lev < 1 || lev > maxLeverage) {
+      setError(t("trading.leverage_out_of_range", { max: maxLeverage }));
+      return;
+    }
+    setError(null);
+    if (localOnly) {
+      onLocalChange?.(lev);
+      return;
+    }
+    setPending(true);
+    try {
+      // 成功时用交易所回读值，而非乐观假设
+      const applied = await onApply(lev);
+      onLocalChange?.(applied);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("trading.leverage_failed"));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs text-text-muted">
+        <span>{t("trading.leverage")}</span>
+        <span className={cn("font-mono tabular-nums", value > 20 ? "font-semibold text-danger" : "text-gold")}>
+          {value}x {pending && <span className="ml-1 opacity-60">…</span>}
+        </span>
+      </div>
+
+      <div className="mb-1 grid grid-cols-5 gap-1">
+        {presets.map((l) => (
+          <button
+            key={l}
+            type="button"
+            disabled={pending}
+            onClick={() => apply(l)}
+            className={cn(
+              "rounded-xs py-0.5 text-xs font-medium disabled:opacity-50",
+              value === l ? "bg-gold/20 text-gold" : "bg-bg-tertiary text-text-muted hover:text-text-secondary"
+            )}
+          >
+            {l}x
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-1">
+        <input
+          type="number"
+          min={1}
+          max={maxLeverage}
+          inputMode="numeric"
+          placeholder={t("trading.custom_leverage", { max: maxLeverage })}
+          value={custom}
+          disabled={pending}
+          onChange={(e) => setCustom(e.target.value)}
+          className="w-full rounded-xs bg-bg-tertiary px-2 py-1 text-xs text-text-primary outline-none focus:ring-1 focus:ring-gold/30 disabled:opacity-50"
+        />
+        <button
+          type="button"
+          disabled={pending || !custom}
+          onClick={() => apply(parseInt(custom, 10))}
+          className="rounded-xs bg-bg-hover px-2 text-xs text-text-secondary disabled:opacity-50"
+        >
+          {t("common.confirm")}
+        </button>
+      </div>
+
+      {onApplyMarginType && (
+        <div className="mt-2 flex gap-1">
+          {(["ISOLATED", "CROSSED"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              disabled={pending}
+              onClick={async () => {
+                setError(null);
+                setPending(true);
+                try {
+                  await onApplyMarginType(m);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : t("trading.margin_type_failed"));
+                } finally {
+                  setPending(false);
+                }
+              }}
+              className={cn(
+                "flex-1 rounded-xs py-1 text-xs disabled:opacity-50",
+                marginType?.toUpperCase() === m
+                  ? "bg-gold/20 text-gold"
+                  : "bg-bg-tertiary text-text-muted"
+              )}
+            >
+              {t(`trading.margin_type.${m.toLowerCase()}`)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 4: 创建 `src/components/trade/order-form/fields/PriceFields.tsx`**
+
+```typescript
+"use client";
+
+import { useTranslations } from "next-intl";
+import { Input } from "@/components/ui/Input";
+import { formatPrice } from "@/lib/utils";
+import { LIMIT_TYPES, STOP_TYPES, TRAILING_TYPES, TPSL_ATTACHABLE } from "../config";
+
+interface PriceFieldsProps {
+  orderType: string;
+  currentPrice: number;
+  price: string;
+  onPriceChange: (v: string) => void;
+  stopPrice: string;
+  onStopPriceChange: (v: string) => void;
+  callbackPercent: string;
+  onCallbackPercentChange: (v: string) => void;
+  tpPrice: string;
+  onTpPriceChange: (v: string) => void;
+  slPrice: string;
+  onSlPriceChange: (v: string) => void;
+  showTpSl: boolean;
+  onToggleTpSl: (v: boolean) => void;
+}
+
+export function PriceFields(p: PriceFieldsProps) {
+  const t = useTranslations();
+  const isLimit = LIMIT_TYPES.has(p.orderType);
+  const isStop = STOP_TYPES.has(p.orderType);
+  const isTrailing = TRAILING_TYPES.has(p.orderType);
+  const canAttachTpSl = TPSL_ATTACHABLE.has(p.orderType);
+
+  return (
+    <>
+      {isLimit ? (
+        <div>
+          <div className="mb-1 flex items-center justify-between text-xs text-text-muted">
+            <span>{t("trading.limit_price")}</span>
+            <span className="font-mono tabular-nums">≈ {formatPrice(p.currentPrice)}</span>
+          </div>
+          <Input
+            placeholder="0.00" inputMode="decimal" value={p.price}
+            onChange={(e) => p.onPriceChange(e.target.value)} className="text-sm"
+          />
+        </div>
+      ) : (
+        <div className="flex items-center justify-between text-xs text-text-muted">
+          <span>{t("trading.market_price")}</span>
+          <span className="font-mono tabular-nums text-text-primary">{formatPrice(p.currentPrice)}</span>
+        </div>
+      )}
+
+      {isStop && (
+        <div>
+          <div className="mb-1 text-xs text-text-muted">{t("trading.stop_price")}</div>
+          <Input
+            placeholder="0.00" inputMode="decimal" value={p.stopPrice}
+            onChange={(e) => p.onStopPriceChange(e.target.value)} className="text-sm"
+          />
+        </div>
+      )}
+
+      {isTrailing && (
+        <div>
+          <div className="mb-1 text-xs text-text-muted">{t("trading.callback_rate")}</div>
+          <Input
+            placeholder="1" inputMode="decimal" value={p.callbackPercent}
+            onChange={(e) => p.onCallbackPercentChange(e.target.value)} className="text-sm"
+          />
+          <p className="mt-0.5 text-xs text-text-muted/60">
+            {t("trading.callback_rate_hint", { pct: p.callbackPercent || "1" })}
+          </p>
+        </div>
+      )}
+
+      {canAttachTpSl && (
+        <div className="border-t border-border-default pt-2">
+          <label className="mb-2 flex cursor-pointer items-center gap-2 text-xs text-text-muted">
+            <input
+              type="checkbox" checked={p.showTpSl} className="rounded-xs"
+              onChange={(e) => p.onToggleTpSl(e.target.checked)}
+            />
+            {t("trading.set_tp_sl")}
+          </label>
+          {p.showTpSl && (
+            <div className="space-y-2">
+              <div>
+                <div className="mb-1 text-xs text-text-muted">{t("trading.take_profit_price")}</div>
+                <Input
+                  placeholder="0.00" inputMode="decimal" value={p.tpPrice}
+                  onChange={(e) => p.onTpPriceChange(e.target.value)} className="text-sm"
+                />
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-text-muted">{t("trading.stop_loss_price")}</div>
+                <Input
+                  placeholder="0.00" inputMode="decimal" value={p.slPrice}
+                  onChange={(e) => p.onSlPriceChange(e.target.value)} className="text-sm"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+```
+
+- [ ] **Step 5: 创建 `src/components/trade/order-form/OrderPreview.tsx`**
+
+```typescript
+"use client";
+
+import { useTranslations } from "next-intl";
+import { formatNumber, formatPrice, cn } from "@/lib/utils";
+import type { OrderPreflightPreview } from "@/hooks/useOrderPreflight";
+import type { SymbolSpec } from "@/types/trading";
+
+interface OrderPreviewProps {
+  preview: OrderPreflightPreview;
+  spec: SymbolSpec | undefined;
+  baseAsset: string;
+  leverage: number;
+  showMargin: boolean;
+}
+
+export function OrderPreview({ preview, spec, baseAsset, leverage, showMargin }: OrderPreviewProps) {
+  const t = useTranslations();
+  const { sizing, validation, requiredMarginUsdt, estFee, estLiquidationPrice } = preview;
+
+  if (!sizing || sizing.qty <= 0) return null;
+
+  const rejected = validation && !validation.ok ? validation : null;
+
+  return (
+    <div className="space-y-0.5 rounded-xs border border-border-default bg-bg-tertiary p-2 text-xs">
+      <Row label={t("trading.est_qty")} value={`${formatNumber(sizing.qty, spec?.quantityPrecision ?? 6)} ${baseAsset}`} />
+      <Row label={t("trading.notional")} value={`${formatPrice(sizing.notional)} USDT`} />
+      {showMargin && (
+        <Row
+          label={t("trading.required_margin")}
+          value={`${formatPrice(requiredMarginUsdt)} USDT`}
+          emphasis
+        />
+      )}
+      {showMargin && estLiquidationPrice !== null && leverage > 1 && (
+        <Row label={t("trading.est_liq_price")} value={`≈ ${formatPrice(estLiquidationPrice)}`} />
+      )}
+      {estFee > 0 && <Row label={t("trading.est_fee")} value={`≈ ${formatPrice(estFee)} USDT`} />}
+
+      {rejected && (
+        <p className="mt-1 text-danger">
+          {t(`trading.reject.${rejected.reason.toLowerCase()}`, {
+            limit: rejected.limit ?? "",
+          })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Row({ label, value, emphasis }: { label: string; value: string; emphasis?: boolean }) {
+  return (
+    <div className="flex justify-between py-0.5">
+      <span className="text-text-muted">{label}</span>
+      <span className={cn("font-mono tabular-nums", emphasis ? "font-semibold text-gold" : "text-text-primary")}>
+        {value}
+      </span>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 6: 确认构建通过**
+
+Run: `npm run build`
+Expected: 构建成功。若报缺失翻译 key，暂时忽略——Task 22 会补齐三语文案；`next-intl` 在缺 key 时抛错的话，先在 `zh-CN.json` 里加占位，Task 22 再统一整理。
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/components/trade/order-form/
+git commit -m "feat(trade): add order form field components with unit hints and explicit leverage"
+```
+
+---
+
+## Task 20: 扩展确认弹窗以支持合约
+
+合约现在点一下直接发真单，最高 300x 那一侧反而没有任何摩擦（缺陷 B1）。本任务把确认弹窗做成合约的**必经**步骤。
+
+**Files:**
+- Modify: `src/components/trade/OrderConfirmModal.tsx`
+
+**Interfaces:**
+- Consumes: `formatPrice` / `formatNumber` / `cn`
+- Produces: `OrderConfirmModalProps` 新增 `market` / `direction` / `leverage` / `requiredMarginUsdt` / `estLiquidationPrice` / `estQty` / `baseAsset`
+
+- [ ] **Step 1: 用以下内容整体替换 `src/components/trade/OrderConfirmModal.tsx`**
+
+```typescript
+"use client";
+
+import { useTranslations } from "next-intl";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
+import { formatPrice, formatNumber, cn } from "@/lib/utils";
+
+/** 超过这个杠杆时显示更醒目的警示 */
+const HIGH_LEVERAGE_THRESHOLD = 20;
+
+interface OrderConfirmModalProps {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  loading?: boolean;
+  market: "spot" | "futures" | "paper";
+  /** 现货用 BUY/SELL 语义，合约与模拟盘用 LONG/SHORT */
+  direction: "LONG" | "SHORT";
+  symbol: string;
+  baseAsset: string;
+  orderTypeLabel: string;
+  /** 仓位名义额（USDT） */
+  notionalUsdt: number;
+  /** 换算出的币数量 */
+  estQty: number;
+  /** 参考价 */
+  price: number;
+  leverage: number;
+  requiredMarginUsdt: number;
+  estLiquidationPrice?: number | null;
+  /** 可用余额；未知时隐藏占比行 */
+  availableUsdt?: number;
+}
+
+export function OrderConfirmModal({
+  open, onClose, onConfirm, loading = false,
+  market, direction, symbol, baseAsset, orderTypeLabel,
+  notionalUsdt, estQty, price, leverage, requiredMarginUsdt,
+  estLiquidationPrice, availableUsdt,
+}: OrderConfirmModalProps) {
+  const t = useTranslations();
+  const isLong = direction === "LONG";
+  const isFutures = market === "futures" || market === "paper";
+  const isPaper = market === "paper";
+  const highLeverage = isFutures && leverage > HIGH_LEVERAGE_THRESHOLD;
+
+  const pctOfBalance =
+    availableUsdt && availableUsdt > 0 ? (requiredMarginUsdt / availableUsdt) * 100 : null;
+
+  return (
+    <Modal open={open} onClose={loading ? () => {} : onClose} title={t("trading.confirm_title")} size="sm">
+      <div className="space-y-4">
+        {isPaper && (
+          <div className="rounded-xs bg-gold/10 px-3 py-1.5 text-center text-xs font-medium text-gold">
+            {t("trading.paper_banner")}
+          </div>
+        )}
+
+        <p className="text-sm text-text-secondary">
+          {t.rich("trading.confirm_summary", {
+            dir: () => (
+              <span className={cn("mx-1 font-semibold", isLong ? "text-success" : "text-danger")}>
+                {t(isFutures
+                  ? isLong ? "trading.side.long" : "trading.side.short"
+                  : isLong ? "trading.side.buy" : "trading.side.sell")}
+              </span>
+            ),
+            qty: () => (
+              <span className="font-semibold text-text-primary">
+                {formatNumber(estQty, 8)} {baseAsset}
+              </span>
+            ),
+            notional: () => (
+              <span className="font-semibold text-text-primary">
+                {formatPrice(notionalUsdt)} USDT
+              </span>
+            ),
+          })}
+        </p>
+
+        <div className="rounded-xs border border-border-default bg-bg-tertiary p-3 text-xs">
+          <Row label={t("trading.symbol")} value={symbol} />
+          <Row label={t("trading.order_type")} value={orderTypeLabel} />
+          <Row label={t("trading.est_price")} value={formatPrice(price)} />
+          <Row label={t("trading.notional")} value={`${formatPrice(notionalUsdt)} USDT`} />
+          {isFutures && <Row label={t("trading.leverage")} value={`${leverage}x`} danger={highLeverage} />}
+          {/* 名义额与保证金必须同屏出现：这是新手最容易混淆的一步 */}
+          {isFutures && (
+            <Row
+              label={t("trading.required_margin")}
+              value={`${formatPrice(requiredMarginUsdt)} USDT`}
+              emphasis
+            />
+          )}
+          {isFutures && estLiquidationPrice != null && leverage > 1 && (
+            <Row label={t("trading.est_liq_price")} value={`≈ ${formatPrice(estLiquidationPrice)}`} />
+          )}
+          {pctOfBalance !== null && (
+            <Row label={t("trading.pct_of_balance")} value={`${pctOfBalance.toFixed(1)}%`} />
+          )}
+        </div>
+
+        {highLeverage && (
+          <div className="rounded-xs border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+            {t("trading.high_leverage_warning", { leverage })}
+          </div>
+        )}
+
+        <p className="text-xs text-text-muted">{t("trading.risk_note")}</p>
+
+        <div className="flex justify-end gap-3">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={loading}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant={isLong ? "green" : "red"} size="sm" onClick={onConfirm} loading={loading}>
+            {t("trading.confirm_button")}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function Row({
+  label, value, emphasis, danger,
+}: { label: string; value: string; emphasis?: boolean; danger?: boolean }) {
+  return (
+    <div className="flex justify-between py-0.5">
+      <span className="text-text-muted">{label}</span>
+      <span
+        className={cn(
+          "font-mono tabular-nums",
+          danger ? "font-semibold text-danger" : emphasis ? "font-semibold text-gold" : "text-text-primary"
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: 确认构建通过**
+
+Run: `npm run build`
+Expected: 构建报错，提示 `TradeForm.tsx` 传给 `OrderConfirmModal` 的 props 不匹配——这是预期的，Task 21 会用新的 `OrderForm` 取代它。若想让构建保持绿色，可先跳到 Task 21 再一起验证。
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/components/trade/OrderConfirmModal.tsx
+git commit -m "feat(trade): extend order confirm modal with leverage, margin and liquidation price"
+```
+
+---
+
+## Task 21: 统一下单表单 `OrderForm` 并替换旧表单
+
+三种市场共用一个壳。旧的 `TradeForm.tsx`（395 行，两套 percent 逻辑交织）与 `FuturesTradeForm.tsx` 一并删除。
+
+**Files:**
+- Create: `src/components/trade/order-form/OrderForm.tsx`
+- Modify: `src/app/[locale]/trade/page.tsx`
+- Delete: `src/components/trade/TradeForm.tsx`
+- Delete: `src/components/trade/FuturesTradeForm.tsx`
+
+**Interfaces:**
+- Consumes: `MARKET_CONFIG` / `LIMIT_TYPES` / `STOP_TYPES` / `TRAILING_TYPES`（Task 19）、`AmountField` / `LeverageField` / `PriceFields` / `OrderPreview`（Task 19）、`useSymbolSpec` / `useSpotBalances` / `useFuturesAccount` / `useOrderPreflight`（Task 18）、`OrderConfirmModal`（Task 20）、`useSpotTicker`（现有）、`usePaperAccount` / `usePlacePaperOrder`（现有）
+- Produces: `<OrderForm symbol market initialSide? />`
+
+- [ ] **Step 1: 创建 `src/components/trade/order-form/OrderForm.tsx`**
+
+```typescript
+"use client";
+
+import { useState, useMemo, useEffect } from "react";
+import { useTranslations } from "next-intl";
+import { useSpotTicker } from "@/hooks/useMarketData";
+import { usePaperAccount, usePlacePaperOrder } from "@/hooks/usePaperTrading";
+import { useSymbolSpec } from "@/hooks/useSymbolSpec";
+import { useSpotBalances, useFuturesAccount } from "@/hooks/useTradingAccount";
+import { useOrderPreflight } from "@/hooks/useOrderPreflight";
+import { Button } from "@/components/ui/Button";
+import { OrderConfirmModal } from "@/components/trade/OrderConfirmModal";
+import { AmountField } from "./fields/AmountField";
+import { LeverageField } from "./fields/LeverageField";
+import { PriceFields } from "./fields/PriceFields";
+import { OrderPreview } from "./OrderPreview";
+import { MARKET_CONFIG, LIMIT_TYPES, STOP_TYPES, TRAILING_TYPES, type OrderFormMarket } from "./config";
+import { cn } from "@/lib/utils";
+
+interface OrderFormProps {
+  symbol: string;
+  market: OrderFormMarket;
+  initialSide?: "long" | "short";
+}
+
+export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
+  const t = useTranslations();
+  const cfg = MARKET_CONFIG[market];
+  const baseAsset = symbol.split("-")[0] ?? symbol;
+
+  const [direction, setDirection] = useState<"LONG" | "SHORT">(
+    initialSide === "short" ? "SHORT" : "LONG"
+  );
+  const [uiMode, setUiMode] = useState<"simple" | "pro">("simple");
+  const [orderType, setOrderType] = useState("MARKET");
+  const [amount, setAmount] = useState("");
+  const [price, setPrice] = useState("");
+  const [stopPrice, setStopPrice] = useState("");
+  const [callbackPercent, setCallbackPercent] = useState("1");
+  const [tpPrice, setTpPrice] = useState("");
+  const [slPrice, setSlPrice] = useState("");
+  const [showTpSl, setShowTpSl] = useState(false);
+  const [leverage, setLeverage] = useState(market === "spot" ? 1 : 10);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const specMarket = market === "spot" ? "spot" : "futures";
+  const { data: spec } = useSymbolSpec(symbol, specMarket, direction);
+  const { data: ticker } = useSpotTicker(symbol);
+  const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
+
+  const { data: paperData } = usePaperAccount(market === "paper");
+  const placePaperOrder = usePlacePaperOrder();
+  const { data: spotBalances } = useSpotBalances(market === "spot");
+  const { data: futuresAccount } = useFuturesAccount(symbol, market === "futures");
+
+  // 切换到不支持的订单类型时回退到市价
+  const availableTypes = uiMode === "simple" ? cfg.simpleTypes : cfg.proTypes;
+  useEffect(() => {
+    if (!availableTypes.includes(orderType)) setOrderType("MARKET");
+  }, [availableTypes, orderType]);
+
+  // 交易所实际杠杆是权威值，UI 跟随它
+  useEffect(() => {
+    if (market === "futures" && futuresAccount?.leverage) setLeverage(futuresAccount.leverage);
+  }, [market, futuresAccount?.leverage]);
+
+  const availableUsdt = useMemo(() => {
+    if (market === "paper") return paperData?.account.balance_usdt ?? 0;
+    if (market === "futures") return futuresAccount?.availableMargin;
+    return spotBalances?.find((b) => b.asset === "USDT")
+      ? parseFloat(spotBalances.find((b) => b.asset === "USDT")!.free)
+      : undefined;
+  }, [market, paperData, futuresAccount, spotBalances]);
+
+  const isLimit = LIMIT_TYPES.has(orderType);
+  const refPrice = isLimit && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
+  const notional = parseFloat(amount) || 0;
+  const effectiveLeverage = cfg.hasLeverage ? leverage : 1;
+
+  const preview = useOrderPreflight({
+    spec, notionalUsdt: notional, price: refPrice, leverage: effectiveLeverage, direction,
+  });
+
+  const maxLeverage = futuresAccount?.maxLeverage ?? spec?.maxLeverage ?? 125;
+
+  const canSubmit = () => {
+    if (!(notional > 0) || !preview.validation?.ok) return false;
+    if (isLimit && !(parseFloat(price) > 0)) return false;
+    if (STOP_TYPES.has(orderType) && !(parseFloat(stopPrice) > 0)) return false;
+    if (TRAILING_TYPES.has(orderType) && !(parseFloat(callbackPercent) > 0)) return false;
+    return true;
+  };
+
+  const applyLeverage = async (lev: number): Promise<number> => {
+    const res = await fetch("/api/bingx/futures/positions", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "setLeverage", symbol, leverage: lev, positionSide: direction }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error?.message || t("trading.leverage_failed"));
+    return json.data.leverage as number;
+  };
+
+  const applyMarginType = async (marginType: "ISOLATED" | "CROSSED") => {
+    const res = await fetch("/api/bingx/futures/positions", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "setMarginType", symbol, marginType }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error?.message || t("trading.margin_type_failed"));
+  };
+
+  const execute = async () => {
+    setSubmitting(true);
+    setResult(null);
+    try {
+      if (market === "paper") {
+        const order = await placePaperOrder.mutateAsync({
+          symbol,
+          side: direction === "LONG" ? "buy" : "sell",
+          quoteAmount: notional,
+          leverage,
+          ...(isLimit ? { orderType: "limit" as const, price: parseFloat(price) } : {}),
+        });
+        setResult({ ok: true, message: t("trading.paper_placed", { symbol, price: order.price ?? refPrice }) });
+      } else if (market === "spot") {
+        const json = await postOrder("/api/bingx/trade/order", {
+          symbol, side: direction === "LONG" ? "BUY" : "SELL", type: orderType,
+          notionalUsdt: notional, referencePrice: currentPrice,
+          price: isLimit ? price : undefined,
+          stopPrice: STOP_TYPES.has(orderType) ? stopPrice : undefined,
+          timeInForce: isLimit ? "GTC" : undefined,
+        });
+        if (!json.success) throw new Error(translateError(json, t));
+        setResult({ ok: true, message: t("trading.order_placed", { id: json.data?.orderId ?? "" }) });
+      } else {
+        const json = await postOrder("/api/bingx/futures/order", {
+          symbol, direction, type: orderType,
+          notionalUsdt: notional, referencePrice: currentPrice, leverage,
+          price: isLimit ? price : undefined,
+          stopPrice: STOP_TYPES.has(orderType) ? stopPrice : undefined,
+          priceRatePercent: TRAILING_TYPES.has(orderType) ? callbackPercent : undefined,
+          takeProfitPrice: showTpSl && tpPrice ? tpPrice : undefined,
+          stopLossPrice: showTpSl && slPrice ? slPrice : undefined,
+        });
+        if (!json.success) throw new Error(translateError(json, t));
+        setResult({ ok: true, message: t("trading.order_placed", { id: json.data?.orderIdStr ?? "" }) });
+      }
+      setAmount(""); setPrice(""); setStopPrice(""); setTpPrice(""); setSlPrice("");
+    } catch (e) {
+      setResult({ ok: false, message: e instanceof Error ? e.message : t("bingx_error.network") });
+    } finally {
+      setSubmitting(false);
+      setConfirmOpen(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col overflow-auto">
+      <div className="flex border-b border-border-default">
+        {(["LONG", "SHORT"] as const).map((d) => (
+          <button
+            key={d}
+            onClick={() => setDirection(d)}
+            className={cn(
+              "flex-1 py-2.5 text-sm font-semibold",
+              direction === d
+                ? d === "LONG"
+                  ? "border-b-2 border-success bg-success/10 text-success"
+                  : "border-b-2 border-danger bg-danger/10 text-danger"
+                : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            {t(d === "LONG" ? cfg.longLabelKey : cfg.shortLabelKey)}
+          </button>
+        ))}
+      </div>
+
+      {/* 多空按钮语义说明：平仓走仓位面板，不用反向下单（缺陷 C2） */}
+      {cfg.hasLeverage && (
+        <p className="px-3 pt-2 text-xs text-text-muted/70">{t("trading.direction_hint")}</p>
+      )}
+
+      <div className="flex-1 space-y-2.5 p-3">
+        <div className="flex items-center justify-end">
+          <div className="flex rounded-xs bg-bg-tertiary p-0.5 text-xs">
+            {(["simple", "pro"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setUiMode(m)}
+                className={cn("rounded-xs px-2 py-0.5", uiMode === m ? "bg-bg-primary text-text-primary" : "text-text-muted")}
+              >
+                {t(`trading.ui_mode.${m}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1 text-xs text-text-muted">{t("trading.order_type")}</div>
+          <div className="grid grid-cols-2 gap-1">
+            {availableTypes.map((k) => (
+              <button
+                key={k}
+                onClick={() => setOrderType(k)}
+                className={cn(
+                  "rounded-xs py-1 text-xs font-medium",
+                  orderType === k ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary"
+                )}
+              >
+                {t(`trading.type.${k.toLowerCase()}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {cfg.hasLeverage && (
+          <LeverageField
+            value={leverage}
+            maxLeverage={maxLeverage}
+            marginType={futuresAccount?.marginType}
+            onApply={applyLeverage}
+            onApplyMarginType={market === "futures" ? applyMarginType : undefined}
+            localOnly={market === "paper"}
+            onLocalChange={setLeverage}
+          />
+        )}
+
+        <PriceFields
+          orderType={orderType}
+          currentPrice={currentPrice}
+          price={price} onPriceChange={setPrice}
+          stopPrice={stopPrice} onStopPriceChange={setStopPrice}
+          callbackPercent={callbackPercent} onCallbackPercentChange={setCallbackPercent}
+          tpPrice={tpPrice} onTpPriceChange={setTpPrice}
+          slPrice={slPrice} onSlPriceChange={setSlPrice}
+          showTpSl={showTpSl} onToggleTpSl={setShowTpSl}
+        />
+
+        <AmountField
+          value={amount} onChange={setAmount}
+          availableUsdt={availableUsdt}
+          leverage={effectiveLeverage}
+          estQty={preview.sizing?.qty}
+          baseAsset={baseAsset}
+        />
+
+        <OrderPreview
+          preview={preview} spec={spec} baseAsset={baseAsset}
+          leverage={effectiveLeverage} showMargin={cfg.hasLeverage}
+        />
+
+        <Button
+          className="w-full"
+          variant={direction === "LONG" ? "green" : "red"}
+          disabled={!canSubmit()}
+          onClick={() => setConfirmOpen(true)}
+        >
+          {t(direction === "LONG" ? cfg.longLabelKey : cfg.shortLabelKey)} {baseAsset}
+          {cfg.hasLeverage ? ` ${effectiveLeverage}x` : ""}
+        </Button>
+
+        {result && (
+          <div className={cn("rounded-xs px-3 py-2 text-xs", result.ok ? "bg-success/10 text-success" : "bg-danger/10 text-danger")}>
+            {result.message}
+          </div>
+        )}
+      </div>
+
+      <OrderConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={execute}
+        loading={submitting}
+        market={market}
+        direction={direction}
+        symbol={symbol}
+        baseAsset={baseAsset}
+        orderTypeLabel={t(`trading.type.${orderType.toLowerCase()}`)}
+        notionalUsdt={preview.sizing?.notional ?? 0}
+        estQty={preview.sizing?.qty ?? 0}
+        price={refPrice}
+        leverage={effectiveLeverage}
+        requiredMarginUsdt={preview.requiredMarginUsdt}
+        estLiquidationPrice={preview.estLiquidationPrice}
+        availableUsdt={availableUsdt}
+      />
+    </div>
+  );
+}
+
+async function postOrder(url: string, body: Record<string, unknown>) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+/** 服务端返回 i18nKey 时优先用它翻译，否则回落到原始信息 */
+function translateError(json: { error?: { i18nKey?: string; message?: string; limit?: unknown } }, t: (k: string, v?: Record<string, unknown>) => string): string {
+  const key = json.error?.i18nKey;
+  if (key) {
+    try {
+      return t(key, { limit: String(json.error?.limit ?? "") });
+    } catch {
+      // key 缺失时回落到原文，不吞掉信息
+    }
+  }
+  return json.error?.message || "Order failed";
+}
+```
+
+- [ ] **Step 2: 在交易页改用 `OrderForm`**
+
+`src/app/[locale]/trade/page.tsx` 第 13 行与第 17 行的两条 import 删除，改为：
+
+```typescript
+import { OrderForm } from "@/components/trade/order-form/OrderForm";
+```
+
+把 `tradePanel` 的定义（第 309–312 行）替换为：
+
+```typescript
+  const tradePanel = <OrderForm symbol={symbol} market={market} initialSide={initialSide} />;
+```
+
+`market` 的取值 `"spot" | "paper" | "futures"` 与 `OrderFormMarket` 完全一致，无需转换。
+
+- [ ] **Step 3: 删除旧表单**
+
+```bash
+git rm src/components/trade/TradeForm.tsx src/components/trade/FuturesTradeForm.tsx
+```
+
+- [ ] **Step 4: 确认构建通过**
+
+Run: `npm run build`
+Expected: 构建成功。若有其他文件仍引用被删的组件，按报错改为 `OrderForm`。
+
+- [ ] **Step 5: 浏览器验证三种市场**
+
+`npm run dev`，打开 `/zh-CN/trade`：
+
+1. **Spot** — 输入 100，应看到「≈ 0.00xx BTC」与「可用 xx USDT」；点 50% 应填入余额的一半而**不是字符串 50**（缺陷 A6 已修）
+2. **模拟盘** — 切到模拟盘，杠杆按钮应即时生效（本地），预览显示所需保证金
+3. **Futures**（需 Pro + 已绑 Key）— 杠杆按钮点击后应有 pending 态，成功后显示交易所回读值；输入 100 后预览应显示「所需保证金 = 100 ÷ 杠杆」而不是 100
+4. 三种市场点主按钮都应先弹确认框，合约框内应有杠杆/保证金/预估强平价三行
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/components/trade/order-form/OrderForm.tsx src/app/[locale]/trade/page.tsx
+git commit -m "feat(trade): unify spot, futures and paper order forms into one shell"
+```
+
+---
+
+## Task 22: 合约仓位面板接上 positionId 平仓
+
+Task 9 把 `closePosition` 改成按 `positionId` 平仓，`FuturesInfoPanel` 目前只传 `positionSide`，会返回 400。
+
+**Files:**
+- Modify: `src/components/trade/FuturesInfoPanel.tsx`
+
+**Interfaces:**
+- Consumes: `POST /api/bingx/futures/positions` 的 `closePosition` action（需 `positionId`）
+- Produces: 无对外接口
+
+- [ ] **Step 1: 给本地 `FuturesPosition` 接口补上 `positionId`**
+
+在该文件第 12–22 行的接口里新增一行：
+
+```typescript
+  positionId: string;
+```
+
+- [ ] **Step 2: 改写 `handleClose` 使用 positionId 并处理失败**
+
+把第 75–84 行的 `handleClose` 替换为：
+
+```typescript
+  const [closeError, setCloseError] = useState<string | null>(null);
+
+  const handleClose = async (position: FuturesPosition) => {
+    setClosing(position.positionId);
+    setCloseError(null);
+    try {
+      const res = await fetch("/api/bingx/futures/positions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "closePosition", symbol, positionId: position.positionId }),
+      });
+      const json = await res.json();
+      // 平仓失败必须让用户看见——静默失败会让人以为仓位已经平掉
+      if (!json.success) setCloseError(json.error?.message || "Close failed");
+    } catch {
+      setCloseError("Network error");
+    } finally {
+      setClosing(null);
+      fetchData();
+    }
+  };
+```
+
+- [ ] **Step 3: 更新调用处与 key**
+
+把渲染仓位的 `<div key={pos.positionSide}` 改为 `<div key={pos.positionId}`（对冲模式下同一 symbol 可同时有多空两个仓位，用 positionId 更稳）。
+
+把 Close 按钮的 `onClick={() => handleClose(pos.positionSide)}` 改为 `onClick={() => handleClose(pos)}`，`disabled={closing === pos.positionSide}` 改为 `disabled={closing === pos.positionId}`，按钮文案条件同理改为 `closing === pos.positionId`。
+
+在 Positions 区块标题下方插入错误提示：
+
+```typescript
+        {closeError && (
+          <p className="px-3 py-1.5 text-xs text-danger">{closeError}</p>
+        )}
+```
+
+- [ ] **Step 4: 确认构建通过**
+
+Run: `npm run build`
+Expected: 构建成功
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/components/trade/FuturesInfoPanel.tsx
+git commit -m "fix(trade): close futures positions by positionId and surface failures"
+```
+
+---
+
+## Task 23: API Key 设置页改造
+
+**Files:**
+- Modify: `src/app/[locale]/settings/api-keys/page.tsx`
+
+**Interfaces:**
+- Consumes: `PATCH /api/user/api-keys`（Task 15）、新增的 `api_key_masked` / `spot_ok` / `futures_ok` / `is_primary` 列
+- Produces: 无对外接口
+
+关键改动：真实掩码替换 `maskApiKey("encrypted")`（缺陷 C1）、现货/合约权限分别显示（缺陷 B6）、重新验证按钮、设为主密钥、**IP 白名单说明**。
+
+- [ ] **Step 1: 扩展 `ApiKeyRow` 接口与查询列**
+
+把 `ApiKeyRow` 接口（第 16–22 行）替换为：
+
+```typescript
+interface ApiKeyRow {
+  id: string;
+  label: string;
+  api_key_masked: string | null;
+  is_valid: boolean;
+  spot_ok: boolean | null;
+  futures_ok: boolean | null;
+  is_primary: boolean;
+  last_verified_at: string | null;
+  created_at: string;
+}
+```
+
+把 `fetchKeys` 里的 `.select(...)` 改为：
+
+```typescript
+      .select("id, label, api_key_masked, is_valid, spot_ok, futures_ok, is_primary, last_verified_at, created_at")
+```
+
+- [ ] **Step 2: 新增两个操作处理函数**
+
+在 `handleDeleteKey` 之后插入：
+
+```typescript
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const patchKey = async (id: string, action: "setPrimary" | "reverify") => {
+    setBusyId(id);
+    try {
+      await fetch("/api/user/api-keys", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action }),
+      });
+    } catch { /* 刷新列表即可反映真实状态 */ }
+    setBusyId(null);
+    fetchKeys();
+  };
+```
+
+- [ ] **Step 3: 用真实掩码与权限徽章替换卡片内容**
+
+把 `keys.map((key) => (...))` 内 `<Card>` 的整个 `<div className="min-w-0 flex-1 space-y-2">` 块替换为：
+
+```typescript
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="truncate text-sm font-semibold text-text-primary">{key.label}</h3>
+                    {key.is_primary && (
+                      <Badge variant="gold" size="sm">{t("primary")}</Badge>
+                    )}
+                    {/* 现货与合约权限分开显示：只开了合约权限的 Key 不该被笼统标成「无效」 */}
+                    <Badge variant={key.spot_ok ? "green" : "red"} size="sm">
+                      {t("spot")} {key.spot_ok ? "✓" : "✗"}
+                    </Badge>
+                    <Badge variant={key.futures_ok ? "green" : "red"} size="sm">
+                      {t("futures")} {key.futures_ok ? "✓" : "✗"}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="font-mono text-sm text-text-secondary">
+                      {key.api_key_masked ?? t("masked_unavailable")}
+                    </p>
+                    <p className="text-xs text-text-muted">
+                      {t("added")}: {formatDate(key.created_at)}
+                      {key.last_verified_at && ` · ${t("verified")}: ${formatDate(key.last_verified_at)}`}
+                    </p>
+                  </div>
+                  <div className="flex gap-3 text-xs">
+                    <button
+                      onClick={() => patchKey(key.id, "reverify")}
+                      disabled={busyId === key.id}
+                      className="text-text-muted hover:text-gold disabled:opacity-50"
+                    >
+                      {busyId === key.id ? t("validating") : t("reverify")}
+                    </button>
+                    {!key.is_primary && (
+                      <button
+                        onClick={() => patchKey(key.id, "setPrimary")}
+                        disabled={busyId === key.id}
+                        className="text-text-muted hover:text-gold disabled:opacity-50"
+                      >
+                        {t("set_primary")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+```
+
+若 `Badge` 组件没有 `gold` variant，先打开 `src/components/ui/Badge.tsx` 确认可用的 variant 名，用最接近的替代（如 `default`），不要新增 variant。
+
+- [ ] **Step 4: 在添加弹窗里加入 IP 白名单说明**
+
+这是「绑了 Key 仍然下不了单」最常见的一类原因。把弹窗顶部那段 `<p className="text-xs text-text-muted">Your API key will be encrypted...</p>` 替换为：
+
+```typescript
+          <div className="space-y-2 rounded-xs border border-border-default bg-bg-tertiary p-3 text-xs text-text-muted">
+            <p>{t("encrypted_notice")}</p>
+            <p className="text-warning">{t("ip_whitelist_warning")}</p>
+            <p>{t("permission_notice")}</p>
+          </div>
+```
+
+- [ ] **Step 5: 确认构建通过**
+
+Run: `npm run build`
+Expected: 构建成功。缺失的翻译 key 由 Task 24 统一补齐；若 next-intl 在缺 key 时抛错，先在 `zh-CN.json` 的 `api_keys` 下加占位。
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add "src/app/[locale]/settings/api-keys/page.tsx"
+git commit -m "feat(settings): show real key mask, per-market permissions and IP whitelist warning"
+```
+
+---
+
+## Task 24: Admin 限额配置页
+
+**Files:**
+- Create: `src/app/admin/trading-limits/page.tsx`
+- Modify: `src/components/layout/AdminSidebar.tsx`
+
+**Interfaces:**
+- Consumes: `/api/admin/trading-limits`（Task 17）
+- Produces: 无对外接口
+
+实现前先阅读一个现有 admin 页面（如 `src/app/admin/settings/SettingsEditor.tsx` 与 `src/app/admin/settings/page.tsx`），照搬其页面结构、表单样式与 `AdminPageHeading` 用法。
+
+- [ ] **Step 1: 阅读现有 admin 页面模式**
+
+Run: 打开 `src/app/admin/settings/page.tsx`、`src/app/admin/settings/SettingsEditor.tsx`、`src/components/layout/AdminSidebar.tsx`，确认页面壳、client 组件拆分方式与侧栏条目的写法。
+
+- [ ] **Step 2: 创建 `src/app/admin/trading-limits/page.tsx`**
+
+按上一步确认的模式实现。功能要求：
+
+- 一个「全局默认」表单（`userId: null`），四个字段：单笔最大名义额（USDT）、每日最大下单次数、最大杠杆、允许交易对（逗号分隔）
+- 每个字段旁标注「留空 = 不限制」——这是 spec 定的语义，界面必须写出来，否则管理员会误以为留空是 0
+- 下方列出已有的按用户覆盖配置，可删除
+- 保存调 `PUT /api/admin/trading-limits`，删除调 `DELETE ?id=`
+- 保存成功/失败都要显示反馈
+
+字段与 API 的对应关系：
+
+| 界面字段 | 请求体键 | 空值含义 |
+|---|---|---|
+| 单笔最大名义额 | `maxNotionalPerOrder` | 不限制 |
+| 每日最大下单次数 | `maxOrdersPerDay` | 不限制 |
+| 最大杠杆 | `maxLeverage` | 不限制（仍受交易对自身上限约束） |
+| 允许交易对 | `allowedSymbols`（逗号分隔字符串） | 不限制；填了就只有列表内的能交易 |
+
+- [ ] **Step 3: 在 `AdminSidebar.tsx` 中新增入口**
+
+按该文件现有条目的写法，在「站点设置」附近插入一条指向 `/admin/trading-limits` 的链接，文案「交易风控」。
+
+- [ ] **Step 4: 手动验证**
+
+`npm run dev`，以管理员登录访问 `/admin/trading-limits`：填入单笔最大 500、最大杠杆 20 后保存 → 刷新页面应回显；清空最大杠杆再保存 → 刷新后该字段应为空（而非 0）。
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/app/admin/trading-limits/page.tsx src/components/layout/AdminSidebar.tsx
+git commit -m "feat(admin): add trading limits configuration page"
+```
+
+---
+
+## Task 25: 三语文案补齐
+
+**Files:**
+- Modify: `src/i18n/messages/zh-CN.json`
+- Modify: `src/i18n/messages/en-US.json`
+- Modify: `src/i18n/messages/ms-MY.json`
+
+**Interfaces:**
+- Produces: `trading.*` 与 `bingx_error.*` 两个顶级命名空间；`api_keys.*` 下的若干新 key
+
+- [ ] **Step 1: 在 `zh-CN.json` 顶层新增 `trading` 与 `bingx_error` 两个命名空间**
+
+```json
+  "trading": {
+    "confirm_title": "确认订单",
+    "confirm_summary": "你将<dir></dir>约 <qty></qty>，仓位价值 <notional></notional>。",
+    "confirm_button": "确认下单",
+    "paper_banner": "模拟盘 · 不涉及真实资金",
+    "risk_note": "交易涉及风险，价格可能在下单后变化，实际成交以交易所结果为准。本平台不提供投资建议。",
+    "symbol": "交易对",
+    "order_type": "订单类型",
+    "est_price": "参考价",
+    "market_price": "市价",
+    "limit_price": "限价",
+    "stop_price": "触发价",
+    "notional": "仓位价值",
+    "required_margin": "所需保证金",
+    "est_liq_price": "预估强平价",
+    "est_fee": "预估手续费",
+    "est_qty": "预计数量",
+    "available": "可用",
+    "pct_of_balance": "占可用余额",
+    "amount_label": "仓位价值 (USDT)",
+    "leverage": "杠杆",
+    "custom_leverage": "自定义 (≤{max})",
+    "leverage_out_of_range": "杠杆需在 1 到 {max} 之间",
+    "leverage_failed": "设置杠杆失败",
+    "margin_type_failed": "设置保证金模式失败",
+    "callback_rate": "回撤率 (%)",
+    "callback_rate_hint": "价格从最高点回撤 {pct}% 时触发市价单",
+    "set_tp_sl": "设置止盈止损",
+    "take_profit_price": "止盈价",
+    "stop_loss_price": "止损价",
+    "direction_hint": "做多 = 开多或加多，做空 = 开空或加空；平仓请到「订单」面板点平仓。",
+    "high_leverage_warning": "{leverage}x 高杠杆：价格反向波动约 {leverage} 分之一即可能触发强平。",
+    "order_placed": "下单成功 · {id}",
+    "paper_placed": "模拟盘下单成功 · {symbol} @ {price}",
+    "side": {
+      "buy": "买入", "sell": "卖出", "long": "做多", "short": "做空"
+    },
+    "ui_mode": { "simple": "简单", "pro": "专业" },
+    "margin_type": { "isolated": "逐仓", "crossed": "全仓" },
+    "type": {
+      "market": "市价", "limit": "限价",
+      "take_stop_market": "止损市价", "take_stop_limit": "止损限价",
+      "trigger_market": "触发市价", "trigger_limit": "触发限价",
+      "stop_market": "止损市价", "stop": "止损限价",
+      "take_profit_market": "止盈市价", "take_profit": "止盈限价",
+      "trailing_stop_market": "追踪止损", "trailing_tp_sl": "追踪止盈止损",
+      "oco": "OCO"
+    },
+    "reject": {
+      "unknown_symbol": "交易所不支持该交易对",
+      "not_tradable": "该交易对当前暂停交易",
+      "below_min_qty": "低于最小下单数量 {limit}",
+      "below_min_notional": "低于最小下单金额 {limit} USDT",
+      "zero_after_rounding": "金额太小，按该交易对精度换算后数量为 0",
+      "invalid_input": "输入不合法",
+      "notional_too_large": "超出单笔限额 {limit} USDT",
+      "daily_limit_reached": "已达今日下单次数上限 {limit}",
+      "leverage_too_high": "杠杆超出上限 {limit}x",
+      "symbol_not_allowed": "该交易对不在允许列表内",
+      "rate_limited": "下单过于频繁，请稍候再试",
+      "pro_required": "合约交易需要 Pro 会员",
+      "no_api_key": "请先在设置中绑定 BingX API 密钥",
+      "missing_fields": "缺少必填字段",
+      "missing_price": "限价单需要填写价格",
+      "missing_stop_price": "该订单类型需要填写触发价",
+      "invalid_amount": "金额必须大于 0",
+      "invalid_price": "价格必须大于 0",
+      "invalid_type": "不支持的订单类型",
+      "invalid_side": "方向不合法",
+      "invalid_direction": "方向不合法",
+      "invalid_tif": "有效期设置不合法",
+      "invalid_callback_rate": "回撤率需在 0 到 100 之间"
+    }
+  },
+  "bingx_error": {
+    "signature": "签名校验失败，请重新绑定 API 密钥",
+    "no_permission": "API 密钥缺少交易权限，请在 BingX 后台勾选对应权限",
+    "invalid_key": "API 密钥无效，或你的 BingX 密钥设置了 IP 白名单",
+    "insufficient_margin": "保证金不足，请减小金额、降低杠杆或充值",
+    "invalid_params": "订单参数不合法，请检查数量、价格与持仓模式",
+    "service_busy": "交易所繁忙，请稍后重试",
+    "network": "网络异常，请检查连接后重试",
+    "unknown": "交易所返回未知错误"
+  },
+```
+
+- [ ] **Step 2: 在 `zh-CN.json` 的 `api_keys` 下新增 key**
+
+```json
+    "primary": "主密钥",
+    "set_primary": "设为主密钥",
+    "reverify": "重新验证",
+    "spot": "现货",
+    "futures": "合约",
+    "masked_unavailable": "（重新验证后显示）",
+    "encrypted_notice": "密钥会加密后存储，并在保存时自动验证。",
+    "ip_whitelist_warning": "请勿为该密钥设置 IP 白名单——本站部署在弹性云上，出口 IP 不固定，设了白名单会导致下单持续失败。",
+    "permission_notice": "请在 BingX 后台同时勾选「现货交易」与「永续合约交易」权限；不要勾选提现权限。"
+```
+
+- [ ] **Step 3: 在 `en-US.json` 中补齐同样结构的英文文案**
+
+键名与嵌套结构必须与 `zh-CN.json` 完全一致。占位符 `{limit}` / `{max}` / `{pct}` / `{leverage}` / `{id}` / `{symbol}` / `{price}` 保持原样。`confirm_summary` 的英文：`"You are about to <dir></dir> approximately <qty></qty>, position value <notional></notional>."`
+
+- [ ] **Step 4: 在 `ms-MY.json` 中补齐马来文文案**
+
+同上，键名结构一致。
+
+- [ ] **Step 5: 校验三份文件的键结构完全一致**
+
+```bash
+node -e "const a=require('./src/i18n/messages/zh-CN.json'),b=require('./src/i18n/messages/en-US.json'),c=require('./src/i18n/messages/ms-MY.json');const walk=(o,p='')=>Object.entries(o).flatMap(([k,v])=>typeof v==='object'&&v!==null?walk(v,p+k+'.'):[p+k]);const A=walk(a).sort(),B=walk(b).sort(),C=walk(c).sort();const diff=(x,y,nx,ny)=>x.filter(k=>!y.includes(k)).forEach(k=>console.log('missing in '+ny+':',k));diff(A,B,'zh','en');diff(A,C,'zh','ms');diff(B,A,'en','zh');diff(C,A,'ms','zh');console.log('keys:',A.length,B.length,C.length)"
+```
+
+Expected: 没有 `missing in` 输出，三个数字相等。
+
+- [ ] **Step 6: 确认构建通过并在浏览器切换三语**
+
+Run: `npm run build`，然后 `npm run dev` 分别访问 `/zh-CN/trade`、`/en-US/trade`、`/ms-MY/trade`
+Expected: 下单表单、确认弹窗、错误提示在三种语言下都无 raw key 泄漏、无布局溢出
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/i18n/messages/
+git commit -m "feat(i18n): add trading and BingX error translations in all three locales"
+```
+
+---
+
+## Task 26: 合约订单 dry-run 验证脚本与验收清单
+
+不接 VST 的前提下，这是能自动化的最后一道验证。用官方 `order/test` 端点跑通全部 8 种合约订单类型，验签名与参数合法性但不成交。
+
+**Files:**
+- Create: `scripts/verify-order-dry-run.mjs`
+- Create: `docs/superpowers/plans/2026-07-29-acceptance-checklist.md`
+
+**Interfaces:**
+- Consumes: 运行时从环境变量读 `BINGX_API_KEY` / `BINGX_SECRET`（**不读数据库、不解密用户密钥**）
+- Produces: 命令行报告，每种订单类型一行 PASS/FAIL
+
+- [ ] **Step 1: 创建 `scripts/verify-order-dry-run.mjs`**
+
+```javascript
+#!/usr/bin/env node
+/**
+ * 用 BingX 官方 dry-run 端点验证全部合约订单类型的参数正确性。
+ * 不会真正成交。
+ *
+ * 用法：
+ *   BINGX_API_KEY=xxx BINGX_SECRET=yyy node scripts/verify-order-dry-run.mjs
+ *
+ * 注意：只读环境变量里的密钥，绝不触碰数据库中用户的加密密钥。
+ */
+import { createHmac } from "node:crypto";
+
+const API_KEY = process.env.BINGX_API_KEY;
+const SECRET = process.env.BINGX_SECRET;
+const SYMBOL = process.env.SYMBOL || "BTC-USDT";
+
+if (!API_KEY || !SECRET) {
+  console.error("Set BINGX_API_KEY and BINGX_SECRET in the environment.");
+  process.exit(1);
+}
+
+const BASE = "https://open-api.bingx.com";
+
+async function signedPost(path, params) {
+  const all = { ...params, timestamp: Date.now() };
+  const qs = Object.keys(all).sort().map((k) => `${k}=${all[k]}`).join("&");
+  const sig = createHmac("sha256", SECRET).update(qs).digest("hex");
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "X-BX-APIKEY": API_KEY,
+      "X-SOURCE-KEY": "BX-AI-SKILL",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: `${qs}&signature=${sig}`,
+    signal: AbortSignal.timeout(10000),
+  });
+  return JSON.parse(await res.text());
+}
+
+async function getJson(path, params = {}) {
+  const url = new URL(BASE + path);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+  const res = await fetch(url, { headers: { "X-SOURCE-KEY": "BX-AI-SKILL" } });
+  return res.json();
+}
+
+const contracts = await getJson("/openApi/swap/v2/quote/contracts");
+const contract = (contracts.data || []).find((c) => c.symbol === SYMBOL);
+if (!contract) {
+  console.error(`Contract not found: ${SYMBOL}`);
+  process.exit(1);
+}
+
+const ticker = await getJson("/openApi/swap/v2/quote/ticker", { symbol: SYMBOL });
+const price = parseFloat(ticker.data?.lastPrice ?? ticker.data?.[0]?.lastPrice ?? "0");
+if (!(price > 0)) {
+  console.error("Could not read a reference price");
+  process.exit(1);
+}
+
+// 用最小名义额的两倍换算数量，向下取整到合约精度
+const notional = Math.max(contract.tradeMinUSDT * 2, 10);
+const p = contract.quantityPrecision;
+const qty = (Math.floor((notional / price) * 10 ** p) / 10 ** p).toFixed(p);
+
+console.log(`Symbol ${SYMBOL} · price ${price} · qty ${qty} (notional ≈ ${notional} USDT)`);
+console.log(`quantityPrecision=${p} tradeMinUSDT=${contract.tradeMinUSDT} maxLongLeverage=${contract.maxLongLeverage}\n`);
+
+const dual = await (async () => {
+  const all = { timestamp: Date.now() };
+  const qs = `timestamp=${all.timestamp}`;
+  const sig = createHmac("sha256", SECRET).update(qs).digest("hex");
+  const res = await fetch(`${BASE}/openApi/swap/v1/positionSide/dual?${qs}&signature=${sig}`, {
+    headers: { "X-BX-APIKEY": API_KEY, "X-SOURCE-KEY": "BX-AI-SKILL" },
+  });
+  const j = await res.json();
+  return j.data?.dualSidePosition === true;
+})();
+
+const positionSide = dual ? "LONG" : "BOTH";
+console.log(`Account position mode: ${dual ? "hedge (LONG/SHORT)" : "one-way (BOTH)"} → positionSide=${positionSide}\n`);
+
+const base = { symbol: SYMBOL, side: "BUY", positionSide, quantity: qty };
+const cases = [
+  ["MARKET", { ...base, type: "MARKET" }],
+  ["LIMIT", { ...base, type: "LIMIT", price: (price * 0.9).toFixed(contract.pricePrecision), timeInForce: "GTC" }],
+  ["STOP_MARKET", { ...base, type: "STOP_MARKET", stopPrice: (price * 0.9).toFixed(contract.pricePrecision) }],
+  ["STOP", { ...base, type: "STOP", stopPrice: (price * 0.9).toFixed(contract.pricePrecision), price: (price * 0.89).toFixed(contract.pricePrecision) }],
+  ["TAKE_PROFIT_MARKET", { ...base, type: "TAKE_PROFIT_MARKET", stopPrice: (price * 1.1).toFixed(contract.pricePrecision) }],
+  ["TAKE_PROFIT", { ...base, type: "TAKE_PROFIT", stopPrice: (price * 1.1).toFixed(contract.pricePrecision), price: (price * 1.11).toFixed(contract.pricePrecision) }],
+  // priceRate 是小数：0.01 = 1%。这里正是修复前会误发 1（=100%）的地方
+  ["TRAILING_STOP_MARKET", { ...base, type: "TRAILING_STOP_MARKET", priceRate: 0.01 }],
+  ["TRAILING_TP_SL", { ...base, type: "TRAILING_TP_SL", priceRate: 0.01 }],
+  ["MARKET + attached TP/SL", {
+    ...base, type: "MARKET",
+    stopLoss: JSON.stringify({ type: "STOP_MARKET", stopPrice: Number((price * 0.9).toFixed(contract.pricePrecision)), workingType: "MARK_PRICE" }),
+    takeProfit: JSON.stringify({ type: "TAKE_PROFIT_MARKET", stopPrice: Number((price * 1.1).toFixed(contract.pricePrecision)), workingType: "MARK_PRICE" }),
+  }],
+];
+
+let failed = 0;
+for (const [name, params] of cases) {
+  const r = await signedPost("/openApi/swap/v2/trade/order/test", params);
+  const ok = r.code === 0;
+  if (!ok) failed++;
+  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${ok ? "" : `  → ${r.code}: ${r.msg}`}`);
+}
+
+console.log(`\n${cases.length - failed}/${cases.length} passed`);
+process.exit(failed > 0 ? 1 : 0);
+```
+
+- [ ] **Step 2: 运行脚本**
+
+```bash
+BINGX_API_KEY=your_key BINGX_SECRET=your_secret node scripts/verify-order-dry-run.mjs
+```
+
+Expected: 9/9 passed。若 `TRAILING_TP_SL` 报错，通常是因为该类型要求已有持仓——在报告中标注为「需持仓」，不算失败。
+
+- [ ] **Step 3: 创建验收清单 `docs/superpowers/plans/2026-07-29-acceptance-checklist.md`**
+
+```markdown
+# BingX 下单链路 验收清单
+
+自动化验证到此为止。以下步骤需要人工执行，其中合约真单**必须由项目所有者亲自操作**。
+
+## A. 自动化（已完成才勾）
+
+- [ ] `npm test` 全绿（trading 纯函数层）
+- [ ] `npm run build` 无错误
+- [ ] `node scripts/verify-order-dry-run.mjs` 9/9 通过
+- [ ] 三语 key 结构校验脚本无 `missing in` 输出
+
+## B. 服务端权威性（浏览器 Console，不产生真单）
+
+- [ ] 金额 0.5 USDT 下单 → 返回 `BELOW_MIN_NOTIONAL` 或 `ZERO_AFTER_ROUNDING`，未打交易所
+- [ ] 配置全局单笔限额 500 后，下 900 USDT → 返回 `NOTIONAL_TOO_LARGE`
+- [ ] 上一条在 `orders` 表留下 `risk_rejected = true` 的记录
+- [ ] `priceRatePercent: 150` → 返回 `INVALID_CALLBACK_RATE`，未打交易所
+- [ ] 未绑 Key 的账号下单 → 返回 `NO_API_KEY` 而非 500
+
+## C. 界面（`npm run dev`）
+
+- [ ] 现货点「50%」填入余额一半，不是字符串 `50`
+- [ ] 现货与合约都显示可用余额
+- [ ] 合约输入 100 USDT，预览显示「所需保证金 = 100 ÷ 杠杆」，不是 100
+- [ ] 合约杠杆按钮点击后有 pending 态；设一个超上限值会显示可读错误而非静默成功
+- [ ] 合约点下单先弹确认框，框内含杠杆 / 所需保证金 / 预估强平价
+- [ ] 杠杆 > 20x 时确认框出现高杠杆警示
+- [ ] API Key 页显示真实前4后4掩码，现货/合约权限分别标记
+- [ ] API Key 添加弹窗显示 IP 白名单警告
+- [ ] 三语切换下单表单与确认框均无 raw key 泄漏
+
+## D. 真实资金（需人工，按顺序）
+
+- [ ] **现货小额真单**：BTC-USDT 市价买入约 6 USDT（略高于最小 5），确认成交
+- [ ] 该笔出现在 `/orders` 页面（验证落库）
+- [ ] **合约真单（项目所有者亲自执行）**：
+  - [ ] 名义额 5–10 USDT、杠杆 **1x**、市价开多
+  - [ ] 确认框显示的「预计数量」与交易所实际成交数量一致 ← **这是 A1 缺陷修复的最终证据**
+  - [ ] 仓位出现在 Positions 面板
+  - [ ] 点「平仓」成功平掉（验证 positionId 平仓路径）
+  - [ ] 两笔都出现在 `/orders` 页面
+
+## E. 已知未覆盖
+
+- 未接入 VST，合约真单只能由人工验证一次
+- 内存限流在 Vercel 多实例下无法跨实例生效；真正护栏是服务端限额
+- 预估强平价为简化公式，未计入维持保证金率与手续费，仅作量级提示
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add scripts/verify-order-dry-run.mjs
+git add -f docs/superpowers/plans/2026-07-29-acceptance-checklist.md
+git commit -m "test: add futures dry-run verification script and acceptance checklist"
+```
+
+---
+
+## 自查记录
+
+**Spec 覆盖核对**（缺陷编号对应 spec 的现状缺陷清单）：
+
+| 缺陷 | 覆盖任务 |
+|---|---|
+| A1 合约数量单位 | Task 3（换算）+ Task 14（路由发 quantity）+ Task 21（UI 收 USDT） |
+| A2 priceRate 覆盖与百分比 | Task 9（去掉覆盖）+ Task 14（÷100）+ Task 26（dry-run 验证） |
+| A3 positionSide 单向模式 | Task 10（resolveOrderDirection）+ Task 14（109400 重试） |
+| A4 响应嵌套 | Task 9（unwrapOrder） |
+| A5 精度/最小量 | Task 2（归一化）+ Task 3（校验）+ Task 6（规格路由）+ Task 18/19（前端预览） |
+| A6 百分比按钮 | Task 19（AmountField 按真实余额） |
+| A7 平仓路径 | Task 9（改 v1 + positionId）+ Task 22（面板接线） |
+| A8 多 Key 选择 | Task 8（is_primary 列）+ Task 13/14（order by primary）+ Task 15/23（设为主密钥） |
+| A9 余额 v3 与类型 | Task 9 |
+| B1 合约确认弹窗 | Task 20 + Task 21 |
+| B2 杠杆静默设置 | Task 16（返回真实结果）+ Task 19（LeverageField pending/回滚） |
+| B3 实盘余额 | Task 18（hooks）+ Task 19（AmountField）+ Task 20（确认框） |
+| B4 orders 落库 | Task 11 + Task 13/14 |
+| B5 限流 | Task 7 + Task 13/14 |
+| B6 双权限验证 | Task 15 + Task 23 |
+| B7 杠杆上限与风控 | Task 5 + Task 8 + Task 12（取交易对与配置的更严者）+ Task 17/24 |
+| C1 假掩码 / IP 白名单 | Task 15（masked 列）+ Task 23（展示与警告） |
+| C2 多空按钮说明 | Task 21（direction_hint）+ Task 25（文案） |
+| C3 合约取价 | Task 18（useFuturesAccount 提供账户态）；**注**：`OrderForm` 仍用 `useSpotTicker` 取价，见下方遗留项 |
+| C4 单位提示 | Task 19（AmountField 常驻单位）+ Task 25 |
+
+**遗留项（需在执行时确认）：**
+
+1. **C3 未完全闭合** —— `OrderForm` 目前仍用 `useSpotTicker(symbol)` 取参考价。合约与现货价格存在基差，且纯合约品种没有现货行情。执行 Task 21 时应补一个 `useFuturesTicker`（走 `/api/bingx/market/ticker?market=futures`，`getFuturesTicker` 已存在于 `src/lib/bingx/market.ts`），在 `market === "futures"` 时改用它。若该 API 路由尚不支持 `market` 参数，需要一并扩展 `src/app/api/bingx/market/ticker/route.ts`。
+2. **`useSpotSymbols` 的调用方** —— Task 2 改了 `BingXSymbol` 的形状，`MarketOverview` 等若依赖 `baseAsset` / `quoteAsset` 需改用 `symbol.split("-")`。执行 Task 2 Step 8 时按构建报错处理。
+3. **`Badge` 的 `gold` variant** —— Task 23 用到，需先确认组件是否支持。
+4. **OCO 现货订单** —— 旧 `TradeForm` 支持 OCO，`OrderForm` 未纳入（`config.ts` 的 `SPOT_TYPES` 里没有）。`/api/bingx/trade/oco-order` 路由与 `placeOcoOrder` 保留但暂时无 UI 入口。若需保留该功能，应作为独立后续任务处理——它的参数结构（limitPrice/triggerPrice/orderPrice 三价）与统一表单差异较大，硬塞进来会让表单复杂度显著上升。

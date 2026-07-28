@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSpotTickers, useOpenInterest, useFundingRate } from "@/hooks/useMarketData";
+import { useSpotTickers } from "@/hooks/useMarketData";
 import { hardFilter, computeScreenerResults } from "@/lib/screener-scoring";
 import type { ScreenerResult } from "@/lib/screener-scoring";
 import type { BingXOpenInterest, BingXFundingRate } from "@/types/bingx";

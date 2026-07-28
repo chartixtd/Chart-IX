@@ -13,6 +13,8 @@ interface TradeFormProps {
   symbol: string;
   /** "live" places real BingX orders, "paper" uses the risk-free simulator */
   mode?: "live" | "paper";
+  /** Pre-select side from URL params (e.g., from screener) */
+  initialSide?: "long" | "short";
 }
 
 type OrderType = "MARKET" | "LIMIT" | "TAKE_STOP_MARKET" | "TAKE_STOP_LIMIT" | "TRIGGER_MARKET" | "TRIGGER_LIMIT" | "OCO";
@@ -33,7 +35,7 @@ const SIMPLE_ORDER_TYPES = ORDER_TYPES.filter((t) => t.key === "MARKET" || t.key
 const PAPER_ORDER_TYPES = ORDER_TYPES.filter((t) => t.key === "MARKET" || t.key === "LIMIT");
 const TIF_OPTIONS: TIF[] = ["GTC", "IOC", "FOK", "PostOnly"];
 
-export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
+export function TradeForm({ symbol, mode = "live", initialSide }: TradeFormProps) {
   const isPaper = mode === "paper";
   const { data: ticker } = useSpotTicker(symbol);
   const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
@@ -48,7 +50,7 @@ export function TradeForm({ symbol, mode = "live" }: TradeFormProps) {
   const positionQty = paperPosition ? parseFloat(String(paperPosition.quantity)) : 0;
 
   const [uiMode, setUiMode] = useState<"simple" | "pro">("simple");
-  const [side, setSide] = useState<OrderSide>("BUY");
+  const [side, setSide] = useState<OrderSide>(initialSide === "short" ? "SELL" : "BUY");
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
   const [leverage, setLeverage] = useState(1);
   const [tif, setTif] = useState<TIF>("GTC");

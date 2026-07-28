@@ -276,19 +276,23 @@ export default function TradePage() {
   const setRightTab = useTradePrefsStore((s) => s.setRightTab);
   const [mobileTab, setMobileTab] = useState<"chart" | "trade" | "book">("chart");
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
+  const [initialSide, setInitialSide] = useState<"long" | "short" | undefined>();
 
   useBingXWebSocket([symbol]);
 
-  // URL 参数预填：从 screener 页面跳转时自动设置 symbol/market
+  // URL 参数预填：从 screener 页面跳转时自动设置 symbol/market/side
   const searchParams = useSearchParams();
   useEffect(() => {
     const urlSymbol = searchParams.get("symbol");
     const urlMarket = searchParams.get("market") as TradeMarketType | null;
+    const urlSide = searchParams.get("side") as "long" | "short" | null;
     if (urlSymbol) setSymbol(urlSymbol);
     if (urlMarket && (urlMarket === "spot" || urlMarket === "futures" || urlMarket === "paper")) {
       setMarket(urlMarket);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — 仅首次加载
+    if (urlSide) setInitialSide(urlSide);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 图表叠加：进出场标记 + 止盈止损/进场/强平价格线（按市场类型聚合）
   const { tradeMarkers, priceLines } = useChartOverlay(symbol, market);
@@ -303,8 +307,8 @@ export default function TradePage() {
   const openSymbolPicker = useCallback(() => setSymbolPickerOpen(true), []);
 
   const tradePanel =
-    market === "spot" ? <TradeForm symbol={symbol} mode="live" />
-    : market === "paper" ? <TradeForm symbol={symbol} mode="paper" />
+    market === "spot" ? <TradeForm symbol={symbol} mode="live" initialSide={initialSide} />
+    : market === "paper" ? <TradeForm symbol={symbol} mode="paper" initialSide={initialSide} />
     : <FuturesTradeForm symbol={symbol} />;
 
   const ordersPanel =

@@ -47,8 +47,8 @@ export interface FuturesPosition {
 
 export interface FuturesOrderResult {
   symbol: string;
-  /** 数值型订单号，大数在 JS 中可能丢精度——优先用 orderIdStr */
-  orderId?: number;
+  /** 数值型订单号，大数在 JS 中可能丢精度（signed-request 用 json-bigint 解析为字符串）——优先用 orderIdStr */
+  orderId?: number | string;
   /** 字符串订单号。BingX 在不同端点分别用 orderID / orderId，此处统一为字符串 */
   orderIdStr: string;
   clientOrderId?: string;
@@ -73,6 +73,7 @@ interface FuturesOrderEnvelope {
 
 /** 解包 data.order，并把订单号统一成字符串 */
 function unwrapOrder(raw: FuturesOrderEnvelope): FuturesOrderResult {
+  if (!raw) throw new Error("BingX returned an empty order response");
   const o = (raw?.order ?? raw) as Record<string, unknown>;
   const idStr = o.orderID ?? o.orderId ?? "";
   return { ...(o as unknown as FuturesOrderResult), orderIdStr: String(idStr) };
@@ -176,7 +177,10 @@ export async function getFuturesBalance(
     apiKey, secret, "GET", "/openApi/swap/v3/user/balance"
   );
   if (!Array.isArray(rows)) return null;
-  return rows.find((r) => r.asset === asset) ?? rows[0] ?? null;
+  // Deliberately no rows[0] fallback: guessing a different settlement asset
+  // (e.g. VST) as "USDT" would show the wrong balance as if it were correct.
+  // A missing match must surface as null, not a confident wrong number.
+  return rows.find((r) => r.asset === asset) ?? null;
 }
 
 // ==================== 仓位 ====================

@@ -48,7 +48,7 @@ export function useChartOverlay(symbol: string, market: TradeMarketType): Overla
       const p = await posRes.json();
       const o = await ordRes.json();
       return {
-        positions: p.success ? (p.data ?? []) : [],
+        positions: p.success && Array.isArray(p.data) ? p.data : [],
         orders: o.success ? (Array.isArray(o.data) ? o.data : o.data?.orders ?? []) : [],
       };
     },
@@ -68,7 +68,7 @@ export function useChartOverlay(symbol: string, market: TradeMarketType): Overla
       const tj = await tradesRes.json();
       const oj = await ordRes.json();
       return {
-        trades: tj.success ? (tj.data ?? []) : [],
+        trades: tj.success && Array.isArray(tj.data) ? tj.data : [],
         orders: oj.success ? (Array.isArray(oj.data) ? oj.data : oj.data?.orders ?? []) : [],
       };
     },

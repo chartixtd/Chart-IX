@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMarketStore } from "@/stores/market";
-import type { BingXSymbol, BingXTicker, BingXKline, BingXDepth, BingXTrade } from "@/types/bingx";
+import type { BingXSymbol, BingXTicker, BingXKline, BingXDepth, BingXTrade, BingXOpenInterest, BingXFundingRate } from "@/types/bingx";
 
 async function fetchApi<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(`/api/bingx/market/${endpoint}`, window.location.origin);
@@ -80,6 +80,28 @@ export function useRecentTrades(symbol: string, limit = 20) {
     queryFn: () => fetchApi<BingXTrade[]>("trades", { symbol, limit: String(limit) }),
     refetchInterval: 3_000,
     staleTime: 1_000,
+    enabled: !!symbol,
+  });
+}
+
+// 合约未平仓量
+export function useOpenInterest(symbol: string) {
+  return useQuery({
+    queryKey: ["bingx", "openInterest", symbol],
+    queryFn: () => fetchApi<BingXOpenInterest>("openInterest", { symbol }),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    enabled: !!symbol,
+  });
+}
+
+// 合约资金费率
+export function useFundingRate(symbol: string) {
+  return useQuery({
+    queryKey: ["bingx", "fundingRate", symbol],
+    queryFn: () => fetchApi<BingXFundingRate>("fundingRate", { symbol }),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
     enabled: !!symbol,
   });
 }

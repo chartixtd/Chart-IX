@@ -2306,15 +2306,27 @@ export async function POST(request: NextRequest) {
   // 落库用小写：既有 /orders 页面与 dashboard 统计都按 "buy"/"sell" 比较
   const sideLower = side === "BUY" ? "buy" : "sell";
 
-  const pre = await preflightOrder(supabase, {
-    userId,
-    market: "spot",
-    symbol,
-    direction: side === "BUY" ? "LONG" : "SHORT",
-    notionalUsdt: notional,
-    referencePrice: refPrice,
-    leverage: 1,
-  });
+  // preflightOrder can THROW: getSymbolSpec deliberately does not cache failures and
+  // rethrows on a BingX network error. Without this wrapper a transient exchange
+  // outage surfaces to the user as a bare 500 with no readable message.
+  let pre;
+  try {
+    pre = await preflightOrder(supabase, {
+      userId,
+      market: "spot",
+      symbol,
+      direction: side === "BUY" ? "LONG" : "SHORT",
+      notionalUsdt: notional,
+      referencePrice: refPrice,
+      leverage: 1,
+    });
+  } catch (error) {
+    const described = describeBingXError(error);
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
+  }
 
   if (!pre.ok) {
     await recordOrder(supabase, {
@@ -2509,10 +2521,22 @@ export async function POST(request: NextRequest) {
   if (!(notional > 0)) return reject("INVALID_AMOUNT", "notionalUsdt must be positive", 400);
   if (!(refPrice > 0)) return reject("INVALID_PRICE", "referencePrice must be positive", 400);
 
-  const pre = await preflightOrder(supabase, {
-    userId, market: "futures", symbol, direction,
-    notionalUsdt: notional, referencePrice: refPrice, leverage: lev,
-  });
+  // preflightOrder can THROW: getSymbolSpec deliberately does not cache failures and
+  // rethrows on a BingX network error. Without this wrapper a transient exchange
+  // outage surfaces to the user as a bare 500 with no readable message.
+  let pre;
+  try {
+    pre = await preflightOrder(supabase, {
+      userId, market: "futures", symbol, direction,
+      notionalUsdt: notional, referencePrice: refPrice, leverage: lev,
+    });
+  } catch (error) {
+    const described = describeBingXError(error);
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
+  }
 
   // 落库用小写：既有 /orders 页面与 dashboard 统计都按 "buy"/"sell" 比较
   const sideForLog = direction === "LONG" ? "buy" : "sell";

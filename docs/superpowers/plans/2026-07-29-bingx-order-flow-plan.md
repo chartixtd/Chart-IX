@@ -3570,7 +3570,7 @@ export function AmountField({
 
 - [ ] **Step 3: 创建 `src/components/trade/order-form/fields/LeverageField.tsx`**
 
-杠杆改为显式动作：pending 期间禁用，失败回滚显示（缺陷 B2）；上限用交易对真实 `maxLeverage`（缺陷 B7）。
+杠杆改为显式动作：pending 期间禁用，失败回滚显示（缺陷 B2）；上限取自需签名接口回读的真实 `maxLeverage`（缺陷 B7）——`SymbolSpec.maxLeverage` 实践中恒为 `undefined`，不可依赖。
 
 ```typescript
 "use client";
@@ -4677,7 +4677,7 @@ Run: 打开 `src/app/admin/settings/page.tsx`、`src/app/admin/settings/Settings
 |---|---|---|
 | 单笔最大名义额 | `maxNotionalPerOrder` | 不限制 |
 | 每日最大下单次数 | `maxOrdersPerDay` | 不限制 |
-| 最大杠杆 | `maxLeverage` | 不限制（仍受交易对自身上限约束） |
+| 最大杠杆 | `maxLeverage` | 不限制。注意：交易所自身的杠杆上限**不在**公开规格里（BingX 公开合约接口不返回，2026-07-29 实测 0/944），服务端无法据此兜底；留空即代表服务端不校验杠杆，超限请求由交易所拒绝 |
 | 允许交易对 | `allowedSymbols`（逗号分隔字符串） | 不限制；填了就只有列表内的能交易 |
 
 - [ ] **Step 3: 在 `AdminSidebar.tsx` 中新增入口**

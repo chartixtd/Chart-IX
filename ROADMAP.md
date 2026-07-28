@@ -99,7 +99,7 @@
   - `017_user_preferences.sql`（交易页偏好记忆）
   - `018_paper_futures.sql`（模拟盘升级为杠杆永续合约模型；⚠️ 破坏性：重置持仓/余额）
   - `019_close_paper_position.sql`（按持仓量精确平仓 RPC）
-  - `020_trading_limits.sql`（交易风控限额表 + 放宽 orders.order_type + api_keys 增列 masked/primary/权限标记；⚠️ 两条 orders 的 ADD CONSTRAINT 会短暂对 orders 表加 ACCESS EXCLUSIVE 锁、两条 CREATE INDEX 会短暂阻塞对应表写入，当前数据量小预计很快，但不是零；文件内含验证：执行后若某用户所有 API Key 都是 `is_valid = false`，该用户不会被自动补上 `is_primary = true`，这是预期行为，不代表迁移出错）
+  - `020_trading_limits.sql`（交易风控限额表 + 放宽 orders.order_type + api_keys 增列 masked/primary/权限标记 + 用 `CREATE OR REPLACE FUNCTION` 修正 006 的 `trg_increment_trade_count` 触发器使其跳过 `risk_rejected` 订单（不改触发器本身，只替换其函数体，OID 不变自动生效）；⚠️ 两条 orders 的 ADD CONSTRAINT 会短暂对 orders 表加 ACCESS EXCLUSIVE 锁、两条 CREATE INDEX 会短暂阻塞对应表写入，当前数据量小预计很快，但不是零；文件内含验证：执行后若某用户所有 API Key 都是 `is_valid = false`，该用户不会被自动补上 `is_primary = true`，这是预期行为，不代表迁移出错）
   不跑的话对应功能会报错，但前端都做了优雅降级（不会白屏崩溃），比如 `/learn` 页面会显示"即将上线"而不是报错。
 - **干净的 logo 透明源文件**（PNG 透明背景或 SVG/AI）——现有 `logo/logo.png` 是烘焙了假棋盘格的低保真预览图（alpha 全不透明，棋盘格是真实灰色像素且间距不规则），像素级抠图两轮都做不干净，暂不能用。只需要图形标（"D-X"那个符号）单独一份透明图即可，导航栏/favicon 用得上。
 - 落地页文案定位一句话、信任信号措辞、社群链接（Telegram）——当前落地页文案是我起草的，可以再改。

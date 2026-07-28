@@ -1,5 +1,6 @@
--- 020: 交易风控限额 + 订单类型放宽 + API Key 元数据
--- 依赖：006_trading_rls.sql（orders / api_keys / user_daily_trade_count）
+-- 020: 交易风控限额 + 订单类型放宽 + API Key 元数据 + 每日计数触发器修正
+-- 依赖：006_trading_rls.sql（orders / api_keys / user_daily_trade_count /
+--       trg_increment_trade_count 触发器，本迁移第 5 节对其函数体做 CREATE OR REPLACE）
 --
 -- 锁行为提示（手动在 SQL Editor 里整段粘贴执行前请知悉）：
 --   - 两条 `ALTER TABLE public.orders ADD CONSTRAINT ... CHECK (...)`
@@ -106,3 +107,32 @@ AND NOT EXISTS (
 -- 4) 按用户+日期查每日计数的索引（风控校验每次下单都要查）
 CREATE INDEX IF NOT EXISTS user_daily_trade_count_lookup
   ON public.user_daily_trade_count (user_id, trade_date);
+
+-- 5) 修正每日计数触发器：跳过被风控拦下的订单
+--    006_trading_rls.sql 里的 increment_trade_count() 对每一条插入 orders 的行都计数，
+--    不区分 risk_rejected。一旦订单被风控拦截就不该占用户当日额度——否则一次拦截会
+--    白白消耗一次配额，越是频繁触发风控的用户越容易被连带锁死，属于反向复合的坏体验。
+--    这里用 CREATE OR REPLACE FUNCTION 原地替换函数体：函数名、参数、返回类型都不变，
+--    Postgres 保留其 OID，006 里创建的 trg_increment_trade_count 触发器按 OID 引用该函数，
+--    因此无需 DROP/CREATE 触发器本身，下一次触发器触发时就会执行这里的新函数体。
+--    （这是 Postgres 文档化的标准行为，本次未连接实际数据库验证，留待迁移执行后确认。）
+--    保留原有的原子 `INSERT ... ON CONFLICT ... DO UPDATE SET count = count + 1`——
+--    这就是 020 之前 persist.ts 里应用层 bumpDailyCount() 想做但做不到原子的事，
+--    两边不能并存，因此 persist.ts 已经删除了那段重复计数逻辑，只保留读取。
+CREATE OR REPLACE FUNCTION public.increment_trade_count()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- NEW.risk_rejected 理论上有 NOT NULL DEFAULT false，这里仍显式用
+  -- `IS TRUE` 处理，不依赖该约束——即便将来该列被放宽为可空，NULL 也会
+  -- 被当作"未被拒绝"计数，行为保持保守（宁可计数，不可漏计真实下单）。
+  IF NEW.risk_rejected IS TRUE THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO public.user_daily_trade_count (user_id, trade_date, count)
+  VALUES (NEW.user_id, CURRENT_DATE, 1)
+  ON CONFLICT (user_id, trade_date)
+  DO UPDATE SET count = user_daily_trade_count.count + 1;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;

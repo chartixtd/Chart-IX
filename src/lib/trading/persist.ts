@@ -53,18 +53,6 @@ export async function countOrdersToday(
   }
 }
 
-async function bumpDailyCount(supabase: SupabaseClient, userId: string): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
-  const current = await countOrdersToday(supabase, userId);
-  const { error } = await supabase
-    .from("user_daily_trade_count")
-    .upsert(
-      { user_id: userId, trade_date: today, count: current + 1 },
-      { onConflict: "user_id,trade_date" }
-    );
-  if (error) Sentry.captureException(error, { tags: { scope: "bumpDailyCount" } });
-}
-
 /**
  * 记录一笔下单尝试。
  *
@@ -98,8 +86,10 @@ export async function recordOrder(
       Sentry.captureException(error, { tags: { scope: "recordOrder" } });
       return;
     }
-    // 只有真正发到交易所的单才计入每日额度；被风控拦下的不占额度
-    if (!input.riskRejected) await bumpDailyCount(supabase, input.userId);
+    // 每日计数由 orders 表上的 trg_increment_trade_count 触发器（006_trading_rls.sql，
+    // 020_trading_limits.sql 中改为跳过 risk_rejected 行）在插入时原子维护，
+    // 这里不能重复计数：应用层读-改-写在并发下单时是有竞态的，而触发器的
+    // INSERT ... ON CONFLICT ... DO UPDATE 是原子的，不应被绕过或重复实现。
   } catch (e) {
     Sentry.captureException(e, { tags: { scope: "recordOrder" } });
   }

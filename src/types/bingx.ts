@@ -77,3 +77,18 @@ export interface BingXContract {
   maxLeverage: number;
   status: string;
 }
+
+/** 合约未平仓量 */
+export interface BingXOpenInterest {
+  symbol: string;
+  openInterest: string;
+  timestamp: number;
+}
+
+/** 溢价指数（含当前资金费率） */
+export interface BingXFundingRate {
+  symbol: string;
+  markPrice: string;
+  lastFundingRate: string;
+  nextFundingTime: number;
+}

@@ -15,8 +15,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data });
   } catch (error) {
     return NextResponse.json(
-      { success: false, error: { code: "BINGX_API_ERROR", message: String(error) } },
-      { status: 502 }
+      { success: false, error: { code: "BINGX_API_ERROR", message: String(error) } }
     );
   }
 }

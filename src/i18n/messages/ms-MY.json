@@ -32,7 +32,8 @@
     "videos": "Perpustakaan Video",
     "articles": "Artikel",
     "trade": "Dagangan",
-    "upgrade": "Naik Taraf Pro",
+    "screener": "Penapis",
+    "upgrade": "Naik ke Pro",
     "settings": "Tetapan",
     "admin": "Pentadbir",
     "sign_in": "Log Masuk",
@@ -636,6 +637,29 @@
     "passed": "Lulus! Syabas",
     "failed": "Belum lagi — cuba sekali lagi",
     "retry": "Cuba Lagi"
+  },
+  "screener": {
+    "title": "Penapis Pasaran",
+    "no_results": "Tiada syiling yang memenuhi kriteria. Sila cuba lagi nanti.",
+    "error": "Gagal memuatkan data",
+    "retry": "Cuba Lagi",
+    "refresh": "Segar Semula",
+    "spot": "Spot",
+    "futures": "Niaga Hadapan",
+    "columns": {
+      "rank": "Kedudukan",
+      "symbol": "Simbol",
+      "price": "Harga",
+      "change": "24j Ubah",
+      "amplitude": "Amplitud",
+      "volume": "Volum",
+      "oi_volume_ratio": "OI/Vol",
+      "funding_rate": "Pembiayaan",
+      "score": "Skor",
+      "actions": "Tindakan"
+    },
+    "action_long": "Beli",
+    "action_short": "Jual"
   },
   "seo": {
     "title": "Platform Pendidikan Dagangan Kripto & Dagangan Langsung",

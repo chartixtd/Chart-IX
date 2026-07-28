@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, memo, useCallback } from "react";
+import { useState, memo, useCallback, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -277,6 +278,17 @@ export default function TradePage() {
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
 
   useBingXWebSocket([symbol]);
+
+  // URL 参数预填：从 screener 页面跳转时自动设置 symbol/market
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const urlSymbol = searchParams.get("symbol");
+    const urlMarket = searchParams.get("market") as TradeMarketType | null;
+    if (urlSymbol) setSymbol(urlSymbol);
+    if (urlMarket && (urlMarket === "spot" || urlMarket === "futures" || urlMarket === "paper")) {
+      setMarket(urlMarket);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — 仅首次加载
 
   // 图表叠加：进出场标记 + 止盈止损/进场/强平价格线（按市场类型聚合）
   const { tradeMarkers, priceLines } = useChartOverlay(symbol, market);

@@ -11,8 +11,8 @@ import { PriceAlertBell } from "@/components/alerts/PriceAlertBell";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
-const GUEST_NAV_ITEMS = ["home", "videos", "articles", "trade"] as const;
-const USER_NAV_ITEMS = ["dashboard", "videos", "articles", "trade"] as const;
+const GUEST_NAV_ITEMS = ["home", "videos", "articles", "trade", "screener"] as const;
+const USER_NAV_ITEMS = ["dashboard", "videos", "articles", "trade", "screener"] as const;
 
 export function Navbar() {
   const t = useTranslations("nav");

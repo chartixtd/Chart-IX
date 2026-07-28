@@ -32,6 +32,7 @@
     "videos": "Video Library",
     "articles": "Articles",
     "trade": "Trade",
+    "screener": "Screener",
     "upgrade": "Upgrade to Pro",
     "settings": "Settings",
     "admin": "Admin",
@@ -636,6 +637,29 @@
     "passed": "Passed! Nice work",
     "failed": "Not quite — give it another try",
     "retry": "Retry"
+  },
+  "screener": {
+    "title": "Market Screener",
+    "no_results": "No coins match the current criteria. Please try again later.",
+    "error": "Failed to load data",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "spot": "Spot",
+    "futures": "Futures",
+    "columns": {
+      "rank": "Rank",
+      "symbol": "Symbol",
+      "price": "Price",
+      "change": "24h Change",
+      "amplitude": "Amplitude",
+      "volume": "Volume",
+      "oi_volume_ratio": "OI/Vol",
+      "funding_rate": "Funding",
+      "score": "Score",
+      "actions": "Actions"
+    },
+    "action_long": "Long",
+    "action_short": "Short"
   },
   "seo": {
     "title": "Crypto Trading Education & Live Trading Platform",

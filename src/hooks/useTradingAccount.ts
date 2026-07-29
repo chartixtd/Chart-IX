@@ -19,6 +19,7 @@ interface FuturesAccount {
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   const json = await res.json();
   if (!json.success) throw new Error(json.error?.message || "Request failed");
   return json.data as T;

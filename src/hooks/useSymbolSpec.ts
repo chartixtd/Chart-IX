@@ -13,6 +13,7 @@ async function fetchSpec(
   url.searchParams.set("market", market);
   url.searchParams.set("side", side);
   const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   const json = await res.json();
   if (!json.success) throw new Error(json.error?.message || "Failed to load symbol spec");
   return json.data as SymbolSpec;

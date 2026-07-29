@@ -31,6 +31,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useFavoritesStore } from "@/stores/favorites";
 import { useMarketStore } from "@/stores/market";
 import { usePaperAccount } from "@/hooks/usePaperTrading";
+import { useSpotBalances } from "@/hooks/useTradingAccount";
 import { useAchievements } from "@/hooks/useAchievements";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { Badge } from "@/components/ui/Badge";
@@ -64,8 +65,10 @@ export default function DashboardPage() {
   const [latestArticles, setLatestArticles] = useState<Article[] | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [orders, setOrders] = useState<Order[] | null>(null);
+  const [summaryMode, setSummaryMode] = useState<"live" | "paper">("live");
 
   const { data: paperData, isLoading: paperLoading } = usePaperAccount(!!auth.userId);
+  const { data: spotBalances, isLoading: spotLoading, error: spotError } = useSpotBalances(!!auth.userId);
   const { data: achievements } = useAchievements(auth.userId);
   useBingXWebSocket(favorites.slice(0, 10));
 
@@ -123,6 +126,10 @@ export default function DashboardPage() {
   const paperTotalValue = (paperData?.account.balance_usdt ?? 0) + paperPositionsEquity;
   const paperPnl = paperData ? paperTotalValue - 10000 : 0;
   const paperPnlPct = paperData ? (paperPnl / 10000) * 100 : 0;
+
+  const liveUsdtBalance = parseFloat(spotBalances?.find((b) => b.asset === "USDT")?.free ?? "0") || 0;
+  const liveHoldingsCount = (spotBalances ?? []).filter((b) => parseFloat(b.free) + parseFloat(b.locked) > 0).length;
+  const liveNotConnected = !spotLoading && !!spotError;
 
   const filledOrders = useMemo(() => {
     if (!orders) return [];
@@ -232,65 +239,150 @@ export default function DashboardPage() {
 
       {/* Account Summary */}
       <section className="mt-10">
-        <p className="text-xs font-semibold uppercase tracking-[0.15em] text-text-muted">
-          {t("paper_title")}
-        </p>
-
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
-          {paperLoading ? (
-            <Skeleton className="h-14 w-64" />
-          ) : (
-            <div>
-              <div className="font-display text-5xl tracking-tight text-text-primary tabular-nums md:text-6xl">
-                {formatPrice(paperTotalValue)}
-                <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
-              </div>
-              <div className={cn("mt-2 font-mono text-sm font-medium", paperPnl >= 0 ? "text-success" : "text-danger")}>
-                {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)} USDT ({formatPercent(paperPnlPct)}) 累计
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center gap-3">
-            {paperData && (
-              <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
-                  <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                  <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
-                </svg>
-                分享
-              </Button>
-            )}
-            <Link href={`/${locale}/trade`} className="text-xs font-medium text-gold hover:underline">
-              {t("paper_cta")} →
-            </Link>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-text-muted">
+            {summaryMode === "live" ? "实盘账户" : t("paper_title")}
+          </p>
+          <div className="flex items-center gap-5 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setSummaryMode("live")}
+              className={cn(
+                "border-b-2 pb-1 transition-colors",
+                summaryMode === "live" ? "border-gold text-text-primary" : "border-transparent text-text-muted hover:text-text-secondary"
+              )}
+            >
+              实盘账户
+            </button>
+            <button
+              type="button"
+              onClick={() => setSummaryMode("paper")}
+              className={cn(
+                "border-b-2 pb-1 transition-colors",
+                summaryMode === "paper" ? "border-gold text-text-primary" : "border-transparent text-text-muted hover:text-text-secondary"
+              )}
+            >
+              模拟盘
+            </button>
           </div>
         </div>
 
-        {/* Ruled sub-line items */}
-        <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-border-default pt-5 font-mono text-sm sm:grid-cols-4">
-          <div>
-            <dt className="text-xs text-text-muted">{t("paper_balance")}</dt>
-            <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(paperData?.account.balance_usdt ?? 0)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-text-muted">实盘成交额</dt>
-            <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(tradeStats.totalVolume)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-text-muted">实盘净额</dt>
-            <dd className={cn("mt-1 tabular-nums", tradeStats.netPnl >= 0 ? "text-success" : "text-danger")}>
-              {tradeStats.netPnl >= 0 ? "+" : ""}{formatPrice(tradeStats.netPnl)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-text-muted">最常交易对</dt>
-            <dd className="mt-1 tabular-nums text-text-primary">
-              {tradeStats.mostTradedPair || "—"}
-              {tradeStats.maxCount > 0 && <span className="text-text-muted"> ×{tradeStats.maxCount}</span>}
-            </dd>
-          </div>
-        </dl>
+        {summaryMode === "live" ? (
+          <>
+            <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
+              {spotLoading ? (
+                <Skeleton className="h-14 w-64" />
+              ) : liveNotConnected ? (
+                <div>
+                  <div className="font-display text-3xl tracking-tight text-text-muted md:text-4xl">
+                    未绑定 BingX 账户
+                  </div>
+                  <Link href={`/${locale}/settings/api-keys`} className="mt-2 inline-block text-sm font-medium text-gold hover:underline">
+                    前往设置绑定 API 密钥 →
+                  </Link>
+                </div>
+              ) : (
+                <div>
+                  <div className="font-display text-5xl tracking-tight text-text-primary tabular-nums md:text-6xl">
+                    {formatPrice(liveUsdtBalance)}
+                    <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
+                  </div>
+                  <div className="mt-2 font-mono text-sm text-text-muted">
+                    现货可用余额 · 持仓 {liveHoldingsCount} 项资产
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                <Link href={`/${locale}/trade`} className="text-xs font-medium text-gold hover:underline">
+                  进入实盘交易 →
+                </Link>
+              </div>
+            </div>
+
+            {/* Ruled sub-line items */}
+            <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-border-default pt-5 font-mono text-sm sm:grid-cols-4">
+              <div>
+                <dt className="text-xs text-text-muted">现货可用余额</dt>
+                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(liveUsdtBalance)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-muted">实盘成交额</dt>
+                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(tradeStats.totalVolume)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-muted">实盘净额</dt>
+                <dd className={cn("mt-1 tabular-nums", tradeStats.netPnl >= 0 ? "text-success" : "text-danger")}>
+                  {tradeStats.netPnl >= 0 ? "+" : ""}{formatPrice(tradeStats.netPnl)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-muted">最常交易对</dt>
+                <dd className="mt-1 tabular-nums text-text-primary">
+                  {tradeStats.mostTradedPair || "—"}
+                  {tradeStats.maxCount > 0 && <span className="text-text-muted"> ×{tradeStats.maxCount}</span>}
+                </dd>
+              </div>
+            </dl>
+          </>
+        ) : (
+          <>
+            <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
+              {paperLoading ? (
+                <Skeleton className="h-14 w-64" />
+              ) : (
+                <div>
+                  <div className="font-display text-5xl tracking-tight text-text-primary tabular-nums md:text-6xl">
+                    {formatPrice(paperTotalValue)}
+                    <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
+                  </div>
+                  <div className={cn("mt-2 font-mono text-sm font-medium", paperPnl >= 0 ? "text-success" : "text-danger")}>
+                    {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)} USDT ({formatPercent(paperPnlPct)}) 累计
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                {paperData && (
+                  <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+                    </svg>
+                    分享
+                  </Button>
+                )}
+                <Link href={`/${locale}/trade`} className="text-xs font-medium text-gold hover:underline">
+                  {t("paper_cta")} →
+                </Link>
+              </div>
+            </div>
+
+            {/* Ruled sub-line items */}
+            <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-border-default pt-5 font-mono text-sm sm:grid-cols-4">
+              <div>
+                <dt className="text-xs text-text-muted">{t("paper_balance")}</dt>
+                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(paperData?.account.balance_usdt ?? 0)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-muted">累计盈亏</dt>
+                <dd className={cn("mt-1 tabular-nums", paperPnl >= 0 ? "text-success" : "text-danger")}>
+                  {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-muted">累计收益率</dt>
+                <dd className={cn("mt-1 tabular-nums", paperPnlPct >= 0 ? "text-success" : "text-danger")}>
+                  {formatPercent(paperPnlPct)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-muted">持仓数量</dt>
+                <dd className="mt-1 tabular-nums text-text-primary">{paperData?.positions.length ?? 0}</dd>
+              </div>
+            </dl>
+          </>
+        )}
       </section>
 
       <div className="hairline-gold mt-10" />

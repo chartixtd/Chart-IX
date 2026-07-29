@@ -5,7 +5,10 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useFavoritesStore } from "@/stores/favorites";
 import { usePriceAlertsStore, type PriceAlert } from "@/stores/priceAlerts";
-import { useTradePrefsStore, type TradeMarketType, type TradeRightTab } from "@/stores/tradePrefs";
+import {
+  useTradePrefsStore, type TradeMarketType, type TradeRightTab,
+  type ChartIndicatorSettings, DEFAULT_PINNED_INTERVALS,
+} from "@/stores/tradePrefs";
 
 interface StoredPreferences {
   favorites?: string[];
@@ -15,6 +18,8 @@ interface StoredPreferences {
     interval?: string;
     market?: TradeMarketType;
     rightTab?: TradeRightTab;
+    pinnedIntervals?: string[];
+    chartIndicators?: ChartIndicatorSettings;
   };
 }
 
@@ -29,6 +34,8 @@ function snapshot(): StoredPreferences {
       interval: trade.interval,
       market: trade.market,
       rightTab: trade.rightTab,
+      pinnedIntervals: trade.pinnedIntervals,
+      chartIndicators: trade.chartIndicators,
     },
   };
 }
@@ -100,12 +107,14 @@ export function PreferencesSync() {
 
       // trade prefs: DB wins when present (restore last-used setup on new device)
       if (remote.trade) {
-        const { symbol, interval, market, rightTab } = remote.trade;
+        const { symbol, interval, market, rightTab, pinnedIntervals, chartIndicators } = remote.trade;
         useTradePrefsStore.setState({
           ...(symbol ? { symbol } : {}),
           ...(interval ? { interval } : {}),
           ...(market ? { market } : {}),
           ...(rightTab ? { rightTab } : {}),
+          ...(pinnedIntervals?.length ? { pinnedIntervals } : { pinnedIntervals: DEFAULT_PINNED_INTERVALS }),
+          ...(chartIndicators ? { chartIndicators } : {}),
         });
       }
 

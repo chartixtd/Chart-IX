@@ -414,3 +414,179 @@ export function computeParabolicSAR(
 
   return result;
 }
+
+/** VWMA - Volume Weighted Moving Average over `period` bars. */
+export function computeVWMA(closes: number[], volumes: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  for (let i = period - 1; i < closes.length; i++) {
+    let pv = 0, v = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      pv += closes[j] * volumes[j];
+      v += volumes[j];
+    }
+    result[i] = v === 0 ? null : pv / v;
+  }
+  return result;
+}
+
+/** Keltner Channels - EMA basis with ATR-based upper/lower bands. */
+export function computeKeltnerChannels(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period = 20,
+  atrPeriod = 10,
+  multiplier = 2
+): { upper: (number | null)[]; lower: (number | null)[] } {
+  const basis = computeEMA(closes, period);
+  const atr = computeATR(highs, lows, closes, atrPeriod);
+  const upper: (number | null)[] = new Array(closes.length).fill(null);
+  const lower: (number | null)[] = new Array(closes.length).fill(null);
+  for (let i = 0; i < closes.length; i++) {
+    if (basis[i] !== null && atr[i] !== null) {
+      upper[i] = basis[i]! + multiplier * atr[i]!;
+      lower[i] = basis[i]! - multiplier * atr[i]!;
+    }
+  }
+  return { upper, lower };
+}
+
+/** Donchian Channels - highest high / lowest low over `period` bars. */
+export function computeDonchianChannels(
+  highs: number[],
+  lows: number[],
+  period = 20
+): { upper: (number | null)[]; lower: (number | null)[] } {
+  const upper: (number | null)[] = new Array(highs.length).fill(null);
+  const lower: (number | null)[] = new Array(lows.length).fill(null);
+  for (let i = period - 1; i < highs.length; i++) {
+    let hi = -Infinity, lo = Infinity;
+    for (let j = i - period + 1; j <= i; j++) {
+      if (highs[j] > hi) hi = highs[j];
+      if (lows[j] < lo) lo = lows[j];
+    }
+    upper[i] = hi;
+    lower[i] = lo;
+  }
+  return { upper, lower };
+}
+
+/**
+ * SuperTrend - ATR-based trend-following overlay. Returns the trend line value
+ * plus its direction (true = uptrend / support below price) per bar, so callers
+ * can color or split the line by trend if desired; this implementation plots it
+ * as a single line.
+ */
+export function computeSuperTrend(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period = 10,
+  multiplier = 3
+): { value: (number | null)[]; isUptrend: (boolean | null)[] } {
+  const n = closes.length;
+  const value: (number | null)[] = new Array(n).fill(null);
+  const isUptrend: (boolean | null)[] = new Array(n).fill(null);
+  const atr = computeATR(highs, lows, closes, period);
+  if (n <= period) return { value, isUptrend };
+
+  let prevUpperBand = 0, prevLowerBand = 0, prevSuperTrend = 0, trendUp = true;
+
+  for (let i = period; i < n; i++) {
+    const a = atr[i];
+    if (a === null) continue;
+    const mid = (highs[i] + lows[i]) / 2;
+    let upperBand = mid + multiplier * a;
+    let lowerBand = mid - multiplier * a;
+
+    if (value[i - 1] !== null) {
+      if (upperBand > prevUpperBand && closes[i - 1] <= prevUpperBand) upperBand = prevUpperBand;
+      if (lowerBand < prevLowerBand && closes[i - 1] >= prevLowerBand) lowerBand = prevLowerBand;
+    }
+
+    if (prevSuperTrend === prevUpperBand) {
+      trendUp = closes[i] <= upperBand;
+    } else {
+      trendUp = closes[i] >= lowerBand;
+    }
+
+    const superTrend = trendUp ? lowerBand : upperBand;
+    value[i] = superTrend;
+    isUptrend[i] = trendUp;
+
+    prevUpperBand = upperBand;
+    prevLowerBand = lowerBand;
+    prevSuperTrend = superTrend;
+  }
+
+  return { value, isUptrend };
+}
+
+/** Momentum - closes[i] minus closes[i - period]. */
+export function computeMomentum(closes: number[], period = 10): (number | null)[] {
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  for (let i = period; i < closes.length; i++) {
+    result[i] = closes[i] - closes[i - period];
+  }
+  return result;
+}
+
+/** ROC - Rate of Change, percentage form of momentum. */
+export function computeROC(closes: number[], period = 12): (number | null)[] {
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  for (let i = period; i < closes.length; i++) {
+    const base = closes[i - period];
+    result[i] = base === 0 ? null : ((closes[i] - base) / base) * 100;
+  }
+  return result;
+}
+
+/** MFI - Money Flow Index, a volume-weighted RSI variant. Ranges 0-100. */
+export function computeMFI(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  volumes: number[],
+  period = 14
+): (number | null)[] {
+  const n = closes.length;
+  const result: (number | null)[] = new Array(n).fill(null);
+  if (n <= period) return result;
+
+  const typical = closes.map((c, i) => (highs[i] + lows[i] + c) / 3);
+  const rawFlow = typical.map((tp, i) => tp * volumes[i]);
+
+  for (let i = period; i < n; i++) {
+    let posFlow = 0, negFlow = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      if (typical[j] > typical[j - 1]) posFlow += rawFlow[j];
+      else if (typical[j] < typical[j - 1]) negFlow += rawFlow[j];
+    }
+    if (negFlow === 0) result[i] = 100;
+    else {
+      const moneyRatio = posFlow / negFlow;
+      result[i] = 100 - 100 / (1 + moneyRatio);
+    }
+  }
+
+  return result;
+}
+
+/** TRIX - triple-smoothed EMA rate of change, in percent. */
+export function computeTRIX(closes: number[], period = 15): (number | null)[] {
+  const n = closes.length;
+  const result: (number | null)[] = new Array(n).fill(null);
+  const ema1 = computeEMA(closes, period);
+  const ema1Clean = ema1.map((v) => v ?? closes[0]);
+  const ema2 = computeEMA(ema1Clean, period);
+  const ema3 = computeEMA(ema2.map((v) => v ?? closes[0]), period);
+
+  for (let i = period * 3; i < n; i++) {
+    const prev = ema3[i - 1];
+    const curr = ema3[i];
+    if (prev === null || curr === null || prev === 0) continue;
+    result[i] = ((curr - prev) / prev) * 100;
+  }
+
+  return result;
+}

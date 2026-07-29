@@ -25,10 +25,10 @@ import { useTradePrefsStore, type TradeMarketType } from "@/stores/tradePrefs";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-// Primary row shown as buttons; PRIMARY ⊂ ALL. ALL mirrors BingX's supported
-// kline intervals minus "1M" (monthly), which KlineChart's live-candle bucketing
-// can't represent as a fixed-duration window.
-const PRIMARY_INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"];
+// Mirrors BingX's supported kline intervals minus "1M" (monthly), which
+// KlineChart's live-candle bucketing can't represent as a fixed-duration window.
+// Which of these show as always-visible buttons vs. behind "更多" is per-user
+// (see pinnedIntervals in stores/tradePrefs.ts).
 const ALL_INTERVALS = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"];
 type MarketType = TradeMarketType;
 
@@ -202,7 +202,9 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
   );
 });
 
-// Memoized interval bar — common intervals as buttons, the rest behind a "more" dropdown
+// Memoized interval bar — user-pinned intervals as buttons, the rest behind a
+// "more" dropdown where each entry can be starred to pin/unpin it. Pins persist
+// per-user (zustand localStorage + PreferencesSync to Supabase).
 const IntervalBar = memo(function IntervalBar({
   interval,
   onIntervalChange,
@@ -211,11 +213,16 @@ const IntervalBar = memo(function IntervalBar({
   onIntervalChange: (i: string) => void;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const isPrimary = PRIMARY_INTERVALS.includes(interval);
+  const pinnedIntervals = useTradePrefsStore((s) => s.pinnedIntervals);
+  const togglePinnedInterval = useTradePrefsStore((s) => s.togglePinnedInterval);
+
+  // Keep the visible row in canonical (fast→slow) order regardless of pin order
+  const pinnedInOrder = ALL_INTERVALS.filter((i) => pinnedIntervals.includes(i));
+  const isPinned = pinnedInOrder.includes(interval);
 
   return (
     <div className="relative flex items-center gap-1 px-3 py-1.5">
-      {PRIMARY_INTERVALS.map((int) => (
+      {pinnedInOrder.map((int) => (
         <button
           key={int}
           onClick={() => onIntervalChange(int)}
@@ -232,31 +239,51 @@ const IntervalBar = memo(function IntervalBar({
         onClick={() => setMoreOpen((o) => !o)}
         className={cn(
           "rounded-xs px-2 py-0.5 text-xs font-medium transition-colors",
-          !isPrimary ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
+          !isPinned ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
         )}
       >
-        {!isPrimary ? interval : "更多"} ▾
+        {!isPinned ? interval : "更多"} ▾
       </button>
 
       {moreOpen && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
-          <div className="absolute left-0 top-full z-20 mt-1 grid w-48 grid-cols-4 gap-1 rounded-md border border-border-default bg-bg-secondary p-2 shadow-modal">
-            {ALL_INTERVALS.map((int) => (
-              <button
-                key={int}
-                onClick={() => {
-                  onIntervalChange(int);
-                  setMoreOpen(false);
-                }}
-                className={cn(
-                  "rounded-xs py-1 text-center text-xs font-medium transition-colors",
-                  interval === int ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
-                )}
-              >
-                {int}
-              </button>
-            ))}
+          <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-md border border-border-default bg-bg-secondary p-2 shadow-modal">
+            <p className="mb-1 px-1 text-[11px] text-text-muted">点击星标固定到常用栏</p>
+            <div className="grid grid-cols-4 gap-1">
+              {ALL_INTERVALS.map((int) => {
+                const pinned = pinnedIntervals.includes(int);
+                return (
+                  <div
+                    key={int}
+                    className={cn(
+                      "flex items-center justify-between rounded-xs pl-1.5 pr-0.5 py-1 text-xs font-medium transition-colors",
+                      interval === int ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
+                    )}
+                  >
+                    <button
+                      onClick={() => {
+                        onIntervalChange(int);
+                        setMoreOpen(false);
+                      }}
+                      className="flex-1 text-left"
+                    >
+                      {int}
+                    </button>
+                    <button
+                      onClick={() => togglePinnedInterval(int)}
+                      title={pinned ? "取消固定" : "固定到常用栏"}
+                      className={cn(
+                        "shrink-0 px-0.5 transition-colors",
+                        pinned ? "text-gold" : "text-text-muted/50 hover:text-text-muted"
+                      )}
+                    >
+                      {pinned ? "★" : "☆"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </>
       )}

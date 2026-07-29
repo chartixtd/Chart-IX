@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
-import { getFuturesPositions, closePosition, getFuturesBalance, setLeverage, setMarginType, setPositionTpSl, closeAllPositions, adjustPositionMargin } from "@/lib/bingx/futures";
+import {
+  getFuturesPositions, closePosition, getFuturesBalance,
+  getLeverage, setLeverage, getMarginType, setMarginType,
+  getPositionSideDual, setPositionTpSl, closeAllPositions, adjustPositionMargin,
+} from "@/lib/bingx/futures";
+import { invalidateDualSideMode } from "@/lib/trading/account-mode";
+import { describeBingXError } from "@/lib/trading/errors";
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,6 +34,32 @@ export async function GET(request: NextRequest) {
       const balance = await getFuturesBalance(apiKey, secret);
       return NextResponse.json({ success: true, data: balance });
     }
+
+    if (type === "accountMode") {
+      const mode = await getPositionSideDual(apiKey, secret);
+      return NextResponse.json({
+        success: true,
+        data: { dualSidePosition: mode?.dualSidePosition === true },
+      });
+    }
+
+    if (type === "leverage") {
+      if (!symbol) {
+        return NextResponse.json(
+          { success: false, error: { message: "symbol is required" } },
+          { status: 400 }
+        );
+      }
+      const [lev, margin] = await Promise.all([
+        getLeverage(apiKey, secret, symbol),
+        getMarginType(apiKey, secret, symbol).catch(() => ({ marginType: "" })),
+      ]);
+      return NextResponse.json({
+        success: true,
+        data: { leverage: lev.leverage, maxLeverage: lev.maxLeverage, marginType: margin.marginType },
+      });
+    }
+
     return NextResponse.json({ success: true, data: await getFuturesPositions(apiKey, secret, symbol) });
   } catch (error) {
     return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
@@ -65,35 +97,69 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice, amount, directionType } = body;
 
-    switch (action) {
-      case "closePosition": {
-        if (!positionId) {
-          return NextResponse.json(
-            { success: false, error: { message: "positionId is required to close a position" } },
-            { status: 400 }
-          );
+    try {
+      switch (action) {
+        case "closePosition": {
+          if (!positionId) {
+            return NextResponse.json(
+              { success: false, error: { message: "positionId is required to close a position" } },
+              { status: 400 }
+            );
+          }
+          return NextResponse.json({
+            success: true,
+            data: await closePosition(apiKey, secret, positionId),
+          });
         }
-        return NextResponse.json({
-          success: true,
-          data: await closePosition(apiKey, secret, positionId),
-        });
+        case "closeAllPositions":
+          return NextResponse.json({ success: true, data: await closeAllPositions(apiKey, secret, symbol) });
+        case "setLeverage": {
+          const lev = Number(leverage);
+          if (!(lev > 0)) {
+            return NextResponse.json(
+              { success: false, error: { message: "leverage must be positive" } },
+              { status: 400 }
+            );
+          }
+          await setLeverage(apiKey, secret, symbol, Math.floor(lev), positionSide);
+          // 回读交易所实际值，前端据此显示而非乐观假设
+          const applied = await getLeverage(apiKey, secret, symbol);
+          return NextResponse.json({
+            success: true,
+            data: { leverage: applied.leverage, maxLeverage: applied.maxLeverage },
+          });
+        }
+        case "setMarginType": {
+          if (marginType !== "ISOLATED" && marginType !== "CROSSED") {
+            return NextResponse.json(
+              { success: false, error: { message: "marginType must be ISOLATED or CROSSED" } },
+              { status: 400 }
+            );
+          }
+          await setMarginType(apiKey, secret, symbol, marginType);
+          return NextResponse.json({ success: true, data: { marginType } });
+        }
+        case "setPositionTpSl":
+          await setPositionTpSl(apiKey, secret, { symbol, positionSide, stopLossPrice, takeProfitPrice });
+          return NextResponse.json({ success: true });
+        case "setPositionMode": {
+          invalidateDualSideMode(authData.user.id);
+          return NextResponse.json({ success: true });
+        }
+        case "adjustMargin":
+          return NextResponse.json({
+            success: true,
+            data: await adjustPositionMargin(apiKey, secret, symbol, positionId, String(amount), directionType || 1),
+          });
       }
-      case "closeAllPositions":
-        return NextResponse.json({ success: true, data: await closeAllPositions(apiKey, secret, symbol) });
-      case "setLeverage":
-        await setLeverage(apiKey, secret, symbol, leverage, positionSide);
-        return NextResponse.json({ success: true });
-      case "setMarginType":
-        await setMarginType(apiKey, secret, symbol, marginType);
-        return NextResponse.json({ success: true });
-      case "setPositionTpSl":
-        await setPositionTpSl(apiKey, secret, { symbol, positionSide, stopLossPrice, takeProfitPrice });
-        return NextResponse.json({ success: true });
-      case "adjustMargin":
-        return NextResponse.json({ success: true, data: await adjustPositionMargin(apiKey, secret, symbol, positionId, String(amount), directionType || 1) });
+      return NextResponse.json({ success: false, error: { message: "Invalid action" } }, { status: 400 });
+    } catch (e) {
+      const described = describeBingXError(e);
+      return NextResponse.json(
+        { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+        { status: 502 }
+      );
     }
-
-    return NextResponse.json({ success: false, error: { message: "Invalid action" } }, { status: 400 });
   } catch (error) {
     return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
   }

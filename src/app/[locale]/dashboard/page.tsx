@@ -24,6 +24,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -70,6 +71,35 @@ export default function DashboardPage() {
   const { data: paperData, isLoading: paperLoading } = usePaperAccount(!!auth.userId);
   const { data: spotBalances, isLoading: spotLoading, error: spotError } = useSpotBalances(!!auth.userId);
   const { data: achievements } = useAchievements(auth.userId);
+
+  // 现货全部资产按最新价折算 USDT，用于"完整余额"，而不只是可用 USDT 现金
+  const { data: spotTickers } = useQuery({
+    queryKey: ["dashboard", "spot-tickers"],
+    queryFn: async () => {
+      const res = await fetch("/api/bingx/market/ticker");
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error?.message || "Request failed");
+      return json.data as { symbol: string; lastPrice: string }[];
+    },
+    enabled: !!auth.userId,
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+    retry: false,
+  });
+
+  // 合约账户权益（保证金 + 未实现盈亏），与现货资产合并才是完整余额
+  const { data: futuresBalance } = useQuery({
+    queryKey: ["dashboard", "futures-balance"],
+    queryFn: async () => {
+      const res = await fetch("/api/bingx/futures/positions?type=balance");
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error?.message || "Request failed");
+      return json.data as { equity: string } | null;
+    },
+    enabled: !!auth.userId,
+    staleTime: 15_000,
+    retry: false,
+  });
   useBingXWebSocket(favorites.slice(0, 10));
 
   useEffect(() => {
@@ -130,6 +160,23 @@ export default function DashboardPage() {
   const liveUsdtBalance = parseFloat(spotBalances?.find((b) => b.asset === "USDT")?.free ?? "0") || 0;
   const liveHoldingsCount = (spotBalances ?? []).filter((b) => parseFloat(b.free) + parseFloat(b.locked) > 0).length;
   const liveNotConnected = !spotLoading && !!spotError;
+
+  // 现货总资产（按最新价折算全部持仓，非仅可用 USDT 现金）+ 合约账户权益 = 完整余额
+  const spotPriceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    (spotTickers ?? []).forEach((tk) => map.set(tk.symbol, parseFloat(tk.lastPrice) || 0));
+    return map;
+  }, [spotTickers]);
+
+  const spotTotalValue = (spotBalances ?? []).reduce((sum, b) => {
+    const qty = (parseFloat(b.free) || 0) + (parseFloat(b.locked) || 0);
+    if (qty <= 0) return sum;
+    if (b.asset === "USDT") return sum + qty;
+    const price = spotPriceMap.get(`${b.asset}-USDT`);
+    return price ? sum + qty * price : sum;
+  }, 0);
+  const futuresEquity = parseFloat(futuresBalance?.equity ?? "0") || 0;
+  const liveTotalValue = spotTotalValue + futuresEquity;
 
   const filledOrders = useMemo(() => {
     if (!orders) return [];
@@ -284,11 +331,11 @@ export default function DashboardPage() {
               ) : (
                 <div>
                   <div className="font-display text-5xl tracking-tight text-text-primary tabular-nums md:text-6xl">
-                    {formatPrice(liveUsdtBalance)}
+                    {formatPrice(liveTotalValue)}
                     <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
                   </div>
                   <div className="mt-2 font-mono text-sm text-text-muted">
-                    现货可用余额 · 持仓 {liveHoldingsCount} 项资产
+                    完整余额 · 现货 + 合约账户 · 持仓 {liveHoldingsCount} 项现货资产
                   </div>
                 </div>
               )}
@@ -303,8 +350,20 @@ export default function DashboardPage() {
             {/* Ruled sub-line items */}
             <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-border-default pt-5 font-mono text-sm sm:grid-cols-4">
               <div>
-                <dt className="text-xs text-text-muted">现货可用余额</dt>
+                <dt className="text-xs text-text-muted">现货资产价值</dt>
+                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(spotTotalValue)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-muted">合约账户权益</dt>
+                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(futuresEquity)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-muted">现货可用 USDT</dt>
                 <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(liveUsdtBalance)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-muted">持仓资产数</dt>
+                <dd className="mt-1 tabular-nums text-text-primary">{liveHoldingsCount}</dd>
               </div>
               <div>
                 <dt className="text-xs text-text-muted">实盘成交额</dt>

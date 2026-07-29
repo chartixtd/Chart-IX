@@ -39,6 +39,23 @@ describe("mergeLimits", () => {
     const user = { ...unlimited, maxNotionalPerOrder: 1000 };
     expect(mergeLimits(global, user).maxLeverage).toBe(20);
   });
+
+  it("falls back to the user config alone when the global row is missing", () => {
+    const user = { ...unlimited, maxNotionalPerOrder: 1000, maxLeverage: 20 };
+    expect(mergeLimits(null, user)).toEqual(user);
+  });
+
+  it("treats a user override of 0 as a real override, not an absent value", () => {
+    const global = { ...unlimited, maxOrdersPerDay: 50 };
+    const user = { ...unlimited, maxOrdersPerDay: 0 };
+    expect(mergeLimits(global, user).maxOrdersPerDay).toBe(0);
+  });
+
+  it("treats a user override of an empty allowlist as a real override, not an absent value", () => {
+    const global = { ...unlimited, allowedSymbols: ["BTC-USDT", "ETH-USDT"] };
+    const user = { ...unlimited, allowedSymbols: [] };
+    expect(mergeLimits(global, user).allowedSymbols).toEqual([]);
+  });
 });
 
 describe("checkLimits", () => {
@@ -94,5 +111,21 @@ describe("checkLimits", () => {
       { ...unlimited, maxNotionalPerOrder: 500, allowedSymbols: ["ETH-USDT"] }
     );
     expect(r).toMatchObject({ ok: false, reason: "SYMBOL_NOT_ALLOWED" });
+  });
+
+  it("reports the daily-limit rule before leverage and notional when all three fail", () => {
+    const r = checkLimits(
+      { ...baseInput, notional: 9999, leverage: 999, ordersToday: 10 },
+      { ...unlimited, maxOrdersPerDay: 10, maxLeverage: 20, maxNotionalPerOrder: 500 }
+    );
+    expect(r).toMatchObject({ ok: false, reason: "DAILY_LIMIT_REACHED" });
+  });
+
+  it("reports the leverage rule before the notional rule when both fail", () => {
+    const r = checkLimits(
+      { ...baseInput, notional: 9999, leverage: 999 },
+      { ...unlimited, maxLeverage: 20, maxNotionalPerOrder: 500 }
+    );
+    expect(r).toMatchObject({ ok: false, reason: "LEVERAGE_TOO_HIGH" });
   });
 });

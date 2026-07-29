@@ -758,6 +758,7 @@
       "below_min_notional": "Below the minimum order amount of {limit} USDT",
       "zero_after_rounding": "Amount is too small — it rounds to zero at this pair's precision",
       "invalid_input": "Invalid input",
+      "tpsl_not_supported": "Take-profit/stop-loss cannot be attached to this order type",
       "notional_too_large": "Exceeds the per-order limit of {limit} USDT",
       "daily_limit_reached": "You've reached today's order limit of {limit}",
       "leverage_too_high": "Leverage exceeds the limit of {limit}x",

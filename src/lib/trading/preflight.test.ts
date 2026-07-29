@@ -32,7 +32,14 @@ vi.mock("./persist", () => ({
   countOrdersToday: (...args: unknown[]) => countOrdersToday(...args),
 }));
 
-const { preflightOrder } = await import("./preflight");
+const sentryCaptureException = vi.fn();
+const sentryCaptureMessage = vi.fn();
+vi.mock("@sentry/nextjs", () => ({
+  captureException: (...args: unknown[]) => sentryCaptureException(...args),
+  captureMessage: (...args: unknown[]) => sentryCaptureMessage(...args),
+}));
+
+const { preflightOrder, loadLimitsFor } = await import("./preflight");
 
 /** 最小手写 Supabase 替身：只实现 loadLimitsFor 用到的 from().select().or() 链 */
 function makeSupabase(limitsRows: Record<string, unknown>[] = []): SupabaseClient {
@@ -43,6 +50,23 @@ function makeSupabase(limitsRows: Record<string, unknown>[] = []): SupabaseClien
           return {
             or(_filter: string) {
               return Promise.resolve({ data: limitsRows, error: null });
+            },
+          };
+        },
+      };
+    },
+  } as unknown as SupabaseClient;
+}
+
+/** 同上，但模拟 trading_limits 读表失败（.or() 返回 error） */
+function makeErroringSupabase(): SupabaseClient {
+  return {
+    from(_table: string) {
+      return {
+        select(_cols: string) {
+          return {
+            or(_filter: string) {
+              return Promise.resolve({ data: null, error: new Error("connection reset") });
             },
           };
         },
@@ -247,6 +271,18 @@ describe("preflightOrder — risk valuation must use the server-fetched market p
       isLimitOrder: false,
     });
     expect(result).toEqual({ ok: false, code: "NO_MARKET_PRICE" });
+  });
+
+  it("loadLimitsFor fails open (returns unlimited) when the trading_limits read errors", async () => {
+    const supabase = makeErroringSupabase();
+    const limits = await loadLimitsFor(supabase, USER_ID);
+    expect(limits).toEqual({
+      maxNotionalPerOrder: null,
+      maxOrdersPerDay: null,
+      maxLeverage: null,
+      allowedSymbols: null,
+    });
+    expect(sentryCaptureException).toHaveBeenCalled();
   });
 
   it("propagates a ticker fetch failure instead of swallowing it", async () => {

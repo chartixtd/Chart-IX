@@ -51,6 +51,19 @@ export function useSpotTicker(symbol: string) {
   return { ...query, data: wsTicker ?? query.data };
 }
 
+// 合约行情 —— 永续合约价格与现货存在基差，不能复用 useSpotTicker 的数据。
+// WebSocket store（useMarketStore）目前只推送现货 ticker，所以这里没有实时数据源
+// 可合并，直接轮询 REST 接口（market=futures），刷新节奏与 useSpotTicker 保持一致。
+export function useFuturesTicker(symbol: string) {
+  return useQuery({
+    queryKey: ["bingx", "ticker", "futures", symbol],
+    queryFn: () => fetchApi<BingXTicker>("ticker", { symbol, market: "futures" }),
+    refetchInterval: 5_000,
+    staleTime: 2_000,
+    enabled: !!symbol,
+  });
+}
+
 // K线
 export function useKlines(symbol: string, interval = "1h", market = "spot") {
   return useQuery({

@@ -758,6 +758,7 @@
       "below_min_notional": "Kurang daripada jumlah pesanan minimum {limit} USDT",
       "zero_after_rounding": "Jumlah terlalu kecil — dibundarkan kepada sifar pada ketepatan pasangan ini",
       "invalid_input": "Input tidak sah",
+      "tpsl_not_supported": "Untung/rugi tidak boleh dilampirkan pada jenis pesanan ini",
       "notional_too_large": "Melebihi had setiap pesanan sebanyak {limit} USDT",
       "daily_limit_reached": "Anda telah mencapai had pesanan harian sebanyak {limit}",
       "leverage_too_high": "Leveraj melebihi had {limit}x",

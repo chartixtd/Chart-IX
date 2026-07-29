@@ -758,6 +758,7 @@
       "below_min_notional": "低于最小下单金额 {limit} USDT",
       "zero_after_rounding": "金额太小，按该交易对精度换算后数量为 0",
       "invalid_input": "输入不合法",
+      "tpsl_not_supported": "该订单类型不支持附带止盈止损",
       "notional_too_large": "超出单笔限额 {limit} USDT",
       "daily_limit_reached": "已达今日下单次数上限 {limit}",
       "leverage_too_high": "杠杆超出上限 {limit}x",

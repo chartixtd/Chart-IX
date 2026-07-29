@@ -93,6 +93,14 @@ export async function POST(request: NextRequest) {
     priceRate = pct / 100;
   }
 
+  // 客户端理论上已经在 order-type 切换时清空了 TP/SL 状态（见 OrderForm.tsx 的
+  // reset effect），但这里是最后一道防线：如果请求体里真的带了 TP/SL 字段却选了
+  // 不支持附带 TP/SL 的订单类型，必须显式拒绝，而不是像 `send()` 里那样静默丢弃——
+  // 静默丢弃会让用户以为设置了止盈止损，实际上完全没有。
+  if (!ATTACHABLE_TPSL.has(type) && (Number(takeProfitPrice) > 0 || Number(stopLossPrice) > 0)) {
+    return reject("TPSL_NOT_SUPPORTED", "Take-profit/stop-loss cannot be attached to this order type", 400);
+  }
+
   const lev = Number(leverage) > 0 ? Math.floor(Number(leverage)) : 1;
   const notional = Number(notionalUsdt);
   const refPrice = LIMIT_TYPES.has(type) ? Number(price) : Number(referencePrice);

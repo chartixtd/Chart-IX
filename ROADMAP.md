@@ -48,8 +48,8 @@
 - [x] 基本风险提示：落地页专门区块 + 页脚（已有）。**交易页显要处的风险提示待阶段 1（下单确认弹窗）一并做**。
 
 ### 阶段 1 — 交易激活核心 ✅ 已完成（2026-07-24），待办见下方"需要你做"
-- [x] **模拟盘 / Paper Trading**：登录后可用，$10k 虚拟余额。初版为现货（`010_paper_trading.sql`），**后升级为杠杆永续合约模型**（`018_paper_futures.sql`）——做多/做空、杠杆(1-125x)、保证金、强平价、已实现/未实现盈亏、单向净持仓；市价单立即成交 + 限价单（`014`/`016`）。API 在 `src/app/api/paper/`；`TradeForm` 新增 `mode="paper"`，`PaperOrdersPanel` 显示余额/持仓/成交记录。交易页顶部 Spot/模拟盘/Futures 三态切换，未登录时模拟盘显示🔒引导登录。**平仓改为按持仓量精确全平**（`019_close_paper_position.sql`），修复此前残留仓位需点两次的问题。
-- [x] 交易表单**简单/专业模式**切换：简单模式只显示市价+限价，专业模式显示全部 7 种订单类型（[TradeForm.tsx](src/components/trade/TradeForm.tsx)）。
+- [x] **模拟盘 / Paper Trading**：登录后可用，$10k 虚拟余额。初版为现货（`010_paper_trading.sql`），**后升级为杠杆永续合约模型**（`018_paper_futures.sql`）——做多/做空、杠杆(1-125x)、保证金、强平价、已实现/未实现盈亏、单向净持仓；市价单立即成交 + 限价单（`014`/`016`）。API 在 `src/app/api/paper/`；统一下单表单 `OrderForm`（`src/components/trade/order-form/`）以 `market="paper"` 支持，`PaperOrdersPanel` 显示余额/持仓/成交记录。交易页顶部 Spot/模拟盘/Futures 三态切换，未登录时模拟盘显示🔒引导登录。**平仓改为按持仓量精确全平**（`019_close_paper_position.sql`），修复此前残留仓位需点两次的问题。
+- [x] 交易表单**简单/专业模式**切换：简单模式只显示市价+限价，专业模式显示全部订单类型（[OrderForm.tsx](src/components/trade/order-form/OrderForm.tsx)，现货/合约/模拟盘统一由这一套组件驱动，不再有独立的 `TradeForm.tsx`/`FuturesTradeForm.tsx`）。
 - [x] 下单确认弹窗：大白话摘要（"你将买入约 X BTC，使用 Y USDT"）+ 占余额比例（模拟盘可算，实盘因未接入余额查询暂不显示这一行）+ 风险提示（[OrderConfirmModal.tsx](src/components/trade/OrderConfirmModal.tsx)）。
 - [x] **移动端交易页**：`<lg` 断点切换为 图表/下单/订单簿 三 Tab 布局，symbol 通过弹窗选择器切换（[trade/page.tsx](src/app/[locale]/trade/page.tsx)）。
 - [x] 自选/收藏交易对：星标点击收藏，localStorage 持久化（zustand persist），收藏项自动置顶（[favorites.ts](src/stores/favorites.ts) + [MarketOverview.tsx](src/components/trade/MarketOverview.tsx)）。

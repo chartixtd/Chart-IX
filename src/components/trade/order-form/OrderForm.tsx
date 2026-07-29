@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { useSpotTicker } from "@/hooks/useMarketData";
+import { useSpotTicker, useFuturesTicker } from "@/hooks/useMarketData";
 import { usePaperAccount, usePlacePaperOrder } from "@/hooks/usePaperTrading";
 import { useSymbolSpec } from "@/hooks/useSymbolSpec";
 import { useSpotBalances, useFuturesAccount } from "@/hooks/useTradingAccount";
@@ -13,7 +13,7 @@ import { AmountField } from "./fields/AmountField";
 import { LeverageField } from "./fields/LeverageField";
 import { PriceFields } from "./fields/PriceFields";
 import { OrderPreview } from "./OrderPreview";
-import { MARKET_CONFIG, LIMIT_TYPES, STOP_TYPES, TRAILING_TYPES, type OrderFormMarket } from "./config";
+import { MARKET_CONFIG, LIMIT_TYPES, STOP_TYPES, TRAILING_TYPES, TPSL_ATTACHABLE, type OrderFormMarket } from "./config";
 import { cn, formatPrice } from "@/lib/utils";
 
 interface OrderFormProps {
@@ -56,7 +56,12 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
 
   const specMarket = market === "spot" ? "spot" : "futures";
   const { data: spec } = useSymbolSpec(symbol, specMarket, direction);
-  const { data: ticker } = useSpotTicker(symbol);
+  // 合约价格与现货存在基差（C3 缺陷）：合约市场必须用合约 ticker 取价，
+  // 否则展示给用户的预览价/预估强平价/确认弹窗价格都和实际成交价不是一回事。
+  // 现货和模拟盘（模拟盘按现货撮合）继续用现货 ticker。
+  const { data: spotTicker } = useSpotTicker(symbol);
+  const { data: futuresTicker } = useFuturesTicker(market === "futures" ? symbol : "");
+  const ticker = market === "futures" ? futuresTicker : spotTicker;
   const currentPrice = ticker ? Number(ticker.lastPrice) : 0;
 
   const { data: paperData } = usePaperAccount(market === "paper");
@@ -89,12 +94,13 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
   // TP/SL 只对合约有意义（现货/模拟盘下单接口根本不接受这两个字段）；
   // 切到不支持的市场或方向变化后残留的旧值不应该悄悄带入下一次下单
   useEffect(() => {
-    if (market !== "futures" && showTpSl) {
+    const canAttach = market === "futures" && TPSL_ATTACHABLE.has(orderType);
+    if (!canAttach && showTpSl) {
       setShowTpSl(false);
       setTpPrice("");
       setSlPrice("");
     }
-  }, [market, showTpSl]);
+  }, [market, orderType, showTpSl]);
 
   const availableUsdt = useMemo(() => {
     if (market === "paper") return paperData?.account.balance_usdt ?? 0;

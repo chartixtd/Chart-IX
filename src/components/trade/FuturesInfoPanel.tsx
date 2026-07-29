@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
+import { translateError } from "@/components/trade/order-form/OrderForm";
 
 interface FuturesInfoPanelProps {
   symbol: string;
@@ -88,7 +89,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
       });
       const json = await res.json();
       // A failed close must surface to the user — silently swallowing it would look like the position closed.
-      if (!json.success) setCloseError(json.error?.message || t("bingx_error.unknown"));
+      if (!json.success) setCloseError(translateError(json, t));
     } catch {
       setCloseError(t("bingx_error.network"));
     } finally {

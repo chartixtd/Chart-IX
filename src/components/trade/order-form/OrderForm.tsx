@@ -364,7 +364,7 @@ async function postOrder(url: string, body: Record<string, unknown>) {
  * 两条订单路由都会用 `pre.code` 动态拼出 i18nKey（`trading.reject.${code}`），
  * 未来新增的风控原因码在前端补齐翻译之前会命中这个分支，必须显式用 t.has() 检查。
  */
-function translateError(json: { error?: { i18nKey?: string; message?: string; limit?: unknown } }, t: ReturnType<typeof useTranslations>): string {
+export function translateError(json: { error?: { i18nKey?: string; message?: string; limit?: unknown } }, t: ReturnType<typeof useTranslations>): string {
   const key = json.error?.i18nKey;
   if (key && t.has(key)) {
     return t(key, { limit: String(json.error?.limit ?? "") });

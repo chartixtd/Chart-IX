@@ -5014,7 +5014,11 @@ const dual = await (async () => {
     headers: { "X-BX-APIKEY": API_KEY, "X-SOURCE-KEY": "BX-AI-SKILL" },
   });
   const j = await res.json();
-  return j.data?.dualSidePosition === true;
+  // BingX 文档说这里是 bool，但同一接口的 POST 收字符串 "true"/"false"，
+  // signedRequest 式的响应又不做运行时校验——app 里 account-mode.ts 已经
+  // 踩过这个坑（2026-07-29 修复），这里独立实现同一份判断，同样要兼容两种形状。
+  const raw = j.data?.dualSidePosition;
+  return raw === true || raw === "true";
 })();
 
 const positionSide = dual ? "LONG" : "BOTH";

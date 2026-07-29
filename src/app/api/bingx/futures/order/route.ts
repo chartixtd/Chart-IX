@@ -123,10 +123,12 @@ export async function POST(request: NextRequest) {
   // pre.code 也可能是 12b 引入的 NO_MARKET_PRICE（服务端取不到市价，直接拒单）
   const sideForLog = direction === "LONG" ? "buy" : "sell";
   if (!pre.ok) {
-    await recordOrder(supabase, {
-      userId, apiKeyId: null, market: "futures", symbol, side: sideForLog, orderType: type,
-      quantity: 0, leverage: lev, status: "rejected", riskRejected: true, riskReason: pre.code,
-    });
+    if (!test) {
+      await recordOrder(supabase, {
+        userId, apiKeyId: null, market: "futures", symbol, side: sideForLog, orderType: type,
+        quantity: 0, leverage: lev, status: "rejected", riskRejected: true, riskReason: pre.code,
+      });
+    }
     return reject(pre.code, `Order rejected: ${pre.code}`, 400, pre.limit);
   }
 

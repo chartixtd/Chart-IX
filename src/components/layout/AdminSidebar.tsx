@@ -19,6 +19,7 @@ export function AdminSidebar() {
     { href: "/admin/articles", label: t("articles"), icon: "📄" },
     { href: "/admin/features", label: t("features"), icon: "⚙️" },
     { href: "/admin/pricing", label: t("pricing"), icon: "💰" },
+    { href: "/admin/trading-limits", label: t("trading_limits"), icon: "🚦" },
     { href: "/admin/settings", label: t("settings"), icon: "🔧" },
     { href: "/admin/logs", label: t("logs"), icon: "📝" },
   ];

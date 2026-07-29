@@ -137,7 +137,9 @@ export async function POST(request: NextRequest) {
             );
           }
           await setMarginType(apiKey, secret, symbol, marginType);
-          return NextResponse.json({ success: true, data: { marginType } });
+          // 回读交易所实际值，前端据此显示而非乐观假设（与 setLeverage 保持一致）
+          const applied = await getMarginType(apiKey, secret, symbol);
+          return NextResponse.json({ success: true, data: { marginType: applied.marginType } });
         }
         case "setPositionTpSl":
           await setPositionTpSl(apiKey, secret, { symbol, positionSide, stopLossPrice, takeProfitPrice });

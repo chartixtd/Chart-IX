@@ -1,106 +1,140 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { formatPrice, formatNumber, cn } from "@/lib/utils";
+
+/** 超过这个杠杆时显示更醒目的警示 */
+const HIGH_LEVERAGE_THRESHOLD = 20;
 
 interface OrderConfirmModalProps {
   open: boolean;
   onClose: () => void;
   onConfirm: () => void;
   loading?: boolean;
-  side: "BUY" | "SELL";
+  market: "spot" | "futures" | "paper";
+  /** 现货用 BUY/SELL 语义，合约与模拟盘用 LONG/SHORT */
+  direction: "LONG" | "SHORT";
   symbol: string;
+  baseAsset: string;
   orderTypeLabel: string;
-  /** Amount in quote currency (USDT) being spent (buy) or received (sell) */
-  amountUsdt: number;
-  /** Reference price used for the plain-language estimate */
+  /** 仓位名义额（USDT） */
+  notionalUsdt: number;
+  /** 换算出的币数量 */
+  estQty: number;
+  /** 参考价 */
   price: number;
-  /** Available balance in USDT, if known — omit to hide the "% of balance" line */
-  balanceUsdt?: number;
-  isPaper?: boolean;
+  leverage: number;
+  requiredMarginUsdt: number;
+  estLiquidationPrice?: number | null;
+  /** 可用余额；未知时隐藏占比行 */
+  availableUsdt?: number;
 }
 
 export function OrderConfirmModal({
-  open,
-  onClose,
-  onConfirm,
-  loading = false,
-  side,
-  symbol,
-  orderTypeLabel,
-  amountUsdt,
-  price,
-  balanceUsdt,
-  isPaper = false,
+  open, onClose, onConfirm, loading = false,
+  market, direction, symbol, baseAsset, orderTypeLabel,
+  notionalUsdt, estQty, price, leverage, requiredMarginUsdt,
+  estLiquidationPrice, availableUsdt,
 }: OrderConfirmModalProps) {
-  const base = symbol.split("-")[0] ?? symbol;
-  const estQty = price > 0 ? amountUsdt / price : 0;
-  const pctOfBalance = balanceUsdt && balanceUsdt > 0 ? (amountUsdt / balanceUsdt) * 100 : null;
-  const isBuy = side === "BUY";
+  const t = useTranslations();
+  const isLong = direction === "LONG";
+  const isFutures = market === "futures" || market === "paper";
+  const isPaper = market === "paper";
+  const highLeverage = isFutures && leverage > HIGH_LEVERAGE_THRESHOLD;
+
+  const pctOfBalance =
+    availableUsdt && availableUsdt > 0 ? (requiredMarginUsdt / availableUsdt) * 100 : null;
 
   return (
-    <Modal open={open} onClose={loading ? () => {} : onClose} title="确认订单 / Confirm Order" size="sm">
+    <Modal open={open} onClose={loading ? () => {} : onClose} title={t("trading.confirm_title")} size="sm">
       <div className="space-y-4">
         {isPaper && (
           <div className="rounded-xs bg-gold/10 px-3 py-1.5 text-center text-xs font-medium text-gold">
-            模拟盘 · 不涉及真实资金 / Paper Trading — no real funds
+            {t("trading.paper_banner")}
           </div>
         )}
 
         <p className="text-sm text-text-secondary">
-          你将
-          <span className={cn("mx-1 font-semibold", isBuy ? "text-success" : "text-danger")}>
-            {isBuy ? "买入" : "卖出"}
-          </span>
-          约 <span className="font-semibold text-text-primary">{formatNumber(estQty, 6)} {base}</span>
-          ，使用 <span className="font-semibold text-text-primary">{formatPrice(amountUsdt)} USDT</span>
-          {pctOfBalance !== null && (
-            <>
-              ，约占可用余额的
-              <span className="mx-1 font-semibold text-text-primary">{pctOfBalance.toFixed(1)}%</span>
-            </>
-          )}
-          。
+          {t.rich("trading.confirm_summary", {
+            dir: () => (
+              <span className={cn("mx-1 font-semibold", isLong ? "text-success" : "text-danger")}>
+                {t(isFutures
+                  ? isLong ? "trading.side.long" : "trading.side.short"
+                  : isLong ? "trading.side.buy" : "trading.side.sell")}
+              </span>
+            ),
+            qty: () => (
+              <span className="font-semibold text-text-primary">
+                {formatNumber(estQty, 8)} {baseAsset}
+              </span>
+            ),
+            notional: () => (
+              <span className="font-semibold text-text-primary">
+                {formatPrice(notionalUsdt)} USDT
+              </span>
+            ),
+          })}
         </p>
 
         <div className="rounded-xs border border-border-default bg-bg-tertiary p-3 text-xs">
-          <div className="flex justify-between py-0.5">
-            <span className="text-text-muted">Symbol</span>
-            <span className="text-text-primary">{symbol}</span>
-          </div>
-          <div className="flex justify-between py-0.5">
-            <span className="text-text-muted">Type</span>
-            <span className="text-text-primary">{orderTypeLabel}</span>
-          </div>
-          <div className="flex justify-between py-0.5">
-            <span className="text-text-muted">Est. Price</span>
-            <span className="text-text-primary">{formatPrice(price)}</span>
-          </div>
-          <div className="flex justify-between py-0.5">
-            <span className="text-text-muted">Amount</span>
-            <span className="text-text-primary">{formatPrice(amountUsdt)} USDT</span>
-          </div>
+          <Row label={t("trading.symbol")} value={symbol} />
+          <Row label={t("trading.order_type")} value={orderTypeLabel} />
+          <Row label={t("trading.est_price")} value={formatPrice(price)} />
+          <Row label={t("trading.notional")} value={`${formatPrice(notionalUsdt)} USDT`} />
+          {isFutures && <Row label={t("trading.leverage")} value={`${leverage}x`} danger={highLeverage} />}
+          {/* 名义额与保证金必须同屏出现：这是新手最容易混淆的一步 */}
+          {isFutures && (
+            <Row
+              label={t("trading.required_margin")}
+              value={`${formatPrice(requiredMarginUsdt)} USDT`}
+              emphasis
+            />
+          )}
+          {isFutures && estLiquidationPrice != null && leverage > 1 && (
+            <Row label={t("trading.est_liq_price")} value={`≈ ${formatPrice(estLiquidationPrice)}`} />
+          )}
+          {pctOfBalance !== null && (
+            <Row label={t("trading.pct_of_balance")} value={`${pctOfBalance.toFixed(1)}%`} />
+          )}
         </div>
 
-        <p className="text-xs text-text-muted">
-          交易涉及风险，价格可能在下单后发生变化，实际成交价以最终结果为准。
-        </p>
+        {highLeverage && (
+          <div className="rounded-xs border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+            {t("trading.high_leverage_warning", { leverage })}
+          </div>
+        )}
+
+        <p className="text-xs text-text-muted">{t("trading.risk_note")}</p>
 
         <div className="flex justify-end gap-3">
           <Button variant="ghost" size="sm" onClick={onClose} disabled={loading}>
-            取消 / Cancel
+            {t("common.cancel")}
           </Button>
-          <Button
-            variant={isBuy ? "green" : "red"}
-            size="sm"
-            onClick={onConfirm}
-            loading={loading}
-          >
-            确认{isBuy ? "买入" : "卖出"} / Confirm
+          <Button variant={isLong ? "green" : "red"} size="sm" onClick={onConfirm} loading={loading}>
+            {t("trading.confirm_button")}
           </Button>
         </div>
       </div>
     </Modal>
+  );
+}
+
+function Row({
+  label, value, emphasis, danger,
+}: { label: string; value: string; emphasis?: boolean; danger?: boolean }) {
+  return (
+    <div className="flex justify-between py-0.5">
+      <span className="text-text-muted">{label}</span>
+      <span
+        className={cn(
+          "font-mono tabular-nums",
+          danger ? "font-semibold text-danger" : emphasis ? "font-semibold text-gold" : "text-text-primary"
+        )}
+      >
+        {value}
+      </span>
+    </div>
   );
 }

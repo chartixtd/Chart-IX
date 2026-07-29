@@ -10,11 +10,10 @@ import { Modal } from "@/components/ui/Modal";
 import { MarketOverview } from "@/components/trade/MarketOverview";
 import { KlineChart } from "@/components/trade/KlineChart";
 import { FearGreedIndex } from "@/components/trade/FearGreedIndex";
-import { TradeForm } from "@/components/trade/TradeForm";
+import { OrderForm } from "@/components/trade/order-form/OrderForm";
 import { OrdersPanel } from "@/components/trade/OrdersPanel";
 import { PaperOrdersPanel } from "@/components/trade/PaperOrdersPanel";
 import { OrderBook } from "@/components/trade/OrderBook";
-import { FuturesTradeForm } from "@/components/trade/FuturesTradeForm";
 import { FuturesInfoPanel } from "@/components/trade/FuturesInfoPanel";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -306,10 +305,7 @@ export default function TradePage() {
   const handleTabChange = useCallback((t: string) => setRightTab(t as typeof rightTab), []);
   const openSymbolPicker = useCallback(() => setSymbolPickerOpen(true), []);
 
-  const tradePanel =
-    market === "spot" ? <TradeForm symbol={symbol} mode="live" initialSide={initialSide} />
-    : market === "paper" ? <TradeForm symbol={symbol} mode="paper" initialSide={initialSide} />
-    : <FuturesTradeForm symbol={symbol} />;
+  const tradePanel = <OrderForm symbol={symbol} market={market} initialSide={initialSide} />;
 
   const ordersPanel =
     market === "spot" ? <OrdersPanel symbol={symbol} />

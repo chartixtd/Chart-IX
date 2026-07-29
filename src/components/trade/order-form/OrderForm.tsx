@@ -102,16 +102,25 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
     }
   }, [market, orderType, showTpSl]);
 
+  const isLimit = LIMIT_TYPES.has(orderType);
+  const refPrice = isLimit && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
+
   const availableUsdt = useMemo(() => {
     if (market === "paper") return paperData?.account.balance_usdt ?? 0;
     if (market === "futures") return futuresAccount?.availableMargin;
+    if (direction === "SHORT") {
+      // 现货卖出：可用额度按持有的 baseAsset 数量折算成 USDT 价值，不是账户里
+      // 剩余的 USDT 现金——否则「卖出 100%」会按还剩多少 USDT 现金定价，而不是
+      // 按手上还有多少 BTC 可卖定价（2026-07-29 真实交易测试中发现：买入 25%
+      // BTC 后切到卖出点 100%，显示的是账户剩余 75% USDT 现金的价值）。
+      const baseBalance = spotBalances?.find((b) => b.asset === baseAsset);
+      return baseBalance ? parseFloat(baseBalance.free) * refPrice : undefined;
+    }
     return spotBalances?.find((b) => b.asset === "USDT")
       ? parseFloat(spotBalances.find((b) => b.asset === "USDT")!.free)
       : undefined;
-  }, [market, paperData, futuresAccount, spotBalances]);
+  }, [market, direction, paperData, futuresAccount, spotBalances, baseAsset, refPrice]);
 
-  const isLimit = LIMIT_TYPES.has(orderType);
-  const refPrice = isLimit && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
   const notional = parseFloat(amount) || 0;
   const effectiveLeverage = cfg.hasLeverage ? leverage : 1;
 

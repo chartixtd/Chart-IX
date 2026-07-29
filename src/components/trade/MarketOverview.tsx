@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, memo } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, memo } from "react";
 import { useSpotTickers } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { useMarketStore } from "@/stores/market";
@@ -12,7 +12,10 @@ import { MarketHeatmap } from "@/components/trade/MarketHeatmap";
 import type { BingXTicker } from "@/types/bingx";
 
 const WS_SUBSCRIBE_LIMIT = 30;
-const VISIBLE_LIMIT = 50;
+/** 每行的估计高度（px）。未测出真实高度前用它算窗口范围，测出后即被替换。 */
+const ESTIMATED_ROW_HEIGHT = 32;
+/** 视口上下各多渲染几行，避免快速滚动时先看到空白 */
+const OVERSCAN = 8;
 
 interface MarketOverviewProps {
   onSelectSymbol?: (symbol: string) => void;
@@ -27,11 +30,13 @@ const TickerRow = memo(function TickerRow({
   fallback,
   isActive,
   onSelect,
+  measureRef,
 }: {
   symbol: string;
   fallback: BingXTicker;
   isActive: boolean;
   onSelect: (symbol: string) => void;
+  measureRef?: (el: HTMLDivElement | null) => void;
 }) {
   const live = useMarketStore((s) => s.tickers[symbol]);
   const ticker = live ?? fallback;
@@ -49,6 +54,7 @@ const TickerRow = memo(function TickerRow({
 
   return (
     <div
+      ref={measureRef}
       role="button"
       tabIndex={0}
       onClick={handleClick}
@@ -112,18 +118,53 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOver
     const matches = searchLower
       ? tickers.filter((t) => t.symbol.toLowerCase().includes(searchLower))
       : tickers;
-    // Pin favorited symbols to the top, otherwise keep the incoming (REST) order
+    // Pin favorited symbols to the top, otherwise keep the incoming (REST) order.
+    // 不再按数量裁剪——BingX 现货/合约都有近千个交易对，全部展示，靠下面的
+    // 窗口化渲染（只渲染视口内的行）保证长列表滚动流畅。
     const favSet = new Set(favorites);
-    const sorted = favSet.size
+    return favSet.size
       ? [...matches].sort((a, b) => Number(favSet.has(b.symbol)) - Number(favSet.has(a.symbol)))
       : matches;
-    return sorted.slice(0, VISIBLE_LIMIT);
   }, [tickers, searchLower, favorites]);
 
   const handleSelect = useCallback(
     (symbol: string) => onSelectSymbol?.(symbol),
     [onSelectSymbol]
   );
+
+  // 简易窗口化：不引入虚拟滚动依赖，按滚动位置只渲染视口内 + 少量缓冲的行。
+  // 行高先用估计值起步，测到第一行的真实渲染高度后替换，避免样式变动时估计值跑偏。
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [rowHeight, setRowHeight] = useState(ESTIMATED_ROW_HEIGHT);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setViewportHeight(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const measureFirstRow = useCallback((el: HTMLDivElement | null) => {
+    if (el) setRowHeight(el.getBoundingClientRect().height || ESTIMATED_ROW_HEIGHT);
+  }, []);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
+  const endIndex = Math.min(
+    filtered.length,
+    Math.ceil((scrollTop + viewportHeight) / rowHeight) + OVERSCAN
+  );
+  const visibleRows = filtered.slice(startIndex, endIndex);
+  const topPadding = startIndex * rowHeight;
+  const bottomPadding = Math.max(0, (filtered.length - endIndex) * rowHeight);
 
   return (
     <div className="flex h-full flex-col">
@@ -155,30 +196,42 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOver
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {viewMode === "heatmap" ? (
+      {viewMode === "heatmap" ? (
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
           <MarketHeatmap />
-        ) : (
-          <>
-            <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-1 px-3 pb-2 text-xs text-text-muted">
-              <span className="w-4" />
-              <span>Symbol</span>
-              <span className="text-right">Price</span>
-              <span className="w-16 text-right">24h</span>
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-1 px-3 pb-2 text-xs text-text-muted shrink-0">
+            <span className="w-4" />
+            <span>Symbol</span>
+            <span className="text-right">Price</span>
+            <span className="w-16 text-right">24h</span>
+          </div>
+          {isLoading ? (
+            <LoadingDummy />
+          ) : (
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto custom-scrollbar"
+            >
+              <div style={{ height: topPadding }} />
+              {visibleRows.map((ticker, i) => (
+                <TickerRow
+                  key={ticker.symbol}
+                  symbol={ticker.symbol}
+                  fallback={ticker}
+                  isActive={ticker.symbol === activeSymbol}
+                  onSelect={handleSelect}
+                  measureRef={i === 0 ? measureFirstRow : undefined}
+                />
+              ))}
+              <div style={{ height: bottomPadding }} />
             </div>
-            {isLoading && <LoadingDummy />}
-            {filtered.map((ticker) => (
-              <TickerRow
-                key={ticker.symbol}
-                symbol={ticker.symbol}
-                fallback={ticker}
-                isActive={ticker.symbol === activeSymbol}
-                onSelect={handleSelect}
-              />
-            ))}
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -103,7 +103,7 @@ export function Navbar() {
             <>
               <Link href={`/${locale}/settings`}>
                 <Button variant="ghost" size="sm">
-                  {auth.email?.split("@")[0]}
+                  {auth.displayName || auth.email?.split("@")[0]}
                 </Button>
               </Link>
               <Button variant="ghost" size="sm" onClick={handleLogout}>

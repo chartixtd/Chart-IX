@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { LANGUAGE_LABELS, LOCALES } from "@/lib/constants";
@@ -13,6 +14,7 @@ export default function SettingsPage() {
   const locale = useLocale();
   const router = useRouter();
   const supabase = createClient();
+  const auth = useAuth();
 
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [profile, setProfile] = useState<{
@@ -60,6 +62,7 @@ export default function SettingsPage() {
     } else {
       setMessage(t("saved"));
       setProfile((prev) => (prev ? { ...prev, display_name: displayName } : prev));
+      auth.refresh();
     }
     setSaving(false);
   };

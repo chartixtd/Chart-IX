@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "./middleware";
 export interface ServerAuthState {
   userId: string | null;
   email: string | null;
+  displayName: string | null;
   tier: "free" | "pro" | null;
   role: "user" | "admin" | null;
   loading: boolean;
@@ -12,6 +13,7 @@ export interface ServerAuthState {
 const EMPTY_AUTH: ServerAuthState = {
   userId: null,
   email: null,
+  displayName: null,
   tier: null,
   role: null,
   loading: false,
@@ -40,22 +42,34 @@ export async function getServerAuth(): Promise<ServerAuthState> {
 
     let tier = claimTier;
     let role = claimRole;
+    let displayName: string | null = null;
 
     if (tier === undefined || role === undefined) {
       const serviceClient = createServiceRoleClient();
       const { data: profile } = await serviceClient
         .from("users")
-        .select("tier, role")
+        .select("tier, role, display_name")
         .eq("id", user.id)
         .single();
 
       tier = (profile?.tier as "free" | "pro") ?? "free";
       role = (profile?.role as "user" | "admin") ?? "user";
+      displayName = profile?.display_name ?? null;
+    } else {
+      // tier/role came from JWT claims, but display_name is never synced there —
+      // it still needs its own (cheap, RLS-scoped-to-self) lookup.
+      const { data: profile } = await supabase
+        .from("users")
+        .select("display_name")
+        .eq("id", user.id)
+        .single();
+      displayName = profile?.display_name ?? null;
     }
 
     return {
       userId: user.id,
       email: user.email ?? null,
+      displayName,
       tier,
       role,
       loading: false,

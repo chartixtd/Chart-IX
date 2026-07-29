@@ -6,17 +6,25 @@ import { createClient } from "@/lib/supabase/client";
 export interface AuthState {
   userId: string | null;
   email: string | null;
+  displayName: string | null;
   tier: "free" | "pro" | null;
   role: "user" | "admin" | null;
   loading: boolean;
 }
 
-const AuthContext = createContext<AuthState>({
+interface AuthContextValue extends AuthState {
+  /** Re-fetch auth state from Supabase — call after editing the user's own profile row. */
+  refresh: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue>({
   userId: null,
   email: null,
+  displayName: null,
   tier: null,
   role: null,
   loading: true,
+  refresh: async () => {},
 });
 
 export function AuthProvider({
@@ -32,6 +40,7 @@ export function AuthProvider({
     initialAuth ?? {
       userId: null,
       email: null,
+      displayName: null,
       tier: null,
       role: null,
       loading: true,
@@ -44,7 +53,7 @@ export function AuthProvider({
     const user = data.user;
 
     if (!user) {
-      setAuth({ userId: null, email: null, tier: null, role: null, loading: false });
+      setAuth({ userId: null, email: null, displayName: null, tier: null, role: null, loading: false });
       return;
     }
 
@@ -54,21 +63,32 @@ export function AuthProvider({
     // reading own row) if that migration hasn't been applied yet.
     let tier = user.app_metadata?.tier as "free" | "pro" | undefined;
     let role = user.app_metadata?.role as "user" | "admin" | undefined;
+    let displayName: string | null = null;
 
     if (tier === undefined || role === undefined) {
       const { data: profile } = await supabase
         .from("users")
-        .select("tier, role")
+        .select("tier, role, display_name")
         .eq("id", user.id)
         .single();
 
       tier = (profile?.tier as "free" | "pro") ?? "free";
       role = (profile?.role as "user" | "admin") ?? "user";
+      displayName = profile?.display_name ?? null;
+    } else {
+      // display_name is never synced onto JWT claims, so it always needs its own lookup.
+      const { data: profile } = await supabase
+        .from("users")
+        .select("display_name")
+        .eq("id", user.id)
+        .single();
+      displayName = profile?.display_name ?? null;
     }
 
     setAuth({
       userId: user.id,
       email: user.email ?? null,
+      displayName,
       tier,
       role,
       loading: false,
@@ -92,7 +112,7 @@ export function AuthProvider({
           supabase.rpc("grant_achievement", { p_key: "first_login" }).then(() => {});
         }
       } else if (event === "SIGNED_OUT") {
-        setAuth({ userId: null, email: null, tier: null, role: null, loading: false });
+        setAuth({ userId: null, email: null, displayName: null, tier: null, role: null, loading: false });
       }
     });
 
@@ -100,7 +120,11 @@ export function AuthProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchAuth]);
 
-  return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ ...auth, refresh: fetchAuth }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

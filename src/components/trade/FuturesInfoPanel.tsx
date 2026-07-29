@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,7 @@ interface FuturesInfoPanelProps {
 
 interface FuturesPosition {
   symbol: string;
+  positionId: string;
   positionSide: "LONG" | "SHORT";
   positionAmt: string;
   unrealizedProfit: string;
@@ -35,6 +37,7 @@ interface FuturesOrder {
 }
 
 export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
+  const t = useTranslations();
   const [positions, setPositions] = useState<FuturesPosition[]>([]);
   const [orders, setOrders] = useState<FuturesOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,15 +75,26 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     fetchData();
   };
 
-  const handleClose = async (positionSide: string) => {
-    setClosing(positionSide);
-    await fetch("/api/bingx/futures/positions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "closePosition", symbol, positionSide }),
-    });
-    setClosing(null);
-    fetchData();
+  const [closeError, setCloseError] = useState<string | null>(null);
+
+  const handleClose = async (position: FuturesPosition) => {
+    setClosing(position.positionId);
+    setCloseError(null);
+    try {
+      const res = await fetch("/api/bingx/futures/positions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "closePosition", symbol, positionId: position.positionId }),
+      });
+      const json = await res.json();
+      // A failed close must surface to the user — silently swallowing it would look like the position closed.
+      if (!json.success) setCloseError(json.error?.message || t("bingx_error.unknown"));
+    } catch {
+      setCloseError(t("bingx_error.network"));
+    } finally {
+      setClosing(null);
+      fetchData();
+    }
   };
 
   if (loading) {
@@ -94,6 +108,9 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
         <div className="px-3 py-2 border-b border-border-default">
           <span className="text-xs font-medium text-text-secondary">Positions ({positions.length})</span>
         </div>
+        {closeError && (
+          <p className="px-3 py-1.5 text-xs text-danger">{closeError}</p>
+        )}
         {positions.length === 0 ? (
           <p className="px-3 py-4 text-xs text-text-muted text-center">No positions</p>
         ) : (
@@ -102,7 +119,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
               const pnl = parseFloat(pos.unrealizedProfit);
               const isLong = pos.positionSide === "LONG";
               return (
-                <div key={pos.positionSide} className="px-3 py-2 hover:bg-bg-hover/50">
+                <div key={pos.positionId} className="px-3 py-2 hover:bg-bg-hover/50">
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                       <span className={cn("text-xs font-semibold", isLong ? "text-success" : "text-danger")}>
@@ -111,11 +128,11 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                       <span className="text-xs text-text-muted">{pos.marginType} · {pos.leverage}x</span>
                     </div>
                     <button
-                      onClick={() => handleClose(pos.positionSide)}
-                      disabled={closing === pos.positionSide}
+                      onClick={() => handleClose(pos)}
+                      disabled={closing === pos.positionId}
                       className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
                     >
-                      {closing === pos.positionSide ? "..." : "Close"}
+                      {closing === pos.positionId ? "..." : "Close"}
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-x-2 text-xs">

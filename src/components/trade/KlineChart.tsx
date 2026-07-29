@@ -24,13 +24,17 @@ import Link from "next/link";
 import { useLocale } from "next-intl";
 import { useKlines } from "@/hooks/useMarketData";
 import { useMarketStore } from "@/stores/market";
-import { useTradePrefsStore, type ChartBottomPane } from "@/stores/tradePrefs";
+import {
+  useTradePrefsStore, type ChartBottomPane, type ChartIndicatorParams, type ChartIndicatorSettings,
+} from "@/stores/tradePrefs";
 import { useFeatureAccess } from "@/hooks/useFeatureFlags";
 import {
   computeMA, computeEMA, computeRSI, computeMACD, computeBollingerBands, computeVWAP,
   computeATR, computeStochastic, computeCCI, computeWilliamsR, computeOBV, computeADX,
   computeParabolicSAR, computeVWMA, computeKeltnerChannels, computeDonchianChannels,
   computeSuperTrend, computeMomentum, computeROC, computeMFI, computeTRIX,
+  computeDEMA, computeTEMA, computeEnvelope, computeIchimoku, computeCMF, computeAroon,
+  computeUltimateOscillator, computeCMO, computeDPO, computeStdDev,
 } from "@/lib/indicators";
 import { cn } from "@/lib/utils";
 
@@ -111,6 +115,102 @@ const MOMENTUM_COLOR = "#818cf8";
 const ROC_COLOR = "#f472b6";
 const MFI_COLOR = "#fbbf24";
 const TRIX_COLOR = "#60a5fa";
+const DEMA_COLOR = "#fb7185";
+const TEMA_COLOR = "#34d399";
+const ENVELOPE_COLOR = "rgba(163,113,247,0.4)";
+const ICHIMOKU_TENKAN_COLOR = "#f87171";
+const ICHIMOKU_KIJUN_COLOR = "#60a5fa";
+const ICHIMOKU_SPAN_A_COLOR = "rgba(34,197,94,0.4)";
+const ICHIMOKU_SPAN_B_COLOR = "rgba(239,68,68,0.4)";
+const CMF_COLOR = "#2dd4bf";
+const AROON_UP_COLOR = "#22c55e";
+const AROON_DOWN_COLOR = "#ef4444";
+const UO_COLOR = "#c084fc";
+const CMO_COLOR = "#fb923c";
+const DPO_COLOR = "#38bdf8";
+const STDDEV_COLOR = "#a3e635";
+
+interface ParamField {
+  key: keyof ChartIndicatorParams;
+  step?: number;
+}
+
+type BooleanIndicatorKey = Exclude<keyof ChartIndicatorSettings, "bottomPane">;
+
+interface OverlayDescriptor {
+  toggleKey: BooleanIndicatorKey;
+  label: string;
+  params?: ParamField[];
+}
+
+interface BottomPaneDescriptor {
+  key: ChartBottomPane;
+  label: string;
+  params?: ParamField[];
+}
+
+const OVERLAY_INDICATORS: OverlayDescriptor[] = [
+  { toggleKey: "showMA", label: "MA 均线", params: [{ key: "maPeriod1" }, { key: "maPeriod2" }] },
+  { toggleKey: "showEMA", label: "EMA", params: [{ key: "emaPeriod1" }, { key: "emaPeriod2" }] },
+  { toggleKey: "showBB", label: "Bollinger Bands", params: [{ key: "bbPeriod" }, { key: "bbMultiplier", step: 0.1 }] },
+  { toggleKey: "showVWAP", label: "VWAP" },
+  { toggleKey: "showVWMA", label: "VWMA", params: [{ key: "vwmaPeriod" }] },
+  { toggleKey: "showSAR", label: "抛物线 SAR", params: [{ key: "sarStep", step: 0.01 }, { key: "sarMax", step: 0.01 }] },
+  { toggleKey: "showKC", label: "Keltner Channels", params: [{ key: "kcPeriod" }, { key: "kcAtrPeriod" }, { key: "kcMultiplier", step: 0.1 }] },
+  { toggleKey: "showDonchian", label: "Donchian Channels", params: [{ key: "donchianPeriod" }] },
+  { toggleKey: "showSuperTrend", label: "SuperTrend", params: [{ key: "superTrendPeriod" }, { key: "superTrendMultiplier", step: 0.5 }] },
+  { toggleKey: "showDEMA", label: "DEMA", params: [{ key: "demaPeriod" }] },
+  { toggleKey: "showTEMA", label: "TEMA", params: [{ key: "temaPeriod" }] },
+  { toggleKey: "showEnvelope", label: "Envelope 通道", params: [{ key: "envelopePeriod" }, { key: "envelopePercent", step: 0.1 }] },
+  { toggleKey: "showIchimoku", label: "一目均衡表", params: [{ key: "ichimokuTenkan" }, { key: "ichimokuKijun" }, { key: "ichimokuSenkouB" }] },
+];
+
+const BOTTOM_PANE_INDICATORS: BottomPaneDescriptor[] = [
+  { key: "volume", label: "成交量" },
+  { key: "rsi", label: "RSI", params: [{ key: "rsiPeriod" }] },
+  { key: "macd", label: "MACD", params: [{ key: "macdFast" }, { key: "macdSlow" }, { key: "macdSignal" }] },
+  { key: "stoch", label: "随机指标", params: [{ key: "stochKPeriod" }, { key: "stochDPeriod" }] },
+  { key: "cci", label: "CCI", params: [{ key: "cciPeriod" }] },
+  { key: "willr", label: "威廉%R", params: [{ key: "willrPeriod" }] },
+  { key: "atr", label: "ATR", params: [{ key: "atrPeriod" }] },
+  { key: "adx", label: "ADX", params: [{ key: "adxPeriod" }] },
+  { key: "obv", label: "OBV" },
+  { key: "momentum", label: "动量指标", params: [{ key: "momentumPeriod" }] },
+  { key: "roc", label: "ROC", params: [{ key: "rocPeriod" }] },
+  { key: "mfi", label: "资金流量指标", params: [{ key: "mfiPeriod" }] },
+  { key: "trix", label: "TRIX", params: [{ key: "trixPeriod" }] },
+  { key: "cmf", label: "佳庆资金流量", params: [{ key: "cmfPeriod" }] },
+  { key: "aroon", label: "Aroon", params: [{ key: "aroonPeriod" }] },
+  { key: "uo", label: "终极震荡指标", params: [{ key: "uoPeriod1" }, { key: "uoPeriod2" }, { key: "uoPeriod3" }] },
+  { key: "cmo", label: "钱德动量摆动", params: [{ key: "cmoPeriod" }] },
+  { key: "dpo", label: "区间震荡指标", params: [{ key: "dpoPeriod" }] },
+  { key: "stddev", label: "标准差", params: [{ key: "stddevPeriod" }] },
+];
+
+/** Small inline numeric field used by the indicator panel's editable periods. */
+function NumberField({
+  value,
+  step = 1,
+  onChange,
+}: {
+  value: number;
+  step?: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <input
+      type="number"
+      value={value}
+      step={step}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => {
+        const v = parseFloat(e.target.value);
+        if (!Number.isNaN(v)) onChange(v);
+      }}
+      className="w-11 rounded-xs border border-border-default bg-bg-tertiary px-1 py-0.5 text-center text-[11px] text-text-primary focus:border-gold focus:outline-none"
+    />
+  );
+}
 
 export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, priceLines }: KlineChartProps) {
   const locale = useLocale();
@@ -149,6 +249,21 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   const rocSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const mfiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const trixSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const demaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const temaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const envelopeUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const envelopeLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ichimokuTenkanSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ichimokuKijunSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ichimokuSpanASeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ichimokuSpanBSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const cmfSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const aroonUpSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const aroonDownSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const uoSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const cmoSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const dpoSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stddevSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const isFirstDataRef = useRef(true);
 
   // Last candle state, kept in sync so ticker updates can mutate it live
@@ -179,9 +294,15 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   const chartIndicators = useTradePrefsStore((s) => s.chartIndicators);
   const setChartIndicators = useTradePrefsStore((s) => s.setChartIndicators);
   const {
-    showMA, showEMA, showBB, showVWAP, showSAR, showVWMA, showKC, showDonchian, showSuperTrend, bottomPane,
+    showMA, showEMA, showBB, showVWAP, showSAR, showVWMA, showKC, showDonchian, showSuperTrend,
+    showDEMA, showTEMA, showEnvelope, showIchimoku, bottomPane,
   } = chartIndicators;
   const setBottomPane = (key: ChartBottomPane) => setChartIndicators({ bottomPane: key });
+
+  // Indicator periods/multipliers — also persisted, editable from the same panel
+  const indicatorParams = useTradePrefsStore((s) => s.indicatorParams);
+  const setIndicatorParams = useTradePrefsStore((s) => s.setIndicatorParams);
+  const resetIndicatorParams = useTradePrefsStore((s) => s.resetIndicatorParams);
 
   // ---- Create chart once ----
   useEffect(() => {
@@ -364,6 +485,71 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     });
     chart.priceScale("trix").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
 
+    const demaSeries = chart.addSeries(LineSeries, {
+      color: DEMA_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const temaSeries = chart.addSeries(LineSeries, {
+      color: TEMA_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const envelopeUpperSeries = chart.addSeries(LineSeries, {
+      color: ENVELOPE_COLOR, lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const envelopeLowerSeries = chart.addSeries(LineSeries, {
+      color: ENVELOPE_COLOR, lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const ichimokuTenkanSeries = chart.addSeries(LineSeries, {
+      color: ICHIMOKU_TENKAN_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const ichimokuKijunSeries = chart.addSeries(LineSeries, {
+      color: ICHIMOKU_KIJUN_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const ichimokuSpanASeries = chart.addSeries(LineSeries, {
+      color: ICHIMOKU_SPAN_A_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+    const ichimokuSpanBSeries = chart.addSeries(LineSeries, {
+      color: ICHIMOKU_SPAN_B_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+
+    const cmfSeries = chart.addSeries(LineSeries, {
+      color: CMF_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "cmf", visible: false,
+    });
+    chart.priceScale("cmf").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const aroonUpSeries = chart.addSeries(LineSeries, {
+      color: AROON_UP_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "aroon", visible: false,
+    });
+    const aroonDownSeries = chart.addSeries(LineSeries, {
+      color: AROON_DOWN_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "aroon", visible: false,
+    });
+    chart.priceScale("aroon").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const uoSeries = chart.addSeries(LineSeries, {
+      color: UO_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "uo", visible: false,
+    });
+    chart.priceScale("uo").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const cmoSeries = chart.addSeries(LineSeries, {
+      color: CMO_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "cmo", visible: false,
+    });
+    chart.priceScale("cmo").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const dpoSeries = chart.addSeries(LineSeries, {
+      color: DPO_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "dpo", visible: false,
+    });
+    chart.priceScale("dpo").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const stddevSeries = chart.addSeries(LineSeries, {
+      color: STDDEV_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "stddev", visible: false,
+    });
+    chart.priceScale("stddev").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
     chartApiRef.current = chart;
     candleSeriesRef.current = candleSeries;
     markersPluginRef.current = createSeriesMarkers(candleSeries, []);
@@ -397,6 +583,21 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     rocSeriesRef.current = rocSeries;
     mfiSeriesRef.current = mfiSeries;
     trixSeriesRef.current = trixSeries;
+    demaSeriesRef.current = demaSeries;
+    temaSeriesRef.current = temaSeries;
+    envelopeUpperSeriesRef.current = envelopeUpperSeries;
+    envelopeLowerSeriesRef.current = envelopeLowerSeries;
+    ichimokuTenkanSeriesRef.current = ichimokuTenkanSeries;
+    ichimokuKijunSeriesRef.current = ichimokuKijunSeries;
+    ichimokuSpanASeriesRef.current = ichimokuSpanASeries;
+    ichimokuSpanBSeriesRef.current = ichimokuSpanBSeries;
+    cmfSeriesRef.current = cmfSeries;
+    aroonUpSeriesRef.current = aroonUpSeries;
+    aroonDownSeriesRef.current = aroonDownSeries;
+    uoSeriesRef.current = uoSeries;
+    cmoSeriesRef.current = cmoSeries;
+    dpoSeriesRef.current = dpoSeries;
+    stddevSeriesRef.current = stddevSeries;
 
     const ro = new ResizeObserver(() => {
       if (chartRef.current) {
@@ -445,6 +646,21 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       rocSeriesRef.current = null;
       mfiSeriesRef.current = null;
       trixSeriesRef.current = null;
+      demaSeriesRef.current = null;
+      temaSeriesRef.current = null;
+      envelopeUpperSeriesRef.current = null;
+      envelopeLowerSeriesRef.current = null;
+      ichimokuTenkanSeriesRef.current = null;
+      ichimokuKijunSeriesRef.current = null;
+      ichimokuSpanASeriesRef.current = null;
+      ichimokuSpanBSeriesRef.current = null;
+      cmfSeriesRef.current = null;
+      aroonUpSeriesRef.current = null;
+      aroonDownSeriesRef.current = null;
+      uoSeriesRef.current = null;
+      cmoSeriesRef.current = null;
+      dpoSeriesRef.current = null;
+      stddevSeriesRef.current = null;
       isFirstDataRef.current = true;
       lastCandleRef.current = null;
     };
@@ -502,22 +718,24 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       return points;
     };
 
-    const ma7Data = toLineData(computeMA(closes, 7));
-    const ma25Data = toLineData(computeMA(closes, 25));
+    const p = indicatorParams;
+
+    const ma7Data = toLineData(computeMA(closes, p.maPeriod1));
+    const ma25Data = toLineData(computeMA(closes, p.maPeriod2));
     ma7SeriesRef.current?.setData(ma7Data as LineData[]);
     ma25SeriesRef.current?.setData(ma25Data as LineData[]);
 
-    const rsiData = toLineData(computeRSI(closes, 14));
+    const rsiData = toLineData(computeRSI(closes, p.rsiPeriod));
     rsiSeriesRef.current?.setData(rsiData as LineData[]);
 
     // EMA
-    const ema12Data = toLineData(computeEMA(closes, 12));
-    const ema26Data = toLineData(computeEMA(closes, 26));
+    const ema12Data = toLineData(computeEMA(closes, p.emaPeriod1));
+    const ema26Data = toLineData(computeEMA(closes, p.emaPeriod2));
     ema12SeriesRef.current?.setData(ema12Data as LineData[]);
     ema26SeriesRef.current?.setData(ema26Data as LineData[]);
 
     // Bollinger Bands
-    const bb = computeBollingerBands(closes, 20);
+    const bb = computeBollingerBands(closes, p.bbPeriod, p.bbMultiplier);
     const bbUpperData = toLineData(bb.upper);
     const bbLowerData = toLineData(bb.lower);
     bbUpperSeriesRef.current?.setData(bbUpperData as LineData[]);
@@ -531,7 +749,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     vwapSeriesRef.current?.setData(vwapData as LineData[]);
 
     // MACD
-    const macdResult = computeMACD(closes);
+    const macdResult = computeMACD(closes, p.macdFast, p.macdSlow, p.macdSignal);
     const macdLineData = toLineData(macdResult.macd);
     const signalLineData = toLineData(macdResult.signal);
     macdSeriesRef.current?.setData(macdLineData as LineData[]);
@@ -552,28 +770,28 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     histogramSeriesRef.current?.setData(histData);
 
     // Parabolic SAR
-    const sarData = toLineData(computeParabolicSAR(highs, lows));
+    const sarData = toLineData(computeParabolicSAR(highs, lows, p.sarStep, p.sarMax));
     sarSeriesRef.current?.setData(sarData as LineData[]);
 
     // Stochastic Oscillator
-    const stoch = computeStochastic(highs, lows, closes, 14, 3);
+    const stoch = computeStochastic(highs, lows, closes, p.stochKPeriod, p.stochDPeriod);
     stochKSeriesRef.current?.setData(toLineData(stoch.k) as LineData[]);
     stochDSeriesRef.current?.setData(toLineData(stoch.d) as LineData[]);
 
     // CCI
-    const cciData = toLineData(computeCCI(highs, lows, closes, 20));
+    const cciData = toLineData(computeCCI(highs, lows, closes, p.cciPeriod));
     cciSeriesRef.current?.setData(cciData as LineData[]);
 
     // Williams %R
-    const willrData = toLineData(computeWilliamsR(highs, lows, closes, 14));
+    const willrData = toLineData(computeWilliamsR(highs, lows, closes, p.willrPeriod));
     willrSeriesRef.current?.setData(willrData as LineData[]);
 
     // ATR
-    const atrData = toLineData(computeATR(highs, lows, closes, 14));
+    const atrData = toLineData(computeATR(highs, lows, closes, p.atrPeriod));
     atrSeriesRef.current?.setData(atrData as LineData[]);
 
     // ADX
-    const adxData = toLineData(computeADX(highs, lows, closes, 14));
+    const adxData = toLineData(computeADX(highs, lows, closes, p.adxPeriod));
     adxSeriesRef.current?.setData(adxData as LineData[]);
 
     // OBV
@@ -581,38 +799,79 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     obvSeriesRef.current?.setData(obvData as LineData[]);
 
     // VWMA
-    const vwmaData = toLineData(computeVWMA(closes, volumes, 20));
+    const vwmaData = toLineData(computeVWMA(closes, volumes, p.vwmaPeriod));
     vwmaSeriesRef.current?.setData(vwmaData as LineData[]);
 
     // Keltner Channels
-    const kc = computeKeltnerChannels(highs, lows, closes, 20, 10, 2);
+    const kc = computeKeltnerChannels(highs, lows, closes, p.kcPeriod, p.kcAtrPeriod, p.kcMultiplier);
     kcUpperSeriesRef.current?.setData(toLineData(kc.upper) as LineData[]);
     kcLowerSeriesRef.current?.setData(toLineData(kc.lower) as LineData[]);
 
     // Donchian Channels
-    const donchian = computeDonchianChannels(highs, lows, 20);
+    const donchian = computeDonchianChannels(highs, lows, p.donchianPeriod);
     donchianUpperSeriesRef.current?.setData(toLineData(donchian.upper) as LineData[]);
     donchianLowerSeriesRef.current?.setData(toLineData(donchian.lower) as LineData[]);
 
     // SuperTrend
-    const superTrend = computeSuperTrend(highs, lows, closes, 10, 3);
+    const superTrend = computeSuperTrend(highs, lows, closes, p.superTrendPeriod, p.superTrendMultiplier);
     superTrendSeriesRef.current?.setData(toLineData(superTrend.value) as LineData[]);
 
     // Momentum
-    const momentumData = toLineData(computeMomentum(closes, 10));
+    const momentumData = toLineData(computeMomentum(closes, p.momentumPeriod));
     momentumSeriesRef.current?.setData(momentumData as LineData[]);
 
     // ROC
-    const rocData = toLineData(computeROC(closes, 12));
+    const rocData = toLineData(computeROC(closes, p.rocPeriod));
     rocSeriesRef.current?.setData(rocData as LineData[]);
 
     // MFI
-    const mfiData = toLineData(computeMFI(highs, lows, closes, volumes, 14));
+    const mfiData = toLineData(computeMFI(highs, lows, closes, volumes, p.mfiPeriod));
     mfiSeriesRef.current?.setData(mfiData as LineData[]);
 
     // TRIX
-    const trixData = toLineData(computeTRIX(closes, 15));
+    const trixData = toLineData(computeTRIX(closes, p.trixPeriod));
     trixSeriesRef.current?.setData(trixData as LineData[]);
+
+    // DEMA / TEMA
+    demaSeriesRef.current?.setData(toLineData(computeDEMA(closes, p.demaPeriod)) as LineData[]);
+    temaSeriesRef.current?.setData(toLineData(computeTEMA(closes, p.temaPeriod)) as LineData[]);
+
+    // Envelope
+    const envelope = computeEnvelope(closes, p.envelopePeriod, p.envelopePercent);
+    envelopeUpperSeriesRef.current?.setData(toLineData(envelope.upper) as LineData[]);
+    envelopeLowerSeriesRef.current?.setData(toLineData(envelope.lower) as LineData[]);
+
+    // Ichimoku
+    const ichimoku = computeIchimoku(highs, lows, p.ichimokuTenkan, p.ichimokuKijun, p.ichimokuSenkouB);
+    ichimokuTenkanSeriesRef.current?.setData(toLineData(ichimoku.tenkan) as LineData[]);
+    ichimokuKijunSeriesRef.current?.setData(toLineData(ichimoku.kijun) as LineData[]);
+    ichimokuSpanASeriesRef.current?.setData(toLineData(ichimoku.senkouA) as LineData[]);
+    ichimokuSpanBSeriesRef.current?.setData(toLineData(ichimoku.senkouB) as LineData[]);
+
+    // CMF
+    const cmfData = toLineData(computeCMF(highs, lows, closes, volumes, p.cmfPeriod));
+    cmfSeriesRef.current?.setData(cmfData as LineData[]);
+
+    // Aroon
+    const aroon = computeAroon(highs, lows, p.aroonPeriod);
+    aroonUpSeriesRef.current?.setData(toLineData(aroon.up) as LineData[]);
+    aroonDownSeriesRef.current?.setData(toLineData(aroon.down) as LineData[]);
+
+    // Ultimate Oscillator
+    const uoData = toLineData(computeUltimateOscillator(highs, lows, closes, p.uoPeriod1, p.uoPeriod2, p.uoPeriod3));
+    uoSeriesRef.current?.setData(uoData as LineData[]);
+
+    // CMO
+    const cmoData = toLineData(computeCMO(closes, p.cmoPeriod));
+    cmoSeriesRef.current?.setData(cmoData as LineData[]);
+
+    // DPO
+    const dpoData = toLineData(computeDPO(closes, p.dpoPeriod));
+    dpoSeriesRef.current?.setData(dpoData as LineData[]);
+
+    // Standard Deviation
+    const stddevData = toLineData(computeStdDev(closes, p.stddevPeriod));
+    stddevSeriesRef.current?.setData(stddevData as LineData[]);
 
     // Track the last candle so live prices can extend it
     const last = valid[valid.length - 1];
@@ -629,7 +888,9 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       chartApiRef.current?.timeScale().fitContent();
       isFirstDataRef.current = false;
     }
-  }, [klines]);
+    // Recomputes (cheaply, a few hundred bars) whenever the user edits an
+    // indicator period/multiplier, not just when new kline data arrives.
+  }, [klines, indicatorParams]);
 
   // ---- Toggle indicator visibility ----
   useEffect(() => {
@@ -684,6 +945,30 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
 
   useEffect(() => {
     const canShow = hasAdvancedChart;
+    demaSeriesRef.current?.applyOptions({ visible: canShow && showDEMA });
+  }, [showDEMA, hasAdvancedChart]);
+
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
+    temaSeriesRef.current?.applyOptions({ visible: canShow && showTEMA });
+  }, [showTEMA, hasAdvancedChart]);
+
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
+    envelopeUpperSeriesRef.current?.applyOptions({ visible: canShow && showEnvelope });
+    envelopeLowerSeriesRef.current?.applyOptions({ visible: canShow && showEnvelope });
+  }, [showEnvelope, hasAdvancedChart]);
+
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
+    ichimokuTenkanSeriesRef.current?.applyOptions({ visible: canShow && showIchimoku });
+    ichimokuKijunSeriesRef.current?.applyOptions({ visible: canShow && showIchimoku });
+    ichimokuSpanASeriesRef.current?.applyOptions({ visible: canShow && showIchimoku });
+    ichimokuSpanBSeriesRef.current?.applyOptions({ visible: canShow && showIchimoku });
+  }, [showIchimoku, hasAdvancedChart]);
+
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
     const want = (p: ChartBottomPane) => canShow && bottomPane === p;
     const wantRsi = want("rsi");
     const wantMacd = want("macd");
@@ -697,9 +982,15 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     const wantRoc = want("roc");
     const wantMfi = want("mfi");
     const wantTrix = want("trix");
+    const wantCmf = want("cmf");
+    const wantAroon = want("aroon");
+    const wantUo = want("uo");
+    const wantCmo = want("cmo");
+    const wantDpo = want("dpo");
+    const wantStddev = want("stddev");
     const wantAnyOscillator = [
       wantRsi, wantMacd, wantStoch, wantCci, wantWillr, wantAtr, wantAdx, wantObv,
-      wantMomentum, wantRoc, wantMfi, wantTrix,
+      wantMomentum, wantRoc, wantMfi, wantTrix, wantCmf, wantAroon, wantUo, wantCmo, wantDpo, wantStddev,
     ].some(Boolean);
     volumeSeriesRef.current?.applyOptions({ visible: !wantAnyOscillator });
     rsiSeriesRef.current?.applyOptions({ visible: wantRsi });
@@ -717,6 +1008,13 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     rocSeriesRef.current?.applyOptions({ visible: wantRoc });
     mfiSeriesRef.current?.applyOptions({ visible: wantMfi });
     trixSeriesRef.current?.applyOptions({ visible: wantTrix });
+    cmfSeriesRef.current?.applyOptions({ visible: wantCmf });
+    aroonUpSeriesRef.current?.applyOptions({ visible: wantAroon });
+    aroonDownSeriesRef.current?.applyOptions({ visible: wantAroon });
+    uoSeriesRef.current?.applyOptions({ visible: wantUo });
+    cmoSeriesRef.current?.applyOptions({ visible: wantCmo });
+    dpoSeriesRef.current?.applyOptions({ visible: wantDpo });
+    stddevSeriesRef.current?.applyOptions({ visible: wantStddev });
   }, [bottomPane, hasAdvancedChart]);
 
   // ---- Drive the current candle with live ticker price (rAF-throttled) ----
@@ -872,50 +1170,45 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
             <div className="absolute left-0 top-9 z-20 max-h-[70vh] w-64 overflow-y-auto rounded-md border border-border-default bg-bg-secondary p-3 text-xs shadow-modal">
               {hasAdvancedChart ? (
                 <div className="space-y-3">
-                  <p className="text-text-muted">叠加指标</p>
-                  {(
-                    [
-                      { key: "showMA", label: "MA 均线 (7 / 25)" },
-                      { key: "showEMA", label: "EMA (12 / 26)" },
-                      { key: "showBB", label: "Bollinger Bands (20)" },
-                      { key: "showVWAP", label: "VWAP" },
-                      { key: "showVWMA", label: "VWMA (20)" },
-                      { key: "showSAR", label: "抛物线 SAR" },
-                      { key: "showKC", label: "Keltner Channels (20)" },
-                      { key: "showDonchian", label: "Donchian Channels (20)" },
-                      { key: "showSuperTrend", label: "SuperTrend (10, 3)" },
-                    ] as const
-                  ).map(({ key, label }) => (
-                    <label key={key} className="flex items-center justify-between">
-                      <span className="text-text-secondary">{label}</span>
-                      <input
-                        type="checkbox"
-                        checked={chartIndicators[key]}
-                        onChange={(e) => setChartIndicators({ [key]: e.target.checked })}
-                      />
-                    </label>
+                  <div className="flex items-center justify-between">
+                    <p className="text-text-muted">叠加指标（周期可编辑）</p>
+                    <button
+                      onClick={resetIndicatorParams}
+                      className="text-[11px] text-text-muted hover:text-gold"
+                      title="恢复全部指标默认周期"
+                    >
+                      重置周期
+                    </button>
+                  </div>
+                  {OVERLAY_INDICATORS.map(({ toggleKey, label, params }) => (
+                    <div key={toggleKey} className="flex items-center justify-between gap-2">
+                      <label className="flex flex-1 items-center gap-1.5 overflow-hidden">
+                        <input
+                          type="checkbox"
+                          checked={chartIndicators[toggleKey]}
+                          onChange={(e) => setChartIndicators({ [toggleKey]: e.target.checked })}
+                        />
+                        <span className="truncate text-text-secondary">{label}</span>
+                      </label>
+                      {params && (
+                        <div className="flex shrink-0 items-center gap-1">
+                          {params.map(({ key, step }) => (
+                            <NumberField
+                              key={key}
+                              value={indicatorParams[key]}
+                              step={step}
+                              onChange={(v) => setIndicatorParams({ [key]: v })}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
 
                   <div className="border-t border-border-default pt-3">
                     <p className="mb-1 text-text-muted">底部副图</p>
                     <div className="grid grid-cols-3 gap-1">
-                      {(
-                        [
-                          { key: "volume", label: "成交量" },
-                          { key: "rsi", label: "RSI(14)" },
-                          { key: "macd", label: "MACD" },
-                          { key: "stoch", label: "随机指标" },
-                          { key: "cci", label: "CCI(20)" },
-                          { key: "willr", label: "%R(14)" },
-                          { key: "atr", label: "ATR(14)" },
-                          { key: "adx", label: "ADX(14)" },
-                          { key: "obv", label: "OBV" },
-                          { key: "momentum", label: "动量(10)" },
-                          { key: "roc", label: "ROC(12)" },
-                          { key: "mfi", label: "MFI(14)" },
-                          { key: "trix", label: "TRIX(15)" },
-                        ] as { key: ChartBottomPane; label: string }[]
-                      ).map(({ key, label }) => (
+                      {BOTTOM_PANE_INDICATORS.map(({ key, label }) => (
                         <button
                           key={key}
                           onClick={() => setBottomPane(key)}
@@ -928,6 +1221,27 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
                         </button>
                       ))}
                     </div>
+
+                    {/* Editable period(s) for whichever bottom-pane indicator is currently selected */}
+                    {(() => {
+                      const active = BOTTOM_PANE_INDICATORS.find((b) => b.key === bottomPane);
+                      if (!active?.params) return null;
+                      return (
+                        <div className="mt-2 flex items-center justify-between rounded-xs bg-bg-tertiary px-2 py-1.5">
+                          <span className="text-text-muted">{active.label} 周期</span>
+                          <div className="flex items-center gap-1">
+                            {active.params.map(({ key, step }) => (
+                              <NumberField
+                                key={key}
+                                value={indicatorParams[key]}
+                                step={step}
+                                onChange={(v) => setIndicatorParams({ [key]: v })}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ) : (

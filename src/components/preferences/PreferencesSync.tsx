@@ -7,7 +7,8 @@ import { useFavoritesStore } from "@/stores/favorites";
 import { usePriceAlertsStore, type PriceAlert } from "@/stores/priceAlerts";
 import {
   useTradePrefsStore, type TradeMarketType, type TradeRightTab,
-  type ChartIndicatorSettings, DEFAULT_PINNED_INTERVALS,
+  type ChartIndicatorSettings, type ChartIndicatorParams,
+  DEFAULT_PINNED_INTERVALS, DEFAULT_CHART_INDICATORS, DEFAULT_CHART_INDICATOR_PARAMS,
 } from "@/stores/tradePrefs";
 
 interface StoredPreferences {
@@ -19,7 +20,8 @@ interface StoredPreferences {
     market?: TradeMarketType;
     rightTab?: TradeRightTab;
     pinnedIntervals?: string[];
-    chartIndicators?: ChartIndicatorSettings;
+    chartIndicators?: Partial<ChartIndicatorSettings>;
+    indicatorParams?: Partial<ChartIndicatorParams>;
   };
 }
 
@@ -36,6 +38,7 @@ function snapshot(): StoredPreferences {
       rightTab: trade.rightTab,
       pinnedIntervals: trade.pinnedIntervals,
       chartIndicators: trade.chartIndicators,
+      indicatorParams: trade.indicatorParams,
     },
   };
 }
@@ -105,16 +108,24 @@ export function PreferencesSync() {
       for (const a of localAlerts) if (!byId.has(a.id)) byId.set(a.id, a);
       usePriceAlertsStore.setState({ alerts: Array.from(byId.values()) });
 
-      // trade prefs: DB wins when present (restore last-used setup on new device)
+      // trade prefs: DB wins when present (restore last-used setup on new device).
+      // chartIndicators/indicatorParams are deep-merged onto current defaults so a
+      // field added after the user last saved doesn't come back `undefined`.
       if (remote.trade) {
-        const { symbol, interval, market, rightTab, pinnedIntervals, chartIndicators } = remote.trade;
+        const { symbol, interval, market, rightTab, pinnedIntervals, chartIndicators, indicatorParams } = remote.trade;
+        const current = useTradePrefsStore.getState();
         useTradePrefsStore.setState({
           ...(symbol ? { symbol } : {}),
           ...(interval ? { interval } : {}),
           ...(market ? { market } : {}),
           ...(rightTab ? { rightTab } : {}),
           ...(pinnedIntervals?.length ? { pinnedIntervals } : { pinnedIntervals: DEFAULT_PINNED_INTERVALS }),
-          ...(chartIndicators ? { chartIndicators } : {}),
+          ...(chartIndicators
+            ? { chartIndicators: { ...DEFAULT_CHART_INDICATORS, ...current.chartIndicators, ...chartIndicators } }
+            : {}),
+          ...(indicatorParams
+            ? { indicatorParams: { ...DEFAULT_CHART_INDICATOR_PARAMS, ...current.indicatorParams, ...indicatorParams } }
+            : {}),
         });
       }
 

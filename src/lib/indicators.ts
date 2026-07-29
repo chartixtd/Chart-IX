@@ -590,3 +590,212 @@ export function computeTRIX(closes: number[], period = 15): (number | null)[] {
 
   return result;
 }
+
+/** DEMA - Double Exponential Moving Average, reacts faster than a plain EMA. */
+export function computeDEMA(closes: number[], period: number): (number | null)[] {
+  const ema1 = computeEMA(closes, period);
+  const ema2 = computeEMA(ema1.map((v) => v ?? closes[0]), period);
+  return closes.map((_, i) => (ema1[i] === null || ema2[i] === null ? null : 2 * ema1[i]! - ema2[i]!));
+}
+
+/** TEMA - Triple Exponential Moving Average, reacts even faster than DEMA. */
+export function computeTEMA(closes: number[], period: number): (number | null)[] {
+  const ema1 = computeEMA(closes, period);
+  const ema1Clean = ema1.map((v) => v ?? closes[0]);
+  const ema2 = computeEMA(ema1Clean, period);
+  const ema2Clean = ema2.map((v) => v ?? closes[0]);
+  const ema3 = computeEMA(ema2Clean, period);
+  return closes.map((_, i) =>
+    ema1[i] === null || ema2[i] === null || ema3[i] === null
+      ? null
+      : 3 * ema1[i]! - 3 * ema2[i]! + ema3[i]!
+  );
+}
+
+/** Envelope - a fixed percentage band around an SMA. */
+export function computeEnvelope(
+  closes: number[],
+  period = 20,
+  percent = 2.5
+): { upper: (number | null)[]; lower: (number | null)[] } {
+  const basis = computeMA(closes, period);
+  const upper = basis.map((v) => (v === null ? null : v * (1 + percent / 100)));
+  const lower = basis.map((v) => (v === null ? null : v * (1 - percent / 100)));
+  return { upper, lower };
+}
+
+/**
+ * Ichimoku Kinko Hyo (simplified) - Tenkan-sen, Kijun-sen, and the two Senkou
+ * spans, all plotted at the current bar (not forward-shifted 26 bars as in the
+ * traditional cloud), so the cloud reads as a same-time trend/support overlay
+ * rather than the classic leading cloud.
+ */
+export function computeIchimoku(
+  highs: number[],
+  lows: number[],
+  tenkanPeriod = 9,
+  kijunPeriod = 26,
+  senkouBPeriod = 52
+): {
+  tenkan: (number | null)[];
+  kijun: (number | null)[];
+  senkouA: (number | null)[];
+  senkouB: (number | null)[];
+} {
+  const midpoint = (period: number): (number | null)[] => {
+    const result: (number | null)[] = new Array(highs.length).fill(null);
+    for (let i = period - 1; i < highs.length; i++) {
+      let hi = -Infinity, lo = Infinity;
+      for (let j = i - period + 1; j <= i; j++) {
+        if (highs[j] > hi) hi = highs[j];
+        if (lows[j] < lo) lo = lows[j];
+      }
+      result[i] = (hi + lo) / 2;
+    }
+    return result;
+  };
+
+  const tenkan = midpoint(tenkanPeriod);
+  const kijun = midpoint(kijunPeriod);
+  const senkouB = midpoint(senkouBPeriod);
+  const senkouA = tenkan.map((v, i) => (v === null || kijun[i] === null ? null : (v + kijun[i]!) / 2));
+
+  return { tenkan, kijun, senkouA, senkouB };
+}
+
+/** CMF - Chaikin Money Flow over `period` bars (default 20). */
+export function computeCMF(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  volumes: number[],
+  period = 20
+): (number | null)[] {
+  const n = closes.length;
+  const result: (number | null)[] = new Array(n).fill(null);
+  const mfv = closes.map((c, i) => {
+    const range = highs[i] - lows[i];
+    const mfm = range === 0 ? 0 : ((c - lows[i]) - (highs[i] - c)) / range;
+    return mfm * volumes[i];
+  });
+
+  for (let i = period - 1; i < n; i++) {
+    let sumMfv = 0, sumVol = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      sumMfv += mfv[j];
+      sumVol += volumes[j];
+    }
+    result[i] = sumVol === 0 ? 0 : sumMfv / sumVol;
+  }
+
+  return result;
+}
+
+/** Aroon Up / Aroon Down over `period` bars (default 25). Both range 0-100. */
+export function computeAroon(
+  highs: number[],
+  lows: number[],
+  period = 25
+): { up: (number | null)[]; down: (number | null)[] } {
+  const up: (number | null)[] = new Array(highs.length).fill(null);
+  const down: (number | null)[] = new Array(lows.length).fill(null);
+
+  for (let i = period; i < highs.length; i++) {
+    let highIdx = i, lowIdx = i;
+    let hi = -Infinity, lo = Infinity;
+    for (let j = i - period; j <= i; j++) {
+      if (highs[j] >= hi) { hi = highs[j]; highIdx = j; }
+      if (lows[j] <= lo) { lo = lows[j]; lowIdx = j; }
+    }
+    up[i] = ((period - (i - highIdx)) / period) * 100;
+    down[i] = ((period - (i - lowIdx)) / period) * 100;
+  }
+
+  return { up, down };
+}
+
+/** Ultimate Oscillator - weighted blend of three buying-pressure/true-range periods. */
+export function computeUltimateOscillator(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period1 = 7,
+  period2 = 14,
+  period3 = 28
+): (number | null)[] {
+  const n = closes.length;
+  const result: (number | null)[] = new Array(n).fill(null);
+  if (n < 2) return result;
+
+  const bp: number[] = new Array(n).fill(0);
+  const tr: number[] = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const priorClose = closes[i - 1];
+    bp[i] = closes[i] - Math.min(lows[i], priorClose);
+    tr[i] = Math.max(highs[i], priorClose) - Math.min(lows[i], priorClose);
+  }
+
+  const avgOver = (arr: number[], i: number, period: number) => {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += arr[j];
+    return sum;
+  };
+
+  const maxPeriod = Math.max(period1, period2, period3);
+  for (let i = maxPeriod; i < n; i++) {
+    const avg1 = avgOver(bp, i, period1) / (avgOver(tr, i, period1) || 1);
+    const avg2 = avgOver(bp, i, period2) / (avgOver(tr, i, period2) || 1);
+    const avg3 = avgOver(bp, i, period3) / (avgOver(tr, i, period3) || 1);
+    result[i] = (100 * (4 * avg1 + 2 * avg2 + avg3)) / 7;
+  }
+
+  return result;
+}
+
+/** CMO - Chande Momentum Oscillator over `period` bars (default 14). Ranges -100 to 100. */
+export function computeCMO(closes: number[], period = 14): (number | null)[] {
+  const n = closes.length;
+  const result: (number | null)[] = new Array(n).fill(null);
+  for (let i = period; i < n; i++) {
+    let up = 0, down = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      const change = closes[j] - closes[j - 1];
+      if (change > 0) up += change;
+      else down -= change;
+    }
+    // Clamp: floating-point error can push an exact ±100 case a hair past the boundary
+    result[i] = up + down === 0 ? 0 : Math.max(-100, Math.min(100, (100 * (up - down)) / (up + down)));
+  }
+  return result;
+}
+
+/** DPO - Detrended Price Oscillator over `period` bars (default 20). */
+export function computeDPO(closes: number[], period = 20): (number | null)[] {
+  const n = closes.length;
+  const result: (number | null)[] = new Array(n).fill(null);
+  const sma = computeMA(closes, period);
+  const shift = Math.floor(period / 2) + 1;
+  for (let i = 0; i < n; i++) {
+    const smaIdx = i - shift;
+    if (smaIdx >= 0 && sma[i] !== null) {
+      // Classic DPO compares a past price to the SMA centered `shift` bars later;
+      // plotted here at index i using sma[i] against the price `shift` bars back
+      // so every point aligns with real, already-elapsed bars (no lookahead).
+      result[i] = closes[i - shift] - sma[i]!;
+    }
+  }
+  return result;
+}
+
+/** Rolling standard deviation of closes over `period` bars (default 20). */
+export function computeStdDev(closes: number[], period = 20): (number | null)[] {
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  const sma = computeMA(closes, period);
+  for (let i = period - 1; i < closes.length; i++) {
+    const mean = sma[i]!;
+    let sumSq = 0;
+    for (let j = i - period + 1; j <= i; j++) sumSq += (closes[j] - mean) ** 2;
+    result[i] = Math.sqrt(sumSq / period);
+  }
+  return result;
+}

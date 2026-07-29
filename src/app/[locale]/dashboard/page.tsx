@@ -166,7 +166,7 @@ export default function DashboardPage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-12">
       <h1 className="font-display text-3xl tracking-tight text-text-primary">
-        {t("welcome")}{auth.email ? `, ${auth.email.split("@")[0]}` : ""}
+        {t("welcome")}{(auth.displayName || auth.email?.split("@")[0]) ? `, ${auth.displayName || auth.email?.split("@")[0]}` : ""}
       </h1>
       <div className="hairline-gold mt-5 w-full max-w-[220px] opacity-60" />
 

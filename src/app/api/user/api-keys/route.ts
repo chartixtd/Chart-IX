@@ -1,9 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { encrypt, decrypt } from "@/lib/crypto";
 import { verifyApiKey } from "@/lib/bingx/trade";
 import { verifyFuturesApiKey } from "@/lib/bingx/futures";
 import { maskApiKey } from "@/lib/utils";
+
+/**
+ * 若该用户当前没有任何 is_primary=true 的 key，补选最早创建的有效密钥顶上。
+ * DELETE（删掉的可能是主密钥）和 reverify（重新验证后主密钥可能变为无效）共用此逻辑，
+ * 避免下单路由 (.order("is_primary", ...)) 长期无主密钥可用。
+ */
+async function promoteNextValidPrimaryIfNoneSet(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<void> {
+  const { count } = await supabase
+    .from("api_keys")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("is_primary", true);
+
+  if ((count ?? 0) === 0) {
+    const { data: next } = await supabase
+      .from("api_keys")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("is_valid", true)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (next) {
+      await supabase.from("api_keys").update({ is_primary: true }).eq("id", next.id);
+    }
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -103,25 +134,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // 删掉的可能正是主密钥；补选最早创建的有效密钥顶上，避免下单时无 key 可选
-    const { count } = await supabase
-      .from("api_keys")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", authData.user.id)
-      .eq("is_primary", true);
-
-    if ((count ?? 0) === 0) {
-      const { data: next } = await supabase
-        .from("api_keys")
-        .select("id")
-        .eq("user_id", authData.user.id)
-        .eq("is_valid", true)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (next) {
-        await supabase.from("api_keys").update({ is_primary: true }).eq("id", next.id);
-      }
-    }
+    await promoteNextValidPrimaryIfNoneSet(supabase, authData.user.id);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -150,6 +163,25 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (action === "setPrimary") {
+      // 先确认目标 key 存在、属于该用户、且是可用的，再清后设 —
+      // 否则一个陈旧/错误/属于别人的 id 会让第二步 update 命中 0 行但不报错，
+      // 造成「清空了所有 primary，却没有真正设上」的假成功。
+      const { data: target } = await supabase
+        .from("api_keys")
+        .select("id, is_valid")
+        .eq("id", id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!target) {
+        return NextResponse.json({ success: false, error: { message: "Key not found" } }, { status: 404 });
+      }
+      if (!target.is_valid) {
+        return NextResponse.json(
+          { success: false, error: { message: "Cannot set an invalid key as primary" } },
+          { status: 400 }
+        );
+      }
+
       // 唯一索引限制每用户至多一个 primary，必须先清后设
       await supabase.from("api_keys").update({ is_primary: false }).eq("user_id", userId);
       const { error } = await supabase
@@ -163,7 +195,7 @@ export async function PATCH(request: NextRequest) {
     if (action === "reverify") {
       const { data: row } = await supabase
         .from("api_keys")
-        .select("api_key_encrypted, secret_encrypted")
+        .select("api_key_encrypted, secret_encrypted, is_primary")
         .eq("id", id).eq("user_id", userId).single();
       if (!row) {
         return NextResponse.json({ success: false, error: { message: "Key not found" } }, { status: 404 });
@@ -174,6 +206,10 @@ export async function PATCH(request: NextRequest) {
       const [spotOk, futuresOk] = await Promise.all([verifyApiKey(k, s), verifyFuturesApiKey(k, s)]);
       const isValid = spotOk || futuresOk;
 
+      // 重新验证后如果一把原本是主密钥的 key 变为失效，不能让它继续挂着 primary 标记 ——
+      // 下单路由按 is_valid 过滤，会悄悄跳过它改用别的 key，界面却仍显示它是「主密钥」。
+      const wasPrimaryAndNowInvalid = row.is_primary && !isValid;
+
       const { data, error } = await supabase
         .from("api_keys")
         .update({
@@ -182,6 +218,7 @@ export async function PATCH(request: NextRequest) {
           is_valid: isValid,
           api_key_masked: maskApiKey(k),
           last_verified_at: isValid ? new Date().toISOString() : null,
+          ...(wasPrimaryAndNowInvalid ? { is_primary: false } : {}),
         })
         .eq("id", id).eq("user_id", userId)
         .select("id, label, api_key_masked, is_valid, spot_ok, futures_ok, is_primary, last_verified_at, created_at")
@@ -190,6 +227,13 @@ export async function PATCH(request: NextRequest) {
       if (error) {
         return NextResponse.json({ success: false, error: { message: error.message } }, { status: 500 });
       }
+
+      if (wasPrimaryAndNowInvalid) {
+        await promoteNextValidPrimaryIfNoneSet(supabase, userId);
+        // data.is_primary 上面已经被更新为 false 并返回；补选发生在其后，
+        // 若调用方需要拿到新主密钥的状态，需重新拉取列表 —— 这里保持响应即时返回本次操作结果。
+      }
+
       return NextResponse.json({ success: true, data });
     }
 

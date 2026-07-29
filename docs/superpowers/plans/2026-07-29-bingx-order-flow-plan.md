@@ -4840,6 +4840,7 @@ git commit -m "feat(admin): add trading limits configuration page"
     },
     "reject": {
       "unknown_symbol": "交易所不支持该交易对",
+      "no_market_price": "暂时无法获取市场价格，请稍后重试",
       "not_tradable": "该交易对当前暂停交易",
       "below_min_qty": "低于最小下单数量 {limit}",
       "below_min_notional": "低于最小下单金额 {limit} USDT",
@@ -4861,7 +4862,8 @@ git commit -m "feat(admin): add trading limits configuration page"
       "invalid_side": "方向不合法",
       "invalid_direction": "方向不合法",
       "invalid_tif": "有效期设置不合法",
-      "invalid_callback_rate": "回撤率需在 0 到 100 之间"
+      "invalid_callback_rate": "回撤率需在 0 到 100 之间",
+      "invalid_body": "请求格式不正确"
     }
   },
   "bingx_error": {

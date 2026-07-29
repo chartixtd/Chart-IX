@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyApiKey } from "@/lib/bingx/trade";
+import { verifyFuturesApiKey } from "@/lib/bingx/futures";
 
-/** Verify that provided BingX API credentials are valid */
+/** 分别验证现货与合约权限。任一通过即视为可用密钥 */
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -19,9 +20,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const isValid = await verifyApiKey(apiKey.trim(), secret.trim());
+    const [spotOk, futuresOk] = await Promise.all([
+      verifyApiKey(apiKey.trim(), secret.trim()),
+      verifyFuturesApiKey(apiKey.trim(), secret.trim()),
+    ]);
 
-    return NextResponse.json({ success: true, data: { isValid } });
+    return NextResponse.json({
+      success: true,
+      data: { spotOk, futuresOk, isValid: spotOk || futuresOk },
+    });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: { message: String(error) } },

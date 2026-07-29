@@ -25,7 +25,11 @@ import { useTradePrefsStore, type TradeMarketType } from "@/stores/tradePrefs";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"];
+// Primary row shown as buttons; PRIMARY ⊂ ALL. ALL mirrors BingX's supported
+// kline intervals minus "1M" (monthly), which KlineChart's live-candle bucketing
+// can't represent as a fixed-duration window.
+const PRIMARY_INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"];
+const ALL_INTERVALS = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"];
 type MarketType = TradeMarketType;
 
 // Memoized top bar — isolates ticker-driven re-renders from the rest of the page
@@ -198,7 +202,7 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
   );
 });
 
-// Memoized interval bar
+// Memoized interval bar — common intervals as buttons, the rest behind a "more" dropdown
 const IntervalBar = memo(function IntervalBar({
   interval,
   onIntervalChange,
@@ -206,9 +210,12 @@ const IntervalBar = memo(function IntervalBar({
   interval: string;
   onIntervalChange: (i: string) => void;
 }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const isPrimary = PRIMARY_INTERVALS.includes(interval);
+
   return (
-    <div className="flex items-center gap-1 px-3 py-1.5">
-      {INTERVALS.map((int) => (
+    <div className="relative flex items-center gap-1 px-3 py-1.5">
+      {PRIMARY_INTERVALS.map((int) => (
         <button
           key={int}
           onClick={() => onIntervalChange(int)}
@@ -220,6 +227,39 @@ const IntervalBar = memo(function IntervalBar({
           {int}
         </button>
       ))}
+
+      <button
+        onClick={() => setMoreOpen((o) => !o)}
+        className={cn(
+          "rounded-xs px-2 py-0.5 text-xs font-medium transition-colors",
+          !isPrimary ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
+        )}
+      >
+        {!isPrimary ? interval : "更多"} ▾
+      </button>
+
+      {moreOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
+          <div className="absolute left-0 top-full z-20 mt-1 grid w-48 grid-cols-4 gap-1 rounded-md border border-border-default bg-bg-secondary p-2 shadow-modal">
+            {ALL_INTERVALS.map((int) => (
+              <button
+                key={int}
+                onClick={() => {
+                  onIntervalChange(int);
+                  setMoreOpen(false);
+                }}
+                className={cn(
+                  "rounded-xs py-1 text-center text-xs font-medium transition-colors",
+                  interval === int ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
+                )}
+              >
+                {int}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 });

@@ -25,7 +25,11 @@ import { useLocale } from "next-intl";
 import { useKlines } from "@/hooks/useMarketData";
 import { useMarketStore } from "@/stores/market";
 import { useFeatureAccess } from "@/hooks/useFeatureFlags";
-import { computeMA, computeEMA, computeRSI, computeMACD, computeBollingerBands, computeVWAP } from "@/lib/indicators";
+import {
+  computeMA, computeEMA, computeRSI, computeMACD, computeBollingerBands, computeVWAP,
+  computeATR, computeStochastic, computeCCI, computeWilliamsR, computeOBV, computeADX,
+  computeParabolicSAR,
+} from "@/lib/indicators";
 import { cn } from "@/lib/utils";
 
 /** 图表上的进出场箭头标记 */
@@ -67,6 +71,7 @@ const INTERVAL_SECONDS: Record<string, number> = {
   "2h": 7200,
   "4h": 14400,
   "6h": 21600,
+  "8h": 28800,
   "12h": 43200,
   "1d": 86400,
   "3d": 259200,
@@ -88,6 +93,16 @@ const MACD_COLOR = "#60a5fa";
 const SIGNAL_COLOR = "#f59e0b";
 const HIST_GREEN = "#22c55e";
 const HIST_RED = "#ef4444";
+const SAR_COLOR = "#e879f9";
+const STOCH_K_COLOR = "#60a5fa";
+const STOCH_D_COLOR = "#f59e0b";
+const CCI_COLOR = "#22d3ee";
+const WILLR_COLOR = "#f472b6";
+const ATR_COLOR = "#a3e635";
+const ADX_COLOR = "#fb923c";
+const OBV_COLOR = "#38bdf8";
+
+type BottomPane = "volume" | "rsi" | "macd" | "stoch" | "cci" | "willr" | "atr" | "adx" | "obv";
 
 export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, priceLines }: KlineChartProps) {
   const locale = useLocale();
@@ -108,6 +123,14 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   const macdSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const signalSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const histogramSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const sarSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stochKSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stochDSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const cciSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const willrSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const atrSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const adxSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const obvSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const isFirstDataRef = useRef(true);
 
   // Last candle state, kept in sync so ticker updates can mutate it live
@@ -137,7 +160,8 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   const [showEMA, setShowEMA] = useState(false);
   const [showBB, setShowBB] = useState(false);
   const [showVWAP, setShowVWAP] = useState(false);
-  const [bottomPane, setBottomPane] = useState<"volume" | "rsi" | "macd">("volume");
+  const [showSAR, setShowSAR] = useState(false);
+  const [bottomPane, setBottomPane] = useState<BottomPane>("volume");
 
   // ---- Create chart once ----
   useEffect(() => {
@@ -232,6 +256,51 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       autoScale: true,
     });
 
+    const sarSeries = chart.addSeries(LineSeries, {
+      color: SAR_COLOR, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2,
+      priceLineVisible: false, lastValueVisible: false, visible: false,
+    });
+
+    const stochKSeries = chart.addSeries(LineSeries, {
+      color: STOCH_K_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "stoch", visible: false,
+    });
+    const stochDSeries = chart.addSeries(LineSeries, {
+      color: STOCH_D_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "stoch", visible: false,
+    });
+    chart.priceScale("stoch").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const cciSeries = chart.addSeries(LineSeries, {
+      color: CCI_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "cci", visible: false,
+    });
+    chart.priceScale("cci").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const willrSeries = chart.addSeries(LineSeries, {
+      color: WILLR_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "willr", visible: false,
+    });
+    chart.priceScale("willr").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const atrSeries = chart.addSeries(LineSeries, {
+      color: ATR_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "atr", visible: false,
+    });
+    chart.priceScale("atr").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const adxSeries = chart.addSeries(LineSeries, {
+      color: ADX_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "adx", visible: false,
+    });
+    chart.priceScale("adx").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
+    const obvSeries = chart.addSeries(LineSeries, {
+      color: OBV_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      priceScaleId: "obv", visible: false,
+    });
+    chart.priceScale("obv").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 }, autoScale: true });
+
     chartApiRef.current = chart;
     candleSeriesRef.current = candleSeries;
     markersPluginRef.current = createSeriesMarkers(candleSeries, []);
@@ -247,6 +316,14 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     macdSeriesRef.current = macdSeries;
     signalSeriesRef.current = signalSeries;
     histogramSeriesRef.current = histogramSeries;
+    sarSeriesRef.current = sarSeries;
+    stochKSeriesRef.current = stochKSeries;
+    stochDSeriesRef.current = stochDSeries;
+    cciSeriesRef.current = cciSeries;
+    willrSeriesRef.current = willrSeries;
+    atrSeriesRef.current = atrSeries;
+    adxSeriesRef.current = adxSeries;
+    obvSeriesRef.current = obvSeries;
 
     const ro = new ResizeObserver(() => {
       if (chartRef.current) {
@@ -277,6 +354,14 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       macdSeriesRef.current = null;
       signalSeriesRef.current = null;
       histogramSeriesRef.current = null;
+      sarSeriesRef.current = null;
+      stochKSeriesRef.current = null;
+      stochDSeriesRef.current = null;
+      cciSeriesRef.current = null;
+      willrSeriesRef.current = null;
+      atrSeriesRef.current = null;
+      adxSeriesRef.current = null;
+      obvSeriesRef.current = null;
       isFirstDataRef.current = true;
       lastCandleRef.current = null;
     };
@@ -383,6 +468,35 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     }
     histogramSeriesRef.current?.setData(histData);
 
+    // Parabolic SAR
+    const sarData = toLineData(computeParabolicSAR(highs, lows));
+    sarSeriesRef.current?.setData(sarData as LineData[]);
+
+    // Stochastic Oscillator
+    const stoch = computeStochastic(highs, lows, closes, 14, 3);
+    stochKSeriesRef.current?.setData(toLineData(stoch.k) as LineData[]);
+    stochDSeriesRef.current?.setData(toLineData(stoch.d) as LineData[]);
+
+    // CCI
+    const cciData = toLineData(computeCCI(highs, lows, closes, 20));
+    cciSeriesRef.current?.setData(cciData as LineData[]);
+
+    // Williams %R
+    const willrData = toLineData(computeWilliamsR(highs, lows, closes, 14));
+    willrSeriesRef.current?.setData(willrData as LineData[]);
+
+    // ATR
+    const atrData = toLineData(computeATR(highs, lows, closes, 14));
+    atrSeriesRef.current?.setData(atrData as LineData[]);
+
+    // ADX
+    const adxData = toLineData(computeADX(highs, lows, closes, 14));
+    adxSeriesRef.current?.setData(adxData as LineData[]);
+
+    // OBV
+    const obvData = toLineData(computeOBV(closes, volumes));
+    obvSeriesRef.current?.setData(obvData as LineData[]);
+
     // Track the last candle so live prices can extend it
     const last = valid[valid.length - 1];
     lastCandleRef.current = {
@@ -426,13 +540,32 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
 
   useEffect(() => {
     const canShow = hasAdvancedChart;
+    sarSeriesRef.current?.applyOptions({ visible: canShow && showSAR });
+  }, [showSAR, hasAdvancedChart]);
+
+  useEffect(() => {
+    const canShow = hasAdvancedChart;
     const wantRsi = canShow && bottomPane === "rsi";
     const wantMacd = canShow && bottomPane === "macd";
-    volumeSeriesRef.current?.applyOptions({ visible: !wantRsi && !wantMacd });
+    const wantStoch = canShow && bottomPane === "stoch";
+    const wantCci = canShow && bottomPane === "cci";
+    const wantWillr = canShow && bottomPane === "willr";
+    const wantAtr = canShow && bottomPane === "atr";
+    const wantAdx = canShow && bottomPane === "adx";
+    const wantObv = canShow && bottomPane === "obv";
+    const wantAnyOscillator = wantRsi || wantMacd || wantStoch || wantCci || wantWillr || wantAtr || wantAdx || wantObv;
+    volumeSeriesRef.current?.applyOptions({ visible: !wantAnyOscillator });
     rsiSeriesRef.current?.applyOptions({ visible: wantRsi });
     macdSeriesRef.current?.applyOptions({ visible: wantMacd });
     signalSeriesRef.current?.applyOptions({ visible: wantMacd });
     histogramSeriesRef.current?.applyOptions({ visible: wantMacd });
+    stochKSeriesRef.current?.applyOptions({ visible: wantStoch });
+    stochDSeriesRef.current?.applyOptions({ visible: wantStoch });
+    cciSeriesRef.current?.applyOptions({ visible: wantCci });
+    willrSeriesRef.current?.applyOptions({ visible: wantWillr });
+    atrSeriesRef.current?.applyOptions({ visible: wantAtr });
+    adxSeriesRef.current?.applyOptions({ visible: wantAdx });
+    obvSeriesRef.current?.applyOptions({ visible: wantObv });
   }, [bottomPane, hasAdvancedChart]);
 
   // ---- Drive the current candle with live ticker price (rAF-throttled) ----
@@ -585,9 +718,10 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
         {indicatorsOpen && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setIndicatorsOpen(false)} />
-            <div className="absolute left-0 top-9 z-20 w-56 rounded-md border border-border-default bg-bg-secondary p-3 text-xs shadow-modal">
+            <div className="absolute left-0 top-9 z-20 max-h-[70vh] w-64 overflow-y-auto rounded-md border border-border-default bg-bg-secondary p-3 text-xs shadow-modal">
               {hasAdvancedChart ? (
                 <div className="space-y-3">
+                  <p className="text-text-muted">叠加指标</p>
                   <label className="flex items-center justify-between">
                     <span className="text-text-secondary">MA 均线 (7 / 25)</span>
                     <input type="checkbox" checked={showMA} onChange={(e) => setShowMA(e.target.checked)} />
@@ -604,27 +738,38 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
                     <span className="text-text-secondary">VWAP</span>
                     <input type="checkbox" checked={showVWAP} onChange={(e) => setShowVWAP(e.target.checked)} />
                   </label>
-                  <div>
-                    <p className="mb-1 text-text-secondary">底部副图</p>
-                    <div className="flex rounded-xs bg-bg-tertiary p-0.5">
-                      <button
-                        onClick={() => setBottomPane("volume")}
-                        className={cn("flex-1 rounded-xs py-1", bottomPane === "volume" ? "bg-bg-primary text-text-primary" : "text-text-muted")}
-                      >
-                        成交量
-                      </button>
-                      <button
-                        onClick={() => setBottomPane("rsi")}
-                        className={cn("flex-1 rounded-xs py-1", bottomPane === "rsi" ? "bg-bg-primary text-text-primary" : "text-text-muted")}
-                      >
-                        RSI(14)
-                      </button>
-                      <button
-                        onClick={() => setBottomPane("macd")}
-                        className={cn("flex-1 rounded-xs py-1", bottomPane === "macd" ? "bg-bg-primary text-text-primary" : "text-text-muted")}
-                      >
-                        MACD
-                      </button>
+                  <label className="flex items-center justify-between">
+                    <span className="text-text-secondary">抛物线 SAR</span>
+                    <input type="checkbox" checked={showSAR} onChange={(e) => setShowSAR(e.target.checked)} />
+                  </label>
+
+                  <div className="border-t border-border-default pt-3">
+                    <p className="mb-1 text-text-muted">底部副图</p>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(
+                        [
+                          { key: "volume", label: "成交量" },
+                          { key: "rsi", label: "RSI(14)" },
+                          { key: "macd", label: "MACD" },
+                          { key: "stoch", label: "随机指标" },
+                          { key: "cci", label: "CCI(20)" },
+                          { key: "willr", label: "%R(14)" },
+                          { key: "atr", label: "ATR(14)" },
+                          { key: "adx", label: "ADX(14)" },
+                          { key: "obv", label: "OBV" },
+                        ] as { key: BottomPane; label: string }[]
+                      ).map(({ key, label }) => (
+                        <button
+                          key={key}
+                          onClick={() => setBottomPane(key)}
+                          className={cn(
+                            "rounded-xs py-1.5 text-center transition-colors",
+                            bottomPane === key ? "bg-bg-primary text-text-primary" : "bg-bg-tertiary text-text-muted hover:text-text-secondary"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>

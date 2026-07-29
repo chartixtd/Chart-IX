@@ -20,6 +20,11 @@ interface PriceFieldsProps {
   onSlPriceChange: (v: string) => void;
   showTpSl: boolean;
   onToggleTpSl: (v: boolean) => void;
+  /**
+   * 只有合约订单可以附带止盈止损对象——现货/模拟盘下单接口根本不接受这两个字段，
+   * 之前没有这个开关时它们会被无声丢弃，用户以为设置生效了但其实完全没有保护。
+   */
+  allowTpSl: boolean;
 }
 
 export function PriceFields(p: PriceFieldsProps) {
@@ -27,7 +32,7 @@ export function PriceFields(p: PriceFieldsProps) {
   const isLimit = LIMIT_TYPES.has(p.orderType);
   const isStop = STOP_TYPES.has(p.orderType);
   const isTrailing = TRAILING_TYPES.has(p.orderType);
-  const canAttachTpSl = TPSL_ATTACHABLE.has(p.orderType);
+  const canAttachTpSl = p.allowTpSl && TPSL_ATTACHABLE.has(p.orderType);
 
   return (
     <>

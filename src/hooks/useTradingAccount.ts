@@ -40,15 +40,25 @@ export function useSpotBalances(enabled = true) {
   });
 }
 
-/** 单个交易对的合约账户状态：可用保证金 + 当前/最大杠杆 + 保证金模式 + 持仓模式 */
-export function useFuturesAccount(symbol: string, enabled = true) {
+/**
+ * 单个交易对 + 方向的合约账户状态：可用保证金 + 当前/最大杠杆 + 保证金模式 + 持仓模式。
+ *
+ * `direction` 参与 queryKey：BingX 的已确认杠杆是按 symbol+positionSide 存的（见
+ * setLeverage 的 positionSide 参数），多空两侧可能持有不同的已确认杠杆。缺少
+ * direction 时切换方向不会重新拉取，会把另一侧的杠杆数字当成当前方向的已确认值，
+ * 这正是复核发现的“方向翻转后杠杆未重新确认”漏洞的根源之一。
+ */
+export function useFuturesAccount(symbol: string, direction: "LONG" | "SHORT" = "LONG", enabled = true) {
   return useQuery<FuturesAccount>({
-    queryKey: ["trading", "futures-account", symbol],
+    queryKey: ["trading", "futures-account", symbol, direction],
     queryFn: async () => {
       const [balance, leverage, mode] = await Promise.all([
         getJson<{ availableMargin: string; equity: string } | null>(
           "/api/bingx/futures/positions?type=balance"
         ),
+        // 注意：/api/bingx/futures/positions?type=leverage 目前不按 positionSide 过滤
+        // （Task 16 既有路由，超出本次修复范围）；direction 加入 queryKey 只是为了确保
+        // 切换方向时强制重新拉取一次最新数据，不与旧方向的缓存结果混用。
         getJson<{ leverage: number; maxLeverage: number; marginType: string }>(
           `/api/bingx/futures/positions?type=leverage&symbol=${encodeURIComponent(symbol)}`
         ),

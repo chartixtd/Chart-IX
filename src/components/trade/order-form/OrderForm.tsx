@@ -14,7 +14,7 @@ import { LeverageField } from "./fields/LeverageField";
 import { PriceFields } from "./fields/PriceFields";
 import { OrderPreview } from "./OrderPreview";
 import { MARKET_CONFIG, LIMIT_TYPES, STOP_TYPES, TRAILING_TYPES, type OrderFormMarket } from "./config";
-import { cn } from "@/lib/utils";
+import { cn, formatPrice } from "@/lib/utils";
 
 interface OrderFormProps {
   symbol: string;
@@ -40,6 +40,16 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
   const [slPrice, setSlPrice] = useState("");
   const [showTpSl, setShowTpSl] = useState(false);
   const [leverage, setLeverage] = useState(market === "spot" ? 1 : 10);
+  /**
+   * 已在交易所确认、且与当前方向匹配的杠杆。只由两处写入：
+   * 1) LeverageField 的 onApply 成功回读之后（handleLeverageConfirmed）；
+   * 2) useFuturesAccount 的方向感知重新拉取结果（下方 effect）。
+   * 方向切换时立即清空——BingX 的已确认杠杆是按 symbol+positionSide 存的，
+   * 上一侧确认过不代表这一侧也确认过。canSubmit() 会在合约市场强制要求
+   * confirmedLeverage 非空且方向匹配，否则禁用主按钮，从结构上杜绝
+   * "未在交易所确认的杠杆" 进入下单请求体。
+   */
+  const [confirmedLeverage, setConfirmedLeverage] = useState<{ value: number; direction: "LONG" | "SHORT" } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -52,7 +62,7 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
   const { data: paperData } = usePaperAccount(market === "paper");
   const placePaperOrder = usePlacePaperOrder();
   const { data: spotBalances } = useSpotBalances(market === "spot");
-  const { data: futuresAccount } = useFuturesAccount(symbol, market === "futures");
+  const { data: futuresAccount } = useFuturesAccount(symbol, direction, market === "futures");
 
   // 切换到不支持的订单类型时回退到市价
   const availableTypes = uiMode === "simple" ? cfg.simpleTypes : cfg.proTypes;
@@ -60,10 +70,31 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
     if (!availableTypes.includes(orderType)) setOrderType("MARKET");
   }, [availableTypes, orderType]);
 
-  // 交易所实际杠杆是权威值，UI 跟随它
+  // 交易所实际杠杆是权威值，UI 跟随它；同时把它标记为"已确认"，方向匹配才算数。
+  // 两件事必须在同一个 effect 里做完：如果拆成"同步已确认值"与"方向变化就清空"
+  // 两个独立 effect，同一次 commit 里两者都会触发，后声明的"清空"总会覆盖掉前面
+  // 刚设好的确认值——哪怕新方向的杠杆数据其实已经在缓存里、本可以立刻可信。
   useEffect(() => {
-    if (market === "futures" && futuresAccount?.leverage) setLeverage(futuresAccount.leverage);
-  }, [market, futuresAccount?.leverage]);
+    if (market !== "futures") return;
+    if (futuresAccount?.leverage) {
+      setLeverage(futuresAccount.leverage);
+      setConfirmedLeverage({ value: futuresAccount.leverage, direction });
+    } else {
+      // 该方向还没有可信数据（例如刚切换方向、新 queryKey 尚未取回）：
+      // 宁可暂时禁用提交，也不能让上一方向确认过的杠杆继续被当作"已确认"
+      setConfirmedLeverage(null);
+    }
+  }, [market, futuresAccount?.leverage, direction]);
+
+  // TP/SL 只对合约有意义（现货/模拟盘下单接口根本不接受这两个字段）；
+  // 切到不支持的市场或方向变化后残留的旧值不应该悄悄带入下一次下单
+  useEffect(() => {
+    if (market !== "futures" && showTpSl) {
+      setShowTpSl(false);
+      setTpPrice("");
+      setSlPrice("");
+    }
+  }, [market, showTpSl]);
 
   const availableUsdt = useMemo(() => {
     if (market === "paper") return paperData?.account.balance_usdt ?? 0;
@@ -89,7 +120,25 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
     if (isLimit && !(parseFloat(price) > 0)) return false;
     if (STOP_TYPES.has(orderType) && !(parseFloat(stopPrice) > 0)) return false;
     if (TRAILING_TYPES.has(orderType) && !(parseFloat(callbackPercent) > 0)) return false;
+    // 合约：杠杆必须是交易所已确认过的值，且确认时的方向要和当前方向一致
+    // （见 confirmedLeverage 的注释——这是结构性拦截，不是提示/警告）
+    if (market === "futures") {
+      if (!confirmedLeverage || confirmedLeverage.direction !== direction) return false;
+    }
+    // 附带止盈止损：非空字段必须能解析成正数；两个都留空视为"未设置"，不算错误
+    if (showTpSl) {
+      const tpValid = tpPrice.trim() === "" || parseFloat(tpPrice) > 0;
+      const slValid = slPrice.trim() === "" || parseFloat(slPrice) > 0;
+      if (!tpValid || !slValid) return false;
+    }
     return true;
+  };
+
+  const handleLeverageConfirmed = (lev: number) => {
+    setLeverage(lev);
+    // localOnly（模拟盘）也会走到这里，但模拟盘不受 confirmedLeverage 门槛约束，
+    // 只在合约市场标记为"已确认"
+    if (market === "futures") setConfirmedLeverage({ value: lev, direction });
   };
 
   const applyLeverage = async (lev: number): Promise<number> => {
@@ -115,7 +164,8 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
     setSubmitting(true);
     setResult(null);
     try {
-      if (market === "paper") {
+      if (!cfg.isLive) {
+        // 模拟盘：不涉及真实资金，走本地账本而不是任何 BingX 下单接口
         const order = await placePaperOrder.mutateAsync({
           symbol,
           side: direction === "LONG" ? "buy" : "sell",
@@ -123,7 +173,10 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
           leverage,
           ...(isLimit ? { orderType: "limit" as const, price: parseFloat(price) } : {}),
         });
-        setResult({ ok: true, message: t("trading.paper_placed", { symbol, price: order.price ?? refPrice }) });
+        setResult({
+          ok: true,
+          message: t("trading.paper_placed", { symbol, price: formatPrice(Number(order.price ?? refPrice)) }),
+        });
       } else if (market === "spot") {
         const json = await postOrder("/api/bingx/trade/order", {
           symbol, side: direction === "LONG" ? "BUY" : "SELL", type: orderType,
@@ -162,6 +215,7 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
         {(["LONG", "SHORT"] as const).map((d) => (
           <button
             key={d}
+            type="button"
             onClick={() => setDirection(d)}
             className={cn(
               "flex-1 py-2.5 text-sm font-semibold",
@@ -188,6 +242,7 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
             {(["simple", "pro"] as const).map((m) => (
               <button
                 key={m}
+                type="button"
                 onClick={() => setUiMode(m)}
                 className={cn("rounded-xs px-2 py-0.5", uiMode === m ? "bg-bg-primary text-text-primary" : "text-text-muted")}
               >
@@ -203,6 +258,7 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
             {availableTypes.map((k) => (
               <button
                 key={k}
+                type="button"
                 onClick={() => setOrderType(k)}
                 className={cn(
                   "rounded-xs py-1 text-xs font-medium",
@@ -223,7 +279,7 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
             onApply={applyLeverage}
             onApplyMarginType={market === "futures" ? applyMarginType : undefined}
             localOnly={market === "paper"}
-            onLocalChange={setLeverage}
+            onLocalChange={handleLeverageConfirmed}
           />
         )}
 
@@ -236,6 +292,7 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
           tpPrice={tpPrice} onTpPriceChange={setTpPrice}
           slPrice={slPrice} onSlPriceChange={setSlPrice}
           showTpSl={showTpSl} onToggleTpSl={setShowTpSl}
+          allowTpSl={market === "futures"}
         />
 
         <AmountField
@@ -299,15 +356,18 @@ async function postOrder(url: string, body: Record<string, unknown>) {
   return res.json();
 }
 
-/** 服务端返回 i18nKey 时优先用它翻译，否则回落到原始信息 */
+/**
+ * 服务端返回 i18nKey 时优先用它翻译，否则回落到原始信息。
+ *
+ * next-intl 的 t() 在 key 缺失时默认不抛异常——它只打印 warning 并把 key 原样
+ * 当字符串返回，所以不能用 try/catch 判断"key 是否存在"（catch 分支永远不会触发）。
+ * 两条订单路由都会用 `pre.code` 动态拼出 i18nKey（`trading.reject.${code}`），
+ * 未来新增的风控原因码在前端补齐翻译之前会命中这个分支，必须显式用 t.has() 检查。
+ */
 function translateError(json: { error?: { i18nKey?: string; message?: string; limit?: unknown } }, t: ReturnType<typeof useTranslations>): string {
   const key = json.error?.i18nKey;
-  if (key) {
-    try {
-      return t(key, { limit: String(json.error?.limit ?? "") });
-    } catch {
-      // key 缺失时回落到原文，不吞掉信息
-    }
+  if (key && t.has(key)) {
+    return t(key, { limit: String(json.error?.limit ?? "") });
   }
   return json.error?.message || "Order failed";
 }

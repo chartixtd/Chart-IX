@@ -305,7 +305,9 @@ export default function TradePage() {
   const handleTabChange = useCallback((t: string) => setRightTab(t as typeof rightTab), []);
   const openSymbolPicker = useCallback(() => setSymbolPickerOpen(true), []);
 
-  const tradePanel = <OrderForm symbol={symbol} market={market} initialSide={initialSide} />;
+  // key={market}: 切换市场必须整体重挂载 OrderForm，否则同一实例会带着上一个市场的
+  // state（尤其是杠杆）跨市场存活——模拟盘本地设置的杠杆数字会原样漏进合约表单。
+  const tradePanel = <OrderForm key={market} symbol={symbol} market={market} initialSide={initialSide} />;
 
   const ordersPanel =
     market === "spot" ? <OrdersPanel symbol={symbol} />

@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   }
   const userId = authData.user.id;
 
-  const rl = checkRateLimit(`spot-order:${userId}`, RATE_LIMITS.SPOT_TRADE);
+  const rl = await checkRateLimit(`spot-order:${userId}`, RATE_LIMITS.SPOT_TRADE);
   if (!rl.ok) {
     return NextResponse.json(
       { success: false, error: { message: "Too many orders, slow down", i18nKey: "trading.reject.rate_limited" } },

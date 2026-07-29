@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     return reject("PRO_REQUIRED", "Futures trading requires Pro subscription", 403);
   }
 
-  const rl = checkRateLimit(`futures-order:${userId}`, RATE_LIMITS.FUTURES_TRADE);
+  const rl = await checkRateLimit(`futures-order:${userId}`, RATE_LIMITS.FUTURES_TRADE);
   if (!rl.ok) {
     return NextResponse.json(
       { success: false, error: { message: "Too many orders, slow down", i18nKey: "trading.reject.rate_limited" } },

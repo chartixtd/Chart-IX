@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
+import DOMPurify from "dompurify";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -39,10 +40,15 @@ export function ArticleDetailClient({ article, isGated }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const contentHtml =
+  const rawContentHtml =
     article.content?.[locale] ??
     article.content?.["en-US"] ??
     "";
+
+  // Content is admin-authored today, but sanitize anyway: it's stored HTML
+  // rendered to every visitor, so a compromised/lower-trust admin account or
+  // future editor role shouldn't be able to turn this into stored XSS.
+  const contentHtml = useMemo(() => DOMPurify.sanitize(rawContentHtml), [rawContentHtml]);
 
   const formatDate = (dateStr: string) => {
     try {

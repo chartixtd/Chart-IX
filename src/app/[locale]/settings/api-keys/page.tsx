@@ -118,9 +118,9 @@ export default function ApiKeysPage() {
     try {
       await fetch(`/api/user/api-keys?id=${keyId}`, { method: "DELETE" });
     } catch { /* ignore */ }
+    await fetchKeys();
     setDeleting(false);
     setShowDeleteConfirm(null);
-    fetchKeys();
   };
 
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -134,8 +134,8 @@ export default function ApiKeysPage() {
         body: JSON.stringify({ id, action }),
       });
     } catch { /* refetching the list reflects true state */ }
+    await fetchKeys();
     setBusyId(null);
-    fetchKeys();
   };
 
   const formatDate = (dateStr: string) => {

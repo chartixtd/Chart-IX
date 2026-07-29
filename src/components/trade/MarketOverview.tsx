@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef, memo } from "react";
+import { useState, useMemo, useCallback, useLayoutEffect, memo } from "react";
 import { useSpotTickers } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { useMarketStore } from "@/stores/market";
@@ -134,20 +134,27 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOver
 
   // 简易窗口化：不引入虚拟滚动依赖，按滚动位置只渲染视口内 + 少量缓冲的行。
   // 行高先用估计值起步，测到第一行的真实渲染高度后替换，避免样式变动时估计值跑偏。
-  const scrollRef = useRef<HTMLDivElement>(null);
+  //
+  // scrollEl 用回调 ref（而非普通 ref + 空依赖 useEffect）来接管：可滚动的容器只在
+  // isLoading 变为 false 之后才会挂载（见下方 JSX），如果测量逻辑挂在一次性的
+  // useEffect(() => {...}, []) 里，组件首次挂载时该 div 还不存在、el 是 null，
+  // 之后 isLoading 翻转导致 div 真正出现时这个 effect 不会重新执行——
+  // viewportHeight 永远停在初始值 0，窗口化只渲染出缓冲区那几行，下面全部留白
+  // （2026-07-29 真实使用中发现：列表只显示 8 行左右，其余是空白）。
+  // 回调 ref 在 DOM 节点真正挂载/卸载时触发，不受这个时序影响。
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [rowHeight, setRowHeight] = useState(ESTIMATED_ROW_HEIGHT);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const measure = () => setViewportHeight(el.clientHeight);
+  useLayoutEffect(() => {
+    if (!scrollEl) return;
+    const measure = () => setViewportHeight(scrollEl.clientHeight);
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(el);
+    ro.observe(scrollEl);
     return () => ro.disconnect();
-  }, []);
+  }, [scrollEl]);
 
   const measureFirstRow = useCallback((el: HTMLDivElement | null) => {
     if (el) setRowHeight(el.getBoundingClientRect().height || ESTIMATED_ROW_HEIGHT);
@@ -212,7 +219,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOver
             <LoadingDummy />
           ) : (
             <div
-              ref={scrollRef}
+              ref={setScrollEl}
               onScroll={handleScroll}
               className="flex-1 overflow-y-auto custom-scrollbar"
             >

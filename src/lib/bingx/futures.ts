@@ -190,10 +190,15 @@ export async function getFuturesPositions(
 ): Promise<FuturesPosition[]> {
   const params: Record<string, string> = {};
   if (symbol) params.symbol = symbol;
-  const res = await signedRequest<{ positions: FuturesPosition[] }>(
+  // BingX 文档：GET /openApi/swap/v2/user/positions 的 data 直接是持仓数组，
+  // 不是 { positions: [...] } 包装。此前按包装形状解析，导致 res.positions
+  // 在真实数组上恒为 undefined，函数无论账户是否有持仓都返回空数组——
+  // 2026-07-29 真实下单测试中发现：BingX 上能看到仓位，网站上一直显示空。
+  const res = await signedRequest<FuturesPosition[] | { positions: FuturesPosition[] }>(
     apiKey, secret, "GET", "/openApi/swap/v2/user/positions", params
   );
-  return res.positions || [];
+  if (Array.isArray(res)) return res;
+  return res?.positions || [];
 }
 
 export async function getPositionHistory(
@@ -230,9 +235,20 @@ export async function setPositionTpSl(
 
 // ==================== 杠杆 & 保证金模式 ====================
 
+/**
+ * BingX 的 GET 与 POST /openApi/swap/v2/trade/leverage 返回的字段形状不一样：
+ * POST（设置杠杆）返回扁平的 { leverage }；这个 GET（查询杠杆）按多空分开返回
+ * { longLeverage, shortLeverage, maxLongLeverage, maxShortLeverage }，没有
+ * 统一的 leverage/maxLeverage 字段。此前误按 POST 的形状声明类型，导致
+ * lev.leverage 恒为 undefined，一路传导到前端变成 NaN（2026-07-29 真实下单
+ * 测试中发现：点击仓位价值百分比按钮显示 NaN）。
+ */
 export async function getLeverage(
   apiKey: string, secret: string, symbol: string
-): Promise<{ leverage: number; maxLeverage: number }> {
+): Promise<{
+  longLeverage: number; shortLeverage: number;
+  maxLongLeverage: number; maxShortLeverage: number;
+}> {
   return signedRequest(apiKey, secret, "GET", "/openApi/swap/v2/trade/leverage", { symbol });
 }
 

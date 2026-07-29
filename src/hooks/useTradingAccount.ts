@@ -56,11 +56,9 @@ export function useFuturesAccount(symbol: string, direction: "LONG" | "SHORT" = 
         getJson<{ availableMargin: string; equity: string } | null>(
           "/api/bingx/futures/positions?type=balance"
         ),
-        // 注意：/api/bingx/futures/positions?type=leverage 目前不按 positionSide 过滤
-        // （Task 16 既有路由，超出本次修复范围）；direction 加入 queryKey 只是为了确保
-        // 切换方向时强制重新拉取一次最新数据，不与旧方向的缓存结果混用。
+        // route 现在按 side 参数选多空对应的杠杆字段（BingX 的查询接口按多空分开返回）
         getJson<{ leverage: number; maxLeverage: number; marginType: string }>(
-          `/api/bingx/futures/positions?type=leverage&symbol=${encodeURIComponent(symbol)}`
+          `/api/bingx/futures/positions?type=leverage&symbol=${encodeURIComponent(symbol)}&side=${direction}`
         ),
         getJson<{ dualSidePosition: boolean }>("/api/bingx/futures/positions?type=accountMode"),
       ]);

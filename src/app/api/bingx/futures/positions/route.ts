@@ -52,13 +52,18 @@ export async function GET(request: NextRequest) {
           { status: 400 }
         );
       }
+      // BingX 的查询接口按多空分开返回杠杆，客户端传方向来选对应的一侧；
+      // 缺省当 LONG 处理（对单向持仓账户，long/short 字段实际是同一个值）
+      const side = searchParams.get("side") === "SHORT" ? "SHORT" : "LONG";
       const [lev, margin] = await Promise.all([
         getLeverage(apiKey, secret, symbol),
         getMarginType(apiKey, secret, symbol).catch(() => ({ marginType: "" })),
       ]);
+      const leverage = side === "SHORT" ? lev.shortLeverage : lev.longLeverage;
+      const maxLeverage = side === "SHORT" ? lev.maxShortLeverage : lev.maxLongLeverage;
       return NextResponse.json({
         success: true,
-        data: { leverage: lev.leverage, maxLeverage: lev.maxLeverage, marginType: margin.marginType },
+        data: { leverage, maxLeverage, marginType: margin.marginType },
       });
     }
 
@@ -126,11 +131,15 @@ export async function POST(request: NextRequest) {
             );
           }
           await setLeverage(apiKey, secret, symbol, Math.floor(lev), positionSide);
-          // 回读交易所实际值，前端据此显示而非乐观假设
+          // 回读交易所实际值，前端据此显示而非乐观假设；GET 查询接口按多空分开返回，
+          // 用刚才设置的方向选对应字段（positionSide 为 BOTH 时视为 LONG，单向持仓下
+          // long/short 字段本就是同一个值）
           const applied = await getLeverage(apiKey, secret, symbol);
+          const appliedLeverage = positionSide === "SHORT" ? applied.shortLeverage : applied.longLeverage;
+          const appliedMaxLeverage = positionSide === "SHORT" ? applied.maxShortLeverage : applied.maxLongLeverage;
           return NextResponse.json({
             success: true,
-            data: { leverage: applied.leverage, maxLeverage: applied.maxLeverage },
+            data: { leverage: appliedLeverage, maxLeverage: appliedMaxLeverage },
           });
         }
         case "setMarginType": {

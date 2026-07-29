@@ -1,3 +1,26 @@
+/**
+ * DIRECTION CONTRACT — "我的主页" restructure (surface-level, established world)
+ * THESIS: this is a private-bank statement of one account, not a card-grid
+ *   dashboard. It refuses the four-tile-plus-emoji-stats pattern the page
+ *   shipped with. One account, one ledger, one page — read top to bottom
+ *   like a monthly statement, not scanned as a grid of widgets.
+ * OWN-WORLD: inherits DESIGN.md as-is — warm charcoal ground, engraved
+ *   champagne gold, Marcellus display for the headline figure, hairline-gold
+ *   rules dividing sections instead of card borders, JetBrains Mono for every
+ *   figure. No emoji, no colored pill stat tiles, no card-grid page structure.
+ * STORY: visitor understands this is their account statement, not a widget
+ *   board; believes their standing (paper equity, real trading activity,
+ *   learning progress) is being tracked precisely; acts by continuing to
+ *   trade, learn, or review a specific entry.
+ * FIRST VIEWPORT: masthead (greeting + statement period) → hairline → Account
+ *   Summary (oversized mono equity figure, ruled sub-line items) → hairline →
+ *   unified chronological Ledger merging real trade fills and achievement
+ *   unlocks → hairline → Continue Learning / Watchlist two-up → hairline →
+ *   Latest Content two-up.
+ * FORM: surface-level restructure inside the established world (new-work.md
+ *   §3, "create a whole surface inside an established world"); no new tokens,
+ *   no DESIGN.md change.
+ */
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
@@ -10,13 +33,12 @@ import { useMarketStore } from "@/stores/market";
 import { usePaperAccount } from "@/hooks/usePaperTrading";
 import { useAchievements } from "@/hooks/useAchievements";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
-import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ShareCardModal } from "@/components/dashboard/ShareCardModal";
-import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
+import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { Video, Article, Locale, Order } from "@/types";
 
@@ -26,6 +48,10 @@ interface ContinueWatchingItem {
   completed: boolean;
   video: Pick<Video, "id" | "title" | "duration_seconds" | "thumbnail_url"> | null;
 }
+
+type LedgerEntry =
+  | { kind: "trade"; id: string; date: string; order: Order }
+  | { kind: "achievement"; id: string; date: string; title: string; icon: string };
 
 export default function DashboardPage() {
   const t = useTranslations("dashboard");
@@ -105,17 +131,12 @@ export default function DashboardPage() {
 
   const tradeStats = useMemo(() => {
     const filled = filledOrders;
-    const allOrders = orders ?? [];
     const totalTrades = filled.length;
     const totalVolume = filled.reduce((sum, o) => sum + (o.total_value ?? 0), 0);
     const totalFees = filled.reduce((sum, o) => sum + (o.fee ?? 0), 0);
-    const totalOrders = allOrders.length;
-    const fillRate = totalOrders > 0 ? (totalTrades / totalOrders) * 100 : 0;
     const sellTotal = filled.filter((o) => o.side === "sell").reduce((sum, o) => sum + (o.total_value ?? 0), 0);
     const buyTotal = filled.filter((o) => o.side === "buy").reduce((sum, o) => sum + (o.total_value ?? 0), 0);
     const netPnl = sellTotal - buyTotal - totalFees;
-    const winningTrades = filled.filter((o) => o.side === "sell").length;
-    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
     const pairCounts: Record<string, number> = {};
     filled.forEach((o) => {
       pairCounts[o.symbol] = (pairCounts[o.symbol] ?? 0) + 1;
@@ -125,16 +146,45 @@ export default function DashboardPage() {
     for (const [pair, count] of Object.entries(pairCounts)) {
       if (count > maxCount) { maxCount = count; mostTradedPair = pair; }
     }
-    return { totalTrades, totalVolume, totalFees, netPnl, winRate, fillRate, totalOrders, mostTradedPair, maxCount };
-  }, [filledOrders, orders]);
+    return { totalTrades, totalVolume, totalFees, netPnl, mostTradedPair, maxCount };
+  }, [filledOrders]);
+
+  // 统一台账：实盘成交 + 成就解锁，按时间倒序合并，只取最近一段
+  const ledger = useMemo<LedgerEntry[]>(() => {
+    const tradeEntries: LedgerEntry[] = filledOrders.map((o) => ({
+      kind: "trade",
+      id: `trade-${o.id}`,
+      date: o.created_at,
+      order: o,
+    }));
+    const achievementEntries: LedgerEntry[] = (achievements ?? [])
+      .filter((a) => a.earned && a.earnedAt)
+      .map((a) => ({
+        kind: "achievement",
+        id: `ach-${a.key}`,
+        date: a.earnedAt as string,
+        title: a.title[locale] ?? a.title["en-US"],
+        icon: a.icon,
+      }));
+    return [...tradeEntries, ...achievementEntries]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 8);
+  }, [filledOrders, achievements, locale]);
+
+  const statementPeriod = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat(locale, { year: "numeric", month: "long" }).format(new Date());
+    } catch {
+      return "";
+    }
+  }, [locale]);
 
   if (auth.loading) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-10">
+      <div className="mx-auto max-w-5xl px-4 py-12">
         <Skeleton className="h-8 w-64" />
-        <div className="mt-8 grid gap-6 lg:grid-cols-3">
-          <Skeleton className="h-40" />
-          <Skeleton className="h-40" />
+        <div className="mt-10 space-y-6">
+          <Skeleton className="h-24" />
           <Skeleton className="h-40" />
         </div>
       </div>
@@ -143,7 +193,7 @@ export default function DashboardPage() {
 
   if (!auth.userId) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-16">
+      <div className="mx-auto max-w-5xl px-4 py-16">
         <EmptyState
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className="h-10 w-10 text-gold">
@@ -163,36 +213,45 @@ export default function DashboardPage() {
     );
   }
 
-  return (
-    <div className="mx-auto max-w-7xl px-4 py-12">
-      <h1 className="font-display text-3xl tracking-tight text-text-primary">
-        {t("welcome")}{(auth.displayName || auth.email?.split("@")[0]) ? `, ${auth.displayName || auth.email?.split("@")[0]}` : ""}
-      </h1>
-      <div className="hairline-gold mt-5 w-full max-w-[220px] opacity-60" />
+  const displayName = auth.displayName || auth.email?.split("@")[0];
 
-      <div className="mt-10 grid gap-6 lg:grid-cols-4">
-        {/* Paper trading performance */}
-        <Card>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">{t("paper_title")}</h2>
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-12 lg:py-16">
+      {/* Masthead */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <h1 className="font-display text-3xl tracking-tight text-text-primary">
+          {t("welcome")}{displayName ? `, ${displayName}` : ""}
+        </h1>
+        {statementPeriod && (
+          <p className="font-mono text-xs uppercase tracking-wider text-text-muted">
+            对账区间 · {statementPeriod}
+          </p>
+        )}
+      </div>
+      <div className="hairline-gold mt-5" />
+
+      {/* Account Summary */}
+      <section className="mt-10">
+        <p className="text-xs font-semibold uppercase tracking-[0.15em] text-text-muted">
+          {t("paper_title")}
+        </p>
+
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
           {paperLoading ? (
-            <Skeleton className="mt-3 h-16" />
+            <Skeleton className="h-14 w-64" />
           ) : (
-            <>
-              <div className="mt-3 text-2xl font-bold text-text-primary">
-                {formatPrice(paperTotalValue)} <span className="text-sm font-normal text-text-muted">USDT</span>
+            <div>
+              <div className="font-display text-5xl tracking-tight text-text-primary tabular-nums md:text-6xl">
+                {formatPrice(paperTotalValue)}
+                <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
               </div>
-              <div className={cn("mt-1 text-sm font-medium", paperPnl >= 0 ? "text-success" : "text-danger")}>
-                {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)} ({formatPercent(paperPnlPct)})
+              <div className={cn("mt-2 font-mono text-sm font-medium", paperPnl >= 0 ? "text-success" : "text-danger")}>
+                {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)} USDT ({formatPercent(paperPnlPct)}) 累计
               </div>
-              <div className="mt-3 text-xs text-text-muted">
-                {t("paper_balance")}: {formatPrice(paperData?.account.balance_usdt ?? 0)} USDT
-              </div>
-            </>
+            </div>
           )}
-          <div className="mt-4 flex items-center justify-between">
-            <Link href={`/${locale}/trade`} className="text-xs font-medium text-gold hover:underline">
-              {t("paper_cta")} →
-            </Link>
+
+          <div className="flex items-center gap-3">
             {paperData && (
               <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
@@ -202,113 +261,162 @@ export default function DashboardPage() {
                 分享
               </Button>
             )}
-          </div>
-        </Card>
-
-        {/* Trade P&L */}
-        <Card>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">交易盈亏</h2>
-          {orders === null ? (
-            <Skeleton className="mt-3 h-16" />
-          ) : filledOrders.length === 0 ? (
-            <div className="mt-3">
-              <p className="text-sm text-text-muted">暂无交易数据</p>
-            </div>
-          ) : (
-            <>
-              <div className="mt-3 text-2xl font-bold text-text-primary">
-                {formatPrice(tradeStats.totalVolume)} <span className="text-sm font-normal text-text-muted">USDT</span>
-              </div>
-              <div className={cn("mt-1 text-sm font-medium", tradeStats.netPnl >= 0 ? "text-success" : "text-danger")}>
-                净额 {tradeStats.netPnl >= 0 ? "+" : ""}{formatPrice(tradeStats.netPnl)} USDT
-              </div>
-              <div className="mt-3 space-y-0.5 text-xs text-text-muted">
-                <div>已成交 <span className="text-text-secondary font-medium">{tradeStats.totalTrades}</span> 笔</div>
-                <div>手续费 {formatPrice(tradeStats.totalFees)} USDT</div>
-              </div>
-            </>
-          )}
-          <div className="mt-4">
-            <Link href={`/${locale}/orders`} className="text-xs font-medium text-gold hover:underline">
-              查看订单 →
+            <Link href={`/${locale}/trade`} className="text-xs font-medium text-gold hover:underline">
+              {t("paper_cta")} →
             </Link>
           </div>
-        </Card>
+        </div>
 
-        {/* Favorites */}
-        <Card>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">{t("favorites_title")}</h2>
-          {favorites.length === 0 ? (
-            <div className="mt-3">
-              <p className="text-xs text-text-muted">{t("favorites_empty")}</p>
-              <Link href={`/${locale}/trade`} className="mt-2 inline-block text-xs font-medium text-gold hover:underline">
-                {t("favorites_cta")} →
-              </Link>
-            </div>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {favorites.slice(0, 5).map((symbol) => (
-                <FavoriteRow key={symbol} symbol={symbol} locale={locale} />
-              ))}
-            </div>
-          )}
-        </Card>
+        {/* Ruled sub-line items */}
+        <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-border-default pt-5 font-mono text-sm sm:grid-cols-4">
+          <div>
+            <dt className="text-xs text-text-muted">{t("paper_balance")}</dt>
+            <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(paperData?.account.balance_usdt ?? 0)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-text-muted">实盘成交额</dt>
+            <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(tradeStats.totalVolume)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-text-muted">实盘净额</dt>
+            <dd className={cn("mt-1 tabular-nums", tradeStats.netPnl >= 0 ? "text-success" : "text-danger")}>
+              {tradeStats.netPnl >= 0 ? "+" : ""}{formatPrice(tradeStats.netPnl)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-text-muted">最常交易对</dt>
+            <dd className="mt-1 tabular-nums text-text-primary">
+              {tradeStats.mostTradedPair || "—"}
+              {tradeStats.maxCount > 0 && <span className="text-text-muted"> ×{tradeStats.maxCount}</span>}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
-        {/* Continue learning */}
-        <Card>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">{t("continue_learning_title")}</h2>
-          {continueWatching === null ? (
-            <Skeleton className="mt-3 h-16" />
-          ) : continueWatching.length === 0 ? (
-            <div className="mt-3">
-              <p className="text-xs text-text-muted">{t("continue_learning_empty")}</p>
-              <Link href={`/${locale}/videos`} className="mt-2 inline-block text-xs font-medium text-gold hover:underline">
-                {t("continue_learning_cta")} →
-              </Link>
-            </div>
-          ) : (
-            <div className="mt-3 space-y-3">
-              {continueWatching.map((item) => {
+      <div className="hairline-gold mt-10" />
+
+      {/* Unified ledger */}
+      <section className="mt-10">
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-display text-xl tracking-tight text-text-primary">本期台账</h2>
+          <Link href={`/${locale}/orders`} className="text-xs font-medium text-gold hover:underline">
+            查看全部订单 →
+          </Link>
+        </div>
+
+        {orders === null ? (
+          <div className="mt-5 space-y-3">
+            <Skeleton className="h-10" />
+            <Skeleton className="h-10" />
+            <Skeleton className="h-10" />
+          </div>
+        ) : ledger.length === 0 ? (
+          <p className="mt-5 border-y border-border-default py-6 text-center text-sm text-text-muted">
+            暂无交易或成就记录，去模拟盘练一笔，或完成一节课解锁第一个成就。
+          </p>
+        ) : (
+          <div className="mt-5 divide-y divide-border-default border-y border-border-default">
+            {ledger.map((entry) => (
+              <LedgerRow key={entry.id} entry={entry} locale={locale} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="hairline-gold mt-10" />
+
+      {/* Continue learning + watchlist */}
+      <section className="mt-10 grid gap-10 lg:grid-cols-2">
+        <div>
+          <div className="flex items-baseline justify-between">
+            <h2 className="font-display text-xl tracking-tight text-text-primary">{t("continue_learning_title")}</h2>
+            <Link href={`/${locale}/videos`} className="text-xs text-text-muted hover:text-gold">→</Link>
+          </div>
+          <div className="mt-4 border-t border-border-default">
+            {continueWatching === null ? (
+              <Skeleton className="mt-4 h-16" />
+            ) : continueWatching.length === 0 ? (
+              <div className="pt-4">
+                <p className="text-xs text-text-muted">{t("continue_learning_empty")}</p>
+                <Link href={`/${locale}/videos`} className="mt-2 inline-block text-xs font-medium text-gold hover:underline">
+                  {t("continue_learning_cta")} →
+                </Link>
+              </div>
+            ) : (
+              continueWatching.map((item) => {
                 if (!item.video) return null;
                 const pct = item.video.duration_seconds > 0
                   ? Math.min(100, Math.round((item.progress_seconds / item.video.duration_seconds) * 100))
                   : 0;
                 return (
-                  <Link key={item.video_id} href={`/${locale}/videos/${item.video_id}`} className="block group">
-                    <p className="truncate text-xs font-medium text-text-primary group-hover:text-gold">
+                  <Link
+                    key={item.video_id}
+                    href={`/${locale}/videos/${item.video_id}`}
+                    className="group flex items-center justify-between gap-4 border-b border-border-default py-3 first:pt-4"
+                  >
+                    <span className="truncate text-sm text-text-secondary group-hover:text-gold">
                       {item.video.title[locale] ?? item.video.title["en-US"]}
-                    </p>
-                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-bg-tertiary">
-                      <div className="h-full rounded-full bg-gold" style={{ width: `${pct}%` }} />
-                    </div>
-                    <p className="mt-0.5 text-xs text-text-muted">{t("progress_percent", { percent: pct })}</p>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="h-1 w-16 overflow-hidden rounded-full bg-bg-tertiary">
+                        <span className="block h-full rounded-full bg-gold" style={{ width: `${pct}%` }} />
+                      </span>
+                      <span className="font-mono text-xs tabular-nums text-text-muted">{pct}%</span>
+                    </span>
                   </Link>
                 );
-              })}
-            </div>
-          )}
-        </Card>
-      </div>
+              })
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-baseline justify-between">
+            <h2 className="font-display text-xl tracking-tight text-text-primary">{t("favorites_title")}</h2>
+            <Link href={`/${locale}/trade`} className="text-xs text-text-muted hover:text-gold">→</Link>
+          </div>
+          <div className="mt-4 border-t border-border-default">
+            {favorites.length === 0 ? (
+              <div className="pt-4">
+                <p className="text-xs text-text-muted">{t("favorites_empty")}</p>
+                <Link href={`/${locale}/trade`} className="mt-2 inline-block text-xs font-medium text-gold hover:underline">
+                  {t("favorites_cta")} →
+                </Link>
+              </div>
+            ) : (
+              favorites.slice(0, 5).map((symbol) => (
+                <FavoriteRow key={symbol} symbol={symbol} locale={locale} />
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+
+      <div className="hairline-gold mt-10" />
 
       {/* Latest content */}
-      <div className="mt-10 grid gap-6 lg:grid-cols-2">
+      <section className="mt-10 grid gap-10 lg:grid-cols-2">
         <div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-baseline justify-between">
             <h2 className="font-display text-xl tracking-tight text-text-primary">{t("latest_videos_title")}</h2>
             <Link href={`/${locale}/videos`} className="text-xs text-text-muted hover:text-gold">→</Link>
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="mt-4 border-t border-border-default">
             {latestVideos === null ? (
-              <Skeleton className="h-24" />
+              <Skeleton className="mt-4 h-24" />
             ) : (
               latestVideos.map((video) => (
-                <Link key={video.id} href={`/${locale}/videos/${video.id}`} className="flex items-center gap-3 rounded-sm p-2 hover:bg-bg-tertiary">
+                <Link
+                  key={video.id}
+                  href={`/${locale}/videos/${video.id}`}
+                  className="flex items-center gap-3 border-b border-border-default py-3 first:pt-4"
+                >
                   <div className="h-10 w-16 shrink-0 overflow-hidden rounded-sm bg-bg-tertiary">
                     {video.thumbnail_url && (
                       <img src={video.thumbnail_url} alt="" className="h-full w-full object-cover" />
                     )}
                   </div>
-                  <span className="truncate text-sm text-text-secondary">
+                  <span className="truncate text-sm text-text-secondary hover:text-gold">
                     {video.title[locale] ?? video.title["en-US"]}
                   </span>
                 </Link>
@@ -318,17 +426,21 @@ export default function DashboardPage() {
         </div>
 
         <div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-baseline justify-between">
             <h2 className="font-display text-xl tracking-tight text-text-primary">{t("latest_articles_title")}</h2>
             <Link href={`/${locale}/articles`} className="text-xs text-text-muted hover:text-gold">→</Link>
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="mt-4 border-t border-border-default">
             {latestArticles === null ? (
-              <Skeleton className="h-24" />
+              <Skeleton className="mt-4 h-24" />
             ) : (
               latestArticles.map((article) => (
-                <Link key={article.id} href={`/${locale}/articles/${article.slug}`} className="block rounded-sm p-2 hover:bg-bg-tertiary">
-                  <span className="truncate text-sm text-text-secondary">
+                <Link
+                  key={article.id}
+                  href={`/${locale}/articles/${article.slug}`}
+                  className="block border-b border-border-default py-3 first:pt-4"
+                >
+                  <span className="truncate text-sm text-text-secondary hover:text-gold">
                     {article.title[locale] ?? article.title["en-US"]}
                   </span>
                 </Link>
@@ -336,86 +448,44 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Trading Statistics */}
-      {orders !== null && filledOrders.length > 0 && (
-        <div className="mt-10">
-          <h2 className="font-display text-xl tracking-tight text-text-primary">交易统计</h2>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Card padding="sm" className="flex items-center gap-3">
-              <span className="text-xl">📊</span>
-              <div>
-                <p className="text-xs text-text-muted">总交易次数</p>
-                <p className="text-lg font-bold text-text-primary">{tradeStats.totalTrades}</p>
-              </div>
-            </Card>
-            <Card padding="sm" className="flex items-center gap-3">
-              <span className="text-xl">✅</span>
-              <div>
-                <p className="text-xs text-text-muted">成交率</p>
-                <p className="text-lg font-bold text-text-primary">{formatNumber(tradeStats.fillRate, 1)}%</p>
-              </div>
-            </Card>
-            <Card padding="sm" className="flex items-center gap-3">
-              <span className="text-xl">🏆</span>
-              <div>
-                <p className="text-xs text-text-muted">胜率</p>
-                <p className="text-lg font-bold text-text-primary">{formatNumber(tradeStats.winRate, 1)}%</p>
-              </div>
-            </Card>
-            <Card padding="sm" className="flex items-center gap-3">
-              <span className="text-xl">💰</span>
-              <div>
-                <p className="text-xs text-text-muted">总成交量</p>
-                <p className="text-lg font-bold text-text-primary">{formatPrice(tradeStats.totalVolume)} USDT</p>
-              </div>
-            </Card>
-            <Card padding="sm" className="flex items-center gap-3">
-              <span className="text-xl">🧾</span>
-              <div>
-                <p className="text-xs text-text-muted">总手续费</p>
-                <p className="text-lg font-bold text-text-primary">{formatPrice(tradeStats.totalFees)} USDT</p>
-              </div>
-            </Card>
-            <Card padding="sm" className="flex items-center gap-3">
-              <span className="text-xl">🔥</span>
-              <div>
-                <p className="text-xs text-text-muted">最常交易对</p>
-                <p className="text-lg font-bold text-text-primary">
-                  {tradeStats.mostTradedPair || "—"}
-                  {tradeStats.maxCount > 0 && (
-                    <span className="ml-1 text-xs font-normal text-text-muted">×{tradeStats.maxCount}</span>
-                  )}
-                </p>
-              </div>
-            </Card>
-          </div>
-        </div>
-      )}
-
-      {/* Achievements */}
-      {achievements && achievements.some((a) => a.earned) && (
-        <div className="mt-10">
-          <h2 className="font-display text-xl tracking-tight text-text-primary">{t("achievements_title")}</h2>
-          <div className="mt-3 flex flex-wrap gap-3">
-            {achievements.map((a) => (
-              <div
-                key={a.key}
-                title={a.description?.[locale] ?? a.description?.["en-US"] ?? ""}
-                className={cn(
-                  "flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs",
-                  a.earned
-                    ? "border-gold/40 bg-gold/10 text-gold"
-                    : "border-border-default text-text-muted opacity-40"
-                )}
-              >
-                <span>{a.icon}</span>
-                <span>{a.title[locale] ?? a.title["en-US"]}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Achievements — restrained seal row, not a colored pill wall */}
+      {achievements && achievements.length > 0 && (
+        <>
+          <div className="hairline-gold mt-10" />
+          <section className="mt-10">
+            <div className="flex items-baseline justify-between">
+              <h2 className="font-display text-xl tracking-tight text-text-primary">{t("achievements_title")}</h2>
+              <span className="font-mono text-xs tabular-nums text-text-muted">
+                {achievements.filter((a) => a.earned).length}/{achievements.length}
+              </span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-4">
+              {achievements.map((a) => (
+                <div
+                  key={a.key}
+                  title={a.description?.[locale] ?? a.description?.["en-US"] ?? ""}
+                  className="flex w-20 flex-col items-center gap-1.5 text-center"
+                >
+                  <span
+                    className={cn(
+                      "flex h-11 w-11 items-center justify-center rounded-full border text-base",
+                      a.earned
+                        ? "border-gold/50 bg-gold/10 shadow-[0_0_0_1px_rgba(201,162,75,0.15)]"
+                        : "border-border-default text-text-muted grayscale opacity-35"
+                    )}
+                  >
+                    {a.icon}
+                  </span>
+                  <span className={cn("text-[11px] leading-tight", a.earned ? "text-text-secondary" : "text-text-muted")}>
+                    {a.title[locale] ?? a.title["en-US"]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
       )}
 
       {paperData && (
@@ -432,11 +502,55 @@ export default function DashboardPage() {
   );
 }
 
+function LedgerRow({ entry, locale }: { entry: LedgerEntry; locale: string }) {
+  const date = new Intl.DateTimeFormat(locale, { month: "2-digit", day: "2-digit" }).format(new Date(entry.date));
+
+  if (entry.kind === "achievement") {
+    return (
+      <div className="flex items-center justify-between gap-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs tabular-nums text-text-muted">{date}</span>
+          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-gold/50 bg-gold/10 text-[11px] text-gold">
+            ✓
+          </span>
+          <span className="text-sm text-text-primary">解锁成就 · {entry.title}</span>
+        </div>
+        <span className="font-mono text-xs text-text-muted">—</span>
+      </div>
+    );
+  }
+
+  const o = entry.order;
+  const isBuy = o.side === "buy";
+  const marketLabel = o.market_type === "spot" ? "现货" : "合约";
+
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-xs tabular-nums text-text-muted">{date}</span>
+        <span
+          className={cn(
+            "rounded-sm border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+            isBuy ? "border-success/40 text-success" : "border-danger/40 text-danger"
+          )}
+        >
+          {isBuy ? "买入" : "卖出"}
+        </span>
+        <span className="text-sm text-text-primary">{o.symbol}</span>
+        <span className="text-xs text-text-muted">{marketLabel}</span>
+      </div>
+      <span className="font-mono text-sm tabular-nums text-text-secondary">
+        {o.total_value != null ? `${formatPrice(o.total_value)} USDT` : "—"}
+      </span>
+    </div>
+  );
+}
+
 function FavoriteRow({ symbol, locale }: { symbol: string; locale: string }) {
   const ticker = useMarketStore((s) => s.tickers[symbol]);
   if (!ticker) {
     return (
-      <div className="flex items-center justify-between text-xs">
+      <div className="flex items-center justify-between border-b border-border-default py-3 first:pt-4 text-xs">
         <span className="font-medium text-text-primary">{symbol}</span>
         <span className="text-text-muted">—</span>
       </div>
@@ -444,9 +558,12 @@ function FavoriteRow({ symbol, locale }: { symbol: string; locale: string }) {
   }
   const isPositive = parseFloat(ticker.priceChangePercent) >= 0;
   return (
-    <Link href={`/${locale}/trade`} className="flex items-center justify-between text-xs hover:text-gold">
+    <Link
+      href={`/${locale}/trade`}
+      className="flex items-center justify-between border-b border-border-default py-3 first:pt-4 text-xs hover:text-gold"
+    >
       <span className="font-medium text-text-primary">{symbol}</span>
-      <span className="flex items-center gap-2">
+      <span className="flex items-center gap-3 font-mono">
         <span className="tabular-nums text-text-secondary">{formatPrice(Number(ticker.lastPrice))}</span>
         <span className={cn("tabular-nums font-medium", isPositive ? "text-success" : "text-danger")}>
           {formatPercent(parseFloat(ticker.priceChangePercent))}

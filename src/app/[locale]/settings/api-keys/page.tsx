@@ -11,12 +11,15 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { createClient } from "@/lib/supabase/client";
-import { maskApiKey } from "@/lib/utils";
 
 interface ApiKeyRow {
   id: string;
   label: string;
+  api_key_masked: string | null;
   is_valid: boolean;
+  spot_ok: boolean | null;
+  futures_ok: boolean | null;
+  is_primary: boolean;
   last_verified_at: string | null;
   created_at: string;
 }
@@ -56,7 +59,7 @@ export default function ApiKeysPage() {
 
     const { data, error: fetchError } = await supabase
       .from("api_keys")
-      .select("id, label, is_valid, last_verified_at, created_at")
+      .select("id, label, api_key_masked, is_valid, spot_ok, futures_ok, is_primary, last_verified_at, created_at")
       .eq("user_id", userData.user.id)
       .order("created_at", { ascending: false });
 
@@ -120,6 +123,21 @@ export default function ApiKeysPage() {
     fetchKeys();
   };
 
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const patchKey = async (id: string, action: "setPrimary" | "reverify") => {
+    setBusyId(id);
+    try {
+      await fetch("/api/user/api-keys", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action }),
+      });
+    } catch { /* refetching the list reflects true state */ }
+    setBusyId(null);
+    fetchKeys();
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString(locale, {
@@ -164,18 +182,45 @@ export default function ApiKeysPage() {
             <Card key={key.id} padding="md">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1 space-y-2">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-sm font-semibold text-text-primary truncate">{key.label}</h3>
-                    <Badge variant={key.is_valid ? "green" : "red"} size="sm">
-                      {key.is_valid ? t("verified") : t("invalid")}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="truncate text-sm font-semibold text-text-primary">{key.label}</h3>
+                    {key.is_primary && (
+                      <Badge variant="gold" size="sm">{t("primary")}</Badge>
+                    )}
+                    {/* spot and futures permissions shown separately: a key with only futures enabled shouldn't be lumped in as "invalid" */}
+                    <Badge variant={key.spot_ok ? "green" : "red"} size="sm">
+                      {t("spot")} {key.spot_ok ? "✓" : "✗"}
+                    </Badge>
+                    <Badge variant={key.futures_ok ? "green" : "red"} size="sm">
+                      {t("futures")} {key.futures_ok ? "✓" : "✗"}
                     </Badge>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-sm font-mono text-text-secondary">{maskApiKey("encrypted")}</p>
+                    <p className="font-mono text-sm text-text-secondary">
+                      {key.api_key_masked ?? t("masked_unavailable")}
+                    </p>
                     <p className="text-xs text-text-muted">
                       {t("added")}: {formatDate(key.created_at)}
                       {key.last_verified_at && ` · ${t("verified")}: ${formatDate(key.last_verified_at)}`}
                     </p>
+                  </div>
+                  <div className="flex gap-3 text-xs">
+                    <button
+                      onClick={() => patchKey(key.id, "reverify")}
+                      disabled={busyId === key.id}
+                      className="text-text-muted hover:text-gold disabled:opacity-50"
+                    >
+                      {busyId === key.id ? t("validating") : t("reverify")}
+                    </button>
+                    {!key.is_primary && (
+                      <button
+                        onClick={() => patchKey(key.id, "setPrimary")}
+                        disabled={busyId === key.id}
+                        className="text-text-muted hover:text-gold disabled:opacity-50"
+                      >
+                        {t("set_primary")}
+                      </button>
+                    )}
                   </div>
                 </div>
                 <Button
@@ -199,9 +244,11 @@ export default function ApiKeysPage() {
         title={t("add_key")}
       >
         <div className="space-y-4">
-          <p className="text-xs text-text-muted">
-            Your API key will be encrypted before storage and automatically verified against BingX.
-          </p>
+          <div className="space-y-2 rounded-xs border border-border-default bg-bg-tertiary p-3 text-xs text-text-muted">
+            <p>{t("encrypted_notice")}</p>
+            <p className="text-warning">{t("ip_whitelist_warning")}</p>
+            <p>{t("permission_notice")}</p>
+          </div>
           <Input
             id="label"
             label={t("label")}

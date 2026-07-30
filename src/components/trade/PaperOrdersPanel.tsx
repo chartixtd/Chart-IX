@@ -22,10 +22,10 @@ interface PaperLimitOrderRow {
   filled_at: string | null;
 }
 
-function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liquidationPrice, onClose, closing }: {
+function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liquidationPrice, onClose, closing, active }: {
   symbol: string; side: "long" | "short"; quantity: number; entryPrice: number;
   leverage: number; margin: number; liquidationPrice: number;
-  onClose: (symbol: string) => void; closing: boolean;
+  onClose: (symbol: string) => void; closing: boolean; active: boolean;
 }) {
   const { data: ticker } = useSpotTicker(symbol);
   const markPrice = ticker ? Number(ticker.lastPrice) : entryPrice;
@@ -39,7 +39,7 @@ function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liq
   const isLong = side === "long";
 
   return (
-    <div className="px-3 py-2 border-b border-border-default/50 last:border-0">
+    <div className={cn("px-3 py-2 border-b border-border-default/50 last:border-0", active && "bg-gold/5")}>
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5">
           <span className={cn("rounded-xs px-1 py-0.5 text-[10px] font-bold", isLong ? "bg-success/15 text-success" : "bg-danger/15 text-danger")}>
@@ -76,7 +76,9 @@ function formatTime(ts: string) {
 
 export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const { data, isLoading } = usePaperAccount();
-  const { data: orders, isLoading: ordersLoading } = usePaperOrders(symbol);
+  // No symbol filter: this panel shows every fill across the account, not just
+  // whichever symbol the chart happens to be on.
+  const { data: orders, isLoading: ordersLoading } = usePaperOrders();
   const closePaperPosition = useClosePaperPosition();
 
   const [limitOrders, setLimitOrders] = useState<PaperLimitOrderRow[]>([]);
@@ -138,14 +140,6 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Balance */}
-      <div className="border-b border-border-default px-3 py-2.5">
-        <div className="text-xs text-text-muted">模拟盘可用余额 / Available Balance</div>
-        <div className="mt-0.5 text-lg font-bold text-text-primary">
-          {data ? formatPrice(data.account.balance_usdt) : "—"} <span className="text-xs font-normal text-text-muted">USDT</span>
-        </div>
-      </div>
-
       {/* Positions */}
       <div className="overflow-auto">
         <div className="px-3 py-2 border-b border-border-default">
@@ -166,6 +160,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
               liquidationPrice={parseFloat(String(p.liquidation_price))}
               onClose={handleClosePosition}
               closing={closing === p.symbol}
+              active={p.symbol === symbol}
             />
           ))
         )}
@@ -211,7 +206,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
         )}
       </div>
 
-      {/* Trade history for this symbol */}
+      {/* Trade history — every symbol */}
       <div className="border-t border-border-default flex-1 overflow-auto">
         <div className="px-3 py-2 border-b border-border-default">
           <span className="text-xs font-medium text-text-secondary">Recent Fills</span>
@@ -227,6 +222,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
             {orders.map((order) => (
               <div key={order.id} className="px-3 py-1.5 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5">
+                  <span className="text-text-primary font-medium">{order.symbol}</span>
                   <span className={cn("font-semibold", order.side === "buy" ? "text-success" : "text-danger")}>
                     {order.side === "buy" ? "B" : "S"}
                   </span>
@@ -240,6 +236,14 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Wallet — paper account balance, always visible at the bottom */}
+      <div className="shrink-0 border-t border-border-default px-3 py-2.5">
+        <div className="text-xs font-medium text-text-secondary">模拟盘钱包 / Available Balance</div>
+        <div className="mt-0.5 text-lg font-bold text-text-primary">
+          {data ? formatPrice(data.account.balance_usdt) : "—"} <span className="text-xs font-normal text-text-muted">USDT</span>
+        </div>
       </div>
     </div>
   );

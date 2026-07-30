@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import { translateError } from "@/components/trade/order-form/OrderForm";
 
 interface FuturesInfoPanelProps {
+  /** Only used to pre-select which symbol's Close/Cancel error toasts read naturally; the
+   *  list itself always shows every open futures position/order, not just this symbol. */
   symbol: string;
 }
 
@@ -39,27 +40,38 @@ interface FuturesOrder {
   leverage: number;
 }
 
+interface FuturesBalance {
+  availableMargin: string;
+  equity: string;
+}
+
 export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const t = useTranslations();
   const [positions, setPositions] = useState<FuturesPosition[]>([]);
   const [orders, setOrders] = useState<FuturesOrder[]>([]);
+  const [balance, setBalance] = useState<FuturesBalance | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [posRes, ordRes] = await Promise.all([
-        fetch(`/api/bingx/futures/positions?symbol=${symbol}`),
-        fetch(`/api/bingx/futures/open-orders?symbol=${symbol}`),
+      // No symbol filter: this panel is the account-wide "everything I have open"
+      // view, not scoped to whichever symbol the chart happens to be on.
+      const [posRes, ordRes, balRes] = await Promise.all([
+        fetch(`/api/bingx/futures/positions`),
+        fetch(`/api/bingx/futures/open-orders`),
+        fetch(`/api/bingx/futures/positions?type=balance`),
       ]);
       const p = await posRes.json();
       const o = await ordRes.json();
+      const b = await balRes.json();
       if (p.success) setPositions(p.data || []);
       if (o.success) setOrders(Array.isArray(o.data) ? o.data : o.data?.orders || []);
+      if (b.success && b.data) setBalance(b.data);
     } catch { /* ignore */ }
     setLoading(false);
-  }, [symbol]);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -67,12 +79,12 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const handleCancel = async (orderId: string) => {
-    setCancelling(orderId);
+  const handleCancel = async (order: FuturesOrder) => {
+    setCancelling(order.orderId);
     await fetch("/api/bingx/futures/open-orders", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "cancel", symbol, orderId }),
+      body: JSON.stringify({ action: "cancel", symbol: order.symbol, orderId: order.orderId }),
     });
     setCancelling(null);
     fetchData();
@@ -87,7 +99,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
       const res = await fetch("/api/bingx/futures/positions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "closePosition", symbol, positionId: position.positionId }),
+        body: JSON.stringify({ action: "closePosition", symbol: position.symbol, positionId: position.positionId }),
       });
       const json = await res.json();
       // A failed close must surface to the user — silently swallowing it would look like the position closed.
@@ -106,7 +118,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Positions */}
+      {/* Positions — every open symbol, not just the one on the chart */}
       <div className="flex-1 overflow-auto">
         <div className="px-3 py-2 border-b border-border-default">
           <span className="text-xs font-medium text-text-secondary">Positions ({positions.length})</span>
@@ -122,9 +134,13 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
               const pnl = parseFloat(pos.unrealizedProfit);
               const isLong = pos.positionSide === "LONG";
               return (
-                <div key={pos.positionId} className="px-3 py-2 hover:bg-bg-hover/50">
+                <div
+                  key={pos.positionId}
+                  className={cn("px-3 py-2 hover:bg-bg-hover/50", pos.symbol === symbol && "bg-gold/5")}
+                >
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-text-primary">{pos.symbol}</span>
                       <span className={cn("text-xs font-semibold", isLong ? "text-success" : "text-danger")}>
                         {isLong ? "LONG" : "SHORT"}
                       </span>
@@ -155,25 +171,10 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
         )}
       </div>
 
-      {/* Open Orders */}
+      {/* Open Orders — every open symbol */}
       <div className="border-t border-border-default">
-        <div className="px-3 py-2 border-b border-border-default flex items-center justify-between">
+        <div className="px-3 py-2 border-b border-border-default">
           <span className="text-xs font-medium text-text-secondary">Orders ({orders.length})</span>
-          {orders.length > 0 && (
-            <button
-              onClick={async () => {
-                await fetch("/api/bingx/futures/open-orders", {
-                  method: "DELETE",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "cancelAll", symbol }),
-                });
-                fetchData();
-              }}
-              className="text-xs text-danger hover:text-danger/80"
-            >
-              Cancel All
-            </button>
-          )}
         </div>
         {orders.length === 0 ? (
           <p className="px-3 py-4 text-xs text-text-muted text-center">No open orders</p>
@@ -182,7 +183,8 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
             {orders.map((o) => (
               <div key={o.orderId} className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-bg-hover/50">
                 <div>
-                  <span className={cn("font-semibold", o.positionSide === "LONG" ? "text-success" : "text-danger")}>
+                  <span className="text-text-primary font-medium">{o.symbol}</span>
+                  <span className={cn("font-semibold ml-1", o.positionSide === "LONG" ? "text-success" : "text-danger")}>
                     {o.positionSide}
                   </span>
                   <span className="text-text-muted ml-1">{o.type} {o.side}</span>
@@ -193,7 +195,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                   </span>
                   <span className="text-text-primary">{parseFloat(o.origQty)}</span>
                   <button
-                    onClick={() => handleCancel(o.orderId)}
+                    onClick={() => handleCancel(o)}
                     disabled={cancelling === o.orderId}
                     className="text-text-muted hover:text-danger disabled:opacity-50"
                   >
@@ -203,6 +205,21 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Wallet — futures account margin/equity, always visible at the bottom */}
+      <div className="shrink-0 border-t border-border-default px-3 py-2">
+        <span className="text-xs font-medium text-text-secondary">合约钱包</span>
+        {balance ? (
+          <div className="mt-1 grid grid-cols-2 gap-x-2 text-xs">
+            <span className="text-text-muted">权益 Equity</span>
+            <span className="text-text-primary text-right">{parseFloat(balance.equity).toFixed(2)} USDT</span>
+            <span className="text-text-muted">可用保证金</span>
+            <span className="text-text-primary text-right">{parseFloat(balance.availableMargin).toFixed(2)} USDT</span>
+          </div>
+        ) : (
+          <p className="mt-1 text-xs text-text-muted">—</p>
         )}
       </div>
     </div>

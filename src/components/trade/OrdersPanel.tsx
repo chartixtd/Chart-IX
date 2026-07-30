@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
-import { formatPrice } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 interface OrdersPanelProps {
+  /** Only used to highlight this symbol's rows; the list itself always shows
+   *  every open order/recent fill across all symbols, not just this one. */
   symbol: string;
 }
 
@@ -63,17 +63,17 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
   const [orders, setOrders] = useState<BingXOrder[]>([]);
   const [trades, setTrades] = useState<BingXTradeRecord[]>([]);
   const [balances, setBalances] = useState<BingXBalanceItem[]>([]);
-  const [balancesOpen, setBalancesOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
-  const [cancellingAll, setCancellingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
+      // No symbol filter: this panel is the account-wide "everything I have
+      // open" view, not scoped to whichever symbol the chart happens to be on.
       const [ordersRes, tradesRes, balanceRes] = await Promise.all([
-        fetch(`/api/bingx/trade/open-orders?symbol=${symbol}`),
-        fetch(`/api/bingx/trade/my-trades?symbol=${symbol}&limit=20`),
+        fetch(`/api/bingx/trade/open-orders`),
+        fetch(`/api/bingx/trade/my-trades?limit=30`),
         fetch(`/api/bingx/account/balance`),
       ]);
 
@@ -82,18 +82,18 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
       const balanceJson = await balanceRes.json();
 
       if (ordersJson.success) {
-        setOrders(ordersJson.data.orders || []);
+        setOrders(Array.isArray(ordersJson.data) ? ordersJson.data : ordersJson.data?.orders || []);
       } else if (ordersJson.error?.message?.includes("No valid API key")) {
         setError("Please add your BingX API key in Settings first.");
       }
 
       if (tradesJson.success) {
-        setTrades(tradesJson.data.fills || []);
+        setTrades(Array.isArray(tradesJson.data) ? tradesJson.data : tradesJson.data?.fills || []);
       }
 
       if (balanceJson.success && balanceJson.data?.balances) {
         const filtered = (balanceJson.data.balances as BingXBalanceItem[]).filter(
-          (b) => parseFloat(b.free) > 0
+          (b) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0
         );
         filtered.sort((a, b) => {
           const ia = PRIORITY_ASSETS.indexOf(a.asset);
@@ -110,7 +110,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [symbol]);
+  }, []);
 
   // Fetch on mount and every 5 seconds
   useEffect(() => {
@@ -119,30 +119,16 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const handleCancel = async (orderId: string) => {
-    setCancelling(orderId);
+  const handleCancel = async (order: BingXOrder) => {
+    setCancelling(order.orderId);
     try {
       await fetch("/api/bingx/trade/open-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "cancel", symbol, orderId }),
+        body: JSON.stringify({ action: "cancel", symbol: order.symbol, orderId: order.orderId }),
       });
     } catch { /* ignore */ }
     setCancelling(null);
-    fetchData();
-  };
-
-  const handleCancelAll = async () => {
-    if (!orders.length) return;
-    setCancellingAll(true);
-    try {
-      await fetch("/api/bingx/trade/open-orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "cancelAll", symbol }),
-      });
-    } catch { /* ignore */ }
-    setCancellingAll(false);
     fetchData();
   };
 
@@ -177,55 +163,12 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Balances */}
-      {balances.length > 0 && (
-        <div className="border-b border-border-default">
-          <button
-            onClick={() => setBalancesOpen(!balancesOpen)}
-            className="w-full flex items-center justify-between px-3 py-2 hover:bg-bg-hover/50 text-xs"
-          >
-            <span className="font-medium text-text-secondary">
-              Balances ({balances.length})
-            </span>
-            <span className="text-text-muted">{balancesOpen ? "▲" : "▼"}</span>
-          </button>
-          {balancesOpen && (
-            <div className="divide-y divide-border-default/50 max-h-40 overflow-auto">
-              {balances.map((b) => (
-                <div key={b.asset} className="px-3 py-1.5 flex items-center justify-between text-xs">
-                  <span className="font-medium text-text-primary">{b.asset}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-text-muted">
-                      Free: <span className="text-text-primary">{formatPriceLocal(b.free)}</span>
-                    </span>
-                    {parseFloat(b.locked) > 0 && (
-                      <span className="text-text-muted">
-                        Locked: <span className="text-text-primary">{formatPriceLocal(b.locked)}</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Active Orders */}
+      {/* Active Orders — every open symbol, not just the one on the chart */}
       <div className="flex-1 overflow-auto">
         <div className="flex items-center justify-between px-3 py-2 border-b border-border-default">
           <span className="text-xs font-medium text-text-secondary">
             Open Orders ({orders.length})
           </span>
-          {orders.length > 0 && (
-            <button
-              onClick={handleCancelAll}
-              disabled={cancellingAll}
-              className="text-xs text-danger hover:text-danger/80 disabled:opacity-50"
-            >
-              {cancellingAll ? "Cancelling..." : "Cancel All"}
-            </button>
-          )}
         </div>
 
         {orders.length === 0 ? (
@@ -233,9 +176,13 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
         ) : (
           <div className="divide-y divide-border-default/50">
             {orders.map((order) => (
-              <div key={order.orderId} className="px-3 py-2 hover:bg-bg-hover/50">
+              <div
+                key={order.orderId}
+                className={cn("px-3 py-2 hover:bg-bg-hover/50", order.symbol === symbol && "bg-gold/5")}
+              >
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium text-text-primary">{order.symbol}</span>
                     <span
                       className={cn(
                         "text-xs font-semibold",
@@ -247,7 +194,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
                     <span className="text-xs text-text-muted">{order.type}</span>
                   </div>
                   <button
-                    onClick={() => handleCancel(order.orderId)}
+                    onClick={() => handleCancel(order)}
                     disabled={cancelling === order.orderId}
                     className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
                   >
@@ -269,7 +216,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
         )}
       </div>
 
-      {/* Recent Trades */}
+      {/* Recent Trades — every symbol */}
       <div className="border-t border-border-default">
         <div className="px-3 py-2 border-b border-border-default">
           <span className="text-xs font-medium text-text-secondary">Recent Fills</span>
@@ -281,6 +228,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
             {trades.map((trade) => (
               <div key={trade.id} className="px-3 py-1.5 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5">
+                  <span className="text-text-primary font-medium">{trade.symbol}</span>
                   <span
                     className={cn(
                       "font-semibold",
@@ -294,6 +242,32 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
                 <div className="flex items-center gap-3">
                   <span className="text-text-muted">{formatPriceLocal(trade.price)}</span>
                   <span className="text-text-muted w-12 text-right">{formatTime(trade.time)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Wallet — spot balances, always visible at the bottom */}
+      <div className="shrink-0 border-t border-border-default px-3 py-2">
+        <span className="text-xs font-medium text-text-secondary">现货钱包 ({balances.length})</span>
+        {balances.length === 0 ? (
+          <p className="mt-1 text-xs text-text-muted">—</p>
+        ) : (
+          <div className="mt-1 max-h-32 overflow-auto divide-y divide-border-default/50">
+            {balances.map((b) => (
+              <div key={b.asset} className="py-1 flex items-center justify-between text-xs">
+                <span className="font-medium text-text-primary">{b.asset}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-text-muted">
+                    可用 <span className="text-text-primary">{formatPriceLocal(b.free)}</span>
+                  </span>
+                  {parseFloat(b.locked) > 0 && (
+                    <span className="text-text-muted">
+                      冻结 <span className="text-text-primary">{formatPriceLocal(b.locked)}</span>
+                    </span>
+                  )}
                 </div>
               </div>
             ))}

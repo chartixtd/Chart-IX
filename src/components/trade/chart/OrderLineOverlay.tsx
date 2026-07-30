@@ -107,6 +107,7 @@ export function OrderLineOverlay({ chart, series, lines, containerRef }: Props) 
         const y = series.priceToCoordinate(price);
         if (y === null) return null;
         const yNum = y as number;
+        const isUnset = !!line.editable?.unset && !isDragging;
 
         return (
           <g
@@ -126,28 +127,28 @@ export function OrderLineOverlay({ chart, series, lines, containerRef }: Props) 
               y2={yNum}
               stroke={line.color}
               strokeWidth={isDragging ? 2 : 1.5}
-              strokeDasharray={line.dashed ? "5 3" : undefined}
-              opacity={isDragging ? 1 : 0.9}
+              strokeDasharray={isUnset ? "2 4" : line.dashed ? "5 3" : undefined}
+              opacity={isDragging ? 1 : isUnset ? 0.45 : 0.9}
               vectorEffect="non-scaling-stroke"
             />
             <rect
-              x={pane.width - 78}
+              x={pane.width - (isUnset ? 118 : 78)}
               y={yNum - 9}
-              width={76}
+              width={isUnset ? 116 : 76}
               height={18}
               fill={line.color}
-              opacity={isDragging ? 1 : 0.85}
+              opacity={isDragging ? 1 : isUnset ? 0.5 : 0.85}
               rx={2}
             />
             <text
-              x={pane.width - 40}
+              x={pane.width - (isUnset ? 60 : 40)}
               y={yNum + 4}
               fill="#0b0a08"
               fontSize={10}
               fontFamily="monospace"
               textAnchor="middle"
             >
-              {price.toPrecision(6)}
+              {isUnset ? `拖动设置 ${price.toPrecision(6)}` : price.toPrecision(6)}
             </text>
             {isDragging && (
               <text x={6} y={yNum - 4} fill={line.color} fontSize={10} fontFamily="monospace">

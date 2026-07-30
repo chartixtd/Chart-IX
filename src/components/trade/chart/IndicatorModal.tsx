@@ -1,0 +1,230 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { Modal } from "@/components/ui/Modal";
+import {
+  INDICATORS, CATEGORY_LABELS, legendLabel, type IndicatorCategory, type IndicatorDef,
+} from "@/lib/chart/indicator-registry";
+import { useChartStore, resolveDef } from "@/stores/chartStore";
+import { cn } from "@/lib/utils";
+
+const CATEGORIES: (IndicatorCategory | "all")[] = ["all", "trend", "momentum", "volatility", "volume"];
+
+const CATEGORY_TAB_LABELS: Record<IndicatorCategory | "all", string> = {
+  all: "全部",
+  ...CATEGORY_LABELS,
+};
+
+export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<IndicatorCategory | "all">("all");
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const applied = useChartStore((s) => s.appliedIndicators);
+  const addIndicator = useChartStore((s) => s.addIndicator);
+  const removeIndicator = useChartStore((s) => s.removeIndicator);
+  const updateIndicatorParams = useChartStore((s) => s.updateIndicatorParams);
+  const toggleIndicatorVisible = useChartStore((s) => s.toggleIndicatorVisible);
+  const resetIndicatorToDefaults = useChartStore((s) => s.resetIndicatorToDefaults);
+  const clearIndicators = useChartStore((s) => s.clearIndicators);
+
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return INDICATORS.filter((d) => {
+      if (category !== "all" && d.category !== category) return false;
+      if (!q) return true;
+      return (
+        d.name.toLowerCase().includes(q) ||
+        d.short.toLowerCase().includes(q) ||
+        d.id.includes(q)
+      );
+    });
+  }, [query, category]);
+
+  const appliedCountByDef = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of applied) m.set(a.defId, (m.get(a.defId) ?? 0) + 1);
+    return m;
+  }, [applied]);
+
+  return (
+    <Modal open={open} onClose={onClose} title="指标" className="max-w-3xl" >
+      <div className="grid gap-5 md:grid-cols-[1fr_1fr]">
+        {/* ---- Browse / search ---- */}
+        <div className="flex min-h-0 flex-col">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索指标…"
+            className="w-full rounded-sm border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-gold focus:outline-none"
+          />
+
+          <div className="mt-3 flex flex-wrap gap-1">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCategory(c)}
+                className={cn(
+                  "rounded-xs px-2 py-1 text-xs font-medium transition-colors",
+                  category === c
+                    ? "bg-gold/20 text-gold"
+                    : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
+                )}
+              >
+                {CATEGORY_TAB_LABELS[c]}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 max-h-[46vh] min-h-[200px] overflow-y-auto rounded-sm border border-border-default">
+            {results.length === 0 ? (
+              <p className="p-4 text-center text-xs text-text-muted">没有匹配的指标</p>
+            ) : (
+              results.map((def) => {
+                const count = appliedCountByDef.get(def.id) ?? 0;
+                return (
+                  <button
+                    key={def.id}
+                    onClick={() => addIndicator(def.id)}
+                    className="flex w-full items-center justify-between gap-2 border-b border-border-default px-3 py-2 text-left last:border-b-0 hover:bg-bg-tertiary"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm text-text-primary">{def.name}</span>
+                      <span className="block text-[11px] text-text-muted">
+                        {CATEGORY_LABELS[def.category]}
+                        {def.placement === "pane" ? " · 独立副图" : " · 主图叠加"}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {count > 0 && (
+                        <span className="rounded-full bg-gold/15 px-1.5 py-0.5 font-mono text-[10px] text-gold">
+                          ×{count}
+                        </span>
+                      )}
+                      <span className="text-gold">＋</span>
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+          <p className="mt-2 text-[11px] text-text-muted">
+            同一指标可重复添加，用不同参数并存（例如 MA 20 / MA 50 / MA 200）。
+          </p>
+        </div>
+
+        {/* ---- Applied ---- */}
+        <div className="flex min-h-0 flex-col">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-text-primary">
+              已应用 <span className="font-mono text-xs text-text-muted">({applied.length})</span>
+            </p>
+            {applied.length > 0 && (
+              <button
+                onClick={clearIndicators}
+                className="text-[11px] text-text-muted hover:text-danger"
+              >
+                全部移除
+              </button>
+            )}
+          </div>
+
+          <div className="mt-3 max-h-[52vh] min-h-[200px] overflow-y-auto rounded-sm border border-border-default">
+            {applied.length === 0 ? (
+              <p className="p-4 text-center text-xs text-text-muted">
+                还没有指标，从左侧列表点击添加
+              </p>
+            ) : (
+              applied.map((a) => {
+                const def = resolveDef(a);
+                if (!def) return null;
+                const isEditing = editingId === a.instanceId;
+                return (
+                  <div key={a.instanceId} className="border-b border-border-default last:border-b-0">
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ background: def.plots[0]?.color }}
+                        />
+                        <span
+                          className={cn(
+                            "truncate font-mono text-xs",
+                            a.visible ? "text-text-primary" : "text-text-muted line-through"
+                          )}
+                        >
+                          {legendLabel(def, a.params)}
+                        </span>
+                      </span>
+
+                      <button
+                        onClick={() => toggleIndicatorVisible(a.instanceId)}
+                        title={a.visible ? "隐藏" : "显示"}
+                        className="shrink-0 text-xs text-text-muted hover:text-text-primary"
+                      >
+                        {a.visible ? "👁" : "🚫"}
+                      </button>
+                      {def.params.length > 0 && (
+                        <button
+                          onClick={() => setEditingId(isEditing ? null : a.instanceId)}
+                          title="参数设置"
+                          className={cn(
+                            "shrink-0 text-xs hover:text-text-primary",
+                            isEditing ? "text-gold" : "text-text-muted"
+                          )}
+                        >
+                          ⚙
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeIndicator(a.instanceId)}
+                        title="移除"
+                        className="shrink-0 text-xs text-text-muted hover:text-danger"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {isEditing && (
+                      <div className="space-y-2 bg-bg-tertiary/60 px-3 pb-3 pt-1">
+                        {def.params.map((pd) => (
+                          <label key={pd.key} className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-text-secondary">{pd.label}</span>
+                            <input
+                              type="number"
+                              value={a.params[pd.key] ?? pd.default}
+                              min={pd.min}
+                              max={pd.max}
+                              step={pd.step ?? 1}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
+                                if (Number.isNaN(v)) return;
+                                const clamped = Math.min(
+                                  pd.max ?? Number.POSITIVE_INFINITY,
+                                  Math.max(pd.min ?? Number.NEGATIVE_INFINITY, v)
+                                );
+                                updateIndicatorParams(a.instanceId, { [pd.key]: clamped });
+                              }}
+                              className="w-20 rounded-xs border border-border-default bg-bg-primary px-2 py-1 text-right font-mono text-[11px] text-text-primary focus:border-gold focus:outline-none"
+                            />
+                          </label>
+                        ))}
+                        <button
+                          onClick={() => resetIndicatorToDefaults(a.instanceId)}
+                          className="text-[11px] text-text-muted hover:text-gold"
+                        >
+                          恢复默认参数
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}

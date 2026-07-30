@@ -225,9 +225,20 @@ export function computeStochastic(
     const range = highest - lowest;
     k[i] = range === 0 ? 100 : ((closes[i] - lowest) / range) * 100;
   }
-  const d = computeMA(k.map((v) => v ?? NaN), dPeriod).map((v, i) =>
-    v !== null && k[i] !== null && !Number.isNaN(v) ? v : null
-  );
+  // %D is the SMA of %K. It must be averaged only over the populated part of %K:
+  // routing %K's null warm-up through computeMA as NaN poisons its running sum,
+  // which then stays NaN for the rest of the series and leaves %D entirely empty.
+  const d: (number | null)[] = new Array(closes.length).fill(null);
+  for (let i = kPeriod - 1 + dPeriod - 1; i < closes.length; i++) {
+    let sum = 0;
+    let complete = true;
+    for (let j = i - dPeriod + 1; j <= i; j++) {
+      const v = k[j];
+      if (v === null) { complete = false; break; }
+      sum += v;
+    }
+    if (complete) d[i] = sum / dPeriod;
+  }
   return { k, d };
 }
 

@@ -8,7 +8,11 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/lib/trading/**/*.test.ts", "src/lib/bingx/**/*.test.ts"],
+    include: [
+      "src/lib/trading/**/*.test.ts",
+      "src/lib/bingx/**/*.test.ts",
+      "src/lib/chart/**/*.test.ts",
+    ],
     environment: "node",
   },
 });

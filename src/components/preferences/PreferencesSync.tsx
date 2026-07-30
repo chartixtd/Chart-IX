@@ -6,10 +6,13 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useFavoritesStore } from "@/stores/favorites";
 import { usePriceAlertsStore, type PriceAlert } from "@/stores/priceAlerts";
 import {
-  useTradePrefsStore, type TradeMarketType, type TradeRightTab,
-  type ChartIndicatorSettings, type ChartIndicatorParams,
-  DEFAULT_PINNED_INTERVALS, DEFAULT_CHART_INDICATORS, DEFAULT_CHART_INDICATOR_PARAMS,
+  useTradePrefsStore, type TradeMarketType, type TradeRightTab, DEFAULT_PINNED_INTERVALS,
 } from "@/stores/tradePrefs";
+import {
+  useChartStore, migrateLegacyIndicators,
+  type AppliedIndicator, type Drawing,
+} from "@/stores/chartStore";
+import { INDICATOR_BY_ID } from "@/lib/chart/indicator-registry";
 
 interface StoredPreferences {
   favorites?: string[];
@@ -20,14 +23,22 @@ interface StoredPreferences {
     market?: TradeMarketType;
     rightTab?: TradeRightTab;
     pinnedIntervals?: string[];
-    chartIndicators?: Partial<ChartIndicatorSettings>;
-    indicatorParams?: Partial<ChartIndicatorParams>;
+    /** Pre-registry indicator settings, read only to migrate them forward. */
+    chartIndicators?: Record<string, unknown>;
+    indicatorParams?: Record<string, number>;
+  };
+  chart?: {
+    appliedIndicators?: AppliedIndicator[];
+    drawings?: Record<string, Drawing[]>;
+    drawingColor?: string;
+    keepToolActive?: boolean;
   };
 }
 
-/** Snapshot the three synced stores into a single JSONB-friendly object. */
+/** Snapshot the synced stores into a single JSONB-friendly object. */
 function snapshot(): StoredPreferences {
   const trade = useTradePrefsStore.getState();
+  const chart = useChartStore.getState();
   return {
     favorites: useFavoritesStore.getState().favorites,
     priceAlerts: usePriceAlertsStore.getState().alerts,
@@ -37,8 +48,12 @@ function snapshot(): StoredPreferences {
       market: trade.market,
       rightTab: trade.rightTab,
       pinnedIntervals: trade.pinnedIntervals,
-      chartIndicators: trade.chartIndicators,
-      indicatorParams: trade.indicatorParams,
+    },
+    chart: {
+      appliedIndicators: chart.appliedIndicators,
+      drawings: chart.drawings,
+      drawingColor: chart.drawingColor,
+      keepToolActive: chart.keepToolActive,
     },
   };
 }
@@ -48,9 +63,9 @@ function snapshot(): StoredPreferences {
  *
  * On login it pulls the user's saved preferences from `user_preferences`,
  * merges them with whatever is already in localStorage (favorites/alerts are
- * unioned so nothing is lost; trade prefs let the DB win for cross-device
- * continuity), hydrates the stores, then writes the merged result back.
- * After hydration it debounce-persists any further store changes to the DB.
+ * unioned so nothing is lost; trade and chart prefs let the DB win for
+ * cross-device continuity), hydrates the stores, then writes the merged result
+ * back. After hydration it debounce-persists any further store changes.
  *
  * Logged-out visitors keep using localStorage untouched.
  */
@@ -108,25 +123,41 @@ export function PreferencesSync() {
       for (const a of localAlerts) if (!byId.has(a.id)) byId.set(a.id, a);
       usePriceAlertsStore.setState({ alerts: Array.from(byId.values()) });
 
-      // trade prefs: DB wins when present (restore last-used setup on new device).
-      // chartIndicators/indicatorParams are deep-merged onto current defaults so a
-      // field added after the user last saved doesn't come back `undefined`.
+      // trade prefs: DB wins when present (restore last-used setup on new device)
       if (remote.trade) {
-        const { symbol, interval, market, rightTab, pinnedIntervals, chartIndicators, indicatorParams } = remote.trade;
-        const current = useTradePrefsStore.getState();
+        const { symbol, interval, market, rightTab, pinnedIntervals } = remote.trade;
         useTradePrefsStore.setState({
           ...(symbol ? { symbol } : {}),
           ...(interval ? { interval } : {}),
           ...(market ? { market } : {}),
           ...(rightTab ? { rightTab } : {}),
           ...(pinnedIntervals?.length ? { pinnedIntervals } : { pinnedIntervals: DEFAULT_PINNED_INTERVALS }),
-          ...(chartIndicators
-            ? { chartIndicators: { ...DEFAULT_CHART_INDICATORS, ...current.chartIndicators, ...chartIndicators } }
-            : {}),
-          ...(indicatorParams
-            ? { indicatorParams: { ...DEFAULT_CHART_INDICATOR_PARAMS, ...current.indicatorParams, ...indicatorParams } }
+        });
+      }
+
+      // chart state: prefer the saved instance list; otherwise carry a v1 save forward
+      const chart = useChartStore.getState();
+      if (remote.chart?.appliedIndicators) {
+        useChartStore.setState({
+          // Drop instances whose registry entry no longer exists.
+          appliedIndicators: remote.chart.appliedIndicators.filter((a) => INDICATOR_BY_ID.has(a.defId)),
+          migratedV1: true,
+          ...(remote.chart.drawings ? { drawings: remote.chart.drawings } : {}),
+          ...(remote.chart.drawingColor ? { drawingColor: remote.chart.drawingColor } : {}),
+          ...(typeof remote.chart.keepToolActive === "boolean"
+            ? { keepToolActive: remote.chart.keepToolActive }
             : {}),
         });
+      } else if (remote.trade?.chartIndicators && !chart.migratedV1) {
+        useChartStore.setState({
+          appliedIndicators: migrateLegacyIndicators(
+            remote.trade.chartIndicators as Parameters<typeof migrateLegacyIndicators>[0],
+            remote.trade.indicatorParams
+          ),
+          migratedV1: true,
+        });
+      } else if (remote.chart?.drawings) {
+        useChartStore.setState({ drawings: remote.chart.drawings });
       }
 
       hydratedRef.current = true;
@@ -138,6 +169,7 @@ export function PreferencesSync() {
       unsubscribers.push(useFavoritesStore.subscribe(schedulePersist));
       unsubscribers.push(usePriceAlertsStore.subscribe(schedulePersist));
       unsubscribers.push(useTradePrefsStore.subscribe(schedulePersist));
+      unsubscribers.push(useChartStore.subscribe(schedulePersist));
     })();
 
     return () => {

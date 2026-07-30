@@ -1,8 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { usePaperAccount, usePaperOrders } from "@/hooks/usePaperTrading";
+import { useMarketStore } from "@/stores/market";
+import { useToast } from "@/components/ui/Toast";
 import type { ChartTradeMarker, ChartPriceLine } from "@/components/trade/KlineChart";
 import type { TradeMarketType } from "@/stores/tradePrefs";
 
@@ -21,18 +23,31 @@ interface Overlay {
 const EMPTY: Overlay = { tradeMarkers: [], priceLines: [] };
 
 /** 判断实盘期货挂单是否为止盈/止损类型 */
-function classifyStop(type: string): "tp" | "sl" | null {
+function classifyFuturesStop(type: string): "tp" | "sl" | null {
   const t = type.toUpperCase();
   if (t.includes("TAKE_PROFIT")) return "tp";
   if (t.includes("STOP")) return "sl";
   return null;
 }
 
+async function postJson(url: string, body: unknown): Promise<{ success: boolean; error?: { message: string } }> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
 /**
  * 聚合当前交易对的图表叠加数据（进出场标记 + 止盈止损/进场/强平价格线）。
- * 依据 market 选择数据源：模拟盘、实盘现货、实盘期货。
+ * 依据 market 选择数据源：模拟盘、实盘现货、实盘期货。止盈止损线带
+ * `editable`，KlineChart 会渲染成可拖动的线，拖完调用这里定义的回调落地修改。
  */
 export function useChartOverlay(symbol: string, market: TradeMarketType): Overlay {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
   // ---- 模拟盘 ----
   const { data: paperAcct } = usePaperAccount(market === "paper");
   const { data: paperOrders } = usePaperOrders(symbol, market === "paper");
@@ -78,20 +93,39 @@ export function useChartOverlay(symbol: string, market: TradeMarketType): Overla
   });
 
   return useMemo<Overlay>(() => {
-    if (market === "paper") return buildPaper(symbol, paperAcct, paperOrders);
-    if (market === "futures") return buildFutures(futuresData);
-    if (market === "spot") return buildSpot(spotData);
+    const onDragSuccess = (queryKey: unknown[]) => queryClient.invalidateQueries({ queryKey });
+    const onDragError = (message: string) => toast(`修改止盈止损失败：${message}`, "error");
+
+    if (market === "paper") {
+      return buildPaper(symbol, paperAcct, paperOrders, () =>
+        queryClient.invalidateQueries({ queryKey: ["paper", "account"] })
+      , onDragError);
+    }
+    if (market === "futures") {
+      return buildFutures(symbol, futuresData, () => onDragSuccess(["overlay", "futures", symbol]), onDragError);
+    }
+    if (market === "spot") {
+      return buildSpot(symbol, spotData, () => onDragSuccess(["overlay", "spot", symbol]), onDragError);
+    }
     return EMPTY;
-  }, [market, symbol, paperAcct, paperOrders, futuresData, spotData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market, symbol, paperAcct, paperOrders, futuresData, spotData, queryClient]);
 }
 
 // ==================== builders ====================
 
-/** 模拟盘：成交历史 → 进出场箭头；持仓 → 进场价/强平价线 */
+/** 模拟盘：成交历史 → 进出场箭头；持仓 → 进场价/强平价/止盈止损线（止盈止损可拖动） */
 function buildPaper(
   symbol: string,
-  acct: { positions: Array<{ symbol: string; side: string; entry_price: number; liquidation_price: number; leverage: number }> } | undefined,
+  acct: {
+    positions: Array<{
+      symbol: string; side: string; entry_price: number; liquidation_price: number;
+      leverage: number; take_profit_price: number | null; stop_loss_price: number | null;
+    }>;
+  } | undefined,
   orders: Array<{ symbol: string; side: string; price: number; quantity: number; created_at: string; reduce_only?: boolean }> | undefined,
+  onDragSuccess: () => void,
+  onDragError: (message: string) => void,
 ): Overlay {
   const tradeMarkers: ChartTradeMarker[] = (orders ?? [])
     .filter((o) => o.symbol === symbol)
@@ -104,20 +138,53 @@ function buildPaper(
   const priceLines: ChartPriceLine[] = [];
   const pos = (acct?.positions ?? []).find((p) => p.symbol === symbol);
   if (pos) {
+    const label = pos.side === "long" ? "多" : "空";
     if (pos.entry_price > 0) {
-      priceLines.push({ price: pos.entry_price, color: ENTRY_COLOR, title: `进场 ${pos.side === "long" ? "多" : "空"} ${pos.leverage}x` });
+      priceLines.push({ price: pos.entry_price, color: ENTRY_COLOR, title: `进场 ${label} ${pos.leverage}x` });
     }
     if (pos.liquidation_price > 0) {
       priceLines.push({ price: pos.liquidation_price, color: LIQ_COLOR, title: "强平", dashed: true });
     }
+
+    const setTpSl = async (patch: { takeProfit?: number; stopLoss?: number }) => {
+      const result = await postJson("/api/paper/positions/tp-sl", { symbol, ...patch });
+      if (!result.success) onDragError(result.error?.message ?? "未知错误");
+      else onDragSuccess();
+    };
+
+    priceLines.push({
+      price: pos.take_profit_price ?? guessTakeProfit(pos.entry_price, pos.side),
+      color: TP_COLOR,
+      title: "止盈",
+      dashed: true,
+      editable: { kind: "tp", onDragEnd: (price) => setTpSl({ takeProfit: price }) },
+    });
+    priceLines.push({
+      price: pos.stop_loss_price ?? guessStopLoss(pos.entry_price, pos.side),
+      color: SL_COLOR,
+      title: "止损",
+      dashed: true,
+      editable: { kind: "sl", onDragEnd: (price) => setTpSl({ stopLoss: price }) },
+    });
   }
 
   return { tradeMarkers, priceLines };
 }
 
-/** 实盘期货：持仓 → 进场价/强平价线；挂单 → 止盈/止损/限价线 */
+/** 尚未设置止盈时，把线放在进场价上方 3%（多）/ 下方 3%（空）处，方便用户直接拖动而不是从零开始输入 */
+function guessTakeProfit(entry: number, side: string): number {
+  return side === "long" ? entry * 1.03 : entry * 0.97;
+}
+function guessStopLoss(entry: number, side: string): number {
+  return side === "long" ? entry * 0.97 : entry * 1.03;
+}
+
+/** 实盘期货：持仓 → 进场价/强平价线；挂单 → 止盈/止损（可拖动）/限价线 */
 function buildFutures(
+  symbol: string,
   data: { positions: Array<Record<string, unknown>>; orders: Array<Record<string, unknown>> } | undefined,
+  onDragSuccess: () => void,
+  onDragError: (message: string) => void,
 ): Overlay {
   if (!data) return EMPTY;
   const priceLines: ChartPriceLine[] = [];
@@ -135,15 +202,28 @@ function buildFutures(
     }
   }
 
+  const amend = async (orderId: string, newPrice: number) => {
+    const result = await postJson("/api/bingx/futures/order/amend", { symbol, orderId, stopPrice: newPrice });
+    if (!result.success) onDragError(result.error?.message ?? "未知错误");
+    else onDragSuccess();
+  };
+
   for (const o of data.orders) {
     const type = String(o.type ?? "");
     const stop = parseFloat(String(o.stopPrice ?? ""));
     const price = parseFloat(String(o.price ?? ""));
-    const kind = classifyStop(type);
+    const kind = classifyFuturesStop(type);
+    const orderId = String(o.orderId ?? "");
     if (kind === "tp" && isFinite(stop) && stop > 0) {
-      priceLines.push({ price: stop, color: TP_COLOR, title: "止盈", dashed: true });
+      priceLines.push({
+        price: stop, color: TP_COLOR, title: "止盈", dashed: true,
+        editable: orderId ? { kind: "tp", onDragEnd: (p) => amend(orderId, p) } : undefined,
+      });
     } else if (kind === "sl" && isFinite(stop) && stop > 0) {
-      priceLines.push({ price: stop, color: SL_COLOR, title: "止损", dashed: true });
+      priceLines.push({
+        price: stop, color: SL_COLOR, title: "止损", dashed: true,
+        editable: orderId ? { kind: "sl", onDragEnd: (p) => amend(orderId, p) } : undefined,
+      });
     } else if (type.toUpperCase() === "LIMIT" && isFinite(price) && price > 0) {
       priceLines.push({ price, color: LIMIT_COLOR, title: `挂单 ${String(o.side ?? "")}`, dashed: true });
     }
@@ -152,9 +232,22 @@ function buildFutures(
   return { tradeMarkers: [], priceLines };
 }
 
-/** 实盘现货：成交记录 → 进出场箭头；挂单 → 限价线 */
+/**
+ * 现货没有"仓位"概念，止盈/止损都是挂在钱包余额上的条件卖单——用触发价相对
+ * 当前市价的位置区分：SELL 且触发价高于现价＝止盈，低于现价＝止损。BUY 方向
+ * 的条件单极少用来做止盈止损（现货难以做空），不猜测，按普通条件单处理。
+ */
+function classifySpotStop(side: string, stopPrice: number, marketPrice: number | undefined): "tp" | "sl" | null {
+  if (side.toUpperCase() !== "SELL" || !marketPrice || !isFinite(marketPrice)) return null;
+  return stopPrice >= marketPrice ? "tp" : "sl";
+}
+
+/** 实盘现货：成交记录 → 进出场箭头；条件单 → 止盈/止损（可拖动）；限价单 → 挂单线 */
 function buildSpot(
+  symbol: string,
   data: { trades: Array<Record<string, unknown>>; orders: Array<Record<string, unknown>> } | undefined,
+  onDragSuccess: () => void,
+  onDragError: (message: string) => void,
 ): Overlay {
   if (!data) return EMPTY;
 
@@ -168,15 +261,52 @@ function buildSpot(
     };
   });
 
+  const marketPrice = Number(useMarketStore.getState().tickers[symbol]?.lastPrice);
+
+  const amend = async (o: Record<string, unknown>, newPrice: number) => {
+    const orderId = String(o.orderId ?? "");
+    const isLimitStyle = String(o.type ?? "").toUpperCase().includes("LIMIT");
+    const result = await postJson("/api/bingx/trade/order/amend", {
+      symbol,
+      side: o.side,
+      type: o.type,
+      quantity: String(o.origQty ?? ""),
+      price: isLimitStyle ? String(o.price ?? "") : undefined,
+      stopPrice: newPrice,
+      cancelOrderId: orderId,
+    });
+    if (!result.success) onDragError(result.error?.message ?? "未知错误");
+    else onDragSuccess();
+  };
+
   const priceLines: ChartPriceLine[] = [];
   for (const o of data.orders) {
     const type = String(o.type ?? "").toUpperCase();
     const price = parseFloat(String(o.price ?? ""));
+    const stop = parseFloat(String(o.stopPrice ?? ""));
+
     if (type === "LIMIT" && isFinite(price) && price > 0) {
       priceLines.push({ price, color: LIMIT_COLOR, title: `挂单 ${String(o.side ?? "")}`, dashed: true });
+      continue;
+    }
+
+    if (isFinite(stop) && stop > 0) {
+      const kind = classifySpotStop(String(o.side ?? ""), stop, marketPrice);
+      if (kind === "tp") {
+        priceLines.push({
+          price: stop, color: TP_COLOR, title: "止盈", dashed: true,
+          editable: { kind: "tp", onDragEnd: (p) => amend(o, p) },
+        });
+      } else if (kind === "sl") {
+        priceLines.push({
+          price: stop, color: SL_COLOR, title: "止损", dashed: true,
+          editable: { kind: "sl", onDragEnd: (p) => amend(o, p) },
+        });
+      } else {
+        priceLines.push({ price: stop, color: LIMIT_COLOR, title: `条件单 ${String(o.side ?? "")}`, dashed: true });
+      }
     }
   }
 
   return { tradeMarkers, priceLines };
 }
-

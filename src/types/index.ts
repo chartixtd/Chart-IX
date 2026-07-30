@@ -181,6 +181,8 @@ export interface PaperPosition {
   leverage: number;
   margin: number;
   liquidation_price: number;
+  take_profit_price: number | null;
+  stop_loss_price: number | null;
   updated_at: string;
 }
 

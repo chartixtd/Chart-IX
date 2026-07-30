@@ -32,6 +32,7 @@ import { IndicatorModal } from "./chart/IndicatorModal";
 import { ChartLegend } from "./chart/ChartLegend";
 import { DrawingToolbar } from "./chart/DrawingToolbar";
 import { DrawingLayer } from "./chart/DrawingLayer";
+import { OrderLineOverlay } from "./chart/OrderLineOverlay";
 import { cn } from "@/lib/utils";
 
 /** 图表上的进出场箭头标记 */
@@ -50,6 +51,15 @@ export interface ChartPriceLine {
   title: string;
   /** 虚线用于止盈止损/强平，实线用于进场价 */
   dashed?: boolean;
+  /**
+   * 只有止盈/止损线才带这个字段：拖动结束后调用，由调用方（useChartOverlay）
+   * 决定怎么落地——实盘期货走 amend 接口，实盘现货走撤单重下，模拟盘直接更新
+   * 持仓行。不带这个字段的线（进场价/强平价/普通挂单）保持原生只读价格线。
+   */
+  editable?: {
+    kind: "tp" | "sl";
+    onDragEnd: (newPrice: number) => void;
+  };
 }
 
 interface KlineChartProps {
@@ -544,7 +554,9 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     }
     priceLinesRef.current = [];
 
+    // Editable (止盈/止损) lines render on their own draggable SVG layer instead.
     for (const pl of priceLines ?? []) {
+      if (pl.editable) continue;
       if (!isFinite(pl.price) || pl.price <= 0) continue;
       try {
         const line = candleSeries.createPriceLine({
@@ -606,6 +618,10 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
         <ChartLegend onOpenSettings={() => setIndicatorsOpen(true)} />
 
         <div ref={chartRef} className="h-full w-full" />
+
+        {/* Draggable TP/SL lines — independent of the Pro chart-tools gate,
+            since this is core order management, not an "advanced chart" perk. */}
+        <OrderLineOverlay chart={chartApi} series={candleSeries} lines={priceLines ?? []} containerRef={chartRef} />
 
         {hasAdvancedChart && (
           <DrawingLayer

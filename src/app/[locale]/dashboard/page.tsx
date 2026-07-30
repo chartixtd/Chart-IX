@@ -255,11 +255,11 @@ export default function DashboardPage() {
               <path d="M8 10V7a4 4 0 018 0v3" />
             </svg>
           }
-          title="请先登录"
-          description="登录后即可查看你的学习进度、模拟盘战绩与自选行情。"
+          title={t("please_login")}
+          description={t("please_login_desc")}
           action={
             <Link href={`/${locale}/login`}>
-              <Badge variant="gold" size="md">前往登录</Badge>
+              <Badge variant="gold" size="md">{t("go_login")}</Badge>
             </Link>
           }
         />
@@ -278,7 +278,7 @@ export default function DashboardPage() {
         </h1>
         {statementPeriod && (
           <p className="font-mono text-xs uppercase tracking-wider text-text-muted">
-            对账区间 · {statementPeriod}
+            {t("statement_period", { period: statementPeriod })}
           </p>
         )}
       </div>
@@ -288,7 +288,7 @@ export default function DashboardPage() {
       <section className="mt-10">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.15em] text-text-muted">
-            {summaryMode === "live" ? "实盘账户" : t("paper_title")}
+            {summaryMode === "live" ? t("live_account") : t("paper_title")}
           </p>
           <div className="flex items-center gap-5 text-xs font-medium">
             <button
@@ -299,7 +299,7 @@ export default function DashboardPage() {
                 summaryMode === "live" ? "border-gold text-text-primary" : "border-transparent text-text-muted hover:text-text-secondary"
               )}
             >
-              实盘账户
+              {t("live_account")}
             </button>
             <button
               type="button"
@@ -309,7 +309,7 @@ export default function DashboardPage() {
                 summaryMode === "paper" ? "border-gold text-text-primary" : "border-transparent text-text-muted hover:text-text-secondary"
               )}
             >
-              模拟盘
+              {t("paper_tab")}
             </button>
           </div>
         </div>
@@ -322,10 +322,10 @@ export default function DashboardPage() {
               ) : liveNotConnected ? (
                 <div>
                   <div className="font-display text-3xl tracking-tight text-text-muted md:text-4xl">
-                    未绑定 BingX 账户
+                    {t("not_connected")}
                   </div>
                   <Link href={`/${locale}/settings/api-keys`} className="mt-2 inline-block text-sm font-medium text-gold hover:underline">
-                    前往设置绑定 API 密钥 →
+                    {t("connect_api_cta")} →
                   </Link>
                 </div>
               ) : (
@@ -335,14 +335,14 @@ export default function DashboardPage() {
                     <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
                   </div>
                   <div className="mt-2 font-mono text-sm text-text-muted">
-                    完整余额 · 现货 + 合约账户 · 持仓 {liveHoldingsCount} 项现货资产
+                    {t("full_balance_summary", { count: liveHoldingsCount })}
                   </div>
                 </div>
               )}
 
               <div className="flex items-center gap-3">
                 <Link href={`/${locale}/trade`} className="text-xs font-medium text-gold hover:underline">
-                  进入实盘交易 →
+                  {t("enter_live_trade_cta")} →
                 </Link>
               </div>
             </div>
@@ -350,33 +350,33 @@ export default function DashboardPage() {
             {/* Ruled sub-line items */}
             <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-border-default pt-5 font-mono text-sm sm:grid-cols-4">
               <div>
-                <dt className="text-xs text-text-muted">现货资产价值</dt>
+                <dt className="text-xs text-text-muted">{t("spot_asset_value")}</dt>
                 <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(spotTotalValue)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-text-muted">合约账户权益</dt>
+                <dt className="text-xs text-text-muted">{t("futures_equity")}</dt>
                 <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(futuresEquity)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-text-muted">现货可用 USDT</dt>
+                <dt className="text-xs text-text-muted">{t("spot_available_usdt")}</dt>
                 <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(liveUsdtBalance)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-text-muted">持仓资产数</dt>
+                <dt className="text-xs text-text-muted">{t("holdings_count")}</dt>
                 <dd className="mt-1 tabular-nums text-text-primary">{liveHoldingsCount}</dd>
               </div>
               <div>
-                <dt className="text-xs text-text-muted">实盘成交额</dt>
+                <dt className="text-xs text-text-muted">{t("live_volume")}</dt>
                 <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(tradeStats.totalVolume)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-text-muted">实盘净额</dt>
+                <dt className="text-xs text-text-muted">{t("live_net")}</dt>
                 <dd className={cn("mt-1 tabular-nums", tradeStats.netPnl >= 0 ? "text-success" : "text-danger")}>
                   {tradeStats.netPnl >= 0 ? "+" : ""}{formatPrice(tradeStats.netPnl)}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-text-muted">最常交易对</dt>
+                <dt className="text-xs text-text-muted">{t("most_traded_pair")}</dt>
                 <dd className="mt-1 tabular-nums text-text-primary">
                   {tradeStats.mostTradedPair || "—"}
                   {tradeStats.maxCount > 0 && <span className="text-text-muted"> ×{tradeStats.maxCount}</span>}
@@ -396,7 +396,7 @@ export default function DashboardPage() {
                     <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
                   </div>
                   <div className={cn("mt-2 font-mono text-sm font-medium", paperPnl >= 0 ? "text-success" : "text-danger")}>
-                    {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)} USDT ({formatPercent(paperPnlPct)}) 累计
+                    {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)} USDT ({formatPercent(paperPnlPct)}) {t("cumulative_suffix")}
                   </div>
                 </div>
               )}
@@ -408,7 +408,7 @@ export default function DashboardPage() {
                       <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
                       <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
                     </svg>
-                    分享
+                    {t("share")}
                   </Button>
                 )}
                 <Link href={`/${locale}/trade`} className="text-xs font-medium text-gold hover:underline">
@@ -424,19 +424,19 @@ export default function DashboardPage() {
                 <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(paperData?.account.balance_usdt ?? 0)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-text-muted">累计盈亏</dt>
+                <dt className="text-xs text-text-muted">{t("cumulative_pnl")}</dt>
                 <dd className={cn("mt-1 tabular-nums", paperPnl >= 0 ? "text-success" : "text-danger")}>
                   {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-text-muted">累计收益率</dt>
+                <dt className="text-xs text-text-muted">{t("cumulative_return")}</dt>
                 <dd className={cn("mt-1 tabular-nums", paperPnlPct >= 0 ? "text-success" : "text-danger")}>
                   {formatPercent(paperPnlPct)}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-text-muted">持仓数量</dt>
+                <dt className="text-xs text-text-muted">{t("holdings_quantity")}</dt>
                 <dd className="mt-1 tabular-nums text-text-primary">{paperData?.positions.length ?? 0}</dd>
               </div>
             </dl>
@@ -449,9 +449,9 @@ export default function DashboardPage() {
       {/* Unified ledger */}
       <section className="mt-10">
         <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-xl tracking-tight text-text-primary">本期台账</h2>
+          <h2 className="font-display text-xl tracking-tight text-text-primary">{t("ledger_title")}</h2>
           <Link href={`/${locale}/orders`} className="text-xs font-medium text-gold hover:underline">
-            查看全部订单 →
+            {t("view_all_orders_cta")} →
           </Link>
         </div>
 
@@ -463,12 +463,12 @@ export default function DashboardPage() {
           </div>
         ) : ledger.length === 0 ? (
           <p className="mt-5 border-y border-border-default py-6 text-center text-sm text-text-muted">
-            暂无交易或成就记录，去模拟盘练一笔，或完成一节课解锁第一个成就。
+            {t("ledger_empty")}
           </p>
         ) : (
           <div className="mt-5 divide-y divide-border-default border-y border-border-default">
             {ledger.map((entry) => (
-              <LedgerRow key={entry.id} entry={entry} locale={locale} />
+              <LedgerRow key={entry.id} entry={entry} locale={locale} t={t} />
             ))}
           </div>
         )}
@@ -653,7 +653,7 @@ export default function DashboardPage() {
   );
 }
 
-function LedgerRow({ entry, locale }: { entry: LedgerEntry; locale: string }) {
+function LedgerRow({ entry, locale, t }: { entry: LedgerEntry; locale: string; t: ReturnType<typeof useTranslations> }) {
   const date = new Intl.DateTimeFormat(locale, { month: "2-digit", day: "2-digit" }).format(new Date(entry.date));
 
   if (entry.kind === "achievement") {
@@ -664,7 +664,7 @@ function LedgerRow({ entry, locale }: { entry: LedgerEntry; locale: string }) {
           <span className="flex h-5 w-5 items-center justify-center rounded-full border border-gold/50 bg-gold/10 text-[11px] text-gold">
             ✓
           </span>
-          <span className="text-sm text-text-primary">解锁成就 · {entry.title}</span>
+          <span className="text-sm text-text-primary">{t("achievement_unlocked_prefix")} · {entry.title}</span>
         </div>
         <span className="font-mono text-xs text-text-muted">—</span>
       </div>
@@ -673,7 +673,7 @@ function LedgerRow({ entry, locale }: { entry: LedgerEntry; locale: string }) {
 
   const o = entry.order;
   const isBuy = o.side === "buy";
-  const marketLabel = o.market_type === "spot" ? "现货" : "合约";
+  const marketLabel = o.market_type === "spot" ? t("market_spot") : t("market_futures");
 
   return (
     <div className="flex items-center justify-between gap-4 py-3">
@@ -685,7 +685,7 @@ function LedgerRow({ entry, locale }: { entry: LedgerEntry; locale: string }) {
             isBuy ? "border-success/40 text-success" : "border-danger/40 text-danger"
           )}
         >
-          {isBuy ? "买入" : "卖出"}
+          {isBuy ? t("buy") : t("sell")}
         </span>
         <span className="text-sm text-text-primary">{o.symbol}</span>
         <span className="text-xs text-text-muted">{marketLabel}</span>

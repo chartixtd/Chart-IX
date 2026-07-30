@@ -182,6 +182,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#666666",
         panes: { separatorColor: "#2a2a2a", separatorHoverColor: "rgba(201,162,75,0.3)" },
+        attributionLogo: false,
       },
       grid: {
         vertLines: { color: "#1a1a1a" },

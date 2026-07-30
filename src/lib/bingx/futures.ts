@@ -38,10 +38,11 @@ export interface FuturesPosition {
   initialMargin: string;
   margin: string;
   leverage: number;
-  entryPrice: string;
+  /** BingX's real field name for entry price on GET /openApi/swap/v2/user/positions */
+  avgPrice: string;
   markPrice: string;
   liquidationPrice: string;
-  marginType: "isolated" | "cross";
+  isolated: boolean;
   notional: string;
 }
 

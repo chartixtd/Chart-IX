@@ -190,7 +190,9 @@ function buildFutures(
   const priceLines: ChartPriceLine[] = [];
 
   for (const p of data.positions) {
-    const entry = parseFloat(String(p.entryPrice ?? ""));
+    // BingX's real field name here is avgPrice, not entryPrice — the position
+    // panel elsewhere in the app has the same mismatch (fixed alongside this).
+    const entry = parseFloat(String(p.avgPrice ?? ""));
     const liq = parseFloat(String(p.liquidationPrice ?? ""));
     const side = String(p.positionSide ?? "");
     const lev = p.leverage ?? "";

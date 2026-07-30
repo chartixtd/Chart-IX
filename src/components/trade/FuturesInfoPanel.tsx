@@ -18,10 +18,12 @@ interface FuturesPosition {
   positionAmt: string;
   unrealizedProfit: string;
   leverage: number;
-  entryPrice: string;
+  /** BingX's real field name for entry price on this endpoint — not entryPrice */
+  avgPrice: string;
   markPrice: string;
   liquidationPrice: string;
-  marginType: string;
+  /** BingX returns isolated as a boolean here, not a marginType string */
+  isolated: boolean;
 }
 
 interface FuturesOrder {
@@ -126,7 +128,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                       <span className={cn("text-xs font-semibold", isLong ? "text-success" : "text-danger")}>
                         {isLong ? "LONG" : "SHORT"}
                       </span>
-                      <span className="text-xs text-text-muted">{pos.marginType} · {pos.leverage}x</span>
+                      <span className="text-xs text-text-muted">{pos.isolated ? "isolated" : "cross"} · {pos.leverage}x</span>
                     </div>
                     <button
                       onClick={() => handleClose(pos)}
@@ -138,7 +140,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                   </div>
                   <div className="grid grid-cols-2 gap-x-2 text-xs">
                     <span className="text-text-muted">Size</span><span className="text-text-primary text-right">{parseFloat(pos.positionAmt).toFixed(4)}</span>
-                    <span className="text-text-muted">Entry</span><span className="text-text-primary text-right">{parseFloat(pos.entryPrice).toFixed(4)}</span>
+                    <span className="text-text-muted">Entry</span><span className="text-text-primary text-right">{parseFloat(pos.avgPrice).toFixed(4)}</span>
                     <span className="text-text-muted">Mark</span><span className="text-text-primary text-right">{parseFloat(pos.markPrice).toFixed(4)}</span>
                     <span className="text-text-muted">Liq</span><span className="text-text-primary text-right">{parseFloat(pos.liquidationPrice).toFixed(4)}</span>
                     <span className="text-text-muted">PnL</span>

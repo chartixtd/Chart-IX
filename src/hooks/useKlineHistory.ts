@@ -91,10 +91,10 @@ export function useKlineHistory(symbol: string, interval: string, market = "spot
       })
       .catch(() => {
         if (myRequestId !== requestIdRef.current) return;
-        // 拉取失败就不再重试——避免对一个持续失败的请求反复轰炸；用户已加载
-        // 的部分仍然可见
-        hasMoreRef.current = false;
-        setHasMore(false);
+        // A failed request does not mean history is exhausted — leave hasMore
+        // as-is so the caller can retry via another loadMore() call. Only an
+        // actual short/empty page (handled in .then via determineHasMore) means
+        // there's truly nothing earlier to fetch.
       })
       .finally(() => {
         if (myRequestId === requestIdRef.current) {

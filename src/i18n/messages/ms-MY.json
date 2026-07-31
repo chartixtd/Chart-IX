@@ -793,6 +793,21 @@
       "trailing_stop_market": "Henti Rugi Mengekor", "trailing_tp_sl": "TP/SL Mengekor",
       "oco": "OCO"
     },
+    "time_in_force": "Tempoh Sah",
+    "tif": {
+      "gtc": "GTC",
+      "postonly": "Hanya Letak",
+      "ioc": "IOC",
+      "fok": "FOK"
+    },
+    "reduce_only": "Hanya Kurangkan",
+    "reduce_only_hint": "Hanya boleh kurangkan kedudukan, tidak akan buka kedudukan baharu",
+    "oco": {
+      "hint": "Pesanan had terus aktif; apabila harga pencetus dilepasi, satu lagi pesanan had diletakkan secara automatik. Mana-mana kaki yang dipenuhi dahulu akan membatalkan yang satu lagi.",
+      "limit_price": "Harga Had (aktif sekarang)",
+      "trigger_price": "Harga Pencetus",
+      "order_price": "Harga Pesanan (selepas pencetus)"
+    },
     "reject": {
       "unknown_symbol": "Pasangan dagangan ini tidak disokong oleh bursa",
       "no_market_price": "Tidak dapat memperoleh harga pasaran buat masa ini — sila cuba lagi sebentar lagi",

@@ -793,6 +793,21 @@
       "trailing_stop_market": "追踪止损", "trailing_tp_sl": "追踪止盈止损",
       "oco": "OCO"
     },
+    "time_in_force": "有效方式",
+    "tif": {
+      "gtc": "GTC",
+      "postonly": "只挂单",
+      "ioc": "IOC",
+      "fok": "FOK"
+    },
+    "reduce_only": "只减仓",
+    "reduce_only_hint": "只能减少持仓，不会开新仓",
+    "oco": {
+      "hint": "限价单立即挂出；触发价被突破时，自动改挂另一笔限价单。两笔单一旦有一笔成交，另一笔自动取消。",
+      "limit_price": "限价（立即挂单）",
+      "trigger_price": "触发价",
+      "order_price": "触发后限价"
+    },
     "reject": {
       "unknown_symbol": "交易所不支持该交易对",
       "no_market_price": "暂时无法获取市场价格，请稍后重试",

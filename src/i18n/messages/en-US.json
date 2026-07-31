@@ -793,6 +793,21 @@
       "trailing_stop_market": "Trailing Stop", "trailing_tp_sl": "Trailing TP/SL",
       "oco": "OCO"
     },
+    "time_in_force": "Time in Force",
+    "tif": {
+      "gtc": "GTC",
+      "postonly": "Post Only",
+      "ioc": "IOC",
+      "fok": "FOK"
+    },
+    "reduce_only": "Reduce Only",
+    "reduce_only_hint": "Can only reduce your position, never open new exposure",
+    "oco": {
+      "hint": "The limit order goes live immediately; when the trigger price is crossed, the other limit order is placed automatically. Whichever leg fills first cancels the other.",
+      "limit_price": "Limit Price (live now)",
+      "trigger_price": "Trigger Price",
+      "order_price": "Order Price (after trigger)"
+    },
     "reject": {
       "unknown_symbol": "This trading pair is not supported by the exchange",
       "no_market_price": "Unable to fetch the market price right now — please try again shortly",

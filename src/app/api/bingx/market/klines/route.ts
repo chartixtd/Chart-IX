@@ -8,6 +8,10 @@ export async function GET(request: NextRequest) {
     const interval = searchParams.get("interval") || "1h";
     const limit = parseInt(searchParams.get("limit") || "100");
     const market = searchParams.get("market") || "spot";
+    const startTimeParam = searchParams.get("startTime");
+    const endTimeParam = searchParams.get("endTime");
+    const startTime = startTimeParam ? parseInt(startTimeParam) : undefined;
+    const endTime = endTimeParam ? parseInt(endTimeParam) : undefined;
 
     if (!symbol) {
       return NextResponse.json(
@@ -17,11 +21,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (market === "futures") {
-      const data = await getFuturesKlines(symbol, interval, limit);
+      const data = await getFuturesKlines(symbol, interval, limit, startTime, endTime);
       return NextResponse.json({ success: true, data });
     }
 
-    const data = await getSpotKlines(symbol, interval, limit);
+    const data = await getSpotKlines(symbol, interval, limit, startTime, endTime);
     return NextResponse.json({ success: true, data });
   } catch (error) {
     return NextResponse.json(

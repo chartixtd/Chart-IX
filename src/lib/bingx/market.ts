@@ -101,11 +101,13 @@ export async function getFuturesContracts(): Promise<BingXContract[]> {
 export async function getFuturesKlines(
   symbol: string,
   interval = "1h",
-  limit = 100
+  limit = 100,
+  startTime?: number,
+  endTime?: number
 ): Promise<BingXKline[]> {
   const rows = await bingxClient.publicRequest<BingXKlineRow[]>(
     "/openApi/swap/v3/quote/klines",
-    { symbol, interval, limit }
+    { symbol, interval, limit, startTime, endTime }
   );
 
   return rows.map((row) => ({

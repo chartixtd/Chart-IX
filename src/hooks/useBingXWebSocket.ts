@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useMarketStore } from "@/stores/market";
 import type { BingXTicker } from "@/types/bingx";
+import { gunzipWsMessage } from "@/lib/bingx/ws-utils";
 
 const WS_URL = "wss://open-api-ws.bingx.com/market";
 const RECONNECT_DELAY = 3_000;
@@ -26,15 +27,6 @@ function mapTicker(raw: Record<string, string>): BingXTicker {
     // valuation in preflight.ts, which does its own closeTime freshness check.
     closeTime: Date.now(),
   };
-}
-
-/** GZIP decompress an ArrayBuffer to text */
-async function gunzip(buf: ArrayBuffer): Promise<string> {
-  const ds = new DecompressionStream("gzip");
-  const writer = ds.writable.getWriter();
-  writer.write(new Uint8Array(buf));
-  writer.close();
-  return new Response(ds.readable).text();
 }
 
 function subMsg(reqType: "sub" | "unsub", symbol: string) {
@@ -111,7 +103,7 @@ class BingXWebSocketManager {
           const buf = event.data as ArrayBuffer;
           if (buf.byteLength === 0) return;
           const raw = new TextDecoder().decode(buf);
-          text = raw.startsWith("{") || raw.startsWith("[") ? raw : await gunzip(buf);
+          text = raw.startsWith("{") || raw.startsWith("[") ? raw : await gunzipWsMessage(buf);
         } else {
           return;
         }
@@ -127,7 +119,7 @@ class BingXWebSocketManager {
       } catch {
         if (event.data instanceof ArrayBuffer) {
           try {
-            msg = JSON.parse(await gunzip(event.data as ArrayBuffer));
+            msg = JSON.parse(await gunzipWsMessage(event.data as ArrayBuffer));
           } catch { return; }
         } else { return; }
       }

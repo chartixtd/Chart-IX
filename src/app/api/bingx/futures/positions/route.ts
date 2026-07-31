@@ -6,7 +6,7 @@ import {
   getLeverage, setLeverage, getMarginType, setMarginType,
   getPositionSideDual, setPositionTpSl, closeAllPositions, adjustPositionMargin,
 } from "@/lib/bingx/futures";
-import { invalidateDualSideMode } from "@/lib/trading/account-mode";
+import { invalidateDualSideMode, getDualSideMode } from "@/lib/trading/account-mode";
 import { describeBingXError } from "@/lib/trading/errors";
 
 export async function GET(request: NextRequest) {
@@ -69,7 +69,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: await getFuturesPositions(apiKey, secret, symbol) });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
+    // 带上 BingX 错误码与 i18nKey：只回 String(error) 时前端和日志都看不出
+    // 到底是签名、权限还是限流，排查只能靠猜（与 POST 分支保持一致）
+    const described = describeBingXError(error);
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
   }
 }
 
@@ -154,9 +160,15 @@ export async function POST(request: NextRequest) {
           const applied = await getMarginType(apiKey, secret, symbol);
           return NextResponse.json({ success: true, data: { marginType: applied.marginType } });
         }
-        case "setPositionTpSl":
-          await setPositionTpSl(apiKey, secret, { symbol, positionSide, stopLossPrice, takeProfitPrice });
+        case "setPositionTpSl": {
+          // 必须按账户实际持仓模式决定 positionSide：单向模式下传 LONG/SHORT
+          // 会被 BingX 拒绝（109400），与下单路径用同一套判断
+          const dualSide = await getDualSideMode(authData.user.id, apiKey, secret);
+          await setPositionTpSl(apiKey, secret, {
+            symbol, positionSide, stopLossPrice, takeProfitPrice, dualSide,
+          });
           return NextResponse.json({ success: true });
+        }
         case "setPositionMode": {
           invalidateDualSideMode(authData.user.id);
           return NextResponse.json({ success: true });

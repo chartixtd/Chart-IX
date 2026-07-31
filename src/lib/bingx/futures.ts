@@ -236,11 +236,19 @@ export async function setPositionTpSl(
     stopLossPrice?: string;
     takeProfitPrice?: string;
     workingType?: FuturesWorkingType;
+    /**
+     * 账户是否为对冲模式。单向模式（false）下 BingX 要求 positionSide 必须是
+     * BOTH，传 LONG/SHORT 会被拒（109400 PositionSide must be BOTH in one-way
+     * mode）——这正是首版改写后仍然报「订单参数不合法」的原因。
+     */
+    dualSide?: boolean;
   }
 ): Promise<void> {
-  const positionSide = params.positionSide ?? "LONG";
-  // 平多要卖出，平空要买入
-  const closeSide: FuturesSide = positionSide === "LONG" ? "SELL" : "BUY";
+  const holdingSide = params.positionSide ?? "LONG";
+  // 平多要卖出，平空要买入。注意方向取自持仓方向，与 positionSide 字段无关：
+  // 单向模式下 positionSide 是 BOTH，但平仓方向仍由实际持仓多空决定。
+  const closeSide: FuturesSide = holdingSide === "LONG" ? "SELL" : "BUY";
+  const positionSide: FuturesPositionSide = params.dualSide === false ? "BOTH" : holdingSide;
   const workingType = params.workingType ?? "MARK_PRICE";
 
   const legs: Array<{ type: FuturesOrderType; stopPrice: string }> = [];

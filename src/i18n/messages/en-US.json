@@ -762,6 +762,7 @@
     "set_tp_sl": "Set Take Profit / Stop Loss",
     "take_profit_price": "Take Profit Price",
     "stop_loss_price": "Stop Loss Price",
+    "tpsl_required": "Enter a take profit or stop loss price",
     "direction_hint": "Long = open or add to a long position, Short = open or add to a short position; to close a position, use the Close button in the Orders panel.",
     "high_leverage_warning": "{leverage}x high leverage: a move of roughly 1/{leverage} against your position may trigger liquidation.",
     "order_placed": "Order placed · {id}",

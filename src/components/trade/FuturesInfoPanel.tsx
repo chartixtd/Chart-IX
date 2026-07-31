@@ -57,6 +57,12 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [amending, setAmending] = useState(false);
+  // 持仓的止盈止损编辑（持仓本身没有"价格"可改，能改的是 TP/SL）
+  const [editingPos, setEditingPos] = useState<string | null>(null);
+  const [tpValue, setTpValue] = useState("");
+  const [slValue, setSlValue] = useState("");
+  const [savingTpSl, setSavingTpSl] = useState(false);
+  const [tpSlError, setTpSlError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -156,6 +162,51 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     }
   };
 
+  const startEditPos = (pos: FuturesPosition) => {
+    // BingX 的持仓接口不回传已挂的 TP/SL 价，所以每次都从空开始填
+    setTpValue("");
+    setSlValue("");
+    setTpSlError(null);
+    setEditingPos(pos.positionId);
+  };
+
+  const handleSaveTpSl = async (pos: FuturesPosition) => {
+    const tp = parseFloat(tpValue);
+    const sl = parseFloat(slValue);
+    const hasTp = tp > 0;
+    const hasSl = sl > 0;
+    if (!hasTp && !hasSl) {
+      setTpSlError(t("trade.tpsl_required"));
+      return;
+    }
+    setSavingTpSl(true);
+    setTpSlError(null);
+    try {
+      const res = await fetch("/api/bingx/futures/positions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "setPositionTpSl",
+          symbol: pos.symbol,
+          positionSide: pos.positionSide,
+          takeProfitPrice: hasTp ? String(tp) : undefined,
+          stopLossPrice: hasSl ? String(sl) : undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setTpSlError(translateError(json, t));
+        return;
+      }
+      setEditingPos(null);
+      fetchData();
+    } catch {
+      setTpSlError(t("bingx_error.network"));
+    } finally {
+      setSavingTpSl(false);
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center py-8"><Spinner className="h-5 w-5" /></div>;
   }
@@ -190,13 +241,23 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                       </span>
                       <span className="text-xs text-text-muted">{pos.isolated ? "isolated" : "cross"} · {pos.leverage}x</span>
                     </div>
-                    <button
-                      onClick={() => handleClose(pos)}
-                      disabled={closing === pos.positionId}
-                      className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
-                    >
-                      {closing === pos.positionId ? "..." : "Close"}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() =>
+                          editingPos === pos.positionId ? setEditingPos(null) : startEditPos(pos)
+                        }
+                        className="text-xs text-text-muted hover:text-gold"
+                      >
+                        {editingPos === pos.positionId ? "取消" : "TP/SL"}
+                      </button>
+                      <button
+                        onClick={() => handleClose(pos)}
+                        disabled={closing === pos.positionId}
+                        className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
+                      >
+                        {closing === pos.positionId ? "..." : "Close"}
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-x-2 text-xs">
                     <span className="text-text-muted">Size</span><span className="text-text-primary text-right">{parseFloat(pos.positionAmt).toFixed(4)}</span>
@@ -208,6 +269,38 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                       {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT
                     </span>
                   </div>
+                  {editingPos === pos.positionId && (
+                    <div className="mt-2 space-y-1.5 rounded border border-border-default p-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-14 shrink-0 text-xs text-text-muted">{t("trade.take_profit_price")}</span>
+                        <input
+                          type="number"
+                          value={tpValue}
+                          onChange={(e) => setTpValue(e.target.value)}
+                          placeholder={parseFloat(pos.markPrice).toFixed(4)}
+                          className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-14 shrink-0 text-xs text-text-muted">{t("trade.stop_loss_price")}</span>
+                        <input
+                          type="number"
+                          value={slValue}
+                          onChange={(e) => setSlValue(e.target.value)}
+                          placeholder={parseFloat(pos.markPrice).toFixed(4)}
+                          className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary"
+                        />
+                      </div>
+                      {tpSlError && <p className="text-xs text-danger">{tpSlError}</p>}
+                      <button
+                        onClick={() => handleSaveTpSl(pos)}
+                        disabled={savingTpSl}
+                        className="w-full rounded bg-gold py-1 text-xs font-medium text-black disabled:opacity-50"
+                      >
+                        {savingTpSl ? "..." : t("trade.set_tp_sl")}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

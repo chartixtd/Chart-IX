@@ -762,6 +762,7 @@
     "set_tp_sl": "设置止盈止损",
     "take_profit_price": "止盈价",
     "stop_loss_price": "止损价",
+    "tpsl_required": "请至少填写止盈价或止损价",
     "direction_hint": "做多 = 开多或加多，做空 = 开空或加空；平仓请到「订单」面板点平仓。",
     "high_leverage_warning": "{leverage}x 高杠杆：价格反向波动约 {leverage} 分之一即可能触发强平。",
     "order_placed": "下单成功 · {id}",

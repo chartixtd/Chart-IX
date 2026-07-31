@@ -94,12 +94,11 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     fetchData();
   };
 
-  // BingX futures order types: MARKET | LIMIT | STOP_MARKET | STOP | TAKE_PROFIT_MARKET | TAKE_PROFIT | TRAILING_STOP_MARKET
-  const isModifiable = (type: string) =>
-    type !== "MARKET";
-
+  // 条件单（止盈止损/触发单）的触发价在 stopPrice 字段；限价单改 price 字段
+  // 市价单不会出现在挂单列表（即时成交），所以出现在这里的都能改
   const isConditionalOrder = (type: string) =>
-    type !== "LIMIT" && type !== "MARKET";
+    type.toUpperCase().includes("STOP") ||
+    type.toUpperCase().includes("TAKE_PROFIT");
 
   const startEdit = (order: FuturesOrder) => {
     // STOP/STOP_MARKET/TAKE_PROFIT 等条件单的触发价在 stopPrice；限价单在 price
@@ -268,14 +267,12 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                       {o.type === "LIMIT" ? parseFloat(o.price).toFixed(4) : "MKT"}
                     </span>
                     <span className="text-text-primary">{parseFloat(o.origQty)}</span>
-                    {isModifiable(o.type) && (
-                      <button
-                        onClick={() => startEdit(o)}
-                        className="text-text-muted hover:text-gold"
-                      >
-                        Edit
-                      </button>
-                    )}
+                    <button
+                      onClick={() => startEdit(o)}
+                      className="text-text-muted hover:text-gold"
+                    >
+                      Edit
+                    </button>
                     <button
                       onClick={() => handleCancel(o)}
                       disabled={cancelling === o.orderId}

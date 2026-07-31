@@ -136,13 +136,12 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     fetchData();
   };
 
-  // BingX spot order types (see lib/bingx/trade.ts OrderType):
-  // MARKET | LIMIT | TAKE_STOP_LIMIT | TAKE_STOP_MARKET | TRIGGER_LIMIT | TRIGGER_MARKET
-  const isModifiable = (type: string) =>
-    type !== "MARKET";
-
+  // 条件单（止盈止损/触发单）的触发价在 stopPrice 字段；限价单改 price 字段
+  // 市价单不会出现在挂单列表（即时成交），所以出现在这里的都能改
   const isConditionalOrder = (type: string) =>
-    type !== "LIMIT" && type !== "MARKET";
+    type.toUpperCase().includes("STOP") ||
+    type.toUpperCase().includes("TRIGGER") ||
+    type.toUpperCase().includes("TAKE_PROFIT");
 
   const startEdit = (order: BingXOrder) => {
     // 条件单（止盈止损/触发单）的触发价格在 stopPrice；限价单在 price
@@ -243,14 +242,12 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
                     <span className="text-xs text-text-muted">{order.type}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {isModifiable(order.type) && (
-                      <button
-                        onClick={() => editing === order.orderId ? setEditing(null) : startEdit(order)}
-                        className="text-xs text-text-muted hover:text-gold"
-                      >
-                        {editing === order.orderId ? "×" : "Edit"}
-                      </button>
-                    )}
+                    <button
+                      onClick={() => editing === order.orderId ? setEditing(null) : startEdit(order)}
+                      className="text-xs text-text-muted hover:text-gold"
+                    >
+                      {editing === order.orderId ? "×" : "Edit"}
+                    </button>
                     <button
                       onClick={() => handleCancel(order)}
                       disabled={cancelling === order.orderId}

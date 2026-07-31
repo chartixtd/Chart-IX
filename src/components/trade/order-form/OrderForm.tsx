@@ -23,9 +23,12 @@ interface OrderFormProps {
   symbol: string;
   market: OrderFormMarket;
   initialSide?: "long" | "short";
+  /** 点击盘口/图表价格后传入的联动信号；nonce 变化即视为一次新的联动请求
+   *  （哪怕两次点了同一个价格）。只在当前是限价类订单类型时生效。 */
+  priceLinkSignal?: { price: number; nonce: number } | null;
 }
 
-export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
+export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: OrderFormProps) {
   const t = useTranslations();
   const cfg = MARKET_CONFIG[market];
   const baseAsset = symbol.split("-")[0] ?? symbol;
@@ -131,6 +134,16 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
 
   const isLimit = LIMIT_TYPES.has(orderType);
   const refPrice = isLimit && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
+
+  // 盘口/图表价格联动：只在当前是限价类订单时把点击的价格填进价格框，
+  // 只依赖 nonce（而不是 isLimit）——如果同时依赖 isLimit，用户先点价格
+  // 再切成限价单不会补填，体验上不如"点的时候是什么类型就按什么类型处理"
+  // 直观；nonce 变化本身就代表"这是一次新的点击"，不需要额外去重。
+  useEffect(() => {
+    if (!priceLinkSignal || !isLimit) return;
+    setPrice(String(priceLinkSignal.price));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceLinkSignal]);
 
   const availableUsdt = useMemo(() => {
     if (market === "paper") return paperData?.account.balance_usdt ?? 0;

@@ -779,6 +779,7 @@
     "high_leverage_warning": "{leverage}x high leverage: a move of roughly 1/{leverage} against your position may trigger liquidation.",
     "order_placed": "Order placed · {id}",
     "paper_placed": "Paper order placed · {symbol} @ {price}",
+    "reverse_reopen_failed": "Position closed, but reopening in the opposite direction failed",
     "side": {
       "buy": "Buy", "sell": "Sell", "long": "Long", "short": "Short"
     },

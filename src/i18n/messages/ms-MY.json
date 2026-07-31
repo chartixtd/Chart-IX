@@ -779,6 +779,7 @@
     "high_leverage_warning": "Leveraj tinggi {leverage}x: pergerakan lawan kira-kira 1/{leverage} boleh mencetuskan kecairan.",
     "order_placed": "Pesanan berjaya dibuat · {id}",
     "paper_placed": "Pesanan simulasi berjaya dibuat · {symbol} @ {price}",
+    "reverse_reopen_failed": "Kedudukan telah ditutup, tetapi pembukaan semula dalam arah bertentangan gagal",
     "side": {
       "buy": "Beli", "sell": "Jual", "long": "Panjang", "short": "Pendek"
     },

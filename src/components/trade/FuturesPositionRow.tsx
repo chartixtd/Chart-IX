@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import type { FuturesPosition } from "@/hooks/useTradingAccount";
 
@@ -24,6 +25,7 @@ const CLOSE_PERCENTS = [25, 50, 75, 100];
 export function FuturesPositionRow({
   position: pos, highlighted, onClose, onReduceOnlyClose, onReverse, onSaveTpSl,
 }: FuturesPositionRowProps) {
+  const t = useTranslations();
   const [closing, setClosing] = useState(false);
   const [reducingPct, setReducingPct] = useState<number | null>(null);
   const [reversing, setReversing] = useState(false);
@@ -53,15 +55,15 @@ export function FuturesPositionRow({
     const hasTp = tp > 0;
     const hasSl = sl > 0;
     if (!hasTp && !hasSl) {
-      setTpSlError("Enter a take-profit and/or stop-loss price");
+      setTpSlError(t("trading.tpsl_required"));
       return;
     }
     if (hasTp && (isLong ? tp <= mark : tp >= mark)) {
-      setTpSlError(isLong ? "Take-profit must be above mark price" : "Take-profit must be below mark price");
+      setTpSlError(isLong ? t("trading.tp_must_be_above") : t("trading.tp_must_be_below"));
       return;
     }
     if (hasSl && (isLong ? sl >= mark : sl <= mark)) {
-      setTpSlError(isLong ? "Stop-loss must be below mark price" : "Stop-loss must be above mark price");
+      setTpSlError(isLong ? t("trading.sl_must_be_below") : t("trading.sl_must_be_above"));
       return;
     }
     setSavingTpSl(true);
@@ -112,18 +114,18 @@ export function FuturesPositionRow({
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => (editingTpSl ? setEditingTpSl(false) : startTpSl())} className="text-xs text-text-muted hover:text-gold">
-            {editingTpSl ? "取消" : "TP/SL"}
+            {editingTpSl ? t("common.cancel") : "TP/SL"}
           </button>
           <button
             onClick={() => setReverseConfirmOpen(true)}
-            disabled={reversing}
+            disabled={closing || reducingPct !== null || reversing}
             className="text-xs text-text-muted hover:text-gold disabled:opacity-50"
           >
             {reversing ? "..." : "Reverse"}
           </button>
           <button
             onClick={handleClose}
-            disabled={closing || reducingPct !== null}
+            disabled={closing || reducingPct !== null || reversing}
             className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
           >
             {closing ? "..." : "Close"}
@@ -149,7 +151,7 @@ export function FuturesPositionRow({
           <button
             key={p}
             onClick={() => handleReduceOnlyClose(p)}
-            disabled={reducingPct !== null || closing}
+            disabled={reducingPct !== null || closing || reversing}
             className="rounded-xs border border-border-default px-1.5 py-0.5 text-xs text-text-muted hover:border-gold hover:text-gold disabled:opacity-50"
           >
             {reducingPct === p ? "..." : `${p}%`}
@@ -187,7 +189,7 @@ export function FuturesPositionRow({
             disabled={savingTpSl}
             className="w-full rounded bg-gold py-1 text-xs font-medium text-black disabled:opacity-50"
           >
-            {savingTpSl ? "..." : "Set TP/SL"}
+            {savingTpSl ? "..." : t("trading.set_tp_sl")}
           </button>
         </div>
       )}
@@ -203,7 +205,7 @@ export function FuturesPositionRow({
             </button>
             <button
               onClick={handleReverse}
-              disabled={reversing}
+              disabled={closing || reducingPct !== null || reversing}
               className="rounded bg-gold px-2 py-1 text-xs font-medium text-black disabled:opacity-50"
             >
               {reversing ? "..." : "Confirm Reverse"}

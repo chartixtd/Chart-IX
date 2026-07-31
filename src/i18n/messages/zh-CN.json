@@ -779,6 +779,7 @@
     "high_leverage_warning": "{leverage}x 高杠杆：价格反向波动约 {leverage} 分之一即可能触发强平。",
     "order_placed": "下单成功 · {id}",
     "paper_placed": "模拟盘下单成功 · {symbol} @ {price}",
+    "reverse_reopen_failed": "仓位已平仓，但反向开仓失败",
     "side": {
       "buy": "买入", "sell": "卖出", "long": "做多", "short": "做空"
     },

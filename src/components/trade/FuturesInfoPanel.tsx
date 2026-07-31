@@ -58,6 +58,11 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const [editValue, setEditValue] = useState("");
   const [amending, setAmending] = useState(false);
 
+  // 面板级的最近一次操作错误。row 组件里的 actionError 只在该持仓仍存在、行还挂载时可见——
+  // 但反向开仓失败这类情况会导致该持仓从列表中消失（第一腿平仓已成功），行随之卸载，
+  // 局部错误状态跟着丢失。这里独立保存一份，保证错误信息在行消失后依然能显示给用户。
+  const [lastActionError, setLastActionError] = useState<string | null>(null);
+
   const handleCancel = async (order: FuturesOpenOrder) => {
     setCancelling(order.orderId);
     await fetch("/api/bingx/futures/open-orders", {
@@ -109,60 +114,90 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   };
 
   const handleClose = async (position: FuturesPosition) => {
+    setLastActionError(null);
     try {
       const json = await postJson("/api/bingx/futures/positions", {
         action: "closePosition", symbol: position.symbol, positionId: position.positionId,
       });
-      if (!json.success) return { ok: false, message: translateError(json, t) };
+      if (!json.success) {
+        const message = translateError(json, t);
+        setLastActionError(message);
+        return { ok: false, message };
+      }
       return { ok: true };
     } catch {
-      return { ok: false, message: t("bingx_error.network") };
+      const message = t("bingx_error.network");
+      setLastActionError(message);
+      return { ok: false, message };
     } finally {
       refetchAll();
     }
   };
 
   const handleReduceOnlyClose = async (position: FuturesPosition, percent: number) => {
+    setLastActionError(null);
     try {
       const json = await postJson("/api/bingx/futures/positions", {
         action: "reduceOnlyClose", symbol: position.symbol, positionId: position.positionId,
         positionSide: position.positionSide, percent,
       });
-      if (!json.success) return { ok: false, message: translateError(json, t) };
+      if (!json.success) {
+        const message = translateError(json, t);
+        setLastActionError(message);
+        return { ok: false, message };
+      }
       return { ok: true };
     } catch {
-      return { ok: false, message: t("bingx_error.network") };
+      const message = t("bingx_error.network");
+      setLastActionError(message);
+      return { ok: false, message };
     } finally {
       refetchAll();
     }
   };
 
   const handleReverse = async (position: FuturesPosition) => {
+    setLastActionError(null);
     try {
       const json = await postJson("/api/bingx/futures/positions", {
         action: "reversePosition", symbol: position.symbol, positionId: position.positionId,
         positionSide: position.positionSide,
       });
-      if (!json.success) return { ok: false, message: translateError(json, t) };
+      if (!json.success) {
+        // 这条错误最关键：反向开仓的第一腿（平仓）可能已经成功，触发这个失败的持仓
+        // 会从列表中消失，行组件随之卸载——所以必须落在面板级状态里才能让用户看到
+        const message = translateError(json, t);
+        setLastActionError(message);
+        return { ok: false, message };
+      }
       return { ok: true };
     } catch {
-      return { ok: false, message: t("bingx_error.network") };
+      const message = t("bingx_error.network");
+      setLastActionError(message);
+      return { ok: false, message };
     } finally {
       refetchAll();
     }
   };
 
   const handleSaveTpSl = async (position: FuturesPosition, tp: string, sl: string) => {
+    setLastActionError(null);
     try {
       const json = await postJson("/api/bingx/futures/positions", {
         action: "setPositionTpSl", symbol: position.symbol, positionSide: position.positionSide,
         takeProfitPrice: tp || undefined, stopLossPrice: sl || undefined,
       });
-      if (!json.success) return { ok: false, message: translateError(json, t) };
+      if (!json.success) {
+        const message = translateError(json, t);
+        setLastActionError(message);
+        return { ok: false, message };
+      }
       refetchAll();
       return { ok: true };
     } catch {
-      return { ok: false, message: t("bingx_error.network") };
+      const message = t("bingx_error.network");
+      setLastActionError(message);
+      return { ok: false, message };
     }
   };
 
@@ -193,6 +228,12 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
           </button>
         ))}
       </div>
+
+      {lastActionError && (
+        <p className="shrink-0 border-b border-border-default px-3 py-1.5 text-xs text-danger">
+          {lastActionError}
+        </p>
+      )}
 
       <div className="flex-1 overflow-auto">
         {tab === "positions" && (

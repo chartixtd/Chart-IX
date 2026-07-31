@@ -161,6 +161,15 @@ export async function POST(request: NextRequest) {
             );
           }
 
+          // 100% 走整仓平仓的既有代码路径——按精度 floor 计算数量在 100% 场景下
+          // 可能留下无法平掉的精度残余，closePosition 按 positionId 直接平仓，无需算量
+          if (pct >= 100) {
+            return NextResponse.json({
+              success: true,
+              data: await closePosition(apiKey, secret, positionId),
+            });
+          }
+
           const spec = await getSymbolSpec(symbol, "futures", pos.positionSide === "SHORT" ? "SHORT" : "LONG");
           if (!spec) {
             return NextResponse.json(

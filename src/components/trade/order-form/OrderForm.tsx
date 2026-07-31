@@ -15,6 +15,7 @@ import { PriceFields } from "./fields/PriceFields";
 import { TifField, type TimeInForceOption } from "./fields/TifField";
 import { ReduceOnlyField } from "./fields/ReduceOnlyField";
 import { OrderPreview } from "./OrderPreview";
+import { OcoTicket } from "./OcoTicket";
 import { MARKET_CONFIG, LIMIT_TYPES, STOP_TYPES, TRAILING_TYPES, TPSL_ATTACHABLE, type OrderFormMarket } from "./config";
 import { cn, formatPrice } from "@/lib/utils";
 
@@ -308,68 +309,75 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
           </div>
         </div>
 
-        {cfg.hasLeverage && (
-          <LeverageField
-            value={leverage}
-            maxLeverage={maxLeverage}
-            marginType={futuresAccount?.marginType}
-            onApply={applyLeverage}
-            onApplyMarginType={market === "futures" ? applyMarginType : undefined}
-            localOnly={market === "paper"}
-            onLocalChange={handleLeverageConfirmed}
-          />
+        {orderType !== "OCO" && (
+          <>
+            {cfg.hasLeverage && (
+              <LeverageField
+                value={leverage}
+                maxLeverage={maxLeverage}
+                marginType={futuresAccount?.marginType}
+                onApply={applyLeverage}
+                onApplyMarginType={market === "futures" ? applyMarginType : undefined}
+                localOnly={market === "paper"}
+                onLocalChange={handleLeverageConfirmed}
+              />
+            )}
+
+            <PriceFields
+              orderType={orderType}
+              currentPrice={currentPrice}
+              price={price} onPriceChange={setPrice}
+              stopPrice={stopPrice} onStopPriceChange={setStopPrice}
+              callbackPercent={callbackPercent} onCallbackPercentChange={setCallbackPercent}
+              tpPrice={tpPrice} onTpPriceChange={setTpPrice}
+              slPrice={slPrice} onSlPriceChange={setSlPrice}
+              showTpSl={showTpSl} onToggleTpSl={setShowTpSl}
+              allowTpSl={market === "futures"}
+            />
+
+            {uiMode === "pro" && isLimit && (
+              <TifField value={timeInForce} onChange={setTimeInForce} />
+            )}
+
+            {market === "futures" && (
+              <ReduceOnlyField value={reduceOnly} onChange={setReduceOnly} />
+            )}
+
+            <AmountField
+              value={amount} onChange={setAmount}
+              availableUsdt={availableUsdt}
+              leverage={effectiveLeverage}
+              estQty={preview.sizing?.qty}
+              baseAsset={baseAsset}
+            />
+
+            <OrderPreview
+              preview={preview} spec={spec} baseAsset={baseAsset}
+              leverage={effectiveLeverage} showMargin={cfg.hasLeverage}
+            />
+
+            <Button
+              className="w-full"
+              variant={direction === "LONG" ? "green" : "red"}
+              disabled={!canSubmit()}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {t(direction === "LONG" ? cfg.longLabelKey : cfg.shortLabelKey)} {baseAsset}
+              {cfg.hasLeverage ? ` ${effectiveLeverage}x` : ""}
+            </Button>
+
+            {result && (
+              <div className={cn("rounded-xs px-3 py-2 text-xs", result.ok ? "bg-success/10 text-success" : "bg-danger/10 text-danger")}>
+                {result.message}
+              </div>
+            )}
+          </>
         )}
 
-        <PriceFields
-          orderType={orderType}
-          currentPrice={currentPrice}
-          price={price} onPriceChange={setPrice}
-          stopPrice={stopPrice} onStopPriceChange={setStopPrice}
-          callbackPercent={callbackPercent} onCallbackPercentChange={setCallbackPercent}
-          tpPrice={tpPrice} onTpPriceChange={setTpPrice}
-          slPrice={slPrice} onSlPriceChange={setSlPrice}
-          showTpSl={showTpSl} onToggleTpSl={setShowTpSl}
-          allowTpSl={market === "futures"}
-        />
-
-        {uiMode === "pro" && isLimit && (
-          <TifField value={timeInForce} onChange={setTimeInForce} />
-        )}
-
-        {market === "futures" && (
-          <ReduceOnlyField value={reduceOnly} onChange={setReduceOnly} />
-        )}
-
-        <AmountField
-          value={amount} onChange={setAmount}
-          availableUsdt={availableUsdt}
-          leverage={effectiveLeverage}
-          estQty={preview.sizing?.qty}
-          baseAsset={baseAsset}
-        />
-
-        <OrderPreview
-          preview={preview} spec={spec} baseAsset={baseAsset}
-          leverage={effectiveLeverage} showMargin={cfg.hasLeverage}
-        />
-
-        <Button
-          className="w-full"
-          variant={direction === "LONG" ? "green" : "red"}
-          disabled={!canSubmit()}
-          onClick={() => setConfirmOpen(true)}
-        >
-          {t(direction === "LONG" ? cfg.longLabelKey : cfg.shortLabelKey)} {baseAsset}
-          {cfg.hasLeverage ? ` ${effectiveLeverage}x` : ""}
-        </Button>
-
-        {result && (
-          <div className={cn("rounded-xs px-3 py-2 text-xs", result.ok ? "bg-success/10 text-success" : "bg-danger/10 text-danger")}>
-            {result.message}
-          </div>
-        )}
+        {orderType === "OCO" && <OcoTicket symbol={symbol} direction={direction} />}
       </div>
 
+      {orderType !== "OCO" && (
       <OrderConfirmModal
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
@@ -388,6 +396,7 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
         estLiquidationPrice={preview.estLiquidationPrice}
         availableUsdt={availableUsdt}
       />
+      )}
     </div>
   );
 }

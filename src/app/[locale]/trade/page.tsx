@@ -4,6 +4,7 @@ import { useState, memo, useCallback, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -291,43 +292,16 @@ const IntervalBar = memo(function IntervalBar({
   );
 });
 
-// Memoized right panel tabs
-const RightTabs = memo(function RightTabs({
-  tab,
-  onTabChange,
-}: {
-  tab: string;
-  onTabChange: (t: string) => void;
-}) {
-  const t = useTranslations("trade");
-  const tabs = [
-    { key: "trade", label: t("market.trade") },
-    { key: "orders", label: "Orders" },
-    { key: "book", label: t("market.order_book") },
-  ] as const;
-
+/** 竖直方向的拖拽手柄——常态是一条细分隔线，hover/拖拽时高亮成金色并露出一个抓取提示点 */
+function ResizeHandle() {
   return (
-    <div className="flex border-b border-border-default">
-      {tabs.map(({ key, label }) => (
-        <button
-          key={key}
-          onClick={() => onTabChange(key)}
-          className={cn(
-            "relative flex-1 py-2 text-xs font-medium transition-colors duration-200",
-            tab === key
-              ? "text-text-primary"
-              : "text-text-muted hover:text-text-secondary"
-          )}
-        >
-          {label}
-          {tab === key && (
-            <span className="absolute inset-x-0 -bottom-px h-px animate-scale-in bg-gold" />
-          )}
-        </button>
-      ))}
-    </div>
+    <PanelResizeHandle className="group relative w-1 shrink-0 bg-border-default transition-colors hover:bg-gold/50 active:bg-gold">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 flex h-8 w-2.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-xs bg-bg-tertiary opacity-0 transition-opacity group-hover:opacity-100">
+        <span className="text-[8px] leading-none text-text-muted">⋮</span>
+      </div>
+    </PanelResizeHandle>
   );
-});
+}
 
 export default function TradePage() {
   const locale = useLocale();
@@ -338,11 +312,10 @@ export default function TradePage() {
   const setInterval = useTradePrefsStore((s) => s.setInterval);
   const market = useTradePrefsStore((s) => s.market);
   const setMarket = useTradePrefsStore((s) => s.setMarket);
-  const rightTab = useTradePrefsStore((s) => s.rightTab);
-  const setRightTab = useTradePrefsStore((s) => s.setRightTab);
   const [mobileTab, setMobileTab] = useState<"chart" | "trade" | "book">("chart");
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
   const [initialSide, setInitialSide] = useState<"long" | "short" | undefined>();
+  const [priceLinkSignal, setPriceLinkSignal] = useState<{ price: number; nonce: number } | null>(null);
 
   useBingXWebSocket([symbol]);
 
@@ -369,12 +342,22 @@ export default function TradePage() {
   const handleSymbolSelect = useCallback((s: string) => { setSymbol(s); setSymbolPickerOpen(false); }, []);
   const handleIntervalChange = useCallback((i: string) => setInterval(i), []);
   const handleMarketChange = useCallback((m: MarketType) => setMarket(m), []);
-  const handleTabChange = useCallback((t: string) => setRightTab(t as typeof rightTab), []);
   const openSymbolPicker = useCallback(() => setSymbolPickerOpen(true), []);
+  const handleOrderBookPriceClick = useCallback((price: number) => {
+    setPriceLinkSignal({ price, nonce: Date.now() });
+  }, []);
 
   // key={market}: 切换市场必须整体重挂载 OrderForm，否则同一实例会带着上一个市场的
   // state（尤其是杠杆）跨市场存活——模拟盘本地设置的杠杆数字会原样漏进合约表单。
-  const tradePanel = <OrderForm key={market} symbol={symbol} market={market} initialSide={initialSide} />;
+  const tradePanel = (
+    <OrderForm
+      key={market}
+      symbol={symbol}
+      market={market}
+      initialSide={initialSide}
+      priceLinkSignal={priceLinkSignal}
+    />
+  );
 
   const ordersPanel =
     market === "spot" ? <OrdersPanel symbol={symbol} />
@@ -394,38 +377,50 @@ export default function TradePage() {
         authLoading={auth.loading}
       />
 
-      {/* Desktop layout: fixed 3-column grid */}
-      <div className="hidden flex-1 overflow-hidden lg:flex">
-        <div className="w-60 shrink-0 border-r border-border-default">
+      {/* Desktop layout: draggable 4-column layout */}
+      <PanelGroup direction="horizontal" autoSaveId="chart-ix-trade-layout" className="hidden flex-1 overflow-hidden lg:flex">
+        <Panel defaultSize={15} minSize={10} maxSize={25} className="border-r border-border-default">
           <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} />
-        </div>
+        </Panel>
 
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex items-center border-b border-border-default">
-            <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
-            <div className="ml-auto pr-2">
-              <FearGreedIndex compact />
+        <ResizeHandle />
+
+        <Panel defaultSize={52} minSize={30}>
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="flex items-center border-b border-border-default">
+              <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+              <div className="ml-auto pr-2">
+                <FearGreedIndex compact />
+              </div>
+            </div>
+            <div className="flex-1">
+              <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
             </div>
           </div>
-          <div className="flex-1">
-            <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
-          </div>
-        </div>
+        </Panel>
 
-        <div className="w-64 shrink-0 border-l border-border-default flex flex-col overflow-hidden">
-          <RightTabs tab={rightTab} onTabChange={handleTabChange} />
-          <div className="flex-1 overflow-hidden">
-            {rightTab === "trade" && (
-              <div className="flex h-full flex-col divide-y divide-border-default overflow-hidden">
-                <div className="shrink-0">{tradePanel}</div>
-                <div className="min-h-0 flex-1 overflow-auto">{ordersPanel}</div>
-              </div>
-            )}
-            {rightTab === "orders" && ordersPanel}
-            {rightTab === "book" && <OrderBook symbol={symbol} />}
+        <ResizeHandle />
+
+        <Panel defaultSize={13} minSize={8} maxSize={22} className="border-r border-border-default">
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="shrink-0 border-b border-border-default px-3 py-2">
+              <span className="text-xs font-medium text-text-secondary">盘口</span>
+            </div>
+            <div className="flex-1 overflow-auto">
+              <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />
+            </div>
           </div>
-        </div>
-      </div>
+        </Panel>
+
+        <ResizeHandle />
+
+        <Panel defaultSize={20} minSize={14} maxSize={32}>
+          <div className="flex h-full flex-col divide-y divide-border-default overflow-hidden">
+            <div className="shrink-0">{tradePanel}</div>
+            <div className="min-h-0 flex-1 overflow-auto">{ordersPanel}</div>
+          </div>
+        </Panel>
+      </PanelGroup>
 
       {/* Mobile layout: tab-switched single column */}
       <div className="flex flex-1 flex-col overflow-hidden lg:hidden">
@@ -470,7 +465,7 @@ export default function TradePage() {
               <div className="min-h-[16rem] flex-1">{ordersPanel}</div>
             </div>
           )}
-          {mobileTab === "book" && <OrderBook symbol={symbol} />}
+          {mobileTab === "book" && <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />}
         </div>
       </div>
 

@@ -51,13 +51,13 @@ export type BingXEnv = "prod-live" | "prod-vst";
  * Follows BingX official authentication spec:
  * - Sorted params (ASCII), no URL encoding in signing string
  * - HMAC-SHA256 signature of canonical string
- * - POST: body = canonical&signature=<hex>, Content-Type: application/x-www-form-urlencoded
+ * - POST/PUT: body = canonical&signature=<hex>, Content-Type: application/x-www-form-urlencoded
  * - GET/DELETE: URL query string = canonical&signature=<hex>
  */
 export async function signedRequest<T>(
   apiKey: string,
   secret: string,
-  method: "GET" | "POST" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   params: Record<string, string | number> = {},
   env: BingXEnv = "prod-live"
@@ -77,7 +77,7 @@ export async function signedRequest<T>(
       let url: string;
       let body: string | undefined;
 
-      if (method === "POST") {
+      if (method === "POST" || method === "PUT") {
         url = `${base}${path}`;
         body = `${canonical}&signature=${signature}`;
       } else {

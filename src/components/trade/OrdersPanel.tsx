@@ -1,48 +1,20 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
+import {
+  useSpotOpenOrders, useSpotMyTrades, useSpotBalances,
+  type SpotOpenOrder, type SpotTradeRecord,
+} from "@/hooks/useTradingAccount";
+import { useUserDataStream } from "@/hooks/useUserDataStream";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 interface OrdersPanelProps {
   /** Only used to highlight this symbol's rows; the list itself always shows
    *  every open order/recent fill across all symbols, not just this one. */
   symbol: string;
-}
-
-interface BingXOrder {
-  symbol: string;
-  orderId: string;
-  price: string;
-  stopPrice?: string;
-  origQty: string;
-  executedQty: string;
-  cummulativeQuoteQty: string;
-  status: string;
-  type: string;
-  side: string;
-  time: number;
-  updateTime: number;
-}
-
-interface BingXTradeRecord {
-  symbol: string;
-  id: string;
-  orderId: string;
-  price: string;
-  qty: string;
-  quoteQty: string;
-  commission: string;
-  commissionAsset: string;
-  time: number;
-  isBuyer: boolean;
-  isMaker: boolean;
-}
-
-interface BingXBalanceItem {
-  asset: string;
-  free: string;
-  locked: string;
 }
 
 const PRIORITY_ASSETS = ["USDT", "BTC", "ETH"];
@@ -61,69 +33,42 @@ function formatTime(ts: number) {
 }
 
 export function OrdersPanel({ symbol }: OrdersPanelProps) {
-  const [orders, setOrders] = useState<BingXOrder[]>([]);
-  const [trades, setTrades] = useState<BingXTradeRecord[]>([]);
-  const [balances, setBalances] = useState<BingXBalanceItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const auth = useAuth();
+  useUserDataStream({ market: "spot", enabled: !!auth.userId });
+
+  const queryClient = useQueryClient();
+  const { data: orders = [], isLoading: ordersLoading, error: ordersError } = useSpotOpenOrders();
+  const { data: trades = [], isLoading: tradesLoading } = useSpotMyTrades(30);
+  const { data: rawBalances = [], isLoading: balancesLoading } = useSpotBalances();
+
+  const loading = ordersLoading || tradesLoading || balancesLoading;
+  const error = ordersError?.message?.includes("No valid API key")
+    ? "Please add your BingX API key in Settings first."
+    : null;
+
+  const balances = [...rawBalances]
+    .filter((b) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
+    .sort((a, b) => {
+      const ia = PRIORITY_ASSETS.indexOf(a.asset);
+      const ib = PRIORITY_ASSETS.indexOf(b.asset);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.asset.localeCompare(b.asset);
+    });
+
+  function refetchAll() {
+    queryClient.invalidateQueries({ queryKey: ["trading", "spot-open-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["trading", "spot-my-trades"] });
+    queryClient.invalidateQueries({ queryKey: ["trading", "spot-balances"] });
+  }
+
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [amending, setAmending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    try {
-      // No symbol filter: this panel is the account-wide "everything I have
-      // open" view, not scoped to whichever symbol the chart happens to be on.
-      const [ordersRes, tradesRes, balanceRes] = await Promise.all([
-        fetch(`/api/bingx/trade/open-orders`),
-        fetch(`/api/bingx/trade/my-trades?limit=30`),
-        fetch(`/api/bingx/account/balance`),
-      ]);
-
-      const ordersJson = await ordersRes.json();
-      const tradesJson = await tradesRes.json();
-      const balanceJson = await balanceRes.json();
-
-      if (ordersJson.success) {
-        setOrders(Array.isArray(ordersJson.data) ? ordersJson.data : ordersJson.data?.orders || []);
-      } else if (ordersJson.error?.message?.includes("No valid API key")) {
-        setError("Please add your BingX API key in Settings first.");
-      }
-
-      if (tradesJson.success) {
-        setTrades(Array.isArray(tradesJson.data) ? tradesJson.data : tradesJson.data?.fills || []);
-      }
-
-      if (balanceJson.success && balanceJson.data?.balances) {
-        const filtered = (balanceJson.data.balances as BingXBalanceItem[]).filter(
-          (b) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0
-        );
-        filtered.sort((a, b) => {
-          const ia = PRIORITY_ASSETS.indexOf(a.asset);
-          const ib = PRIORITY_ASSETS.indexOf(b.asset);
-          if (ia !== -1 && ib !== -1) return ia - ib;
-          if (ia !== -1) return -1;
-          if (ib !== -1) return 1;
-          return a.asset.localeCompare(b.asset);
-        });
-        setBalances(filtered);
-      }
-    } catch {
-      // silently ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Fetch on mount and every 5 seconds
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5_000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  const handleCancel = async (order: BingXOrder) => {
+  const handleCancel = async (order: SpotOpenOrder) => {
     setCancelling(order.orderId);
     try {
       await fetch("/api/bingx/trade/open-orders", {
@@ -133,7 +78,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
       });
     } catch { /* ignore */ }
     setCancelling(null);
-    fetchData();
+    refetchAll();
   };
 
   // 条件单（止盈止损/触发单）的触发价在 stopPrice 字段；限价单改 price 字段
@@ -143,7 +88,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     type.toUpperCase().includes("TRIGGER") ||
     type.toUpperCase().includes("TAKE_PROFIT");
 
-  const startEdit = (order: BingXOrder) => {
+  const startEdit = (order: SpotOpenOrder) => {
     // 条件单（止盈止损/触发单）的触发价格在 stopPrice；限价单在 price
     const currentVal = isConditionalOrder(order.type) && order.stopPrice
       ? order.stopPrice
@@ -152,7 +97,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     setEditing(order.orderId);
   };
 
-  const handleAmend = async (order: BingXOrder) => {
+  const handleAmend = async (order: SpotOpenOrder) => {
     const val = parseFloat(editValue);
     if (!(val > 0)) return;
     setAmending(true);
@@ -177,7 +122,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     } catch { /* ignore */ }
     setAmending(false);
     setEditing(null);
-    fetchData();
+    refetchAll();
   };
 
   const formatQtyLocal = (v: string) => {

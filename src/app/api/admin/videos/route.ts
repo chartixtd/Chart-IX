@@ -4,6 +4,13 @@ import { logAdminAction } from "@/lib/supabase/admin-log";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/supabase/admin-auth";
 
+const VALID_LANGUAGES = ["zh-CN", "en-US", "ms-MY"];
+
+/** 校验多语言 JSONB 字段（title / description） */
+function isLocaleMap(v: unknown): v is Record<string, string> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
 // POST - Create a new video
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +27,7 @@ export async function POST(request: NextRequest) {
       duration_seconds,
       file_size_bytes,
       tier_required,
+      language,
     } = body;
 
     if (!storage_url) {
@@ -27,6 +35,12 @@ export async function POST(request: NextRequest) {
     }
     if (!title || typeof title !== "object" || Object.keys(title).length === 0) {
       return NextResponse.json({ error: "title is required (non-empty JSON object)" }, { status: 400 });
+    }
+    if (language !== undefined && !VALID_LANGUAGES.includes(language)) {
+      return NextResponse.json(
+        { error: `language must be one of ${VALID_LANGUAGES.join(", ")}` },
+        { status: 400 }
+      );
     }
 
     const client = createServiceRoleClient();
@@ -41,6 +55,7 @@ export async function POST(request: NextRequest) {
         duration_seconds: duration_seconds ?? 0,
         file_size_bytes: file_size_bytes ?? null,
         tier_required: tier_required ?? "free",
+        language: language ?? "en-US",
       })
       .select()
       .single();
@@ -72,7 +87,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH - Update video (tier_required, is_deleted)
+// PATCH - Update video (title, description, category, thumbnail, duration, language, tier, soft delete)
 export async function PATCH(request: NextRequest) {
   try {
     const auth = await requireAdmin();
@@ -90,6 +105,49 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: "tier_required must be 'free' or 'pro'" }, { status: 400 });
       }
       allowedFields.tier_required = updates.tier_required;
+    }
+    if ("language" in updates) {
+      if (!VALID_LANGUAGES.includes(updates.language)) {
+        return NextResponse.json(
+          { error: `language must be one of ${VALID_LANGUAGES.join(", ")}` },
+          { status: 400 }
+        );
+      }
+      allowedFields.language = updates.language;
+    }
+    if ("title" in updates) {
+      if (!isLocaleMap(updates.title) || Object.keys(updates.title).length === 0) {
+        return NextResponse.json(
+          { error: "title must be a non-empty JSON object" },
+          { status: 400 }
+        );
+      }
+      allowedFields.title = updates.title;
+    }
+    if ("description" in updates) {
+      if (updates.description !== null && !isLocaleMap(updates.description)) {
+        return NextResponse.json(
+          { error: "description must be a JSON object or null" },
+          { status: 400 }
+        );
+      }
+      allowedFields.description = updates.description;
+    }
+    if ("category_id" in updates) {
+      allowedFields.category_id = updates.category_id ?? null;
+    }
+    if ("thumbnail_url" in updates) {
+      allowedFields.thumbnail_url = updates.thumbnail_url || null;
+    }
+    if ("duration_seconds" in updates) {
+      const d = Number(updates.duration_seconds);
+      if (!Number.isFinite(d) || d < 0) {
+        return NextResponse.json(
+          { error: "duration_seconds must be a non-negative number" },
+          { status: 400 }
+        );
+      }
+      allowedFields.duration_seconds = Math.floor(d);
     }
     if ("is_deleted" in updates) {
       allowedFields.is_deleted = updates.is_deleted;

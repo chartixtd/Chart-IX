@@ -5,6 +5,12 @@ export const BINGX_API_BASE = process.env.BINGX_API_BASE_URL || "https://open-ap
 
 export const LOCALES = ["zh-CN", "en-US", "ms-MY"] as const;
 
+/**
+ * 前台可见的语言列表。ms-MY 路由仍可访问，但不在语言切换入口中展示。
+ * 后台内容管理仍使用 LOCALES（可为 ms-MY 标记内容）。
+ */
+export const PUBLIC_LOCALES = ["zh-CN", "en-US"] as const;
+
 export const LANGUAGE_LABELS: Record<string, string> = {
   "zh-CN": "中文",
   "en-US": "English",

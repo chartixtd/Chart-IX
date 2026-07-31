@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { LANGUAGE_LABELS, LOCALES } from "@/lib/constants";
+import { LANGUAGE_LABELS, PUBLIC_LOCALES } from "@/lib/constants";
 
 export default function SettingsPage() {
   const t = useTranslations("settings");
@@ -134,7 +134,7 @@ export default function SettingsPage() {
       <Card className="mt-6" padding="lg">
         <h2 className="text-lg font-semibold text-text-primary">{t("language")}</h2>
         <div className="mt-4 flex gap-2">
-          {LOCALES.map((l) => (
+          {PUBLIC_LOCALES.map((l) => (
             <Button
               key={l}
               variant={profile?.language === l ? "primary" : "outline"}

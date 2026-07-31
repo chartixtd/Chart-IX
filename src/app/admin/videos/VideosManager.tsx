@@ -4,6 +4,7 @@ import { useState, useRef, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
+import { LANGUAGE_LABELS } from "@/lib/constants";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
@@ -23,6 +24,7 @@ const PAGE_SIZE = 20;
 export function VideosManager({ videos, categories, isLoading = false }: VideosManagerProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const thumbInputRef = useRef<HTMLInputElement>(null);
   const t = useTranslations("admin");
   const tc = useTranslations();
   const locale = useLocale();
@@ -42,33 +44,55 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
   const [confirmDelete, setConfirmDelete] = useState<{ id: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Upload form fields
+  // Upload / edit form fields
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [titleZh, setTitleZh] = useState("");
-  const [titleEn, setTitleEn] = useState("");
-  const [titleMs, setTitleMs] = useState("");
-  const [descZh, setDescZh] = useState("");
-  const [descEn, setDescEn] = useState("");
-  const [descMs, setDescMs] = useState("");
+  const [language, setLanguage] = useState<string>("en-US");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const [thumbnailUploading, setThumbnailUploading] = useState(false);
   const [duration, setDuration] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [tier, setTier] = useState("free");
 
+  // 编辑模式：非 null 表示正在编辑该视频（此时无需重新上传视频文件）
+  const [editingVideo, setEditingVideo] = useState<Video | null>(null);
+  const [saving, setSaving] = useState(false);
+
   const resetForm = () => {
     setVideoFile(null);
-    setTitleZh("");
-    setTitleEn("");
-    setTitleMs("");
-    setDescZh("");
-    setDescEn("");
-    setDescMs("");
+    setLanguage("en-US");
+    setTitle("");
+    setDescription("");
     setThumbnailUrl("");
     setDuration("");
     setCategoryId("");
     setTier("free");
     setUploadError("");
     setUploadProgress(0);
+    setEditingVideo(null);
+  };
+
+  const closeModal = () => {
+    setShowUpload(false);
+    resetForm();
+  };
+
+  /** 打开编辑弹窗，用视频当前数据预填表单 */
+  const openEdit = (v: Video) => {
+    const lang = v.language ?? "en-US";
+    setEditingVideo(v);
+    setLanguage(lang);
+    setTitle(v.title?.[lang as keyof typeof v.title] ?? v.title?.["en-US"] ?? "");
+    setDescription(v.description?.[lang as keyof typeof v.description] ?? v.description?.["en-US"] ?? "");
+    setThumbnailUrl(v.thumbnail_url ?? "");
+    setDuration(v.duration_seconds ? String(v.duration_seconds) : "");
+    setCategoryId(v.category_id ? String(v.category_id) : "");
+    setTier(v.tier_required);
+    setVideoFile(null);
+    setUploadError("");
+    setUploadProgress(0);
+    setShowUpload(true);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,12 +103,63 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
     }
   };
 
+  /** 从设备上传缩略图图片 */
+  const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setThumbnailUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/admin/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? t("videos_list.thumbnail_upload_failed"));
+      setThumbnailUrl(data.url);
+      toast(t("videos_list.thumbnail_uploaded"), "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t("videos_list.thumbnail_upload_failed"), "error");
+    } finally {
+      setThumbnailUploading(false);
+      if (thumbInputRef.current) thumbInputRef.current.value = "";
+    }
+  };
+
+  /** 保存对已上传视频的编辑 */
+  const handleSaveEdit = async () => {
+    if (!editingVideo) return;
+    if (!title.trim()) {
+      setUploadError(t("videos_list.title_required_error"));
+      return;
+    }
+    setSaving(true);
+    setUploadError("");
+    try {
+      // 只保留当前所选语言的标题/描述，保持单语言模型
+      const ok = await updateVideo(editingVideo.id, {
+        language,
+        title: { [language]: title.trim() },
+        description: description.trim() ? { [language]: description.trim() } : null,
+        category_id: categoryId ? parseInt(categoryId) : null,
+        thumbnail_url: thumbnailUrl.trim() || null,
+        duration_seconds: duration ? parseInt(duration) : 0,
+        tier_required: tier,
+      });
+      if (!ok) throw new Error(t("videos_list.save_failed"));
+      toast(t("videos_list.saved"), "success");
+      closeModal();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : t("videos_list.save_failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (!videoFile) {
       setUploadError(t("videos_list.please_select_file"));
       return;
     }
-    if (!titleEn.trim() && !titleZh.trim() && !titleMs.trim()) {
+    if (!title.trim()) {
       setUploadError(t("videos_list.title_required_error"));
       return;
     }
@@ -136,28 +211,24 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
       const publicUrl = urlData.publicUrl;
 
       // Send metadata to API to create video record
-      const title: Record<string, string> = {};
-      if (titleZh.trim()) title["zh-CN"] = titleZh.trim();
-      if (titleEn.trim()) title["en-US"] = titleEn.trim();
-      if (titleMs.trim()) title["ms-MY"] = titleMs.trim();
-
-      const description: Record<string, string> = {};
-      if (descZh.trim()) description["zh-CN"] = descZh.trim();
-      if (descEn.trim()) description["en-US"] = descEn.trim();
-      if (descMs.trim()) description["ms-MY"] = descMs.trim();
+      const titleObj: Record<string, string> = { [language]: title.trim() };
+      const descObj: Record<string, string> | null = description.trim()
+        ? { [language]: description.trim() }
+        : null;
 
       const res = await fetch("/api/admin/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title,
-          description: Object.keys(description).length > 0 ? description : null,
+          title: titleObj,
+          description: descObj,
           category_id: categoryId ? parseInt(categoryId) : null,
           storage_url: publicUrl,
           thumbnail_url: thumbnailUrl.trim() || null,
           duration_seconds: duration ? parseInt(duration) : 0,
           file_size_bytes: videoFile.size,
           tier_required: tier,
+          language,
         }),
       });
 
@@ -299,6 +370,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
           <thead className="bg-bg-tertiary text-left">
             <tr>
               <th className="px-4 py-3 text-text-muted">{t("videos_list.title_col")}</th>
+              <th className="px-4 py-3 text-text-muted">{t("videos_list.language")}</th>
               <th className="px-4 py-3 text-text-muted">{t("videos_list.category")}</th>
               <th className="px-4 py-3 text-text-muted">{t("videos_list.duration")}</th>
               <th className="px-4 py-3 text-text-muted">{t("videos_list.tier")}</th>
@@ -313,6 +385,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
                 <td className="max-w-[240px] truncate px-4 py-3 text-text-primary" title={getTitle(v)}>
                   {getTitle(v)}
                 </td>
+                <td className="px-4 py-3 text-text-secondary text-xs">{LANGUAGE_LABELS[v.language] ?? v.language ?? "-"}</td>
                 <td className="px-4 py-3 text-text-secondary">{getCategoryName(v.category)}</td>
                 <td className="px-4 py-3 text-text-secondary">{formatDuration(v.duration_seconds)}</td>
                 <td className="px-4 py-3">
@@ -336,6 +409,14 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openEdit(v)}
+                      className="text-gold"
+                    >
+                      {tc("common.edit")}
+                    </Button>
                     {v.is_deleted ? (
                       <Button
                         size="sm"
@@ -424,57 +505,64 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
         variant="danger"
       />
 
-      {/* Upload Modal */}
-      <Modal open={showUpload} onClose={() => { setShowUpload(false); resetForm(); }} title={t("videos_list.modal_title")} size="lg">
+      {/* Upload / Edit Modal */}
+      <Modal
+        open={showUpload}
+        onClose={closeModal}
+        title={editingVideo ? t("videos_list.edit_video") : t("videos_list.modal_title")}
+        size="lg"
+      >
         <div className="space-y-4">
-          {/* Video File Upload */}
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">
-              {t("videos_list.video_file_required")}
-            </label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="video/*"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="cursor-pointer rounded-lg border-2 border-dashed border-border-default p-8 text-center transition-colors hover:border-gold/50 hover:bg-bg-tertiary/50"
-            >
-              {videoFile ? (
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-text-primary">{videoFile.name}</p>
-                  <p className="text-xs text-text-muted">
-                    {(videoFile.size / (1024 * 1024)).toFixed(1)} MB
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-gold/10">
-                    <svg className="h-5 w-5 text-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
+          {/* Video File Upload — only for new uploads */}
+          {!editingVideo && (
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1.5">
+                {t("videos_list.video_file_required")}
+              </label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="cursor-pointer rounded-lg border-2 border-dashed border-border-default p-8 text-center transition-colors hover:border-gold/50 hover:bg-bg-tertiary/50"
+              >
+                {videoFile ? (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-text-primary">{videoFile.name}</p>
+                    <p className="text-xs text-text-muted">
+                      {(videoFile.size / (1024 * 1024)).toFixed(1)} MB
+                    </p>
                   </div>
-                  <p className="text-sm text-text-secondary">{t("videos_list.click_to_select")}</p>
-                  <p className="text-xs text-text-muted">{t("videos_list.supported_formats")}</p>
-                </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-gold/10">
+                      <svg className="h-5 w-5 text-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </div>
+                    <p className="text-sm text-text-secondary">{t("videos_list.click_to_select")}</p>
+                    <p className="text-xs text-text-muted">{t("videos_list.supported_formats")}</p>
+                  </div>
+                )}
+              </div>
+              {videoFile && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setVideoFile(null); }}
+                  className="mt-1 text-xs text-red-400 hover:text-red-300"
+                >
+                  {t("videos_list.remove_file")}
+                </button>
               )}
             </div>
-            {videoFile && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setVideoFile(null); }}
-                className="mt-1 text-xs text-red-400 hover:text-red-300"
-              >
-                {t("videos_list.remove_file")}
-              </button>
-            )}
-          </div>
+          )}
 
-          {/* Upload progress */}
-          {uploading && uploadProgress > 0 && (
+          {/* Upload progress — only for new uploads */}
+          {!editingVideo && uploading && uploadProgress > 0 && (
             <div>
               <div className="flex items-center justify-between text-xs text-text-muted mb-1">
                 <span>{t("videos_list.uploading")}</span>
@@ -489,13 +577,63 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
             </div>
           )}
 
-          {/* Thumbnail URL */}
-          <Input
-            label={t("videos_list.thumbnail_url")}
-            placeholder="https://..."
-            value={thumbnailUrl}
-            onChange={(e) => setThumbnailUrl(e.target.value)}
-          />
+          {/* Language selector — always visible */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-text-secondary">{t("videos_list.language")}</label>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="w-full rounded-sm border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold"
+            >
+              <option value="zh-CN">{LANGUAGE_LABELS["zh-CN"]}</option>
+              <option value="en-US">{LANGUAGE_LABELS["en-US"]}</option>
+              <option value="ms-MY">{LANGUAGE_LABELS["ms-MY"]}</option>
+            </select>
+          </div>
+
+          {/* Thumbnail: file upload + URL fallback */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-text-secondary">{t("videos_list.thumbnail_url")}</label>
+            {editingVideo && (
+              <p className="text-xs text-text-muted">{t("videos_list.thumbnail_hint")}</p>
+            )}
+            {/* Hidden file input for thumbnail upload */}
+            <input
+              ref={thumbInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleThumbnailUpload}
+              className="hidden"
+            />
+            {/* Preview + button row */}
+            <div className="flex items-center gap-3">
+              {thumbnailUrl && (
+                <img
+                  src={thumbnailUrl}
+                  alt="thumbnail preview"
+                  className="h-16 w-28 rounded object-cover border border-border-default"
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
+                />
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                loading={thumbnailUploading}
+                onClick={() => thumbInputRef.current?.click()}
+              >
+                {thumbnailUrl
+                  ? t("videos_list.thumbnail_replace")
+                  : t("videos_list.thumbnail_upload")}
+              </Button>
+            </div>
+            {/* URL fallback */}
+            <Input
+              placeholder="https://..."
+              value={thumbnailUrl}
+              onChange={(e) => setThumbnailUrl(e.target.value)}
+            />
+          </div>
 
           {/* Duration */}
           <Input
@@ -537,71 +675,37 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
             </div>
           </div>
 
-          {/* Title fields */}
-          <div className="space-y-3">
-            <p className="text-sm font-medium text-text-secondary">{t("videos_list.title_required")}</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Input
-                label={t("videos_list.locale_zh")}
-                placeholder="视频标题"
-                value={titleZh}
-                onChange={(e) => setTitleZh(e.target.value)}
-              />
-              <Input
-                label={t("videos_list.locale_en")}
-                placeholder="Video title"
-                value={titleEn}
-                onChange={(e) => setTitleEn(e.target.value)}
-              />
-              <Input
-                label={t("videos_list.locale_ms")}
-                placeholder="Tajuk video"
-                value={titleMs}
-                onChange={(e) => setTitleMs(e.target.value)}
-              />
-            </div>
-          </div>
+          {/* Title — single field */}
+          <Input
+            label={t("videos_list.title_required")}
+            placeholder={t("videos_list.title_placeholder")}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
 
-          {/* Description fields */}
-          <div className="space-y-3">
-            <p className="text-sm font-medium text-text-secondary">{t("videos_list.description_optional")}</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Input
-                label={t("videos_list.locale_zh")}
-                placeholder="视频描述"
-                value={descZh}
-                onChange={(e) => setDescZh(e.target.value)}
-              />
-              <Input
-                label={t("videos_list.locale_en")}
-                placeholder="Video description"
-                value={descEn}
-                onChange={(e) => setDescEn(e.target.value)}
-              />
-              <Input
-                label={t("videos_list.locale_ms")}
-                placeholder="Penerangan video"
-                value={descMs}
-                onChange={(e) => setDescMs(e.target.value)}
-              />
-            </div>
-          </div>
+          {/* Description — single field */}
+          <Input
+            label={t("videos_list.description_optional")}
+            placeholder={t("videos_list.desc_placeholder")}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
 
           {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
 
           <div className="flex justify-end gap-3 pt-2">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setShowUpload(false);
-                resetForm();
-              }}
-            >
+            <Button variant="ghost" onClick={closeModal}>
               {tc("common.cancel")}
             </Button>
-            <Button variant="primary" loading={uploading} onClick={handleUpload}>
-              {t("videos_list.upload_video")}
-            </Button>
+            {editingVideo ? (
+              <Button variant="primary" loading={saving} onClick={handleSaveEdit}>
+                {tc("common.save")}
+              </Button>
+            ) : (
+              <Button variant="primary" loading={uploading} onClick={handleUpload}>
+                {t("videos_list.upload_video")}
+              </Button>
+            )}
           </div>
         </div>
       </Modal>

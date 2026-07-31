@@ -1,7 +1,6 @@
 import type { MetadataRoute } from "next";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
-import { routing } from "@/i18n/routing";
-import { SITE_URL } from "@/lib/constants";
+import { PUBLIC_LOCALES, SITE_URL } from "@/lib/constants";
 
 const STATIC_PATHS = ["", "/videos", "/articles", "/trade", "/learn", "/upgrade", "/login", "/register"];
 
@@ -16,7 +15,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const entries: MetadataRoute.Sitemap = [];
 
-  for (const locale of routing.locales) {
+  for (const locale of PUBLIC_LOCALES) {
     for (const path of STATIC_PATHS) {
       entries.push({
         url: `${SITE_URL}/${locale}${path}`,

@@ -26,6 +26,8 @@ export interface Video {
   description: Record<Locale, string> | null;
   category_id: number | null;
   category?: VideoCategory;
+  /** 该视频所属语言，仅在对应语言的前台页面展示 */
+  language: Locale;
   storage_url: string;
   thumbnail_url: string | null;
   duration_seconds: number;

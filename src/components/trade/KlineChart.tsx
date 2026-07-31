@@ -20,10 +20,11 @@ import {
   type HistogramData,
   type LineData,
   type UTCTimestamp,
+  type LogicalRange,
 } from "lightweight-charts";
 import Link from "next/link";
 import { useLocale } from "next-intl";
-import { useKlines } from "@/hooks/useMarketData";
+import { useKlineHistory } from "@/hooks/useKlineHistory";
 import { useMarketStore } from "@/stores/market";
 import { useChartStore } from "@/stores/chartStore";
 import { useFeatureAccess } from "@/hooks/useFeatureFlags";
@@ -109,6 +110,11 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const seriesMapRef = useRef<Map<string, InstanceSeries[]>>(new Map());
   const isFirstDataRef = useRef(true);
+  // Bookkeeping for pagination stitching: lets the "candles data updated" effect
+  // distinguish "an older page got prepended" from "symbol/interval changed" or
+  // "latest-page poll refresh" — only the former needs the visible range shifted.
+  const prevEarliestTimeRef = useRef<UTCTimestamp | null>(null);
+  const prevBarCountRef = useRef(0);
 
   // Held in state (not just refs) so the drawing layer re-renders once they exist.
   const [chartApi, setChartApi] = useState<IChartApi | null>(null);
@@ -131,7 +137,16 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   const rafRef = useRef<number | null>(null);
   const pendingPriceRef = useRef<number | undefined>(undefined);
 
-  const { data: klines, isLoading } = useKlines(symbol, interval);
+  const { candles: klines, isLoading, isLoadingMore, hasMore, loadMore } = useKlineHistory(symbol, interval);
+  // Latest-value refs: let the scroll-triggered pagination subscription avoid
+  // resubscribing on every render (loadMore's identity changes as olderCandles
+  // grows) — same pattern as appliedRef below.
+  const hasMoreRef = useRef(hasMore);
+  const isLoadingMoreRef = useRef(isLoadingMore);
+  const loadMoreRef = useRef(loadMore);
+  hasMoreRef.current = hasMore;
+  isLoadingMoreRef.current = isLoadingMore;
+  loadMoreRef.current = loadMore;
   // Live price from WebSocket ticker (drives the current candle in real time)
   const livePrice = useMarketStore((s) => {
     const t = s.tickers[symbol];
@@ -254,6 +269,8 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   useEffect(() => {
     isFirstDataRef.current = true;
     lastCandleRef.current = null;
+    prevEarliestTimeRef.current = null;
+    prevBarCountRef.current = 0;
   }, [symbol, interval]);
 
   // ---- Build indicator series + panes from the applied list ----
@@ -375,6 +392,19 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     if (!chartApi || !candleSeries || !bars) return;
     const { times, input } = bars;
 
+    // Detect whether this update is "an older page got prepended" (as opposed
+    // to a fresh symbol load or a latest-page poll refresh): the new array's
+    // first candle is earlier than the previously recorded earliest one. If so,
+    // save the current visible range and shift it back after setData, since
+    // otherwise the user's view would appear to "jump" because the logical
+    // coordinate origin moved.
+    const isPrepend =
+      !isFirstDataRef.current &&
+      prevEarliestTimeRef.current !== null &&
+      times.length > 0 &&
+      times[0] < prevEarliestTimeRef.current;
+    const savedRange = isPrepend ? chartApi.timeScale().getVisibleLogicalRange() : null;
+
     const candleData: CandlestickData[] = times.map((time, i) => ({
       time,
       open: input.open[i],
@@ -383,6 +413,18 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       close: input.close[i],
     }));
     candleSeries.setData(candleData);
+
+    if (savedRange) {
+      const addedBars = times.length - prevBarCountRef.current;
+      try {
+        chartApi.timeScale().setVisibleLogicalRange({
+          from: savedRange.from + addedBars,
+          to: savedRange.to + addedBars,
+        });
+      } catch { /* chart not ready to accept a manual range yet */ }
+    }
+    prevEarliestTimeRef.current = times[0] ?? null;
+    prevBarCountRef.current = times.length;
 
     for (const a of applied) {
       const def = INDICATOR_BY_ID.get(a.defId);
@@ -574,6 +616,24 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     }
   }, [priceLines, candleSeries]);
 
+  // ---- Load an older page when the user scrolls near the left edge of loaded data ----
+  useEffect(() => {
+    if (!chartApi) return;
+    const timeScale = chartApi.timeScale();
+
+    function handleRangeChange(range: LogicalRange | null) {
+      if (!range) return;
+      // Start fetching when we're within ~20 bars of the earliest loaded candle,
+      // so data arrives before the user actually scrolls all the way to the end.
+      if (range.from < 20 && hasMoreRef.current && !isLoadingMoreRef.current) {
+        loadMoreRef.current();
+      }
+    }
+
+    timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
+    return () => timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
+  }, [chartApi]);
+
   return (
     <div className={cn("relative flex", className)}>
       {hasAdvancedChart && <DrawingToolbar symbol={symbol} />}
@@ -582,6 +642,12 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
         {isLoading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/60">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-gold/30 border-t-gold" />
+          </div>
+        )}
+
+        {!isLoading && isLoadingMore && (
+          <div className="absolute left-1/2 top-2 z-[7] -translate-x-1/2 rounded-xs border border-border-default bg-bg-secondary/90 px-2 py-0.5 text-[11px] text-text-muted backdrop-blur-sm">
+            加载历史K线…
           </div>
         )}
 

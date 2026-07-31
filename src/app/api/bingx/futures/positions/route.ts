@@ -5,9 +5,12 @@ import {
   getFuturesPositions, closePosition, getFuturesBalance,
   getLeverage, setLeverage, getMarginType, setMarginType,
   getPositionSideDual, setPositionTpSl, closeAllPositions, adjustPositionMargin,
+  placeFuturesOrder,
 } from "@/lib/bingx/futures";
 import { invalidateDualSideMode, getDualSideMode } from "@/lib/trading/account-mode";
 import { describeBingXError } from "@/lib/trading/errors";
+import { getSymbolSpec } from "@/lib/trading/spec";
+import { formatQty } from "@/lib/trading/sizing";
 
 export async function GET(request: NextRequest) {
   try {
@@ -110,7 +113,7 @@ export async function POST(request: NextRequest) {
     const secret = decrypt(apiKeys[0].secret_encrypted);
 
     const body = await request.json();
-    const { action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice, amount, directionType } = body;
+    const { action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice, amount, directionType, percent } = body;
 
     try {
       switch (action) {
@@ -125,6 +128,123 @@ export async function POST(request: NextRequest) {
             success: true,
             data: await closePosition(apiKey, secret, positionId),
           });
+        }
+        case "reduceOnlyClose": {
+          if (!positionId) {
+            return NextResponse.json(
+              { success: false, error: { message: "positionId is required" } },
+              { status: 400 }
+            );
+          }
+          const pct = Number(percent);
+          if (!(pct > 0) || pct > 100) {
+            return NextResponse.json(
+              { success: false, error: { message: "percent must be between 0 and 100" } },
+              { status: 400 }
+            );
+          }
+
+          // 数量按服务端重新拉取的最新持仓量算，不信任客户端传来的任何数量——
+          // 客户端只负责传一个百分比
+          const positions = await getFuturesPositions(apiKey, secret, symbol);
+          const pos = positions.find((p) => p.positionId === positionId);
+          if (!pos) {
+            return NextResponse.json(
+              { success: false, error: { message: "Position not found" } },
+              { status: 404 }
+            );
+          }
+
+          const spec = await getSymbolSpec(symbol, "futures", pos.positionSide === "SHORT" ? "SHORT" : "LONG");
+          if (!spec) {
+            return NextResponse.json(
+              { success: false, error: { message: "Symbol spec unavailable" } },
+              { status: 502 }
+            );
+          }
+
+          const fullQty = Math.abs(parseFloat(pos.positionAmt));
+          const closeQty = formatQty((fullQty * pct) / 100, spec);
+          if (!(parseFloat(closeQty) > 0)) {
+            return NextResponse.json(
+              { success: false, error: { message: "Computed close quantity rounds to zero" } },
+              { status: 400 }
+            );
+          }
+
+          const closeSide = pos.positionSide === "LONG" ? "SELL" : "BUY";
+          const dualSide = await getDualSideMode(authData.user.id, apiKey, secret);
+          const result = await placeFuturesOrder(apiKey, secret, {
+            symbol,
+            side: closeSide,
+            positionSide: dualSide ? pos.positionSide : "BOTH",
+            type: "MARKET",
+            quantity: closeQty,
+            reduceOnly: true,
+          });
+          return NextResponse.json({ success: true, data: result });
+        }
+        case "reversePosition": {
+          if (!positionId) {
+            return NextResponse.json(
+              { success: false, error: { message: "positionId is required" } },
+              { status: 400 }
+            );
+          }
+
+          const positions = await getFuturesPositions(apiKey, secret, symbol);
+          const pos = positions.find((p) => p.positionId === positionId);
+          if (!pos) {
+            return NextResponse.json(
+              { success: false, error: { message: "Position not found" } },
+              { status: 404 }
+            );
+          }
+
+          const qty = Math.abs(parseFloat(pos.positionAmt));
+          if (!(qty > 0)) {
+            return NextResponse.json(
+              { success: false, error: { message: "Position has no open quantity" } },
+              { status: 400 }
+            );
+          }
+
+          // 第一步：整仓平掉
+          await closePosition(apiKey, secret, positionId);
+
+          // 第二步：按原数量反向开仓。这一步如果失败必须显式告诉用户"已平仓但
+          // 反向开仓失败"——不能让调用方以为整个操作都没发生
+          const newPositionSide = pos.positionSide === "LONG" ? "SHORT" : "LONG";
+          const openSide = newPositionSide === "LONG" ? "BUY" : "SELL";
+          try {
+            const spec = await getSymbolSpec(symbol, "futures", newPositionSide);
+            if (!spec) {
+              throw new Error("Symbol spec unavailable for reopening leg");
+            }
+            const dualSide = await getDualSideMode(authData.user.id, apiKey, secret);
+            const result = await placeFuturesOrder(apiKey, secret, {
+              symbol,
+              side: openSide,
+              positionSide: dualSide ? newPositionSide : "BOTH",
+              type: "MARKET",
+              quantity: formatQty(qty, spec),
+              reduceOnly: false,
+            });
+            return NextResponse.json({ success: true, data: result });
+          } catch (reopenError) {
+            const described = describeBingXError(reopenError);
+            return NextResponse.json(
+              {
+                success: false,
+                error: {
+                  message: `Position closed but failed to reopen in the opposite direction: ${described.rawMessage}`,
+                  i18nKey: "trading.reverse_reopen_failed",
+                  code: described.code,
+                },
+              },
+              { status: 502 }
+            );
+          }
         }
         case "closeAllPositions":
           return NextResponse.json({ success: true, data: await closeAllPositions(apiKey, secret, symbol) });

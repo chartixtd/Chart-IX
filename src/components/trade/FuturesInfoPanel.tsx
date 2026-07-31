@@ -53,6 +53,9 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [amending, setAmending] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -87,6 +90,42 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
       body: JSON.stringify({ action: "cancel", symbol: order.symbol, orderId: order.orderId }),
     });
     setCancelling(null);
+    fetchData();
+  };
+
+  const isModifiable = (type: string) =>
+    type === "LIMIT" || type === "STOP" || type === "STOP_MARKET";
+
+  const isConditionalOrder = (type: string) =>
+    type === "STOP" || type === "STOP_MARKET";
+
+  const startEdit = (order: FuturesOrder) => {
+    setEditValue(order.price);
+    setEditing(order.orderId);
+  };
+
+  const handleAmend = async (order: FuturesOrder) => {
+    const val = parseFloat(editValue);
+    if (!(val > 0)) return;
+    setAmending(true);
+    try {
+      const body: Record<string, unknown> = {
+        symbol: order.symbol,
+        orderId: order.orderId,
+      };
+      if (isConditionalOrder(order.type)) {
+        body.stopPrice = val;
+      } else {
+        body.price = val;
+      }
+      await fetch("/api/bingx/futures/order/amend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch { /* ignore */ }
+    setAmending(false);
+    setEditing(null);
     fetchData();
   };
 
@@ -189,19 +228,57 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                   </span>
                   <span className="text-text-muted ml-1">{o.type} {o.side}</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-text-muted">
-                    {o.type === "LIMIT" ? parseFloat(o.price).toFixed(4) : "MKT"}
-                  </span>
-                  <span className="text-text-primary">{parseFloat(o.origQty)}</span>
-                  <button
-                    onClick={() => handleCancel(o)}
-                    disabled={cancelling === o.orderId}
-                    className="text-text-muted hover:text-danger disabled:opacity-50"
-                  >
-                    {cancelling === o.orderId ? "×" : "Cancel"}
-                  </button>
-                </div>
+                {editing === o.orderId ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-text-muted text-xs">
+                      {isConditionalOrder(o.type) ? "Stop" : "Price"}:
+                    </span>
+                    <input
+                      type="number"
+                      step="any"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAmend(o); }}
+                      className="w-24 bg-bg-input border border-border-default rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none focus:border-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => handleAmend(o)}
+                      disabled={amending || !(parseFloat(editValue) > 0)}
+                      className="text-xs text-gold hover:text-gold-light disabled:opacity-40"
+                    >
+                      {amending ? "…" : "OK"}
+                    </button>
+                    <button
+                      onClick={() => setEditing(null)}
+                      className="text-text-muted hover:text-text-primary"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <span className="text-text-muted">
+                      {o.type === "LIMIT" ? parseFloat(o.price).toFixed(4) : "MKT"}
+                    </span>
+                    <span className="text-text-primary">{parseFloat(o.origQty)}</span>
+                    {isModifiable(o.type) && (
+                      <button
+                        onClick={() => startEdit(o)}
+                        className="text-text-muted hover:text-gold"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleCancel(o)}
+                      disabled={cancelling === o.orderId}
+                      className="text-text-muted hover:text-danger disabled:opacity-50"
+                    >
+                      {cancelling === o.orderId ? "×" : "Cancel"}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

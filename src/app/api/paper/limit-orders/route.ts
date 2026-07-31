@@ -79,3 +79,67 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 500 });
   }
 }
+
+/** 修改纸盘限价单的挂单价。 */
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+    const { data: authData } = await supabase.auth.getUser();
+    if (!authData.user) {
+      return NextResponse.json({ success: false, error: { message: "Unauthorized" } }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { orderId, price } = body as { orderId?: string; price?: number };
+
+    if (!orderId || !(Number(price) > 0)) {
+      return NextResponse.json(
+        { success: false, error: { message: "orderId and positive price are required" } },
+        { status: 400 }
+      );
+    }
+
+    // 验证订单归属
+    const { data: account } = await supabase
+      .rpc("get_or_create_paper_account")
+      .single<PaperAccount>();
+
+    if (!account) {
+      return NextResponse.json({ success: false, error: { message: "Paper account not found" } }, { status: 404 });
+    }
+
+    const { data: existing } = await supabase
+      .from("paper_limit_orders")
+      .select("id, status")
+      .eq("id", orderId)
+      .eq("account_id", account.id)
+      .single();
+
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: { message: "Order not found or not yours" } },
+        { status: 404 }
+      );
+    }
+
+    if (existing.status !== "pending") {
+      return NextResponse.json(
+        { success: false, error: { message: "Only pending orders can be amended" } },
+        { status: 400 }
+      );
+    }
+
+    const { error: updateError } = await supabase
+      .from("paper_limit_orders")
+      .update({ price: Number(price), updated_at: new Date().toISOString() })
+      .eq("id", orderId);
+
+    if (updateError) {
+      return NextResponse.json({ success: false, error: { message: updateError.message } }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 500 });
+  }
+}

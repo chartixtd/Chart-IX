@@ -8,10 +8,14 @@ import { RATE_LIMITS } from "@/lib/constants";
 import type { OrderSide, OrderType } from "@/lib/bingx/trade";
 
 /**
- * "修改"一个现货止盈止损/条件单的触发价 —— 由图表上拖动止盈止损线触发。
+ * 修改现货挂单。
+ *
+ * - 止盈止损 / 条件单 → 改 stopPrice（拖动图表线或手动编辑）
+ * - 限价单 → 改 price（手动编辑）
+ *
  * BingX 现货没有单纯改价的 amend 接口，只有撤单重下（cancelReplace），所以
- * 这里必须带上原订单的 side/type/quantity 才能重建一张等价的新单，只有
- * stopPrice（或 price）不同。cancelReplaceMode 用 STOP_ON_FAILURE：重下失败
+ * 必须带上原订单的 side/type/quantity 才能重建一张等价的新单，只有
+ * stopPrice 或 price 不同。cancelReplaceMode 用 STOP_ON_FAILURE：重下失败
  * 时不撤原单，避免"改坏了变成裸仓无保护"。
  */
 export async function POST(request: NextRequest) {
@@ -44,18 +48,26 @@ export async function POST(request: NextRequest) {
       side?: OrderSide;
       type?: OrderType;
       quantity?: string;
-      price?: string;
+      price?: number;
       stopPrice?: number;
       cancelOrderId?: string;
     };
+
     if (!symbol || !side || !type || !quantity || !cancelOrderId) {
       return NextResponse.json(
         { success: false, error: { message: "Missing fields: symbol, side, type, quantity, cancelOrderId" } },
         { status: 400 }
       );
     }
-    if (!(Number(stopPrice) > 0)) {
-      return NextResponse.json({ success: false, error: { message: "stopPrice must be positive" } }, { status: 400 });
+
+    // 至少要改了价格或触发价之一，否则没有修改意义
+    const hasPrice = Number(price) > 0;
+    const hasStop = Number(stopPrice) > 0;
+    if (!hasPrice && !hasStop) {
+      return NextResponse.json(
+        { success: false, error: { message: "price or stopPrice must be positive" } },
+        { status: 400 }
+      );
     }
 
     const { data: apiKeys, error: keyError } = await supabase
@@ -81,8 +93,8 @@ export async function POST(request: NextRequest) {
       cancelReplaceMode: "STOP_ON_FAILURE",
       cancelOrderId,
       quantity,
-      price: price || undefined,
-      stopPrice: String(stopPrice),
+      price: hasPrice ? String(price) : undefined,
+      stopPrice: hasStop ? String(stopPrice) : undefined,
     });
 
     return NextResponse.json({ success: true, data: result });

@@ -65,6 +65,9 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
   const [balances, setBalances] = useState<BingXBalanceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [amending, setAmending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -132,6 +135,52 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     fetchData();
   };
 
+  const isModifiable = (type: string) =>
+    type === "LIMIT" ||
+    type === "STOP_MARKET" ||
+    type === "STOP_LIMIT" ||
+    type === "TAKE_PROFIT" ||
+    type === "TAKE_PROFIT_MARKET";
+
+  const isConditionalOrder = (type: string) =>
+    type !== "LIMIT" && type !== "MARKET";
+
+  const startEdit = (order: BingXOrder) => {
+    const currentVal = isConditionalOrder(order.type)
+      ? parseFloat(order.price).toFixed(8).replace(/0+$/, "").replace(/\.$/, "")
+      : order.price;
+    setEditValue(currentVal);
+    setEditing(order.orderId);
+  };
+
+  const handleAmend = async (order: BingXOrder) => {
+    const val = parseFloat(editValue);
+    if (!(val > 0)) return;
+    setAmending(true);
+    try {
+      const body: Record<string, unknown> = {
+        symbol: order.symbol,
+        side: order.side,
+        type: order.type,
+        quantity: order.origQty,
+        cancelOrderId: order.orderId,
+      };
+      if (isConditionalOrder(order.type)) {
+        body.stopPrice = val;
+      } else {
+        body.price = val;
+      }
+      await fetch("/api/bingx/trade/order/amend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch { /* ignore */ }
+    setAmending(false);
+    setEditing(null);
+    fetchData();
+  };
+
   const formatQtyLocal = (v: string) => {
     const n = parseFloat(v);
     if (n >= 1) return n.toFixed(2);
@@ -193,23 +242,58 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
                     </span>
                     <span className="text-xs text-text-muted">{order.type}</span>
                   </div>
-                  <button
-                    onClick={() => handleCancel(order)}
-                    disabled={cancelling === order.orderId}
-                    className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
-                  >
-                    {cancelling === order.orderId ? "×" : "Cancel"}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {isModifiable(order.type) && (
+                      <button
+                        onClick={() => editing === order.orderId ? setEditing(null) : startEdit(order)}
+                        className="text-xs text-text-muted hover:text-gold"
+                      >
+                        {editing === order.orderId ? "×" : "Edit"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleCancel(order)}
+                      disabled={cancelling === order.orderId}
+                      className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
+                    >
+                      {cancelling === order.orderId ? "×" : "Cancel"}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-text-muted">
-                    {order.type === "LIMIT" && `${formatPriceLocal(order.price)} · `}
-                    {formatQtyLocal(order.executedQty)}/{formatQtyLocal(order.origQty)}
-                  </span>
-                  <span className={STATUS_COLORS[order.status] || "text-text-muted"}>
-                    {order.status.replace("_", " ")}
-                  </span>
-                </div>
+
+                {editing === order.orderId ? (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-xs text-text-muted shrink-0">
+                      {isConditionalOrder(order.type) ? "Stop" : "Price"}:
+                    </span>
+                    <input
+                      type="number"
+                      step="any"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAmend(order); }}
+                      className="flex-1 bg-bg-input border border-border-default rounded px-2 py-0.5 text-xs text-text-primary focus:outline-none focus:border-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => handleAmend(order)}
+                      disabled={amending || !(parseFloat(editValue) > 0)}
+                      className="text-xs text-gold hover:text-gold-light disabled:opacity-40 shrink-0"
+                    >
+                      {amending ? "…" : "OK"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-text-muted">
+                      {order.type === "LIMIT" && `${formatPriceLocal(order.price)} · `}
+                      {formatQtyLocal(order.executedQty)}/{formatQtyLocal(order.origQty)}
+                    </span>
+                    <span className={STATUS_COLORS[order.status] || "text-text-muted"}>
+                      {order.status.replace("_", " ")}
+                    </span>
+                  </div>
+                )}
               </div>
             ))}
           </div>

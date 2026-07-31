@@ -7,9 +7,13 @@ import { checkRateLimit } from "@/lib/trading/rate-limit";
 import { RATE_LIMITS } from "@/lib/constants";
 
 /**
- * 修改一个已挂的合约止盈/止损（或其他条件单）的触发价 —— 由图表上拖动
- * 止盈止损线触发。只改 stopPrice，不改数量/方向，所以不需要走下单预检；
- * BingX 自己的 amend 接口本身就要求该订单必须属于调用方的 API Key。
+ * 修改合约挂单。
+ *
+ * - 止盈止损 / 条件单 → 改 stopPrice（拖动图表线或手动编辑）
+ * - 限价单 → 改 price / quantity（手动编辑）
+ *
+ * BingX 合约有原生 amend 接口（amendFuturesOrder），支持改价、改量、改触发价，
+ * 不需要像现货那样撤单重下。
  */
 export async function POST(request: NextRequest) {
   try {
@@ -36,12 +40,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: "Malformed JSON body" } }, { status: 400 });
     }
 
-    const { symbol, orderId, stopPrice } = body as { symbol?: string; orderId?: string; stopPrice?: number };
+    const { symbol, orderId, price, stopPrice, quantity } = body as {
+      symbol?: string;
+      orderId?: string;
+      price?: number;
+      stopPrice?: number;
+      quantity?: number;
+    };
+
     if (!symbol || !orderId) {
-      return NextResponse.json({ success: false, error: { message: "Missing fields: symbol, orderId" } }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: { message: "Missing fields: symbol, orderId" } },
+        { status: 400 }
+      );
     }
-    if (!(Number(stopPrice) > 0)) {
-      return NextResponse.json({ success: false, error: { message: "stopPrice must be positive" } }, { status: 400 });
+
+    const hasPrice = Number(price) > 0;
+    const hasStop = Number(stopPrice) > 0;
+    const hasQty = Number(quantity) > 0;
+    if (!hasPrice && !hasStop && !hasQty) {
+      return NextResponse.json(
+        { success: false, error: { message: "At least one of price, stopPrice, or quantity must be positive" } },
+        { status: 400 }
+      );
     }
 
     const { data: apiKeys, error: keyError } = await supabase
@@ -63,7 +84,9 @@ export async function POST(request: NextRequest) {
     const result = await amendFuturesOrder(apiKey, secret, {
       symbol,
       orderId: String(orderId),
-      stopPrice: String(stopPrice),
+      price: hasPrice ? String(price) : undefined,
+      stopPrice: hasStop ? String(stopPrice) : undefined,
+      quantity: hasQty ? String(quantity) : undefined,
     });
 
     return NextResponse.json({ success: true, data: result });

@@ -85,6 +85,9 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const [limitLoading, setLimitLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [amending, setAmending] = useState(false);
 
   const positions = data?.positions ?? [];
 
@@ -127,6 +130,27 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
       });
     } catch { /* ignore */ }
     setCancelling(null);
+    fetchLimitOrders();
+  };
+
+  const startEdit = (order: PaperLimitOrderRow) => {
+    setEditValue(String(order.price));
+    setEditing(order.id);
+  };
+
+  const handleAmend = async (order: PaperLimitOrderRow) => {
+    const val = parseFloat(editValue);
+    if (!(val > 0)) return;
+    setAmending(true);
+    try {
+      await fetch("/api/paper/limit-orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id, price: val }),
+      });
+    } catch { /* ignore */ }
+    setAmending(false);
+    setEditing(null);
     fetchLimitOrders();
   };
 
@@ -188,17 +212,55 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
                     {lo.side === "buy" ? "B" : "S"}
                   </span>
                   <span className="text-text-primary">{lo.symbol}</span>
-                  <span className="text-text-muted">{formatPrice(lo.price)}</span>
+                  {editing === lo.id ? (
+                    <input
+                      type="number"
+                      step="any"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAmend(lo); }}
+                      className="w-20 bg-bg-input border border-border-default rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none focus:border-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      autoFocus
+                    />
+                  ) : (
+                    <span className="text-text-muted">{formatPrice(lo.price)}</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-text-muted">{formatNumber(lo.quantity, 6)}</span>
-                  <button
-                    onClick={() => handleCancelLimit(lo.id)}
-                    disabled={cancelling === lo.id}
-                    className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
-                  >
-                    {cancelling === lo.id ? "×" : "Cancel"}
-                  </button>
+                  {editing === lo.id ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleAmend(lo)}
+                        disabled={amending || !(parseFloat(editValue) > 0)}
+                        className="text-xs text-gold hover:text-gold-light disabled:opacity-40"
+                      >
+                        {amending ? "…" : "OK"}
+                      </button>
+                      <button
+                        onClick={() => setEditing(null)}
+                        className="text-xs text-text-muted hover:text-text-primary"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => startEdit(lo)}
+                        className="text-xs text-text-muted hover:text-gold"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleCancelLimit(lo.id)}
+                        disabled={cancelling === lo.id}
+                        className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
+                      >
+                        {cancelling === lo.id ? "×" : "Cancel"}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}

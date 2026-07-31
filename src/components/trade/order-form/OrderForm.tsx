@@ -115,13 +115,19 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
     }
   }, [orderType, timeInForce]);
 
-  // 只减仓只对合约有意义；切到现货/模拟盘时清掉，避免残留状态带进下一次
-  // 合约下单（虽然现货/模拟盘请求体压根不读这个字段，这里是防御性清理）
+  // 只减仓只在合约 + 单向持仓模式下有意义：BingX 官方文档明确 reduceOnly
+  // 在双向持仓（对冲）模式下不被接受（"This parameter is not accepted for
+  // both long and short position mode"）。dualSidePosition 在账户模式查询
+  // 尚未返回时是 undefined，此时按钮也不展示（见下方 isReduceOnlyVisible），
+  // 避免开关先闪现出来、等确认是对冲模式后又消失的糟糕体验。
+  // 只要开关不可见（现货/模拟盘、对冲模式、或数据尚未确认），reduceOnly
+  // 就必须强制清零，防止一个用户看不到的 true 值悄悄带进下单请求体。
+  const isReduceOnlyVisible = market === "futures" && futuresAccount?.dualSidePosition === false;
   useEffect(() => {
-    if (market !== "futures" && reduceOnly) {
+    if (!isReduceOnlyVisible && reduceOnly) {
       setReduceOnly(false);
     }
-  }, [market, reduceOnly]);
+  }, [isReduceOnlyVisible, reduceOnly]);
 
   const isLimit = LIMIT_TYPES.has(orderType);
   const refPrice = isLimit && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
@@ -339,7 +345,7 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
               <TifField value={timeInForce} onChange={setTimeInForce} />
             )}
 
-            {market === "futures" && (
+            {isReduceOnlyVisible && (
               <ReduceOnlyField value={reduceOnly} onChange={setReduceOnly} />
             )}
 

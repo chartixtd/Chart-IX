@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useSpotTicker } from "@/hooks/useMarketData";
 import { useSpotBalances } from "@/hooks/useTradingAccount";
@@ -29,9 +29,19 @@ export function OcoTicket({ symbol, direction }: OcoTicketProps) {
   const { data: ticker } = useSpotTicker(symbol);
   const currentPrice = ticker ? Number(ticker.lastPrice) : 0;
   const { data: balances } = useSpotBalances();
-  const availableUsdt = balances?.find((b) => b.asset === "USDT")
-    ? parseFloat(balances.find((b) => b.asset === "USDT")!.free)
-    : undefined;
+  // 卖出方向：可用额度按持有的 baseAsset 数量折算成 USDT 价值，不是账户里
+  // 剩余的 USDT 现金——否则「卖出」会按还剩多少 USDT 现金定价，而不是按手上
+  // 还有多少 baseAsset 可卖定价。与 OrderForm.tsx 的 availableUsdt 同一个
+  // 缺陷、同一个修复（2026-07-29 真实交易测试中发现，见该文件同名注释）。
+  const availableUsdt = useMemo(() => {
+    if (side === "SELL") {
+      const baseBalance = balances?.find((b) => b.asset === baseAsset);
+      return baseBalance ? parseFloat(baseBalance.free) * currentPrice : undefined;
+    }
+    return balances?.find((b) => b.asset === "USDT")
+      ? parseFloat(balances.find((b) => b.asset === "USDT")!.free)
+      : undefined;
+  }, [side, balances, baseAsset, currentPrice]);
 
   const [notional, setNotional] = useState("");
   const [limitPrice, setLimitPrice] = useState("");

@@ -378,49 +378,55 @@ export default function TradePage() {
       />
 
       {/* Desktop layout: draggable 4-column layout */}
-      <PanelGroup direction="horizontal" autoSaveId="chart-ix-trade-layout" className="hidden flex-1 overflow-hidden lg:flex">
-        <Panel defaultSize={15} minSize={10} maxSize={25} className="border-r border-border-default">
-          <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} />
-        </Panel>
+      {/* PanelGroup sets an inline `display: flex` style on its root element, which
+          wins the CSS cascade over Tailwind's `hidden` utility class regardless of
+          breakpoint — so the responsive show/hide toggle has to live on a plain
+          wrapper div instead of directly on PanelGroup's own className. */}
+      <div className="hidden flex-1 overflow-hidden lg:flex">
+        <PanelGroup direction="horizontal" autoSaveId="chart-ix-trade-layout" className="flex-1">
+          <Panel defaultSize={15} minSize={10} maxSize={25} className="border-r border-border-default">
+            <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} />
+          </Panel>
 
-        <ResizeHandle />
+          <ResizeHandle />
 
-        <Panel defaultSize={52} minSize={30}>
-          <div className="flex h-full flex-col overflow-hidden">
-            <div className="flex items-center border-b border-border-default">
-              <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
-              <div className="ml-auto pr-2">
-                <FearGreedIndex compact />
+          <Panel defaultSize={52} minSize={30}>
+            <div className="flex h-full flex-col overflow-hidden">
+              <div className="flex items-center border-b border-border-default">
+                <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+                <div className="ml-auto pr-2">
+                  <FearGreedIndex compact />
+                </div>
+              </div>
+              <div className="flex-1">
+                <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
               </div>
             </div>
-            <div className="flex-1">
-              <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
+          </Panel>
+
+          <ResizeHandle />
+
+          <Panel defaultSize={13} minSize={8} maxSize={22} className="border-r border-border-default">
+            <div className="flex h-full flex-col overflow-hidden">
+              <div className="shrink-0 border-b border-border-default px-3 py-2">
+                <span className="text-xs font-medium text-text-secondary">盘口</span>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />
+              </div>
             </div>
-          </div>
-        </Panel>
+          </Panel>
 
-        <ResizeHandle />
+          <ResizeHandle />
 
-        <Panel defaultSize={13} minSize={8} maxSize={22} className="border-r border-border-default">
-          <div className="flex h-full flex-col overflow-hidden">
-            <div className="shrink-0 border-b border-border-default px-3 py-2">
-              <span className="text-xs font-medium text-text-secondary">盘口</span>
+          <Panel defaultSize={20} minSize={14} maxSize={32}>
+            <div className="flex h-full flex-col divide-y divide-border-default overflow-hidden">
+              <div className="shrink-0">{tradePanel}</div>
+              <div className="min-h-0 flex-1 overflow-auto">{ordersPanel}</div>
             </div>
-            <div className="flex-1 overflow-auto">
-              <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />
-            </div>
-          </div>
-        </Panel>
-
-        <ResizeHandle />
-
-        <Panel defaultSize={20} minSize={14} maxSize={32}>
-          <div className="flex h-full flex-col divide-y divide-border-default overflow-hidden">
-            <div className="shrink-0">{tradePanel}</div>
-            <div className="min-h-0 flex-1 overflow-auto">{ordersPanel}</div>
-          </div>
-        </Panel>
-      </PanelGroup>
+          </Panel>
+        </PanelGroup>
+      </div>
 
       {/* Mobile layout: tab-switched single column */}
       <div className="flex flex-1 flex-col overflow-hidden lg:hidden">

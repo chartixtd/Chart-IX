@@ -9,6 +9,7 @@ import {
   type SpotOpenOrder, type SpotTradeRecord,
 } from "@/hooks/useTradingAccount";
 import { useUserDataStream } from "@/hooks/useUserDataStream";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 interface OrdersPanelProps {
   /** Only used to highlight this symbol's rows; the list itself always shows
@@ -32,7 +33,8 @@ function formatTime(ts: number) {
 }
 
 export function OrdersPanel({ symbol }: OrdersPanelProps) {
-  useUserDataStream({ market: "spot", enabled: true });
+  const auth = useAuth();
+  useUserDataStream({ market: "spot", enabled: !!auth.userId });
 
   const queryClient = useQueryClient();
   const { data: orders = [], isLoading: ordersLoading, error: ordersError } = useSpotOpenOrders();

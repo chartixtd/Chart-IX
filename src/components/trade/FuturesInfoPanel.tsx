@@ -11,6 +11,7 @@ import {
   type FuturesPosition, type FuturesOpenOrder,
 } from "@/hooks/useTradingAccount";
 import { useUserDataStream } from "@/hooks/useUserDataStream";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 interface FuturesInfoPanelProps {
   /** Only used to pre-select which symbol's Close/Cancel error toasts read naturally; the
@@ -20,8 +21,9 @@ interface FuturesInfoPanelProps {
 
 export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const t = useTranslations();
+  const auth = useAuth();
 
-  useUserDataStream({ market: "futures", enabled: true });
+  useUserDataStream({ market: "futures", enabled: !!auth.userId });
 
   const queryClient = useQueryClient();
   const { data: positions = [], isLoading: positionsLoading } = useFuturesPositions();

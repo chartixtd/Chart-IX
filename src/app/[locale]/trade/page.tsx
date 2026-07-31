@@ -415,7 +415,12 @@ export default function TradePage() {
         <div className="w-64 shrink-0 border-l border-border-default flex flex-col overflow-hidden">
           <RightTabs tab={rightTab} onTabChange={handleTabChange} />
           <div className="flex-1 overflow-hidden">
-            {rightTab === "trade" && tradePanel}
+            {rightTab === "trade" && (
+              <div className="flex h-full flex-col divide-y divide-border-default overflow-hidden">
+                <div className="shrink-0">{tradePanel}</div>
+                <div className="min-h-0 flex-1 overflow-auto">{ordersPanel}</div>
+              </div>
+            )}
             {rightTab === "orders" && ordersPanel}
             {rightTab === "book" && <OrderBook symbol={symbol} />}
           </div>

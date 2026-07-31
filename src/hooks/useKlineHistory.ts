@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { BingXKline } from "@/types/bingx";
 import { mergeOlderKlines, determineHasMore, computeNextEndTime } from "@/lib/chart/kline-history";
@@ -61,20 +61,41 @@ export function useKlineHistory(symbol: string, interval: string, market = "spot
   const isLoadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);
   const requestIdRef = useRef(0);
+  const lastFailureAtRef = useRef<number | null>(null);
+  const FAILURE_COOLDOWN_MS = 5_000;
 
-  // symbol/interval/market 换了 = 换了一条完全不同的序列，累积的历史清空，
-  // 交给最新一页的查询重新播种
-  useEffect(() => {
+  // symbol/interval/market 换了 = 换了一条完全不同的序列，累积的历史需要清空，
+  // 交给最新一页的查询重新播种。这个重置必须在渲染期间同步完成（而不是放进
+  // useEffect）：React Query 的缓存默认保留 5 分钟，如果用户在这期间切回一个
+  // 已经缓存过的 symbol/interval，`latestQuery.data` 会在换 key 后的第一次渲染
+  // 就同步拿到新序列的数据，但 `olderCandles` 这个 state 还是旧序列的——如果
+  // 用 effect 重置，会晚一次渲染，导致这一帧把新旧两个不同 symbol 的K线拼在一
+  // 起传给图表（下游 fitContent() 可能就用这份错误拼接的数据来定位可见范围）。
+  // 用 ref 比较 key 并在渲染体内直接调用 setState 是 React 文档认可的"渲染期间
+  // 调整 state"模式，能保证脏数据永远不会被提交渲染。
+  const seriesKey = `${market}:${symbol}:${interval}`;
+  const seriesKeyRef = useRef(seriesKey);
+  if (seriesKeyRef.current !== seriesKey) {
+    seriesKeyRef.current = seriesKey;
     requestIdRef.current++;
+    hasMoreRef.current = true;
+    isLoadingMoreRef.current = false;
+    lastFailureAtRef.current = null;
+    // 用函数式/条件调用的方式在渲染期间触发一次重渲染；下面的 ref 守卫保证每次
+    // key 变化只会触发一次，不会造成无限循环。
     setOlderCandles([]);
     setHasMore(true);
-    hasMoreRef.current = true;
     setIsLoadingMore(false);
-    isLoadingMoreRef.current = false;
-  }, [symbol, interval, market]);
+  }
 
   const loadMore = useCallback(() => {
     if (isLoadingMoreRef.current || !hasMoreRef.current) return;
+    if (
+      lastFailureAtRef.current !== null &&
+      Date.now() - lastFailureAtRef.current < FAILURE_COOLDOWN_MS
+    ) {
+      return; // 最近失败过，冷却期内不再发起新请求，避免对故障端点连续轰炸
+    }
     const earliest = earliestOpenTime(olderCandles.length ? olderCandles : latestQuery.data ?? []);
     if (earliest === undefined) return;
 
@@ -89,12 +110,15 @@ export function useKlineHistory(symbol: string, interval: string, market = "spot
         setHasMore(more);
         setOlderCandles((prev) => mergeOlderKlines(page, prev));
       })
-      .catch(() => {
+      .catch((error) => {
         if (myRequestId !== requestIdRef.current) return;
         // A failed request does not mean history is exhausted — leave hasMore
         // as-is so the caller can retry via another loadMore() call. Only an
         // actual short/empty page (handled in .then via determineHasMore) means
-        // there's truly nothing earlier to fetch.
+        // there's truly nothing earlier to fetch. Record the failure so the
+        // cooldown guard above can prevent a retry storm while it persists.
+        lastFailureAtRef.current = Date.now();
+        console.error("[useKlineHistory] loadMore failed:", error);
       })
       .finally(() => {
         if (myRequestId === requestIdRef.current) {
@@ -104,7 +128,10 @@ export function useKlineHistory(symbol: string, interval: string, market = "spot
       });
   }, [olderCandles, latestQuery.data, symbol, interval, market]);
 
-  const candles = latestQuery.data ? mergeOlderKlines(olderCandles, latestQuery.data) : null;
+  const candles = useMemo(
+    () => (latestQuery.data ? mergeOlderKlines(olderCandles, latestQuery.data) : null),
+    [olderCandles, latestQuery.data]
+  );
 
   return { candles, isLoading: latestQuery.isLoading, isLoadingMore, hasMore, loadMore };
 }

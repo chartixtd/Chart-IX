@@ -10,7 +10,7 @@ import {
 import { invalidateDualSideMode, getDualSideMode } from "@/lib/trading/account-mode";
 import { describeBingXError } from "@/lib/trading/errors";
 import { getSymbolSpec } from "@/lib/trading/spec";
-import { formatQty } from "@/lib/trading/sizing";
+import { formatQty, floorToPrecision } from "@/lib/trading/sizing";
 
 export async function GET(request: NextRequest) {
   try {
@@ -154,6 +154,12 @@ export async function POST(request: NextRequest) {
               { status: 404 }
             );
           }
+          if (pos.symbol !== symbol) {
+            return NextResponse.json(
+              { success: false, error: { message: "symbol does not match position" } },
+              { status: 400 }
+            );
+          }
 
           const spec = await getSymbolSpec(symbol, "futures", pos.positionSide === "SHORT" ? "SHORT" : "LONG");
           if (!spec) {
@@ -164,10 +170,17 @@ export async function POST(request: NextRequest) {
           }
 
           const fullQty = Math.abs(parseFloat(pos.positionAmt));
-          const closeQty = formatQty((fullQty * pct) / 100, spec);
+          const rawCloseQty = floorToPrecision((fullQty * pct) / 100, spec.quantityPrecision);
+          const closeQty = formatQty(rawCloseQty, spec);
           if (!(parseFloat(closeQty) > 0)) {
             return NextResponse.json(
               { success: false, error: { message: "Computed close quantity rounds to zero" } },
+              { status: 400 }
+            );
+          }
+          if (rawCloseQty < spec.minQty) {
+            return NextResponse.json(
+              { success: false, error: { message: `Computed close quantity is below the minimum order size (${spec.minQty})` } },
               { status: 400 }
             );
           }
@@ -200,6 +213,12 @@ export async function POST(request: NextRequest) {
               { status: 404 }
             );
           }
+          if (pos.symbol !== symbol) {
+            return NextResponse.json(
+              { success: false, error: { message: "symbol does not match position" } },
+              { status: 400 }
+            );
+          }
 
           const qty = Math.abs(parseFloat(pos.positionAmt));
           if (!(qty > 0)) {
@@ -209,25 +228,39 @@ export async function POST(request: NextRequest) {
             );
           }
 
+          // 反向开仓的数量必须在平仓之前就算好并校验——如果精度对齐后数量归零，
+          // 必须在调用 closePosition 之前就拒绝，不能先平仓再发现开不了新仓
+          const newPositionSide = pos.positionSide === "LONG" ? "SHORT" : "LONG";
+          const openSide = newPositionSide === "LONG" ? "BUY" : "SELL";
+          const reopenSpec = await getSymbolSpec(symbol, "futures", newPositionSide);
+          if (!reopenSpec) {
+            return NextResponse.json(
+              { success: false, error: { message: "Symbol spec unavailable" } },
+              { status: 502 }
+            );
+          }
+          const rawReopenQty = floorToPrecision(qty, reopenSpec.quantityPrecision);
+          const reopenQty = formatQty(rawReopenQty, reopenSpec);
+          if (!(parseFloat(reopenQty) > 0) || rawReopenQty < reopenSpec.minQty) {
+            return NextResponse.json(
+              { success: false, error: { message: "Computed reopen quantity is below the minimum order size" } },
+              { status: 400 }
+            );
+          }
+
           // 第一步：整仓平掉
           await closePosition(apiKey, secret, positionId);
 
           // 第二步：按原数量反向开仓。这一步如果失败必须显式告诉用户"已平仓但
           // 反向开仓失败"——不能让调用方以为整个操作都没发生
-          const newPositionSide = pos.positionSide === "LONG" ? "SHORT" : "LONG";
-          const openSide = newPositionSide === "LONG" ? "BUY" : "SELL";
           try {
-            const spec = await getSymbolSpec(symbol, "futures", newPositionSide);
-            if (!spec) {
-              throw new Error("Symbol spec unavailable for reopening leg");
-            }
             const dualSide = await getDualSideMode(authData.user.id, apiKey, secret);
             const result = await placeFuturesOrder(apiKey, secret, {
               symbol,
               side: openSide,
               positionSide: dualSide ? newPositionSide : "BOTH",
               type: "MARKET",
-              quantity: formatQty(qty, spec),
+              quantity: reopenQty,
               reduceOnly: false,
             });
             return NextResponse.json({ success: true, data: result });

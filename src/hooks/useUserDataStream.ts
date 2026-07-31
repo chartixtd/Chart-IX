@@ -46,8 +46,6 @@ export function useUserDataStream({ market, enabled }: UseUserDataStreamOptions)
   const listenKeyRef = useRef<string | null>(null);
   const keepaliveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
 
   useEffect(() => {
     if (!enabled) return;
@@ -78,8 +76,19 @@ export function useUserDataStream({ market, enabled }: UseUserDataStreamOptions)
         if (!cancelled) reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
         return;
       }
-      if (cancelled) return;
+      // Store the key for cleanup BEFORE checking `cancelled` again — otherwise a
+      // teardown that races this await would never release a key we just created.
       listenKeyRef.current = listenKey;
+      if (cancelled) {
+        // Effect was torn down while this POST was in flight; release immediately
+        // rather than leaving it to expire on its own ~1h TTL.
+        fetch("/api/bingx/user-stream", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listenKey }),
+        }).catch(() => {});
+        return;
+      }
 
       const baseUrl = market === "spot" ? SPOT_WS_URL : SWAP_WS_URL;
       const ws = new WebSocket(`${baseUrl}?listenKey=${listenKey}`);
@@ -135,6 +144,10 @@ export function useUserDataStream({ market, enabled }: UseUserDataStreamOptions)
         if (!cancelled) reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
       };
 
+      if (keepaliveTimerRef.current) {
+        clearInterval(keepaliveTimerRef.current);
+        keepaliveTimerRef.current = null;
+      }
       keepaliveTimerRef.current = setInterval(async () => {
         const key = listenKeyRef.current;
         if (!key) return;

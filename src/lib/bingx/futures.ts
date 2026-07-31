@@ -216,6 +216,18 @@ export async function getPositionHistory(
 
 // ==================== 仓位止盈止损 ====================
 
+/**
+ * 给已有持仓挂止盈 / 止损。
+ *
+ * BingX 没有 `/openApi/swap/v2/trade/positionTpSl` 这个接口（官方在
+ * BingX-swap-api-doc#37 明确回复过）。此前按该路径请求，服务端一律返回参数
+ * 错误码，前端表现为「订单参数不合法，请检查数量、价格与持仓模式」。
+ *
+ * 正确做法是走普通下单接口挂两张 reduce-only 的条件市价单：
+ *   止盈 → TAKE_PROFIT_MARKET，止损 → STOP_MARKET
+ * 方向与持仓相反（LONG 用 SELL 平，SHORT 用 BUY 平），并用 closePosition=true
+ * 表示触发时整仓平掉，这样无需传 quantity。触发价统一用标记价，避免插针误触。
+ */
 export async function setPositionTpSl(
   apiKey: string, secret: string,
   params: {
@@ -226,12 +238,33 @@ export async function setPositionTpSl(
     workingType?: FuturesWorkingType;
   }
 ): Promise<void> {
-  const body: Record<string, string> = { symbol: params.symbol };
-  if (params.positionSide) body.positionSide = params.positionSide;
-  if (params.stopLossPrice) body.stopLossPrice = params.stopLossPrice;
-  if (params.takeProfitPrice) body.takeProfitPrice = params.takeProfitPrice;
-  if (params.workingType) body.workingType = params.workingType;
-  await signedRequest(apiKey, secret, "POST", "/openApi/swap/v2/trade/positionTpSl", body);
+  const positionSide = params.positionSide ?? "LONG";
+  // 平多要卖出，平空要买入
+  const closeSide: FuturesSide = positionSide === "LONG" ? "SELL" : "BUY";
+  const workingType = params.workingType ?? "MARK_PRICE";
+
+  const legs: Array<{ type: FuturesOrderType; stopPrice: string }> = [];
+  if (params.takeProfitPrice) {
+    legs.push({ type: "TAKE_PROFIT_MARKET", stopPrice: params.takeProfitPrice });
+  }
+  if (params.stopLossPrice) {
+    legs.push({ type: "STOP_MARKET", stopPrice: params.stopLossPrice });
+  }
+  if (legs.length === 0) return;
+
+  // 顺序提交而非并发：BingX 对同一 symbol 的连续下单有频率限制，
+  // 并发容易触发 80012/80013 service busy
+  for (const leg of legs) {
+    await placeFuturesOrder(apiKey, secret, {
+      symbol: params.symbol,
+      side: closeSide,
+      positionSide,
+      type: leg.type,
+      stopPrice: leg.stopPrice,
+      closePosition: true,
+      workingType,
+    });
+  }
 }
 
 // ==================== 杠杆 & 保证金模式 ====================

@@ -176,7 +176,19 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     const hasTp = tp > 0;
     const hasSl = sl > 0;
     if (!hasTp && !hasSl) {
-      setTpSlError(t("trade.tpsl_required"));
+      setTpSlError(t("trading.tpsl_required"));
+      return;
+    }
+    // 触发价方向校验：做多的止盈必须高于标记价、止损必须低于标记价，做空相反。
+    // 方向填反时 BingX 只回一个笼统的参数错误，这里先拦住给出可读提示。
+    const mark = parseFloat(pos.markPrice);
+    const isLong = pos.positionSide === "LONG";
+    if (hasTp && (isLong ? tp <= mark : tp >= mark)) {
+      setTpSlError(t(isLong ? "trading.tp_must_be_above" : "trading.tp_must_be_below"));
+      return;
+    }
+    if (hasSl && (isLong ? sl >= mark : sl <= mark)) {
+      setTpSlError(t(isLong ? "trading.sl_must_be_below" : "trading.sl_must_be_above"));
       return;
     }
     setSavingTpSl(true);
@@ -272,23 +284,23 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                   {editingPos === pos.positionId && (
                     <div className="mt-2 space-y-1.5 rounded border border-border-default p-2">
                       <div className="flex items-center gap-1.5">
-                        <span className="w-14 shrink-0 text-xs text-text-muted">{t("trade.take_profit_price")}</span>
+                        <span className="w-10 shrink-0 text-xs text-text-muted">TP</span>
                         <input
                           type="number"
                           value={tpValue}
                           onChange={(e) => setTpValue(e.target.value)}
                           placeholder={parseFloat(pos.markPrice).toFixed(4)}
-                          className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary"
+                          className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary placeholder:text-text-muted"
                         />
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="w-14 shrink-0 text-xs text-text-muted">{t("trade.stop_loss_price")}</span>
+                        <span className="w-10 shrink-0 text-xs text-text-muted">SL</span>
                         <input
                           type="number"
                           value={slValue}
                           onChange={(e) => setSlValue(e.target.value)}
                           placeholder={parseFloat(pos.markPrice).toFixed(4)}
-                          className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary"
+                          className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary placeholder:text-text-muted"
                         />
                       </div>
                       {tpSlError && <p className="text-xs text-danger">{tpSlError}</p>}
@@ -297,7 +309,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                         disabled={savingTpSl}
                         className="w-full rounded bg-gold py-1 text-xs font-medium text-black disabled:opacity-50"
                       >
-                        {savingTpSl ? "..." : t("trade.set_tp_sl")}
+                        {savingTpSl ? "..." : t("trading.set_tp_sl")}
                       </button>
                     </div>
                   )}

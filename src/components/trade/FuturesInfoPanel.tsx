@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import { translateError } from "@/components/trade/order-form/OrderForm";
+import {
+  useFuturesPositions, useFuturesOpenOrders, useFuturesBalance,
+  type FuturesPosition, type FuturesOpenOrder,
+} from "@/hooks/useTradingAccount";
+import { useUserDataStream } from "@/hooks/useUserDataStream";
 
 interface FuturesInfoPanelProps {
   /** Only used to pre-select which symbol's Close/Cancel error toasts read naturally; the
@@ -12,46 +18,23 @@ interface FuturesInfoPanelProps {
   symbol: string;
 }
 
-interface FuturesPosition {
-  symbol: string;
-  positionId: string;
-  positionSide: "LONG" | "SHORT";
-  positionAmt: string;
-  unrealizedProfit: string;
-  leverage: number;
-  /** BingX's real field name for entry price on this endpoint — not entryPrice */
-  avgPrice: string;
-  markPrice: string;
-  liquidationPrice: string;
-  /** BingX returns isolated as a boolean here, not a marginType string */
-  isolated: boolean;
-}
-
-interface FuturesOrder {
-  symbol: string;
-  orderId: string;
-  side: string;
-  positionSide: string;
-  type: string;
-  origQty: string;
-  price: string;
-  stopPrice?: string;
-  executedQty: string;
-  status: string;
-  leverage: number;
-}
-
-interface FuturesBalance {
-  availableMargin: string;
-  equity: string;
-}
-
 export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const t = useTranslations();
-  const [positions, setPositions] = useState<FuturesPosition[]>([]);
-  const [orders, setOrders] = useState<FuturesOrder[]>([]);
-  const [balance, setBalance] = useState<FuturesBalance | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  useUserDataStream({ market: "futures", enabled: true });
+
+  const queryClient = useQueryClient();
+  const { data: positions = [], isLoading: positionsLoading } = useFuturesPositions();
+  const { data: orders = [], isLoading: ordersLoading } = useFuturesOpenOrders();
+  const { data: balance = null } = useFuturesBalance();
+  const loading = positionsLoading || ordersLoading;
+
+  function refetchAll() {
+    queryClient.invalidateQueries({ queryKey: ["trading", "futures-positions"] });
+    queryClient.invalidateQueries({ queryKey: ["trading", "futures-open-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["trading", "futures-balance"] });
+  }
+
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -64,32 +47,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const [savingTpSl, setSavingTpSl] = useState(false);
   const [tpSlError, setTpSlError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    try {
-      // No symbol filter: this panel is the account-wide "everything I have open"
-      // view, not scoped to whichever symbol the chart happens to be on.
-      const [posRes, ordRes, balRes] = await Promise.all([
-        fetch(`/api/bingx/futures/positions`),
-        fetch(`/api/bingx/futures/open-orders`),
-        fetch(`/api/bingx/futures/positions?type=balance`),
-      ]);
-      const p = await posRes.json();
-      const o = await ordRes.json();
-      const b = await balRes.json();
-      if (p.success) setPositions(p.data || []);
-      if (o.success) setOrders(Array.isArray(o.data) ? o.data : o.data?.orders || []);
-      if (b.success && b.data) setBalance(b.data);
-    } catch { /* ignore */ }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5_000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  const handleCancel = async (order: FuturesOrder) => {
+  const handleCancel = async (order: FuturesOpenOrder) => {
     setCancelling(order.orderId);
     await fetch("/api/bingx/futures/open-orders", {
       method: "DELETE",
@@ -97,7 +55,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
       body: JSON.stringify({ action: "cancel", symbol: order.symbol, orderId: order.orderId }),
     });
     setCancelling(null);
-    fetchData();
+    refetchAll();
   };
 
   // 条件单（止盈止损/触发单）的触发价在 stopPrice 字段；限价单改 price 字段
@@ -106,7 +64,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     type.toUpperCase().includes("STOP") ||
     type.toUpperCase().includes("TAKE_PROFIT");
 
-  const startEdit = (order: FuturesOrder) => {
+  const startEdit = (order: FuturesOpenOrder) => {
     // STOP/STOP_MARKET/TAKE_PROFIT 等条件单的触发价在 stopPrice；限价单在 price
     const currentVal = isConditionalOrder(order.type) && order.stopPrice
       ? order.stopPrice
@@ -115,7 +73,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     setEditing(order.orderId);
   };
 
-  const handleAmend = async (order: FuturesOrder) => {
+  const handleAmend = async (order: FuturesOpenOrder) => {
     const val = parseFloat(editValue);
     if (!(val > 0)) return;
     setAmending(true);
@@ -137,7 +95,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     } catch { /* ignore */ }
     setAmending(false);
     setEditing(null);
-    fetchData();
+    refetchAll();
   };
 
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -158,7 +116,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
       setCloseError(t("bingx_error.network"));
     } finally {
       setClosing(null);
-      fetchData();
+      refetchAll();
     }
   };
 
@@ -211,7 +169,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
         return;
       }
       setEditingPos(null);
-      fetchData();
+      refetchAll();
     } catch {
       setTpSlError(t("bingx_error.network"));
     } finally {

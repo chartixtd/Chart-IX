@@ -1,6 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import type { FuturesOrder, FuturesFillRecord } from "@/lib/bingx/futures";
+
+export type { FuturesOrder, FuturesFillRecord };
 
 interface SpotBalance {
   asset: string;
@@ -203,6 +206,34 @@ export function useSpotMyTrades(limit = 30, enabled = true) {
     },
     refetchInterval: 30_000,
     staleTime: 10_000,
+    enabled,
+    retry: false,
+  });
+}
+
+/** 历史订单（不限 symbol，账户全部合约历史） */
+export function useFuturesOrderHistory(enabled = true) {
+  return useQuery<FuturesOrder[]>({
+    queryKey: ["trading", "futures-order-history"],
+    queryFn: async () => {
+      const raw = await getJson<FuturesOrder[] | { orders: FuturesOrder[] }>("/api/bingx/futures/history-orders");
+      return Array.isArray(raw) ? raw : raw?.orders ?? [];
+    },
+    staleTime: 30_000,
+    enabled,
+    retry: false,
+  });
+}
+
+/** 成交记录（不限 symbol，账户全部合约成交） */
+export function useFuturesFillHistory(enabled = true) {
+  return useQuery<FuturesFillRecord[]>({
+    queryKey: ["trading", "futures-fill-history"],
+    queryFn: async () => {
+      const raw = await getJson<FuturesFillRecord[] | { fills: FuturesFillRecord[] }>("/api/bingx/futures/fill-history");
+      return Array.isArray(raw) ? raw : raw?.fills ?? [];
+    },
+    staleTime: 30_000,
     enabled,
     retry: false,
   });

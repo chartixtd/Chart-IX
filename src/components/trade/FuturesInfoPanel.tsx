@@ -12,11 +12,25 @@ import {
 } from "@/hooks/useTradingAccount";
 import { useUserDataStream } from "@/hooks/useUserDataStream";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { FuturesPositionRow } from "./FuturesPositionRow";
+import { FuturesOrderHistoryTab } from "./FuturesOrderHistoryTab";
+import { FuturesFillHistoryTab } from "./FuturesFillHistoryTab";
 
 interface FuturesInfoPanelProps {
-  /** Only used to pre-select which symbol's Close/Cancel error toasts read naturally; the
-   *  list itself always shows every open futures position/order, not just this symbol. */
+  /** Only used to highlight this symbol's position row; the list itself always
+   *  shows every open futures position/order, not just this symbol. */
   symbol: string;
+}
+
+type Tab = "positions" | "orders" | "history" | "fills";
+
+async function postJson(url: string, body: Record<string, unknown>) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
 }
 
 export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
@@ -31,6 +45,8 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const { data: balance = null } = useFuturesBalance();
   const loading = positionsLoading || ordersLoading;
 
+  const [tab, setTab] = useState<Tab>("positions");
+
   function refetchAll() {
     queryClient.invalidateQueries({ queryKey: ["trading", "futures-positions"] });
     queryClient.invalidateQueries({ queryKey: ["trading", "futures-open-orders"] });
@@ -38,16 +54,9 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   }
 
   const [cancelling, setCancelling] = useState<string | null>(null);
-  const [closing, setClosing] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [amending, setAmending] = useState(false);
-  // 持仓的止盈止损编辑（持仓本身没有"价格"可改，能改的是 TP/SL）
-  const [editingPos, setEditingPos] = useState<string | null>(null);
-  const [tpValue, setTpValue] = useState("");
-  const [slValue, setSlValue] = useState("");
-  const [savingTpSl, setSavingTpSl] = useState(false);
-  const [tpSlError, setTpSlError] = useState<string | null>(null);
 
   const handleCancel = async (order: FuturesOpenOrder) => {
     setCancelling(order.orderId);
@@ -67,7 +76,6 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     type.toUpperCase().includes("TAKE_PROFIT");
 
   const startEdit = (order: FuturesOpenOrder) => {
-    // STOP/STOP_MARKET/TAKE_PROFIT 等条件单的触发价在 stopPrice；限价单在 price
     const currentVal = isConditionalOrder(order.type) && order.stopPrice
       ? order.stopPrice
       : order.price;
@@ -100,82 +108,61 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     refetchAll();
   };
 
-  const [closeError, setCloseError] = useState<string | null>(null);
-
   const handleClose = async (position: FuturesPosition) => {
-    setClosing(position.positionId);
-    setCloseError(null);
     try {
-      const res = await fetch("/api/bingx/futures/positions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "closePosition", symbol: position.symbol, positionId: position.positionId }),
+      const json = await postJson("/api/bingx/futures/positions", {
+        action: "closePosition", symbol: position.symbol, positionId: position.positionId,
       });
-      const json = await res.json();
-      // A failed close must surface to the user — silently swallowing it would look like the position closed.
-      if (!json.success) setCloseError(translateError(json, t));
+      if (!json.success) return { ok: false, message: translateError(json, t) };
+      return { ok: true };
     } catch {
-      setCloseError(t("bingx_error.network"));
+      return { ok: false, message: t("bingx_error.network") };
     } finally {
-      setClosing(null);
       refetchAll();
     }
   };
 
-  const startEditPos = (pos: FuturesPosition) => {
-    // BingX 的持仓接口不回传已挂的 TP/SL 价，所以每次都从空开始填
-    setTpValue("");
-    setSlValue("");
-    setTpSlError(null);
-    setEditingPos(pos.positionId);
+  const handleReduceOnlyClose = async (position: FuturesPosition, percent: number) => {
+    try {
+      const json = await postJson("/api/bingx/futures/positions", {
+        action: "reduceOnlyClose", symbol: position.symbol, positionId: position.positionId,
+        positionSide: position.positionSide, percent,
+      });
+      if (!json.success) return { ok: false, message: translateError(json, t) };
+      return { ok: true };
+    } catch {
+      return { ok: false, message: t("bingx_error.network") };
+    } finally {
+      refetchAll();
+    }
   };
 
-  const handleSaveTpSl = async (pos: FuturesPosition) => {
-    const tp = parseFloat(tpValue);
-    const sl = parseFloat(slValue);
-    const hasTp = tp > 0;
-    const hasSl = sl > 0;
-    if (!hasTp && !hasSl) {
-      setTpSlError(t("trading.tpsl_required"));
-      return;
-    }
-    // 触发价方向校验：做多的止盈必须高于标记价、止损必须低于标记价，做空相反。
-    // 方向填反时 BingX 只回一个笼统的参数错误，这里先拦住给出可读提示。
-    const mark = parseFloat(pos.markPrice);
-    const isLong = pos.positionSide === "LONG";
-    if (hasTp && (isLong ? tp <= mark : tp >= mark)) {
-      setTpSlError(t(isLong ? "trading.tp_must_be_above" : "trading.tp_must_be_below"));
-      return;
-    }
-    if (hasSl && (isLong ? sl >= mark : sl <= mark)) {
-      setTpSlError(t(isLong ? "trading.sl_must_be_below" : "trading.sl_must_be_above"));
-      return;
-    }
-    setSavingTpSl(true);
-    setTpSlError(null);
+  const handleReverse = async (position: FuturesPosition) => {
     try {
-      const res = await fetch("/api/bingx/futures/positions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "setPositionTpSl",
-          symbol: pos.symbol,
-          positionSide: pos.positionSide,
-          takeProfitPrice: hasTp ? String(tp) : undefined,
-          stopLossPrice: hasSl ? String(sl) : undefined,
-        }),
+      const json = await postJson("/api/bingx/futures/positions", {
+        action: "reversePosition", symbol: position.symbol, positionId: position.positionId,
+        positionSide: position.positionSide,
       });
-      const json = await res.json();
-      if (!json.success) {
-        setTpSlError(translateError(json, t));
-        return;
-      }
-      setEditingPos(null);
-      refetchAll();
+      if (!json.success) return { ok: false, message: translateError(json, t) };
+      return { ok: true };
     } catch {
-      setTpSlError(t("bingx_error.network"));
+      return { ok: false, message: t("bingx_error.network") };
     } finally {
-      setSavingTpSl(false);
+      refetchAll();
+    }
+  };
+
+  const handleSaveTpSl = async (position: FuturesPosition, tp: string, sl: string) => {
+    try {
+      const json = await postJson("/api/bingx/futures/positions", {
+        action: "setPositionTpSl", symbol: position.symbol, positionSide: position.positionSide,
+        takeProfitPrice: tp || undefined, stopLossPrice: sl || undefined,
+      });
+      if (!json.success) return { ok: false, message: translateError(json, t) };
+      refetchAll();
+      return { ok: true };
+    } catch {
+      return { ok: false, message: t("bingx_error.network") };
     }
   };
 
@@ -183,174 +170,122 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     return <div className="flex items-center justify-center py-8"><Spinner className="h-5 w-5" /></div>;
   }
 
+  const TABS: { key: Tab; label: string }[] = [
+    { key: "positions", label: `Positions (${positions.length})` },
+    { key: "orders", label: `Orders (${orders.length})` },
+    { key: "history", label: "History" },
+    { key: "fills", label: "Fills" },
+  ];
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Positions — every open symbol, not just the one on the chart */}
+      <div className="flex border-b border-border-default shrink-0">
+        {TABS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={cn(
+              "flex-1 px-2 py-2 text-xs font-medium transition-colors",
+              tab === key ? "text-text-primary border-b-2 border-gold" : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-auto">
-        <div className="px-3 py-2 border-b border-border-default">
-          <span className="text-xs font-medium text-text-secondary">Positions ({positions.length})</span>
-        </div>
-        {closeError && (
-          <p className="px-3 py-1.5 text-xs text-danger">{closeError}</p>
-        )}
-        {positions.length === 0 ? (
-          <p className="px-3 py-4 text-xs text-text-muted text-center">No positions</p>
-        ) : (
-          <div className="divide-y divide-border-default/50">
-            {positions.map((pos) => {
-              const pnl = parseFloat(pos.unrealizedProfit);
-              const isLong = pos.positionSide === "LONG";
-              return (
-                <div
+        {tab === "positions" && (
+          positions.length === 0 ? (
+            <p className="px-3 py-4 text-xs text-text-muted text-center">No positions</p>
+          ) : (
+            <div className="divide-y divide-border-default/50">
+              {positions.map((pos) => (
+                <FuturesPositionRow
                   key={pos.positionId}
-                  className={cn("px-3 py-2 hover:bg-bg-hover/50", pos.symbol === symbol && "bg-gold/5")}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold text-text-primary">{pos.symbol}</span>
-                      <span className={cn("text-xs font-semibold", isLong ? "text-success" : "text-danger")}>
-                        {isLong ? "LONG" : "SHORT"}
-                      </span>
-                      <span className="text-xs text-text-muted">{pos.isolated ? "isolated" : "cross"} · {pos.leverage}x</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() =>
-                          editingPos === pos.positionId ? setEditingPos(null) : startEditPos(pos)
-                        }
-                        className="text-xs text-text-muted hover:text-gold"
-                      >
-                        {editingPos === pos.positionId ? "取消" : "TP/SL"}
-                      </button>
-                      <button
-                        onClick={() => handleClose(pos)}
-                        disabled={closing === pos.positionId}
-                        className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
-                      >
-                        {closing === pos.positionId ? "..." : "Close"}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-2 text-xs">
-                    <span className="text-text-muted">Size</span><span className="text-text-primary text-right">{parseFloat(pos.positionAmt).toFixed(4)}</span>
-                    <span className="text-text-muted">Entry</span><span className="text-text-primary text-right">{parseFloat(pos.avgPrice).toFixed(4)}</span>
-                    <span className="text-text-muted">Mark</span><span className="text-text-primary text-right">{parseFloat(pos.markPrice).toFixed(4)}</span>
-                    <span className="text-text-muted">Liq</span><span className="text-text-primary text-right">{parseFloat(pos.liquidationPrice).toFixed(4)}</span>
-                    <span className="text-text-muted">PnL</span>
-                    <span className={cn("text-right font-medium", pnl >= 0 ? "text-success" : "text-danger")}>
-                      {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT
+                  position={pos}
+                  highlighted={pos.symbol === symbol}
+                  onClose={handleClose}
+                  onReduceOnlyClose={handleReduceOnlyClose}
+                  onReverse={handleReverse}
+                  onSaveTpSl={handleSaveTpSl}
+                />
+              ))}
+            </div>
+          )
+        )}
+
+        {tab === "orders" && (
+          orders.length === 0 ? (
+            <p className="px-3 py-4 text-xs text-text-muted text-center">No open orders</p>
+          ) : (
+            <div className="divide-y divide-border-default/50">
+              {orders.map((o) => (
+                <div key={o.orderId} className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-bg-hover/50">
+                  <div>
+                    <span className="text-text-primary font-medium">{o.symbol}</span>
+                    <span className={cn("font-semibold ml-1", o.positionSide === "LONG" ? "text-success" : "text-danger")}>
+                      {o.positionSide}
                     </span>
+                    <span className="text-text-muted ml-1">{o.type} {o.side}</span>
                   </div>
-                  {editingPos === pos.positionId && (
-                    <div className="mt-2 space-y-1.5 rounded border border-border-default p-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-10 shrink-0 text-xs text-text-muted">TP</span>
-                        <input
-                          type="number"
-                          value={tpValue}
-                          onChange={(e) => setTpValue(e.target.value)}
-                          placeholder={parseFloat(pos.markPrice).toFixed(4)}
-                          className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary placeholder:text-text-muted"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-10 shrink-0 text-xs text-text-muted">SL</span>
-                        <input
-                          type="number"
-                          value={slValue}
-                          onChange={(e) => setSlValue(e.target.value)}
-                          placeholder={parseFloat(pos.markPrice).toFixed(4)}
-                          className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary placeholder:text-text-muted"
-                        />
-                      </div>
-                      {tpSlError && <p className="text-xs text-danger">{tpSlError}</p>}
+                  {editing === o.orderId ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-text-muted text-xs">
+                        {isConditionalOrder(o.type) ? "Stop" : "Price"}:
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleAmend(o); }}
+                        className="w-24 bg-bg-input border border-border-default rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none focus:border-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        autoFocus
+                      />
                       <button
-                        onClick={() => handleSaveTpSl(pos)}
-                        disabled={savingTpSl}
-                        className="w-full rounded bg-gold py-1 text-xs font-medium text-black disabled:opacity-50"
+                        onClick={() => handleAmend(o)}
+                        disabled={amending || !(parseFloat(editValue) > 0)}
+                        className="text-xs text-gold hover:text-gold-light disabled:opacity-40"
                       >
-                        {savingTpSl ? "..." : t("trading.set_tp_sl")}
+                        {amending ? "…" : "OK"}
+                      </button>
+                      <button
+                        onClick={() => setEditing(null)}
+                        className="text-text-muted hover:text-text-primary"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <span className="text-text-muted">
+                        {o.type === "LIMIT" ? parseFloat(o.price).toFixed(4) : "MKT"}
+                      </span>
+                      <span className="text-text-primary">{parseFloat(o.origQty)}</span>
+                      <button
+                        onClick={() => startEdit(o)}
+                        className="text-text-muted hover:text-gold"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleCancel(o)}
+                        disabled={cancelling === o.orderId}
+                        className="text-text-muted hover:text-danger disabled:opacity-50"
+                      >
+                        {cancelling === o.orderId ? "×" : "Cancel"}
                       </button>
                     </div>
                   )}
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )
         )}
-      </div>
 
-      {/* Open Orders — every open symbol */}
-      <div className="border-t border-border-default">
-        <div className="px-3 py-2 border-b border-border-default">
-          <span className="text-xs font-medium text-text-secondary">Orders ({orders.length})</span>
-        </div>
-        {orders.length === 0 ? (
-          <p className="px-3 py-4 text-xs text-text-muted text-center">No open orders</p>
-        ) : (
-          <div className="max-h-40 overflow-auto divide-y divide-border-default/50">
-            {orders.map((o) => (
-              <div key={o.orderId} className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-bg-hover/50">
-                <div>
-                  <span className="text-text-primary font-medium">{o.symbol}</span>
-                  <span className={cn("font-semibold ml-1", o.positionSide === "LONG" ? "text-success" : "text-danger")}>
-                    {o.positionSide}
-                  </span>
-                  <span className="text-text-muted ml-1">{o.type} {o.side}</span>
-                </div>
-                {editing === o.orderId ? (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-text-muted text-xs">
-                      {isConditionalOrder(o.type) ? "Stop" : "Price"}:
-                    </span>
-                    <input
-                      type="number"
-                      step="any"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleAmend(o); }}
-                      className="w-24 bg-bg-input border border-border-default rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none focus:border-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      autoFocus
-                    />
-                    <button
-                      onClick={() => handleAmend(o)}
-                      disabled={amending || !(parseFloat(editValue) > 0)}
-                      className="text-xs text-gold hover:text-gold-light disabled:opacity-40"
-                    >
-                      {amending ? "…" : "OK"}
-                    </button>
-                    <button
-                      onClick={() => setEditing(null)}
-                      className="text-text-muted hover:text-text-primary"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <span className="text-text-muted">
-                      {o.type === "LIMIT" ? parseFloat(o.price).toFixed(4) : "MKT"}
-                    </span>
-                    <span className="text-text-primary">{parseFloat(o.origQty)}</span>
-                    <button
-                      onClick={() => startEdit(o)}
-                      className="text-text-muted hover:text-gold"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleCancel(o)}
-                      disabled={cancelling === o.orderId}
-                      className="text-text-muted hover:text-danger disabled:opacity-50"
-                    >
-                      {cancelling === o.orderId ? "×" : "Cancel"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        {tab === "history" && <FuturesOrderHistoryTab />}
+        {tab === "fills" && <FuturesFillHistoryTab />}
       </div>
 
       {/* Wallet — futures account margin/equity, always visible at the bottom */}

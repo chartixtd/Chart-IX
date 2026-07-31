@@ -7,9 +7,11 @@ import { cn } from "@/lib/utils";
 
 interface OrderBookProps {
   symbol: string;
+  /** 点击某一行价格时回调，价格是解析后的 number。不传则价格行不可点击。 */
+  onPriceClick?: (price: number) => void;
 }
 
-export const OrderBook = memo(function OrderBook({ symbol }: OrderBookProps) {
+export const OrderBook = memo(function OrderBook({ symbol, onPriceClick }: OrderBookProps) {
   const { data, isLoading } = useOrderBook(symbol, 8);
 
   if (isLoading) {
@@ -30,6 +32,37 @@ export const OrderBook = memo(function OrderBook({ symbol }: OrderBookProps) {
     ...(asks.map(([, q]) => parseFloat(q)) || [0])
   );
 
+  const renderRow = (price: string, qty: string, i: number, side: "ask" | "bid") => {
+    const volume = parseFloat(qty);
+    const widthPercent = maxTotal > 0 ? (volume / maxTotal) * 100 : 0;
+    const priceColor = side === "ask" ? "text-danger" : "text-success";
+    const barColor = side === "ask" ? "bg-danger/10" : "bg-success/10";
+
+    const priceCell = (
+      <span className={cn("relative z-10", priceColor)}>{formatPrice(parseFloat(price))}</span>
+    );
+
+    return (
+      <div key={`${side}-${i}`} className="grid grid-cols-3 gap-1 px-2 py-0.5 relative">
+        <div className={cn("absolute inset-y-0 right-0", barColor)} style={{ width: `${widthPercent}%` }} />
+        {onPriceClick ? (
+          <button
+            type="button"
+            onClick={() => onPriceClick(parseFloat(price))}
+            className="relative z-10 text-left hover:underline"
+            title="点击填入下单价格"
+          >
+            {formatPrice(parseFloat(price))}
+          </button>
+        ) : (
+          priceCell
+        )}
+        <span className="relative z-10 text-right text-text-secondary">{qty}</span>
+        <span className="relative z-10 text-right text-text-muted">{volume.toFixed(4)}</span>
+      </div>
+    );
+  };
+
   return (
     <div className="text-xs">
       {/* Header */}
@@ -40,21 +73,7 @@ export const OrderBook = memo(function OrderBook({ symbol }: OrderBookProps) {
       </div>
 
       {/* Asks (Sell) */}
-      {asks.map(([price, qty], i) => {
-        const volume = parseFloat(qty);
-        const widthPercent = maxTotal > 0 ? (volume / maxTotal) * 100 : 0;
-        return (
-          <div key={`ask-${i}`} className="grid grid-cols-3 gap-1 px-2 py-0.5 relative">
-            <div
-              className="absolute inset-y-0 right-0 bg-danger/10"
-              style={{ width: `${widthPercent}%` }}
-            />
-            <span className="relative z-10 text-danger">{formatPrice(parseFloat(price))}</span>
-            <span className="relative z-10 text-right text-text-secondary">{qty}</span>
-            <span className="relative z-10 text-right text-text-muted">{volume.toFixed(4)}</span>
-          </div>
-        );
-      })}
+      {asks.map(([price, qty], i) => renderRow(price, qty, i, "ask"))}
 
       {/* Spread */}
       <div className="border-y border-border-default px-2 py-1.5 text-center text-text-muted">
@@ -68,21 +87,7 @@ export const OrderBook = memo(function OrderBook({ symbol }: OrderBookProps) {
       </div>
 
       {/* Bids (Buy) */}
-      {bids.map(([price, qty], i) => {
-        const volume = parseFloat(qty);
-        const widthPercent = maxTotal > 0 ? (volume / maxTotal) * 100 : 0;
-        return (
-          <div key={`bid-${i}`} className="grid grid-cols-3 gap-1 px-2 py-0.5 relative">
-            <div
-              className="absolute inset-y-0 right-0 bg-success/10"
-              style={{ width: `${widthPercent}%` }}
-            />
-            <span className="relative z-10 text-success">{formatPrice(parseFloat(price))}</span>
-            <span className="relative z-10 text-right text-text-secondary">{qty}</span>
-            <span className="relative z-10 text-right text-text-muted">{volume.toFixed(4)}</span>
-          </div>
-        );
-      })}
+      {bids.map(([price, qty], i) => renderRow(price, qty, i, "bid"))}
     </div>
   );
 });

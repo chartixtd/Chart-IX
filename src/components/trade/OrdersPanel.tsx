@@ -14,6 +14,7 @@ interface BingXOrder {
   symbol: string;
   orderId: string;
   price: string;
+  stopPrice?: string;
   origQty: string;
   executedQty: string;
   cummulativeQuoteQty: string;
@@ -135,19 +136,18 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     fetchData();
   };
 
+  // BingX spot order types (see lib/bingx/trade.ts OrderType):
+  // MARKET | LIMIT | TAKE_STOP_LIMIT | TAKE_STOP_MARKET | TRIGGER_LIMIT | TRIGGER_MARKET
   const isModifiable = (type: string) =>
-    type === "LIMIT" ||
-    type === "STOP_MARKET" ||
-    type === "STOP_LIMIT" ||
-    type === "TAKE_PROFIT" ||
-    type === "TAKE_PROFIT_MARKET";
+    type !== "MARKET";
 
   const isConditionalOrder = (type: string) =>
     type !== "LIMIT" && type !== "MARKET";
 
   const startEdit = (order: BingXOrder) => {
-    const currentVal = isConditionalOrder(order.type)
-      ? parseFloat(order.price).toFixed(8).replace(/0+$/, "").replace(/\.$/, "")
+    // 条件单（止盈止损/触发单）的触发价格在 stopPrice；限价单在 price
+    const currentVal = isConditionalOrder(order.type) && order.stopPrice
+      ? order.stopPrice
       : order.price;
     setEditValue(currentVal);
     setEditing(order.orderId);

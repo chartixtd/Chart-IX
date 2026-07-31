@@ -35,6 +35,7 @@ interface FuturesOrder {
   type: string;
   origQty: string;
   price: string;
+  stopPrice?: string;
   executedQty: string;
   status: string;
   leverage: number;
@@ -93,14 +94,19 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     fetchData();
   };
 
+  // BingX futures order types: MARKET | LIMIT | STOP_MARKET | STOP | TAKE_PROFIT_MARKET | TAKE_PROFIT | TRAILING_STOP_MARKET
   const isModifiable = (type: string) =>
-    type === "LIMIT" || type === "STOP" || type === "STOP_MARKET";
+    type !== "MARKET";
 
   const isConditionalOrder = (type: string) =>
-    type === "STOP" || type === "STOP_MARKET";
+    type !== "LIMIT" && type !== "MARKET";
 
   const startEdit = (order: FuturesOrder) => {
-    setEditValue(order.price);
+    // STOP/STOP_MARKET/TAKE_PROFIT 等条件单的触发价在 stopPrice；限价单在 price
+    const currentVal = isConditionalOrder(order.type) && order.stopPrice
+      ? order.stopPrice
+      : order.price;
+    setEditValue(currentVal);
     setEditing(order.orderId);
   };
 

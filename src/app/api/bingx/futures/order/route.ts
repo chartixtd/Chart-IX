@@ -9,7 +9,7 @@ import { checkRateLimit } from "@/lib/trading/rate-limit";
 import { describeBingXError } from "@/lib/trading/errors";
 import { roundPrice } from "@/lib/trading/sizing";
 import { RATE_LIMITS } from "@/lib/constants";
-import type { FuturesOrderType } from "@/lib/bingx/futures";
+import type { FuturesOrderType, FuturesTimeInForce } from "@/lib/bingx/futures";
 
 const VALID_TYPES: FuturesOrderType[] = [
   "MARKET", "LIMIT",
@@ -24,6 +24,7 @@ const STOP_TYPES = new Set<FuturesOrderType>([
 const TRAILING_TYPES = new Set<FuturesOrderType>(["TRAILING_STOP_MARKET", "TRAILING_TP_SL"]);
 /** 只有 MARKET / LIMIT 能挂附带止盈止损对象 */
 const ATTACHABLE_TPSL = new Set<FuturesOrderType>(["MARKET", "LIMIT"]);
+const VALID_TIF: FuturesTimeInForce[] = ["GTC", "IOC", "FOK", "PostOnly"];
 
 function reject(code: string, message: string, status: number, limit?: number | string) {
   return NextResponse.json(
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
   const {
     test, symbol, direction, type, notionalUsdt, referencePrice, leverage,
     price, stopPrice, priceRatePercent, workingType,
-    stopLossPrice, takeProfitPrice,
+    stopLossPrice, takeProfitPrice, timeInForce, reduceOnly,
   } = body;
 
   if (!symbol || !direction || !type) {
@@ -76,6 +77,9 @@ export async function POST(request: NextRequest) {
     return reject("INVALID_DIRECTION", "direction must be LONG or SHORT", 400);
   }
   if (!VALID_TYPES.includes(type)) return reject("INVALID_TYPE", "Invalid order type", 400);
+  if (timeInForce && !VALID_TIF.includes(timeInForce)) {
+    return reject("INVALID_TIF", "Invalid timeInForce", 400);
+  }
   if (LIMIT_TYPES.has(type) && !(Number(price) > 0)) {
     return reject("MISSING_PRICE", "price is required for limit-type orders", 400);
   }
@@ -164,8 +168,9 @@ export async function POST(request: NextRequest) {
       price: LIMIT_TYPES.has(type) ? roundPrice(Number(price), pre.spec) : undefined,
       stopPrice: STOP_TYPES.has(type) ? roundPrice(Number(stopPrice), pre.spec) : undefined,
       priceRate,
-      timeInForce: LIMIT_TYPES.has(type) ? ("GTC" as const) : undefined,
+      timeInForce: LIMIT_TYPES.has(type) ? ((timeInForce as FuturesTimeInForce) || "GTC") : undefined,
       workingType: workingType || undefined,
+      reduceOnly: reduceOnly === true ? true : undefined,
       stopLoss:
         ATTACHABLE_TPSL.has(type) && Number(stopLossPrice) > 0
           ? JSON.stringify({

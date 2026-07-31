@@ -17,6 +17,62 @@ interface FuturesAccount {
   dualSidePosition: boolean;
 }
 
+export interface FuturesPosition {
+  symbol: string;
+  positionId: string;
+  positionSide: "LONG" | "SHORT";
+  positionAmt: string;
+  unrealizedProfit: string;
+  leverage: number;
+  avgPrice: string;
+  markPrice: string;
+  liquidationPrice: string;
+  isolated: boolean;
+}
+
+export interface FuturesOpenOrder {
+  symbol: string;
+  orderId: string;
+  side: string;
+  positionSide: string;
+  type: string;
+  origQty: string;
+  price: string;
+  stopPrice?: string;
+  executedQty: string;
+  status: string;
+  leverage: number;
+}
+
+export interface SpotOpenOrder {
+  symbol: string;
+  orderId: string;
+  price: string;
+  stopPrice?: string;
+  origQty: string;
+  executedQty: string;
+  cummulativeQuoteQty: string;
+  status: string;
+  type: string;
+  side: string;
+  time: number;
+  updateTime: number;
+}
+
+export interface SpotTradeRecord {
+  symbol: string;
+  id: string;
+  orderId: string;
+  price: string;
+  qty: string;
+  quoteQty: string;
+  commission: string;
+  commissionAsset: string;
+  time: number;
+  isBuyer: boolean;
+  isMaker: boolean;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Request failed: ${res.status}`);
@@ -25,7 +81,7 @@ async function getJson<T>(url: string): Promise<T> {
   return json.data as T;
 }
 
-/** 现货可用余额。enabled=false 时（未登录/未绑 Key）不发请求 */
+/** Spot available balance. When enabled=false (not logged in/no API key bound), no request is made */
 export function useSpotBalances(enabled = true) {
   return useQuery({
     queryKey: ["trading", "spot-balances"],
@@ -41,12 +97,13 @@ export function useSpotBalances(enabled = true) {
 }
 
 /**
- * 单个交易对 + 方向的合约账户状态：可用保证金 + 当前/最大杠杆 + 保证金模式 + 持仓模式。
+ * Single trading pair + direction contract account state: available margin + current/max leverage + margin mode + position mode.
  *
- * `direction` 参与 queryKey：BingX 的已确认杠杆是按 symbol+positionSide 存的（见
- * setLeverage 的 positionSide 参数），多空两侧可能持有不同的已确认杠杆。缺少
- * direction 时切换方向不会重新拉取，会把另一侧的杠杆数字当成当前方向的已确认值，
- * 这正是复核发现的“方向翻转后杠杆未重新确认”漏洞的根源之一。
+ * `direction` participates in queryKey: BingX's confirmed leverage is stored by symbol+positionSide (see
+ * setLeverage's positionSide parameter). Long and short sides may have different confirmed leverage values.
+ * Without direction in queryKey, switching directions won't re-fetch and will use the other side's leverage
+ * as the current direction's confirmed value, which is the root cause of the "leverage not re-confirmed after
+ * direction reversal" bug discovered in review.
  */
 export function useFuturesAccount(symbol: string, direction: "LONG" | "SHORT" = "LONG", enabled = true) {
   return useQuery<FuturesAccount>({
@@ -56,7 +113,8 @@ export function useFuturesAccount(symbol: string, direction: "LONG" | "SHORT" = 
         getJson<{ availableMargin: string; equity: string } | null>(
           "/api/bingx/futures/positions?type=balance"
         ),
-        // route 现在按 side 参数选多空对应的杠杆字段（BingX 的查询接口按多空分开返回）
+        // route now selects long/short's corresponding leverage field by side parameter
+        // (BingX's query interface returns long and short separately)
         getJson<{ leverage: number; maxLeverage: number; marginType: string }>(
           `/api/bingx/futures/positions?type=leverage&symbol=${encodeURIComponent(symbol)}&side=${direction}`
         ),
@@ -74,6 +132,78 @@ export function useFuturesAccount(symbol: string, direction: "LONG" | "SHORT" = 
     refetchInterval: 15_000,
     staleTime: 5_000,
     enabled: enabled && !!symbol,
+    retry: false,
+  });
+}
+
+/** All positions under account (not filtered by symbol — panel itself is an "all positions under account" view) */
+export function useFuturesPositions(enabled = true) {
+  return useQuery<FuturesPosition[]>({
+    queryKey: ["trading", "futures-positions"],
+    queryFn: () => getJson<FuturesPosition[]>("/api/bingx/futures/positions"),
+    // WS user data stream (useUserDataStream) will invalidate immediately when
+    // ORDER_TRADE_UPDATE/ACCOUNT_UPDATE arrives, triggering a re-fetch. This 30s polling
+    // is just a fallback for connection loss, not the primary update mechanism
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+    enabled,
+    retry: false,
+  });
+}
+
+/** All open orders under account (not filtered by symbol) */
+export function useFuturesOpenOrders(enabled = true) {
+  return useQuery<FuturesOpenOrder[]>({
+    queryKey: ["trading", "futures-open-orders"],
+    queryFn: async () => {
+      const raw = await getJson<FuturesOpenOrder[] | { orders: FuturesOpenOrder[] }>("/api/bingx/futures/open-orders");
+      return Array.isArray(raw) ? raw : raw?.orders ?? [];
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+    enabled,
+    retry: false,
+  });
+}
+
+/** Futures wallet equity / available margin (account-level, unrelated to current chart symbol) */
+export function useFuturesBalance(enabled = true) {
+  return useQuery<{ availableMargin: string; equity: string } | null>({
+    queryKey: ["trading", "futures-balance"],
+    queryFn: () => getJson<{ availableMargin: string; equity: string } | null>("/api/bingx/futures/positions?type=balance"),
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+    enabled,
+    retry: false,
+  });
+}
+
+/** All open spot orders under account (not filtered by symbol) */
+export function useSpotOpenOrders(enabled = true) {
+  return useQuery<SpotOpenOrder[]>({
+    queryKey: ["trading", "spot-open-orders"],
+    queryFn: async () => {
+      const raw = await getJson<SpotOpenOrder[] | { orders: SpotOpenOrder[] }>("/api/bingx/trade/open-orders");
+      return Array.isArray(raw) ? raw : raw?.orders ?? [];
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+    enabled,
+    retry: false,
+  });
+}
+
+/** Recent trades under account (not filtered by symbol) */
+export function useSpotMyTrades(limit = 30, enabled = true) {
+  return useQuery<SpotTradeRecord[]>({
+    queryKey: ["trading", "spot-my-trades", limit],
+    queryFn: async () => {
+      const raw = await getJson<SpotTradeRecord[] | { fills: SpotTradeRecord[] }>(`/api/bingx/trade/my-trades?limit=${limit}`);
+      return Array.isArray(raw) ? raw : raw?.fills ?? [];
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+    enabled,
     retry: false,
   });
 }

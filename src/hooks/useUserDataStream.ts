@@ -46,10 +46,18 @@ export function useUserDataStream({ market, enabled }: UseUserDataStreamOptions)
   const listenKeyRef = useRef<string | null>(null);
   const keepaliveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Identity of the effect instance that currently owns wsRef/listenKeyRef —
+  // guards against a stale/superseded instance's in-flight async work (e.g. a
+  // pending listenKey POST from an effect that already tore down) clobbering
+  // state that a newer, still-live instance is actively using. See the
+  // "instance ownership" note in connect() below.
+  const currentInstanceRef = useRef<object | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    const instanceToken = {};
+    currentInstanceRef.current = instanceToken;
 
     function invalidate(target: StreamInvalidation) {
       if (market === "futures") {
@@ -76,12 +84,13 @@ export function useUserDataStream({ market, enabled }: UseUserDataStreamOptions)
         if (!cancelled) reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
         return;
       }
-      // Store the key for cleanup BEFORE checking `cancelled` again — otherwise a
-      // teardown that races this await would never release a key we just created.
-      listenKeyRef.current = listenKey;
-      if (cancelled) {
-        // Effect was torn down while this POST was in flight; release immediately
-        // rather than leaving it to expire on its own ~1h TTL.
+      // Instance-ownership check BEFORE touching any shared ref: if this effect
+      // was torn down (cancelled) or a newer effect instance has since taken
+      // over (currentInstanceRef reassigned), this call must not write
+      // listenKeyRef/wsRef — a newer, still-live instance may already own them.
+      // Release the key we just created (using the local variable, never the
+      // shared ref) instead of leaving it to expire on its own ~1h TTL.
+      if (cancelled || currentInstanceRef.current !== instanceToken) {
         fetch("/api/bingx/user-stream", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -89,6 +98,7 @@ export function useUserDataStream({ market, enabled }: UseUserDataStreamOptions)
         }).catch(() => {});
         return;
       }
+      listenKeyRef.current = listenKey;
 
       const baseUrl = market === "spot" ? SPOT_WS_URL : SWAP_WS_URL;
       const ws = new WebSocket(`${baseUrl}?listenKey=${listenKey}`);
@@ -168,6 +178,13 @@ export function useUserDataStream({ market, enabled }: UseUserDataStreamOptions)
     return () => {
       cancelled = true;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      // Only tear down the shared refs if this instance is still the current
+      // owner. In practice this is always true at the moment an effect's own
+      // cleanup runs (nothing else reassigns currentInstanceRef until the next
+      // effect body executes, which happens after this cleanup), but the check
+      // is kept as defense-in-depth so cleanup can never clobber a newer,
+      // still-live instance's connection/listenKey.
+      if (currentInstanceRef.current !== instanceToken) return;
       if (keepaliveTimerRef.current) clearInterval(keepaliveTimerRef.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
@@ -176,6 +193,7 @@ export function useUserDataStream({ market, enabled }: UseUserDataStreamOptions)
       }
       const key = listenKeyRef.current;
       if (key) {
+        listenKeyRef.current = null;
         fetch("/api/bingx/user-stream", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },

@@ -12,6 +12,8 @@ import { OrderConfirmModal } from "@/components/trade/OrderConfirmModal";
 import { AmountField } from "./fields/AmountField";
 import { LeverageField } from "./fields/LeverageField";
 import { PriceFields } from "./fields/PriceFields";
+import { TifField, type TimeInForceOption } from "./fields/TifField";
+import { ReduceOnlyField } from "./fields/ReduceOnlyField";
 import { OrderPreview } from "./OrderPreview";
 import { MARKET_CONFIG, LIMIT_TYPES, STOP_TYPES, TRAILING_TYPES, TPSL_ATTACHABLE, type OrderFormMarket } from "./config";
 import { cn, formatPrice } from "@/lib/utils";
@@ -39,6 +41,8 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
   const [tpPrice, setTpPrice] = useState("");
   const [slPrice, setSlPrice] = useState("");
   const [showTpSl, setShowTpSl] = useState(false);
+  const [timeInForce, setTimeInForce] = useState<TimeInForceOption>("GTC");
+  const [reduceOnly, setReduceOnly] = useState(false);
   const [leverage, setLeverage] = useState(market === "spot" ? 1 : 10);
   /**
    * 已在交易所确认、且与当前方向匹配的杠杆。只由两处写入：
@@ -101,6 +105,22 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
       setSlPrice("");
     }
   }, [market, orderType, showTpSl]);
+
+  // TIF 只对限价类订单类型有意义；切到市价类订单时残留的旧选择不该悄悄带入
+  // 下一次下单（比如切成市价单又切回限价单，理应回到默认 GTC）
+  useEffect(() => {
+    if (!LIMIT_TYPES.has(orderType) && timeInForce !== "GTC") {
+      setTimeInForce("GTC");
+    }
+  }, [orderType, timeInForce]);
+
+  // 只减仓只对合约有意义；切到现货/模拟盘时清掉，避免残留状态带进下一次
+  // 合约下单（虽然现货/模拟盘请求体压根不读这个字段，这里是防御性清理）
+  useEffect(() => {
+    if (market !== "futures" && reduceOnly) {
+      setReduceOnly(false);
+    }
+  }, [market, reduceOnly]);
 
   const isLimit = LIMIT_TYPES.has(orderType);
   const refPrice = isLimit && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
@@ -198,7 +218,7 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
           notionalUsdt: notional, referencePrice: currentPrice,
           price: isLimit ? price : undefined,
           stopPrice: STOP_TYPES.has(orderType) ? stopPrice : undefined,
-          timeInForce: isLimit ? "GTC" : undefined,
+          timeInForce: isLimit ? timeInForce : undefined,
         });
         if (!json.success) throw new Error(translateError(json, t));
         setResult({ ok: true, message: t("trading.order_placed", { id: json.data?.orderId ?? "" }) });
@@ -211,6 +231,8 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
           priceRatePercent: TRAILING_TYPES.has(orderType) ? callbackPercent : undefined,
           takeProfitPrice: showTpSl && tpPrice ? tpPrice : undefined,
           stopLossPrice: showTpSl && slPrice ? slPrice : undefined,
+          timeInForce: isLimit ? timeInForce : undefined,
+          reduceOnly: reduceOnly || undefined,
         });
         if (!json.success) throw new Error(translateError(json, t));
         setResult({ ok: true, message: t("trading.order_placed", { id: json.data?.orderIdStr ?? "" }) });
@@ -309,6 +331,14 @@ export function OrderForm({ symbol, market, initialSide }: OrderFormProps) {
           showTpSl={showTpSl} onToggleTpSl={setShowTpSl}
           allowTpSl={market === "futures"}
         />
+
+        {uiMode === "pro" && isLimit && (
+          <TifField value={timeInForce} onChange={setTimeInForce} />
+        )}
+
+        {market === "futures" && (
+          <ReduceOnlyField value={reduceOnly} onChange={setReduceOnly} />
+        )}
 
         <AmountField
           value={amount} onChange={setAmount}

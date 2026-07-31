@@ -49,7 +49,7 @@ export const OrderBook = memo(function OrderBook({ symbol, onPriceClick }: Order
           <button
             type="button"
             onClick={() => onPriceClick(parseFloat(price))}
-            className="relative z-10 text-left hover:underline"
+            className={cn("relative z-10 text-left hover:underline", priceColor)}
             title="点击填入下单价格"
           >
             {formatPrice(parseFloat(price))}

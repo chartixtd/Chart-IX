@@ -9,6 +9,13 @@ import { describeBingXError } from "@/lib/trading/errors";
 import { roundPrice } from "@/lib/trading/sizing";
 import { RATE_LIMITS } from "@/lib/constants";
 
+function reject(code: string, message: string, status: number, limit?: number | string) {
+  return NextResponse.json(
+    { success: false, error: { message, i18nKey: `trading.reject.${code.toLowerCase()}`, code, limit } },
+    { status }
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -55,14 +62,17 @@ export async function POST(request: NextRequest) {
     // 缺这一层）
     const { symbol, side, notionalUsdt, limitPrice, triggerPrice, orderPrice } = body;
 
+    if (!symbol || typeof symbol !== "string") {
+      return reject("MISSING_SYMBOL", "symbol is required", 400);
+    }
     if (side !== "BUY" && side !== "SELL") {
-      return NextResponse.json({ success: false, error: { message: "side must be BUY or SELL" } }, { status: 400 });
+      return reject("INVALID_SIDE", "side must be BUY or SELL", 400);
     }
     if (!(Number(notionalUsdt) > 0)) {
-      return NextResponse.json({ success: false, error: { message: "notionalUsdt must be positive" } }, { status: 400 });
+      return reject("INVALID_AMOUNT", "notionalUsdt must be positive", 400);
     }
     if (!(Number(limitPrice) > 0) || !(Number(triggerPrice) > 0) || !(Number(orderPrice) > 0)) {
-      return NextResponse.json({ success: false, error: { message: "limitPrice, triggerPrice and orderPrice must all be positive" } }, { status: 400 });
+      return reject("INVALID_PRICE", "limitPrice, triggerPrice and orderPrice must all be positive", 400);
     }
 
     const rl = await checkRateLimit(`spot-order:${userId}`, RATE_LIMITS.SPOT_TRADE);

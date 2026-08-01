@@ -391,17 +391,33 @@ export default function TradePage() {
           <ResizeHandle />
 
           <Panel defaultSize={52} minSize={30}>
-            <div className="flex h-full flex-col overflow-hidden">
-              <div className="flex items-center border-b border-border-default">
-                <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
-                <div className="ml-auto pr-2">
-                  <FearGreedIndex compact />
+            {/* 持仓/挂单/历史/成交面板挤在最右侧窄栏里显示不全，改成图表下方的
+                横向面板，宽度跟图表一致，字段能摆开——原来那一栏只留下单表单 */}
+            <PanelGroup direction="vertical" autoSaveId="chart-ix-trade-chart-column">
+              <Panel defaultSize={65} minSize={30}>
+                <div className="flex h-full flex-col overflow-hidden">
+                  <div className="flex items-center border-b border-border-default">
+                    <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+                    <div className="ml-auto pr-2">
+                      <FearGreedIndex compact />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
+                  </div>
                 </div>
-              </div>
-              <div className="flex-1">
-                <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
-              </div>
-            </div>
+              </Panel>
+
+              <PanelResizeHandle className="group relative h-1 shrink-0 bg-border-default transition-colors hover:bg-gold/50 active:bg-gold">
+                <div className="pointer-events-none absolute left-1/2 top-1/2 flex h-2.5 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-xs bg-bg-tertiary opacity-0 transition-opacity group-hover:opacity-100">
+                  <span className="text-[8px] leading-none text-text-muted">⋯</span>
+                </div>
+              </PanelResizeHandle>
+
+              <Panel defaultSize={35} minSize={20} className="border-t border-border-default">
+                <div className="h-full overflow-auto">{ordersPanel}</div>
+              </Panel>
+            </PanelGroup>
           </Panel>
 
           <ResizeHandle />
@@ -420,10 +436,7 @@ export default function TradePage() {
           <ResizeHandle />
 
           <Panel defaultSize={20} minSize={14} maxSize={32}>
-            <div className="flex h-full flex-col divide-y divide-border-default overflow-hidden">
-              <div className="shrink-0">{tradePanel}</div>
-              <div className="min-h-0 flex-1 overflow-auto">{ordersPanel}</div>
-            </div>
+            <div className="h-full overflow-auto">{tradePanel}</div>
           </Panel>
         </PanelGroup>
       </div>

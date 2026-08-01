@@ -451,6 +451,44 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       );
     }
 
+    if (d.tool === "price-range") {
+      const deltaPrice = b.price - a.price;
+      const deltaPct = a.price !== 0 ? (deltaPrice / a.price) * 100 : 0;
+      const midY = (y1 + y2) / 2;
+      const up = deltaPrice >= 0;
+      return (
+        <g key={d.id}>
+          <line x1={x1} y1={y1} x2={x1} y2={y2} {...hit} />
+          <rect x={Math.min(x1, x2)} y={Math.min(y1, y2)} width={Math.abs(x2 - x1)} height={Math.abs(y2 - y1)}
+            fill={up ? "#22c55e" : "#ef4444"} fillOpacity={0.1} stroke="transparent" strokeWidth={0} />
+          <line x1={x1} y1={y1} x2={x1} y2={y2} stroke={stroke} strokeWidth={common.strokeWidth} strokeDasharray={DASH_ARRAY[d.lineStyle]} vectorEffect="non-scaling-stroke" />
+          <text x={Math.min(x1, x2) + 4} y={midY} fill={up ? "#22c55e" : "#ef4444"} fontSize={11} fontFamily="monospace" fontWeight={600}>
+            {deltaPrice >= 0 ? "+" : ""}{deltaPrice.toPrecision(6)} ({deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(2)}%)
+          </text>
+          {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x1} cy={y2} r={3.5} fill={stroke} /></>}
+        </g>
+      );
+    }
+
+    if (d.tool === "date-range") {
+      const deltaSeconds = Math.abs(b.time - a.time);
+      const bars = times.filter((t) => t >= Math.min(a.time, b.time) && t <= Math.max(a.time, b.time)).length;
+      const midX = (x1 + x2) / 2;
+      const label = deltaSeconds >= 86400
+        ? `${(deltaSeconds / 86400).toFixed(1)}天 (${bars}根)`
+        : `${(deltaSeconds / 3600).toFixed(1)}小时 (${bars}根)`;
+      return (
+        <g key={d.id}>
+          <line x1={x1} y1={y1} x2={x2} y2={y1} {...hit} />
+          <line x1={x1} y1={y1} x2={x2} y2={y1} stroke={stroke} strokeWidth={common.strokeWidth} strokeDasharray={DASH_ARRAY[d.lineStyle]} vectorEffect="non-scaling-stroke" />
+          <text x={midX} y={y1 - 6} fill={stroke} fontSize={11} fontFamily="monospace" fontWeight={600} textAnchor="middle">
+            {label}
+          </text>
+          {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y1} r={3.5} fill={stroke} /></>}
+        </g>
+      );
+    }
+
     if (d.tool === "fib") {
       const lo = Math.min(x1, x2);
       const hi = Math.max(x1, x2);

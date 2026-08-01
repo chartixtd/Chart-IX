@@ -180,12 +180,13 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     }
   };
 
-  const handleSaveTpSl = async (position: FuturesPosition, tp: string, sl: string) => {
+  const handleSaveTpSl = async (position: FuturesPosition, tp: string, sl: string, cancelTp?: boolean, cancelSl?: boolean) => {
     setLastActionError(null);
     try {
       const json = await postJson("/api/bingx/futures/positions", {
         action: "setPositionTpSl", symbol: position.symbol, positionSide: position.positionSide,
         takeProfitPrice: tp || undefined, stopLossPrice: sl || undefined,
+        cancelTakeProfit: cancelTp || undefined, cancelStopLoss: cancelSl || undefined,
       });
       if (!json.success) {
         const message = translateError(json, t);

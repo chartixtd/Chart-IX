@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { cn, formatBySpec } from "@/lib/utils";
+import { Modal } from "@/components/ui/Modal";
 import { useFuturesContracts, type FuturesPosition } from "@/hooks/useTradingAccount";
 
 interface ActionResult {
@@ -20,7 +21,8 @@ interface FuturesPositionRowProps {
   onClose: (position: FuturesPosition) => Promise<ActionResult>;
   onReduceOnlyClose: (position: FuturesPosition, percent: number) => Promise<ActionResult>;
   onReverse: (position: FuturesPosition) => Promise<ActionResult>;
-  onSaveTpSl: (position: FuturesPosition, tp: string, sl: string) => Promise<ActionResult>;
+  /** cancelTp/cancelSl：只撤销对应一侧的现有条件单，不下新单——用于"取消止盈/止损" */
+  onSaveTpSl: (position: FuturesPosition, tp: string, sl: string, cancelTp?: boolean, cancelSl?: boolean) => Promise<ActionResult>;
 }
 
 const CLOSE_PERCENTS = [25, 50, 75, 100];
@@ -55,8 +57,10 @@ export function FuturesPositionRow({
   const roi = margin > 0 ? (pnl / margin) * 100 : 0;
 
   const startTpSl = () => {
-    setTpValue("");
-    setSlValue("");
+    // 打开时带出当前已生效的止盈/止损，再次修改时能看到现在设的是多少，
+    // 而不是每次都要从空白重新输入
+    setTpValue(currentTp ? formatBySpec(parseFloat(currentTp), spec?.pricePrecision) : "");
+    setSlValue(currentSl ? formatBySpec(parseFloat(currentSl), spec?.pricePrecision) : "");
     setTpSlError(null);
     setEditingTpSl(true);
   };
@@ -95,6 +99,18 @@ export function FuturesPositionRow({
       return;
     }
     setEditingTpSl(false);
+  };
+
+  const cancelLeg = async (leg: "tp" | "sl") => {
+    setSavingTpSl(true);
+    setTpSlError(null);
+    const result = await onSaveTpSl(pos, "", "", leg === "tp", leg === "sl");
+    setSavingTpSl(false);
+    if (!result.ok) {
+      setTpSlError(result.message ?? "Failed to cancel");
+      return;
+    }
+    if (leg === "tp") setTpValue(""); else setSlValue("");
   };
 
   const handleClose = async () => {
@@ -149,15 +165,10 @@ export function FuturesPositionRow({
         </div>
         <div className="flex items-center gap-1.5">
           <button
-            onClick={() => (editingTpSl ? setEditingTpSl(false) : startTpSl())}
-            className={cn(
-              "rounded-xs border px-2 py-1 text-[11px] font-medium transition-colors",
-              editingTpSl
-                ? "border-gold/50 bg-gold/10 text-gold"
-                : "border-border-default text-text-secondary hover:border-gold/40 hover:text-gold"
-            )}
+            onClick={startTpSl}
+            className="rounded-xs border border-border-default px-2 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:border-gold/40 hover:text-gold"
           >
-            {editingTpSl ? t("common.cancel") : "TP/SL"}
+            TP/SL
           </button>
           <button
             onClick={() => setReverseConfirmOpen(true)}
@@ -238,64 +249,68 @@ export function FuturesPositionRow({
 
       {actionError && <p className="mt-1.5 text-xs text-danger">{actionError}</p>}
 
-      {editingTpSl && (
-        <div className="mt-2 space-y-1.5 rounded border border-border-default p-2">
-          <div className="flex items-center gap-1.5">
-            <span className="w-10 shrink-0 text-xs text-text-muted">TP</span>
+      <Modal open={editingTpSl} onClose={() => setEditingTpSl(false)} title={`TP / SL · ${pos.symbol}`} size="sm">
+        <div className="space-y-3">
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs text-text-muted">TP</span>
+              {currentTp && (
+                <button
+                  type="button"
+                  onClick={() => cancelLeg("tp")}
+                  disabled={savingTpSl}
+                  className="text-[11px] text-danger hover:text-danger/80 disabled:opacity-50"
+                >
+                  取消止盈
+                </button>
+              )}
+            </div>
             <input
               type="number"
               value={tpValue}
               onChange={(e) => setTpValue(e.target.value)}
               placeholder={mark.toFixed(4)}
               className={cn(
-                "min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs font-medium placeholder:font-normal placeholder:text-text-muted/60",
+                "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted/60",
                 tpValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-input text-text-primary"
               )}
             />
-            {tpValue && (
-              <button
-                type="button"
-                onClick={() => setTpValue("")}
-                className="shrink-0 text-xs text-text-muted hover:text-danger"
-                aria-label="clear TP"
-              >
-                ×
-              </button>
-            )}
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-10 shrink-0 text-xs text-text-muted">SL</span>
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs text-text-muted">SL</span>
+              {currentSl && (
+                <button
+                  type="button"
+                  onClick={() => cancelLeg("sl")}
+                  disabled={savingTpSl}
+                  className="text-[11px] text-danger hover:text-danger/80 disabled:opacity-50"
+                >
+                  取消止损
+                </button>
+              )}
+            </div>
             <input
               type="number"
               value={slValue}
               onChange={(e) => setSlValue(e.target.value)}
               placeholder={mark.toFixed(4)}
               className={cn(
-                "min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs font-medium placeholder:font-normal placeholder:text-text-muted/60",
+                "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted/60",
                 slValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-input text-text-primary"
               )}
             />
-            {slValue && (
-              <button
-                type="button"
-                onClick={() => setSlValue("")}
-                className="shrink-0 text-xs text-text-muted hover:text-danger"
-                aria-label="clear SL"
-              >
-                ×
-              </button>
-            )}
           </div>
           {tpSlError && <p className="text-xs text-danger">{tpSlError}</p>}
           <button
             onClick={saveTpSl}
             disabled={savingTpSl}
-            className="w-full rounded bg-gold py-1 text-xs font-medium text-black disabled:opacity-50"
+            className="w-full rounded bg-gold py-2 text-sm font-medium text-black transition-colors hover:bg-gold-hover disabled:opacity-50"
           >
-            {savingTpSl ? "..." : t("trading.set_tp_sl")}
+            {savingTpSl ? "…" : t("trading.set_tp_sl")}
           </button>
         </div>
-      )}
+      </Modal>
 
       {reverseConfirmOpen && (
         <div className="mt-2 space-y-1.5 rounded border border-gold/40 bg-gold/5 p-2">

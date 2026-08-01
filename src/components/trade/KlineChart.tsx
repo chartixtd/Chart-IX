@@ -60,8 +60,6 @@ export interface ChartPriceLine {
   editable?: {
     kind: "tp" | "sl";
     onDragEnd: (newPrice: number) => void;
-    /** True when this is a suggested starting position, not a live order yet — dragging creates the first one. */
-    unset?: boolean;
   };
 }
 

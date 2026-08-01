@@ -243,9 +243,16 @@ export async function setPositionTpSl(
     positionSide?: "LONG" | "SHORT";
     stopLossPrice?: string;
     takeProfitPrice?: string;
+    /** 只撤销当前止盈/止损单，不挂新的——用于"取消止盈"/"取消止损" */
+    cancelTakeProfit?: boolean;
+    cancelStopLoss?: boolean;
     workingType?: FuturesWorkingType;
-    /** 触发时平仓的实际数量——服务端应按最新持仓量现算，不信任任何缓存值 */
-    quantity: string;
+    /**
+     * 触发时平仓的实际数量——服务端应按最新持仓量现算，不信任任何缓存值。
+     * 只在真的要挂新单（提供了 takeProfitPrice/stopLossPrice）时才需要；
+     * 纯撤销（cancelTakeProfit/cancelStopLoss）不下新单，可以不传。
+     */
+    quantity?: string;
     /**
      * 账户是否为对冲模式。单向模式（false）下 BingX 要求 positionSide 必须是
      * BOTH，传 LONG/SHORT 会被拒（109400 PositionSide must be BOTH in one-way
@@ -265,7 +272,13 @@ export async function setPositionTpSl(
   const legs: Array<{ type: FuturesOrderType; stopPrice: string }> = [];
   if (params.takeProfitPrice) legs.push({ type: "TAKE_PROFIT_MARKET", stopPrice: params.takeProfitPrice });
   if (params.stopLossPrice) legs.push({ type: "STOP_MARKET", stopPrice: params.stopLossPrice });
-  if (legs.length === 0) return;
+
+  // 撤销目标不能只看"要挂哪些新单"——纯取消（cancelTakeProfit/cancelStopLoss）
+  // 不会出现在 legs 里，但同样需要撤掉对应的旧单
+  const cancelTypes = new Set<FuturesOrderType>(legs.map((leg) => leg.type));
+  if (params.cancelTakeProfit) cancelTypes.add("TAKE_PROFIT_MARKET");
+  if (params.cancelStopLoss) cancelTypes.add("STOP_MARKET");
+  if (legs.length === 0 && cancelTypes.size === 0) return;
 
   // BingX 没有"改触发价"的接口，每次调用这个函数只能撤旧挂新——不先撤销上一次
   // 挂的那张，"修改止盈止损"就会变成不断叠加新的条件单（第二次设置要么被
@@ -278,14 +291,18 @@ export async function setPositionTpSl(
   // 撤销所有匹配的旧条件单——用户想改的就是这仓位的止盈止损，哪怕撞上自己
   // 手动挂的同方向同类型条件单，"编辑止盈止损"这个操作本身预期也是替换掉它。
   const openOrders = await getFuturesOpenOrders(apiKey, secret, params.symbol);
-  const legTypes = new Set(legs.map((leg) => leg.type));
   const isStaleTpSlOrder = (order: FuturesOrder) =>
-    legTypes.has(order.type as FuturesOrderType) && order.positionSide === positionSide;
+    cancelTypes.has(order.type as FuturesOrderType) && order.positionSide === positionSide;
 
   for (const order of openOrders) {
     if (isStaleTpSlOrder(order)) {
       await cancelFuturesOrder(apiKey, secret, params.symbol, order.orderId);
     }
+  }
+
+  if (legs.length === 0) return;
+  if (!params.quantity) {
+    throw new Error("setPositionTpSl: quantity is required when placing a new TP/SL leg");
   }
 
   // 顺序提交而非并发：BingX 对同一 symbol 的连续下单有频率限制，

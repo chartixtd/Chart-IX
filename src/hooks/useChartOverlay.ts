@@ -152,31 +152,29 @@ function buildPaper(
       else onDragSuccess();
     };
 
-    priceLines.push({
-      price: pos.take_profit_price ?? guessTakeProfit(pos.entry_price, pos.side),
-      color: TP_COLOR,
-      title: "止盈",
-      dashed: true,
-      editable: { kind: "tp", onDragEnd: (price) => setTpSl({ takeProfit: price }) },
-    });
-    priceLines.push({
-      price: pos.stop_loss_price ?? guessStopLoss(pos.entry_price, pos.side),
-      color: SL_COLOR,
-      title: "止损",
-      dashed: true,
-      editable: { kind: "sl", onDragEnd: (price) => setTpSl({ stopLoss: price }) },
-    });
+    // 只在真的设置了止盈/止损时才画线——之前没设置也会画一条"建议线"（进场价
+    // ±3% 处），用户反馈这是条"虚拟"的线，容易被误认成已经生效的止盈止损。
+    if (pos.take_profit_price != null) {
+      priceLines.push({
+        price: pos.take_profit_price,
+        color: TP_COLOR,
+        title: "止盈",
+        dashed: true,
+        editable: { kind: "tp", onDragEnd: (price) => setTpSl({ takeProfit: price }) },
+      });
+    }
+    if (pos.stop_loss_price != null) {
+      priceLines.push({
+        price: pos.stop_loss_price,
+        color: SL_COLOR,
+        title: "止损",
+        dashed: true,
+        editable: { kind: "sl", onDragEnd: (price) => setTpSl({ stopLoss: price }) },
+      });
+    }
   }
 
   return { tradeMarkers, priceLines };
-}
-
-/** 尚未设置止盈时，把线放在进场价上方 3%（多）/ 下方 3%（空）处，方便用户直接拖动而不是从零开始输入 */
-function guessTakeProfit(entry: number, side: string): number {
-  return side === "long" ? entry * 1.03 : entry * 0.97;
-}
-function guessStopLoss(entry: number, side: string): number {
-  return side === "long" ? entry * 0.97 : entry * 1.03;
 }
 
 /**
@@ -195,8 +193,6 @@ function buildFutures(
   const priceLines: ChartPriceLine[] = [];
 
   const position = data.positions.find((p) => String(p.symbol ?? "") === symbol);
-  let entryPrice = 0;
-  let positionSideRaw = "";
   if (position) {
     // BingX's real field name here is avgPrice, not entryPrice — the position
     // panel elsewhere in the app has the same mismatch (fixed alongside this).
@@ -204,9 +200,7 @@ function buildFutures(
     const liq = parseFloat(String(position.liquidationPrice ?? ""));
     const side = String(position.positionSide ?? "");
     const lev = position.leverage ?? "";
-    positionSideRaw = side;
     if (isFinite(entry) && entry > 0) {
-      entryPrice = entry;
       priceLines.push({ price: entry, color: ENTRY_COLOR, title: `进场 ${side === "LONG" ? "多" : "空"} ${lev}x` });
     }
     if (isFinite(liq) && liq > 0) {
@@ -220,22 +214,6 @@ function buildFutures(
     else onDragSuccess();
   };
 
-  // 直接设置仓位止盈止损（BingX 的 positionTpSl 接口），用来"从无到有"创建，
-  // 不需要预先存在一张挂单——已有挂单的场景走上面的 amend（改价，不撤单重下）。
-  const setPositionTpSl = async (patch: { takeProfitPrice?: number; stopLossPrice?: number }) => {
-    const result = await postJson("/api/bingx/futures/positions", {
-      action: "setPositionTpSl",
-      symbol,
-      positionSide: positionSideRaw || undefined,
-      ...patch,
-    });
-    if (!result.success) onDragError(result.error?.message ?? "未知错误");
-    else onDragSuccess();
-  };
-
-  let hasTp = false;
-  let hasSl = false;
-
   for (const o of data.orders) {
     const type = String(o.type ?? "");
     const stop = parseFloat(String(o.stopPrice ?? ""));
@@ -243,41 +221,17 @@ function buildFutures(
     const kind = classifyFuturesStop(type);
     const orderId = String(o.orderId ?? "");
     if (kind === "tp" && isFinite(stop) && stop > 0) {
-      hasTp = true;
       priceLines.push({
         price: stop, color: TP_COLOR, title: "止盈", dashed: true,
         editable: orderId ? { kind: "tp", onDragEnd: (p) => amend(orderId, p) } : undefined,
       });
     } else if (kind === "sl" && isFinite(stop) && stop > 0) {
-      hasSl = true;
       priceLines.push({
         price: stop, color: SL_COLOR, title: "止损", dashed: true,
         editable: orderId ? { kind: "sl", onDragEnd: (p) => amend(orderId, p) } : undefined,
       });
     } else if (type.toUpperCase() === "LIMIT" && isFinite(price) && price > 0) {
       priceLines.push({ price, color: LIMIT_COLOR, title: `挂单 ${String(o.side ?? "")}`, dashed: true });
-    }
-  }
-
-  if (position && entryPrice > 0) {
-    const side = positionSideRaw === "LONG" ? "long" : "short";
-    if (!hasTp) {
-      priceLines.push({
-        price: guessTakeProfit(entryPrice, side),
-        color: TP_COLOR,
-        title: "止盈",
-        dashed: true,
-        editable: { kind: "tp", unset: true, onDragEnd: (p) => setPositionTpSl({ takeProfitPrice: p }) },
-      });
-    }
-    if (!hasSl) {
-      priceLines.push({
-        price: guessStopLoss(entryPrice, side),
-        color: SL_COLOR,
-        title: "止损",
-        dashed: true,
-        editable: { kind: "sl", unset: true, onDragEnd: (p) => setPositionTpSl({ stopLossPrice: p }) },
-      });
     }
   }
 

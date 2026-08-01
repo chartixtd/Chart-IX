@@ -113,7 +113,10 @@ export async function POST(request: NextRequest) {
     const secret = decrypt(apiKeys[0].secret_encrypted);
 
     const body = await request.json();
-    const { action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice, amount, directionType, percent } = body;
+    const {
+      action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice,
+      cancelTakeProfit, cancelStopLoss, amount, directionType, percent,
+    } = body;
 
     try {
       switch (action) {
@@ -359,20 +362,24 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          const spec = await getSymbolSpec(symbol, "futures", pos.positionSide === "SHORT" ? "SHORT" : "LONG");
-          if (!spec) {
-            return NextResponse.json(
-              { success: false, error: { message: "Symbol spec unavailable" } },
-              { status: 502 }
-            );
-          }
-          const rawQty = floorToPrecision(Math.abs(parseFloat(pos.positionAmt)), spec.quantityPrecision);
-          const quantity = formatQty(rawQty, spec);
-          if (!(parseFloat(quantity) > 0)) {
-            return NextResponse.json(
-              { success: false, error: { message: "Position has no open quantity" } },
-              { status: 400 }
-            );
+          // 数量只在真的要挂新单时才需要——纯"取消止盈/止损"不下新单，不用现算数量
+          let quantity: string | undefined;
+          if (takeProfitPrice || stopLossPrice) {
+            const spec = await getSymbolSpec(symbol, "futures", pos.positionSide === "SHORT" ? "SHORT" : "LONG");
+            if (!spec) {
+              return NextResponse.json(
+                { success: false, error: { message: "Symbol spec unavailable" } },
+                { status: 502 }
+              );
+            }
+            const rawQty = floorToPrecision(Math.abs(parseFloat(pos.positionAmt)), spec.quantityPrecision);
+            quantity = formatQty(rawQty, spec);
+            if (!(parseFloat(quantity) > 0)) {
+              return NextResponse.json(
+                { success: false, error: { message: "Position has no open quantity" } },
+                { status: 400 }
+              );
+            }
           }
 
           // 必须按账户实际持仓模式决定 positionSide：单向模式下传 LONG/SHORT
@@ -380,6 +387,7 @@ export async function POST(request: NextRequest) {
           const dualSide = await getDualSideMode(authData.user.id, apiKey, secret);
           await setPositionTpSl(apiKey, secret, {
             symbol, positionSide, stopLossPrice, takeProfitPrice, dualSide, quantity,
+            cancelTakeProfit: Boolean(cancelTakeProfit), cancelStopLoss: Boolean(cancelStopLoss),
           });
           return NextResponse.json({ success: true });
         }

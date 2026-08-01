@@ -58,6 +58,81 @@ describe("setPositionTpSl endpoint choice", () => {
   });
 });
 
+describe("setPositionTpSl cancel-only (no new price given)", () => {
+  it("cancels the existing TP order and places nothing when cancelTakeProfit is set", async () => {
+    signedRequest.mockImplementation(async (..._args: unknown[]) => {
+      const [, , method, path] = _args as [string, string, string, string];
+      if (method === "GET" && path === "/openApi/swap/v2/trade/openOrders") {
+        return {
+          orders: [
+            { orderId: "999", symbol: "SOL-USDT", positionSide: "LONG", type: "TAKE_PROFIT_MARKET", origQty: "10" },
+          ],
+        };
+      }
+      return { order: { orderId: "1" } };
+    });
+
+    await setPositionTpSl("k", "s", {
+      symbol: "SOL-USDT", positionSide: "LONG", cancelTakeProfit: true, dualSide: true,
+    });
+
+    const cancelCall = signedRequest.mock.calls.find((call) => call[2] === "DELETE");
+    expect(cancelCall?.[4]).toMatchObject({ orderId: "999" });
+    expect(orderPlacementCalls()).toHaveLength(0);
+  });
+
+  it("does not require quantity for a cancel-only call", async () => {
+    await expect(
+      setPositionTpSl("k", "s", { symbol: "SOL-USDT", positionSide: "LONG", cancelStopLoss: true, dualSide: true })
+    ).resolves.toBeUndefined();
+  });
+
+  it("cancelling one leg does not touch an untouched leg of the other type", async () => {
+    signedRequest.mockImplementation(async (..._args: unknown[]) => {
+      const [, , method, path] = _args as [string, string, string, string];
+      if (method === "GET" && path === "/openApi/swap/v2/trade/openOrders") {
+        return {
+          orders: [
+            { orderId: "111", symbol: "SOL-USDT", positionSide: "LONG", type: "TAKE_PROFIT_MARKET", origQty: "10" },
+            { orderId: "222", symbol: "SOL-USDT", positionSide: "LONG", type: "STOP_MARKET", origQty: "10" },
+          ],
+        };
+      }
+      return { order: { orderId: "1" } };
+    });
+
+    await setPositionTpSl("k", "s", {
+      symbol: "SOL-USDT", positionSide: "LONG", cancelTakeProfit: true, dualSide: true,
+    });
+
+    const cancelledIds = signedRequest.mock.calls
+      .filter((call) => call[2] === "DELETE")
+      .map((call) => (call[4] as Record<string, string>).orderId);
+    expect(cancelledIds).toEqual(["111"]);
+  });
+
+  it("replacing TP with a new price still cancels the old one and requires quantity", async () => {
+    signedRequest.mockImplementation(async (..._args: unknown[]) => {
+      const [, , method, path] = _args as [string, string, string, string];
+      if (method === "GET" && path === "/openApi/swap/v2/trade/openOrders") {
+        return {
+          orders: [
+            { orderId: "333", symbol: "SOL-USDT", positionSide: "LONG", type: "TAKE_PROFIT_MARKET", origQty: "10" },
+          ],
+        };
+      }
+      return { order: { orderId: "1" } };
+    });
+
+    await expect(
+      setPositionTpSl("k", "s", { symbol: "SOL-USDT", positionSide: "LONG", takeProfitPrice: "85", dualSide: true })
+    ).rejects.toThrow(/quantity is required/);
+
+    const cancelCall = signedRequest.mock.calls.find((call) => call[2] === "DELETE");
+    expect(cancelCall?.[4]).toMatchObject({ orderId: "333" });
+  });
+});
+
 describe("setPositionTpSl order shape", () => {
   it("uses TAKE_PROFIT_MARKET for TP and STOP_MARKET for SL", async () => {
     await setPositionTpSl("k", "s", {

@@ -34,10 +34,10 @@ export interface Drawing {
   tool: DrawingTool;
   points: DrawingPoint[];
   color: string;
-  lineWidth?: 1 | 2 | 3 | 4;
-  lineStyle?: DrawingLineStyle;
+  lineWidth: 1 | 2 | 3 | 4;
+  lineStyle: DrawingLineStyle;
   /** Fill opacity (0-1) for shapes that have an interior: rect, channel, circle, triangle. */
-  opacity?: number;
+  opacity: number;
   /** Only for the text tool. */
   fontSize?: number;
   /** Only for the text tool. */

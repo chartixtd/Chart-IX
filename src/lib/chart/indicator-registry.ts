@@ -15,7 +15,7 @@ import {
   computeRSI, computeMACD, computeStochastic, computeKDJ, computeStochRSI, computeCCI, computeWilliamsR,
   computeMomentum, computeROC, computeTRIX, computeCMO, computeDPO,
   computeUltimateOscillator, computeADX, computeAroon,
-  computeOBV, computeMFI, computeCMF, computeAwesomeOscillator, computeAlligator, computePivotPoints,
+  computeOBV, computeMFI, computeCMF, computeAwesomeOscillator, computeAlligator, computePivotPoints, computeChaikinOscillator,
 } from "@/lib/indicators";
 
 export type IndicatorCategory = "trend" | "volatility" | "momentum" | "volume";
@@ -500,6 +500,13 @@ export const INDICATORS: IndicatorDef[] = [
     params: [p1("period", "周期", 20)],
     plots: [{ key: "cmf", color: C.teal }],
     compute: (i, p) => ({ cmf: computeCMF(i.high, i.low, i.close, i.volume, p.period) }),
+    guides: [0],
+  },
+  {
+    id: "chaikinosc", name: "佳庆振荡器 Chaikin Oscillator", short: "ChaikinOsc", category: "volume", placement: "pane",
+    params: [p1("fastPeriod", "快周期", 3), p1("slowPeriod", "慢周期", 10)],
+    plots: [{ key: "chaikinosc", color: C.indigo }],
+    compute: (i, p) => ({ chaikinosc: computeChaikinOscillator(i.high, i.low, i.close, i.volume, p.fastPeriod, p.slowPeriod) }),
     guides: [0],
   },
 ];

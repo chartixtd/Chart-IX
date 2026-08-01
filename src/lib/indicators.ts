@@ -1018,3 +1018,30 @@ export function computePivotPoints(
   }
   return { pivot, r1, s1, r2, s2 };
 }
+
+/** Chaikin Oscillator — EMA(fast) minus EMA(slow) of the Accumulation/Distribution Line. */
+export function computeChaikinOscillator(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  volumes: number[],
+  fastPeriod = 3,
+  slowPeriod = 10
+): (number | null)[] {
+  const n = closes.length;
+  const adl: number[] = new Array(n).fill(0);
+  let running = 0;
+  for (let i = 0; i < n; i++) {
+    const range = highs[i] - lows[i];
+    const moneyFlowMultiplier = range === 0 ? 0 : ((closes[i] - lows[i]) - (highs[i] - closes[i])) / range;
+    running += moneyFlowMultiplier * volumes[i];
+    adl[i] = running;
+  }
+  const emaFast = computeEMA(adl, fastPeriod);
+  const emaSlow = computeEMA(adl, slowPeriod);
+  const out: (number | null)[] = new Array(n).fill(null);
+  for (let i = slowPeriod - 1; i < n; i++) {
+    if (emaFast[i] !== null && emaSlow[i] !== null) out[i] = emaFast[i]! - emaSlow[i]!;
+  }
+  return out;
+}

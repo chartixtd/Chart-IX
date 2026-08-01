@@ -132,3 +132,30 @@ describe("computePivotPoints", () => {
     expect(s1[1]).toBeCloseTo(2 * p - highs[0], 6);
   });
 });
+
+import { computeChaikinOscillator } from "./indicators";
+
+describe("computeChaikinOscillator", () => {
+  const n = 40;
+  const highs = Array.from({ length: n }, (_, i) => 105 + i * 0.3);
+  const lows = Array.from({ length: n }, (_, i) => 95 + i * 0.3);
+  const closes = Array.from({ length: n }, (_, i) => 100 + i * 0.3 + (i % 2 === 0 ? 2 : -2));
+  const volumes = Array.from({ length: n }, () => 1000);
+
+  it("stays null before slowPeriod bars have accumulated", () => {
+    const osc = computeChaikinOscillator(highs, lows, closes, volumes, 3, 10);
+    expect(osc[2]).toBeNull();
+  });
+
+  it("produces a finite value once warmed up", () => {
+    const osc = computeChaikinOscillator(highs, lows, closes, volumes, 3, 10);
+    expect(osc[n - 1]).not.toBeNull();
+    expect(Number.isFinite(osc[n - 1])).toBe(true);
+  });
+
+  it("handles a zero high-low range bar without producing NaN (division guard)", () => {
+    const flatHighs = [...highs]; flatHighs[5] = lows[5]; // high === low on bar 5
+    const osc = computeChaikinOscillator(flatHighs, lows, closes, volumes, 3, 10);
+    for (const v of osc) expect(Number.isNaN(v as number)).toBe(false);
+  });
+});

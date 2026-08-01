@@ -9,9 +9,8 @@ export default defineConfig({
   },
   test: {
     include: [
-      "src/lib/trading/**/*.test.ts",
-      "src/lib/bingx/**/*.test.ts",
-      "src/lib/chart/**/*.test.ts",
+      "src/lib/**/*.test.ts",
+      "src/stores/**/*.test.ts",
     ],
     environment: "node",
   },

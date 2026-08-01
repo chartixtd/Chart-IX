@@ -15,7 +15,10 @@ export interface AppliedIndicator {
 // ==================== Drawings ====================
 
 export type DrawingTool =
-  | "trendline" | "ray" | "hline" | "vline" | "rect" | "fib" | "text";
+  | "trendline" | "ray" | "hline" | "vline" | "rect" | "fib" | "text"
+  | "channel" | "fib-extension" | "fib-fan"
+  | "circle" | "triangle" | "arrow"
+  | "price-range" | "date-range";
 
 /** Anchored in chart space (time + price) so drawings survive pan, zoom, and interval changes. */
 export interface DrawingPoint {
@@ -24,11 +27,19 @@ export interface DrawingPoint {
   price: number;
 }
 
+export type DrawingLineStyle = "solid" | "dashed" | "dotted";
+
 export interface Drawing {
   id: string;
   tool: DrawingTool;
   points: DrawingPoint[];
   color: string;
+  lineWidth?: 1 | 2 | 3 | 4;
+  lineStyle?: DrawingLineStyle;
+  /** Fill opacity (0-1) for shapes that have an interior: rect, channel, circle, triangle. */
+  opacity?: number;
+  /** Only for the text tool. */
+  fontSize?: number;
   /** Only for the text tool. */
   text?: string;
 }
@@ -41,9 +52,22 @@ export const DRAWING_TOOLS: { tool: DrawingTool; label: string; points: number }
   { tool: "rect", label: "矩形", points: 2 },
   { tool: "fib", label: "斐波那契回撤", points: 2 },
   { tool: "text", label: "文字标注", points: 1 },
+  { tool: "channel", label: "平行通道", points: 3 },
+  { tool: "fib-extension", label: "斐波那契扩展", points: 2 },
+  { tool: "fib-fan", label: "斐波那契扇形线", points: 2 },
+  { tool: "circle", label: "圆形", points: 2 },
+  { tool: "triangle", label: "三角形", points: 2 },
+  { tool: "arrow", label: "箭头", points: 2 },
+  { tool: "price-range", label: "价格范围", points: 2 },
+  { tool: "date-range", label: "时间范围", points: 2 },
 ];
 
 export const DRAWING_COLORS = ["#c9a24b", "#60a5fa", "#22c55e", "#ef4444", "#c084fc", "#f5f0e6"];
+
+export const DEFAULT_DRAWING_LINE_WIDTH: Drawing["lineWidth"] = 2;
+export const DEFAULT_DRAWING_LINE_STYLE: DrawingLineStyle = "solid";
+export const DEFAULT_DRAWING_OPACITY = 0.15;
+export const DEFAULT_DRAWING_FONT_SIZE = 12;
 
 export const DEFAULT_APPLIED_INDICATORS: AppliedIndicator[] = [
   { instanceId: "seed-volume", defId: "volume", params: {}, visible: true },
@@ -191,7 +215,11 @@ interface ChartState {
   setActiveTool: (tool: DrawingTool | null) => void;
   setDrawingColor: (color: string) => void;
   setKeepToolActive: (v: boolean) => void;
-  addDrawing: (symbol: string, drawing: Omit<Drawing, "id">) => void;
+  addDrawing: (
+    symbol: string,
+    drawing: Omit<Drawing, "id" | "lineWidth" | "lineStyle" | "opacity" | "fontSize"> &
+      Partial<Pick<Drawing, "lineWidth" | "lineStyle" | "opacity" | "fontSize">>
+  ) => void;
   updateDrawing: (symbol: string, id: string, patch: Partial<Omit<Drawing, "id">>) => void;
   removeDrawing: (symbol: string, id: string) => void;
   clearDrawings: (symbol: string) => void;
@@ -293,7 +321,17 @@ export const useChartStore = create<ChartState>()(
         set((s) => ({
           drawings: {
             ...s.drawings,
-            [symbol]: [...(s.drawings[symbol] ?? []), { ...drawing, id: uid() }],
+            [symbol]: [
+              ...(s.drawings[symbol] ?? []),
+              {
+                lineWidth: DEFAULT_DRAWING_LINE_WIDTH,
+                lineStyle: DEFAULT_DRAWING_LINE_STYLE,
+                opacity: DEFAULT_DRAWING_OPACITY,
+                fontSize: drawing.tool === "text" ? DEFAULT_DRAWING_FONT_SIZE : undefined,
+                ...drawing,
+                id: uid(),
+              },
+            ],
           },
         })),
 

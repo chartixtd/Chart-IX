@@ -1,6 +1,8 @@
 "use client";
 
-import { useChartStore, DRAWING_COLORS, type DrawingTool } from "@/stores/chartStore";
+import { useState } from "react";
+import { useChartStore, DRAWING_TOOLS, type DrawingTool } from "@/stores/chartStore";
+import { ColorPicker } from "./ColorPicker";
 import { cn } from "@/lib/utils";
 
 const ICON: Record<DrawingTool, React.ReactNode> = {
@@ -11,19 +13,18 @@ const ICON: Record<DrawingTool, React.ReactNode> = {
   rect: <rect x="3" y="5" width="14" height="10" rx="1" />,
   fib: <><path d="M2 4h16" /><path d="M2 8h16" /><path d="M2 12h16" /><path d="M2 16h16" /></>,
   text: <><path d="M4 4h12" /><path d="M10 4v12" /></>,
+  channel: <><path d="M2 15L17 4" /><path d="M3 17L18 6" /></>,
+  "fib-extension": <><path d="M2 4h16" /><path d="M2 10h16" /><path d="M2 16h16" /><path d="M2 2L18 18" strokeDasharray="1.5 1.5" /></>,
+  "fib-fan": <><path d="M2 18L18 2" /><path d="M2 18L18 8" /><path d="M2 18L18 14" /></>,
+  circle: <circle cx="10" cy="10" r="7" />,
+  triangle: <path d="M10 3l7 14H3z" />,
+  arrow: <><path d="M3 17L17 3" /><path d="M8 3h9v9" /></>,
+  "price-range": <><path d="M4 3v14" /><path d="M16 3v14" /><path d="M4 10h12" /></>,
+  "date-range": <><path d="M3 4h14" /><path d="M3 16h14" /><path d="M10 4v12" /></>,
 };
 
-const TOOLS: { tool: DrawingTool; label: string }[] = [
-  { tool: "trendline", label: "趋势线" },
-  { tool: "ray", label: "射线" },
-  { tool: "hline", label: "水平线" },
-  { tool: "vline", label: "垂直线" },
-  { tool: "rect", label: "矩形" },
-  { tool: "fib", label: "斐波那契回撤" },
-  { tool: "text", label: "文字标注" },
-];
-
 export function DrawingToolbar({ symbol }: { symbol: string }) {
+  const [colorPopoverOpen, setColorPopoverOpen] = useState(false);
   const activeTool = useChartStore((s) => s.activeTool);
   const setActiveTool = useChartStore((s) => s.setActiveTool);
   const drawingColor = useChartStore((s) => s.drawingColor);
@@ -53,7 +54,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
 
       <div className="my-1 h-px w-5 bg-border-default" />
 
-      {TOOLS.map(({ tool, label }) => (
+      {DRAWING_TOOLS.map(({ tool, label }) => (
         <button
           key={tool}
           onClick={() => setActiveTool(activeTool === tool ? null : tool)}
@@ -71,20 +72,23 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
 
       <div className="my-1 h-px w-5 bg-border-default" />
 
-      {/* Colour swatches */}
-      <div className="grid grid-cols-2 gap-0.5 px-1">
-        {DRAWING_COLORS.map((c) => (
-          <button
-            key={c}
-            onClick={() => setDrawingColor(c)}
-            title="线条颜色"
-            className={cn(
-              "h-3 w-3 rounded-full border transition-transform",
-              drawingColor === c ? "scale-125 border-text-primary" : "border-transparent"
-            )}
-            style={{ background: c }}
-          />
-        ))}
+      {/* Colour picker (free colour, not just fixed swatches) */}
+      <div className="relative">
+        <button
+          onClick={() => setColorPopoverOpen((o) => !o)}
+          title="线条颜色"
+          className="flex h-7 w-7 items-center justify-center rounded-xs hover:bg-bg-tertiary"
+        >
+          <span className="h-3.5 w-3.5 rounded-full border border-text-primary/40" style={{ background: drawingColor }} />
+        </button>
+        {colorPopoverOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setColorPopoverOpen(false)} />
+            <div className="absolute left-9 top-0 z-20 rounded-sm border border-border-default bg-bg-secondary p-2 shadow-modal">
+              <ColorPicker value={drawingColor} onChange={setDrawingColor} />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="my-1 h-px w-5 bg-border-default" />

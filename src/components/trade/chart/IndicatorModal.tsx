@@ -240,7 +240,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                           onClick={() => resetIndicatorToDefaults(a.instanceId)}
                           className="text-[11px] text-text-muted hover:text-gold"
                         >
-                          恢复默认参数
+                          恢复默认设置
                         </button>
                       </div>
                     )}

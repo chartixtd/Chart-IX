@@ -28,7 +28,7 @@ import { useKlineHistory } from "@/hooks/useKlineHistory";
 import { useMarketStore } from "@/stores/market";
 import { useChartStore } from "@/stores/chartStore";
 import { useFeatureAccess } from "@/hooks/useFeatureFlags";
-import { INDICATOR_BY_ID, type IndicatorInput } from "@/lib/chart/indicator-registry";
+import { INDICATOR_BY_ID, resolvePlotStyle, type IndicatorInput } from "@/lib/chart/indicator-registry";
 import { IndicatorModal } from "./chart/IndicatorModal";
 import { ChartLegend } from "./chart/ChartLegend";
 import { DrawingToolbar } from "./chart/DrawingToolbar";
@@ -445,6 +445,8 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
           continue;
         }
 
+        const resolvedStyle = resolvePlotStyle(def, a.styleOverrides, e.plotKey);
+
         if (plot.kind === "histogram") {
           const data: HistogramData[] = [];
           for (let i = 0; i < values.length; i++) {
@@ -453,7 +455,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
             data.push({
               time: times[i],
               value: v,
-              color: plot.barColor ? plot.barColor({ i, value: v, input }) : plot.color,
+              color: plot.barColor ? plot.barColor({ i, value: v, input }) : resolvedStyle.color,
             });
           }
           e.series.setData(data);
@@ -466,7 +468,13 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
           }
           e.series.setData(data);
         }
-        e.series.applyOptions({ visible });
+        e.series.applyOptions({
+          visible,
+          color: resolvedStyle.color,
+          ...(plot.kind !== "histogram" && plot.kind !== "dots"
+            ? { lineWidth: resolvedStyle.lineWidth, lineStyle: resolvedStyle.lineStyle }
+            : {}),
+        });
       }
     }
 

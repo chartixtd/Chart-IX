@@ -981,3 +981,40 @@ export function computeAlligator(
     lips: shift(smma(median, lipsPeriod), lipsShift),
   };
 }
+
+/**
+ * Standard Pivot Points, computed per-bar from the *previous* bar's H/L/C
+ * (a rolling simplification — real "Standard" pivots use a fixed higher
+ * timeframe like daily, which this per-bar compute function doesn't have
+ * access to). P = (H+L+C)/3; R1/S1 and R2/S2 follow the standard formulas.
+ */
+export function computePivotPoints(
+  highs: number[],
+  lows: number[],
+  closes: number[]
+): {
+  pivot: (number | null)[];
+  r1: (number | null)[];
+  s1: (number | null)[];
+  r2: (number | null)[];
+  s2: (number | null)[];
+} {
+  const n = closes.length;
+  const pivot: (number | null)[] = new Array(n).fill(null);
+  const r1: (number | null)[] = new Array(n).fill(null);
+  const s1: (number | null)[] = new Array(n).fill(null);
+  const r2: (number | null)[] = new Array(n).fill(null);
+  const s2: (number | null)[] = new Array(n).fill(null);
+  for (let i = 1; i < n; i++) {
+    const ph = highs[i - 1];
+    const pl = lows[i - 1];
+    const pc = closes[i - 1];
+    const p = (ph + pl + pc) / 3;
+    pivot[i] = p;
+    r1[i] = 2 * p - pl;
+    s1[i] = 2 * p - ph;
+    r2[i] = p + (ph - pl);
+    s2[i] = p - (ph - pl);
+  }
+  return { pivot, r1, s1, r2, s2 };
+}

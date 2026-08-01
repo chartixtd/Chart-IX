@@ -15,7 +15,7 @@ import {
   computeRSI, computeMACD, computeStochastic, computeKDJ, computeStochRSI, computeCCI, computeWilliamsR,
   computeMomentum, computeROC, computeTRIX, computeCMO, computeDPO,
   computeUltimateOscillator, computeADX, computeAroon,
-  computeOBV, computeMFI, computeCMF, computeAwesomeOscillator, computeAlligator,
+  computeOBV, computeMFI, computeCMF, computeAwesomeOscillator, computeAlligator, computePivotPoints,
 } from "@/lib/indicators";
 
 export type IndicatorCategory = "trend" | "volatility" | "momentum" | "volume";
@@ -270,6 +270,22 @@ export const INDICATORS: IndicatorDef[] = [
       const r = computeDonchianChannels(i.high, i.low, p.period);
       return { upper: r.upper, lower: r.lower };
     },
+  },
+  {
+    id: "pivots", name: "枢轴点 Pivot Points", short: "Pivots", category: "trend", placement: "main",
+    params: [],
+    plots: [
+      { key: "pivot", label: "P", color: C.yellow },
+      { key: "r1", label: "R1", color: C.down },
+      { key: "s1", label: "S1", color: C.up },
+      { key: "r2", label: "R2", color: C.down, lineStyle: 1 },
+      { key: "s2", label: "S2", color: C.up, lineStyle: 1 },
+    ],
+    compute: (i) => {
+      const r = computePivotPoints(i.high, i.low, i.close);
+      return { pivot: r.pivot, r1: r.r1, s1: r.s1, r2: r.r2, s2: r.s2 };
+    },
+    legendParams: () => "",
   },
   {
     id: "envelope", name: "Envelope 百分比通道", short: "ENV", category: "volatility", placement: "main",

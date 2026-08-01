@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeKDJ, computeStochRSI, computeAwesomeOscillator, computeHullMA } from "./indicators";
+import { computeKDJ, computeStochRSI, computeAwesomeOscillator, computeHullMA, computePivotPoints } from "./indicators";
 
 describe("computeKDJ", () => {
   const highs = [10, 11, 12, 11, 10, 9, 10, 11, 12, 13, 12, 11];
@@ -107,5 +107,28 @@ describe("computeAlligator", () => {
     expect(jaw[lastIdx]).not.toBeNull();
     expect(teeth[lastIdx]).not.toBeNull();
     expect(lips[lastIdx]).not.toBeNull();
+  });
+});
+
+describe("computePivotPoints", () => {
+  const highs = [12, 13, 14, 13];
+  const lows = [8, 9, 10, 9];
+  const closes = [10, 11, 12, 11];
+
+  it("has no pivot for the first bar (no prior bar to derive it from)", () => {
+    const { pivot } = computePivotPoints(highs, lows, closes);
+    expect(pivot[0]).toBeNull();
+  });
+
+  it("computes pivot = (prevHigh + prevLow + prevClose) / 3", () => {
+    const { pivot } = computePivotPoints(highs, lows, closes);
+    expect(pivot[1]).toBeCloseTo((12 + 8 + 10) / 3, 6);
+  });
+
+  it("computes R1/S1 symmetric around the pivot using the prior range", () => {
+    const { pivot, r1, s1 } = computePivotPoints(highs, lows, closes);
+    const p = pivot[1]!;
+    expect(r1[1]).toBeCloseTo(2 * p - lows[0], 6);
+    expect(s1[1]).toBeCloseTo(2 * p - highs[0], 6);
   });
 });

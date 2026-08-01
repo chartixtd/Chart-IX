@@ -15,7 +15,7 @@ import {
   computeRSI, computeMACD, computeStochastic, computeKDJ, computeStochRSI, computeCCI, computeWilliamsR,
   computeMomentum, computeROC, computeTRIX, computeCMO, computeDPO,
   computeUltimateOscillator, computeADX, computeAroon,
-  computeOBV, computeMFI, computeCMF,
+  computeOBV, computeMFI, computeCMF, computeAwesomeOscillator,
 } from "@/lib/indicators";
 
 export type IndicatorCategory = "trend" | "volatility" | "momentum" | "volume";
@@ -363,6 +363,26 @@ export const INDICATORS: IndicatorDef[] = [
     plots: [{ key: "r", color: C.pink }],
     compute: (i, p) => ({ r: computeWilliamsR(i.high, i.low, i.close, p.period) }),
     guides: [-80, -20],
+  },
+  {
+    id: "ao", name: "动量振荡指标 Awesome Oscillator", short: "AO", category: "momentum", placement: "pane",
+    params: [
+      p1("fastPeriod", "快周期", 5),
+      p1("slowPeriod", "慢周期", 34),
+    ],
+    plots: [
+      {
+        key: "ao", label: "AO", color: C.up, kind: "histogram",
+        barColor: ({ i, value, input }) => {
+          const prevMedian = i > 0 ? (input.high[i - 1] + input.low[i - 1]) / 2 : (input.high[i] + input.low[i]) / 2;
+          const median = (input.high[i] + input.low[i]) / 2;
+          void value;
+          return median >= prevMedian ? C.up : C.down;
+        },
+      },
+    ],
+    compute: (i, p) => ({ ao: computeAwesomeOscillator(i.high, i.low, p.fastPeriod, p.slowPeriod) }),
+    guides: [0],
   },
   {
     id: "momentum", name: "动量指标 Momentum", short: "MOM", category: "momentum", placement: "pane",

@@ -894,3 +894,16 @@ export function computeStochRSI(
   const d = smooth(k, dSmooth);
   return { k, d };
 }
+
+/** Awesome Oscillator — SMA(5) minus SMA(34) of the median price (high+low)/2. */
+export function computeAwesomeOscillator(
+  highs: number[],
+  lows: number[],
+  fastPeriod = 5,
+  slowPeriod = 34
+): (number | null)[] {
+  const median = highs.map((h, i) => (h + lows[i]) / 2);
+  const fast = computeMA(median, fastPeriod);
+  const slow = computeMA(median, slowPeriod);
+  return fast.map((f, i) => (f === null || slow[i] === null ? null : f - slow[i]!));
+}

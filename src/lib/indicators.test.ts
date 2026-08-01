@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeKDJ, computeStochRSI } from "./indicators";
+import { computeKDJ, computeStochRSI, computeAwesomeOscillator } from "./indicators";
 
 describe("computeKDJ", () => {
   const highs = [10, 11, 12, 11, 10, 9, 10, 11, 12, 13, 12, 11];
@@ -48,5 +48,21 @@ describe("computeStochRSI", () => {
         expect(d[i]!).toBeLessThanOrEqual(100);
       }
     }
+  });
+});
+
+describe("computeAwesomeOscillator", () => {
+  const highs = Array.from({ length: 50 }, (_, i) => 105 + Math.sin(i / 4) * 8 + i * 0.1);
+  const lows = Array.from({ length: 50 }, (_, i) => 95 + Math.sin(i / 4) * 8 + i * 0.1);
+
+  it("stays null before slowPeriod bars have accumulated", () => {
+    const ao = computeAwesomeOscillator(highs, lows, 5, 34);
+    expect(ao[10]).toBeNull();
+  });
+
+  it("produces a finite value once slowPeriod bars are available", () => {
+    const ao = computeAwesomeOscillator(highs, lows, 5, 34);
+    expect(ao[40]).not.toBeNull();
+    expect(Number.isFinite(ao[40])).toBe(true);
   });
 });

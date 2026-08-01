@@ -12,7 +12,7 @@ import {
   computeVWAP, computeParabolicSAR, computeSuperTrend, computeIchimoku,
   computeBollingerBands, computeKeltnerChannels, computeDonchianChannels,
   computeEnvelope, computeATR, computeStdDev,
-  computeRSI, computeMACD, computeStochastic, computeCCI, computeWilliamsR,
+  computeRSI, computeMACD, computeStochastic, computeKDJ, computeCCI, computeWilliamsR,
   computeMomentum, computeROC, computeTRIX, computeCMO, computeDPO,
   computeUltimateOscillator, computeADX, computeAroon,
   computeOBV, computeMFI, computeCMF,
@@ -311,6 +311,24 @@ export const INDICATORS: IndicatorDef[] = [
     compute: (i, p) => {
       const r = computeStochastic(i.high, i.low, i.close, p.k, p.d);
       return { k: r.k, d: r.d };
+    },
+    guides: [20, 80],
+  },
+  {
+    id: "kdj", name: "KDJ 随机指标", short: "KDJ", category: "momentum", placement: "pane",
+    params: [
+      p1("period", "周期", 9),
+      { key: "kSmooth", label: "K 平滑", default: 3, min: 1, max: 20, step: 1 },
+      { key: "dSmooth", label: "D 平滑", default: 3, min: 1, max: 20, step: 1 },
+    ],
+    plots: [
+      { key: "k", label: "K", color: C.blue },
+      { key: "d", label: "D", color: C.amber },
+      { key: "j", label: "J", color: C.purple },
+    ],
+    compute: (i, p) => {
+      const r = computeKDJ(i.high, i.low, i.close, p.period, p.kSmooth, p.dSmooth);
+      return { k: r.k, d: r.d, j: r.j };
     },
     guides: [20, 80],
   },

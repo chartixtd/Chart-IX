@@ -1,0 +1,29 @@
+import { describe, it, expect } from "vitest";
+import { computeKDJ } from "./indicators";
+
+describe("computeKDJ", () => {
+  const highs = [10, 11, 12, 11, 10, 9, 10, 11, 12, 13, 12, 11];
+  const lows = [8, 9, 10, 9, 8, 7, 8, 9, 10, 11, 10, 9];
+  const closes = [9, 10, 11, 10, 9, 8, 9, 10, 11, 12, 11, 10];
+
+  it("returns null for k/d/j before the warm-up period completes", () => {
+    const { k, d, j } = computeKDJ(highs, lows, closes, 9, 3, 3);
+    expect(k[7]).toBeNull();
+    expect(d[7]).toBeNull();
+    expect(j[7]).toBeNull();
+  });
+
+  it("produces a finite K value once `period` bars are available", () => {
+    const { k } = computeKDJ(highs, lows, closes, 9, 3, 3);
+    expect(k[8]).not.toBeNull();
+    expect(Number.isFinite(k[8])).toBe(true);
+  });
+
+  it("computes J as 3K - 2D once both are available", () => {
+    const { k, d, j } = computeKDJ(highs, lows, closes, 9, 3, 3);
+    const lastIdx = closes.length - 1;
+    if (k[lastIdx] !== null && d[lastIdx] !== null) {
+      expect(j[lastIdx]).toBeCloseTo(3 * k[lastIdx]! - 2 * d[lastIdx]!, 6);
+    }
+  });
+});

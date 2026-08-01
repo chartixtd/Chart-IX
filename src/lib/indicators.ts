@@ -810,3 +810,44 @@ export function computeStdDev(closes: number[], period = 20): (number | null)[] 
   }
   return result;
 }
+
+/**
+ * KDJ — the RSV-based oscillator most common on Chinese exchanges. Like
+ * Stochastic but K/D are smoothed with a recursive 1/3 weight (not a plain
+ * SMA), and J = 3K - 2D exaggerates divergence between K and D.
+ */
+export function computeKDJ(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period = 9,
+  kSmooth = 3,
+  dSmooth = 3
+): { k: (number | null)[]; d: (number | null)[]; j: (number | null)[] } {
+  const n = closes.length;
+  const k: (number | null)[] = new Array(n).fill(null);
+  const d: (number | null)[] = new Array(n).fill(null);
+  const j: (number | null)[] = new Array(n).fill(null);
+  if (n < period) return { k, d, j };
+
+  let prevK = 50;
+  let prevD = 50;
+  for (let i = period - 1; i < n; i++) {
+    let highest = -Infinity;
+    let lowest = Infinity;
+    for (let x = i - period + 1; x <= i; x++) {
+      if (highs[x] > highest) highest = highs[x];
+      if (lows[x] < lowest) lowest = lows[x];
+    }
+    const range = highest - lowest;
+    const rsv = range === 0 ? 50 : ((closes[i] - lowest) / range) * 100;
+    const kVal = ((kSmooth - 1) * prevK + rsv) / kSmooth;
+    const dVal = ((dSmooth - 1) * prevD + kVal) / dSmooth;
+    k[i] = kVal;
+    d[i] = dVal;
+    j[i] = 3 * kVal - 2 * dVal;
+    prevK = kVal;
+    prevD = dVal;
+  }
+  return { k, d, j };
+}

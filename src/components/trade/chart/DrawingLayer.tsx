@@ -2,7 +2,16 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { IChartApi, ISeriesApi, Logical, UTCTimestamp } from "lightweight-charts";
-import { useChartStore, type Drawing, type DrawingPoint, type DrawingTool } from "@/stores/chartStore";
+import {
+  useChartStore,
+  type Drawing,
+  type DrawingPoint,
+  type DrawingTool,
+  DEFAULT_DRAWING_LINE_WIDTH,
+  DEFAULT_DRAWING_LINE_STYLE,
+  DEFAULT_DRAWING_OPACITY,
+  DEFAULT_DRAWING_FONT_SIZE,
+} from "@/stores/chartStore";
 import { timeToLogical, logicalToTime, snapToBar } from "@/lib/chart/coords";
 import { DrawingSettingsModal } from "./DrawingSettingsModal";
 
@@ -272,13 +281,14 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       const x = xOf(a.time);
       const y = yOf(a.price);
       if (x === null || y === null) return null;
+      const fontSize = d.fontSize ?? DEFAULT_DRAWING_FONT_SIZE;
       return (
         <g key={d.id}>
           <text
             x={x}
             y={y}
             fill={stroke}
-            fontSize={12}
+            fontSize={fontSize}
             style={{ pointerEvents: activeTool ? "none" : "all", cursor: "move" }}
             onPointerDown={(e) => onShapePointerDown(e, d)}
             onPointerMove={onShapePointerMove}
@@ -290,9 +300,9 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
           {sel && (
             <rect
               x={x - 3}
-              y={y - 13}
-              width={(d.text?.length || 2) * 8 + 8}
-              height={18}
+              y={y - fontSize - 1}
+              width={(d.text?.length || 2) * fontSize * 0.67 + 8}
+              height={fontSize + 6}
               fill="none"
               stroke={stroke}
               strokeDasharray="3 2"
@@ -316,6 +326,11 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       if (cy1 === null || cy2 === null) return null;
       return (
         <g key={d.id}>
+          <polygon
+            points={`${ax},${ay} ${bx},${by} ${bx},${cy2} ${ax},${cy1}`}
+            fill={stroke}
+            fillOpacity={d.opacity}
+          />
           <line x1={ax} y1={ay} x2={bx} y2={by} {...hit} />
           <line x1={ax} y1={ay} x2={bx} y2={by} {...common} />
           <line x1={ax} y1={cy1} x2={bx} y2={cy2} {...common} />
@@ -516,9 +531,9 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
                   x2={hi}
                   y2={y}
                   stroke={stroke}
-                  strokeWidth={sel ? 1.5 : 1}
+                  strokeWidth={sel ? d.lineWidth + 0.5 : d.lineWidth}
                   strokeOpacity={lvl === 0 || lvl === 1 ? 0.9 : 0.55}
-                  strokeDasharray={lvl === 0 || lvl === 1 ? undefined : "3 3"}
+                  strokeDasharray={lvl === 0 || lvl === 1 ? DASH_ARRAY[d.lineStyle] : "3 3"}
                 />
                 <text x={lo + 2} y={y - 3} fill={stroke} fontSize={9} fontFamily="monospace" opacity={0.85}>
                   {(lvl * 100).toFixed(1)}% {price.toPrecision(6)}
@@ -532,9 +547,9 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
             x2={x2}
             y2={y2}
             stroke={stroke}
-            strokeWidth={1}
+            strokeWidth={d.lineWidth}
             strokeOpacity={0.4}
-            strokeDasharray="2 3"
+            strokeDasharray={DASH_ARRAY[d.lineStyle]}
           />
           {sel && (
             <>
@@ -561,9 +576,9 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
                 <line
                   x1={lo} y1={y} x2={hi} y2={y}
                   stroke={stroke}
-                  strokeWidth={sel ? 1.5 : 1}
+                  strokeWidth={sel ? d.lineWidth + 0.5 : d.lineWidth}
                   strokeOpacity={lvl === 0 || lvl === 1 ? 0.9 : 0.55}
-                  strokeDasharray={lvl === 0 || lvl === 1 ? undefined : "3 3"}
+                  strokeDasharray={lvl === 0 || lvl === 1 ? DASH_ARRAY[d.lineStyle] : "3 3"}
                 />
                 <text x={lo + 2} y={y - 3} fill={stroke} fontSize={9} fontFamily="monospace" opacity={0.85}>
                   {(lvl * 100).toFixed(1)}% {price.toPrecision(6)}
@@ -594,8 +609,9 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
                 x1={x1} y1={y1}
                 x2={x1 + rdx * rscale} y2={y1 + rdy * rscale}
                 stroke={stroke}
-                strokeWidth={sel ? 1.5 : 1}
+                strokeWidth={sel ? d.lineWidth + 0.5 : d.lineWidth}
                 strokeOpacity={0.6}
+                strokeDasharray={DASH_ARRAY[d.lineStyle]}
               />
             );
           })}
@@ -643,9 +659,9 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
               tool: draft.tool,
               points: [draft.a, draft.b],
               color: drawingColor,
-              lineWidth: 2,
-              lineStyle: "solid",
-              opacity: 0.15,
+              lineWidth: DEFAULT_DRAWING_LINE_WIDTH,
+              lineStyle: DEFAULT_DRAWING_LINE_STYLE,
+              opacity: DEFAULT_DRAWING_OPACITY,
             },
             true
           )}

@@ -178,8 +178,21 @@ export function FuturesPositionRow({
               value={tpValue}
               onChange={(e) => setTpValue(e.target.value)}
               placeholder={mark.toFixed(4)}
-              className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary placeholder:text-text-muted"
+              className={cn(
+                "min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs font-medium placeholder:font-normal placeholder:text-text-muted/60",
+                tpValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-input text-text-primary"
+              )}
             />
+            {tpValue && (
+              <button
+                type="button"
+                onClick={() => setTpValue("")}
+                className="shrink-0 text-xs text-text-muted hover:text-danger"
+                aria-label="clear TP"
+              >
+                ×
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-10 shrink-0 text-xs text-text-muted">SL</span>
@@ -188,8 +201,21 @@ export function FuturesPositionRow({
               value={slValue}
               onChange={(e) => setSlValue(e.target.value)}
               placeholder={mark.toFixed(4)}
-              className="min-w-0 flex-1 rounded border border-border-default bg-bg-input px-1.5 py-0.5 text-xs text-text-primary placeholder:text-text-muted"
+              className={cn(
+                "min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs font-medium placeholder:font-normal placeholder:text-text-muted/60",
+                slValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-input text-text-primary"
+              )}
             />
+            {slValue && (
+              <button
+                type="button"
+                onClick={() => setSlValue("")}
+                className="shrink-0 text-xs text-text-muted hover:text-danger"
+                aria-label="clear SL"
+              >
+                ×
+              </button>
+            )}
           </div>
           {tpSlError && <p className="text-xs text-danger">{tpSlError}</p>}
           <button

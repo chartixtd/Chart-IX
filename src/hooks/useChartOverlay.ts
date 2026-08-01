@@ -197,6 +197,7 @@ function buildFutures(
   const position = data.positions.find((p) => String(p.symbol ?? "") === symbol);
   let entryPrice = 0;
   let positionSideRaw = "";
+  let markPriceRaw = "";
   if (position) {
     // BingX's real field name here is avgPrice, not entryPrice — the position
     // panel elsewhere in the app has the same mismatch (fixed alongside this).
@@ -205,6 +206,7 @@ function buildFutures(
     const side = String(position.positionSide ?? "");
     const lev = position.leverage ?? "";
     positionSideRaw = side;
+    markPriceRaw = String(position.markPrice ?? "");
     if (isFinite(entry) && entry > 0) {
       entryPrice = entry;
       priceLines.push({ price: entry, color: ENTRY_COLOR, title: `进场 ${side === "LONG" ? "多" : "空"} ${lev}x` });
@@ -227,6 +229,7 @@ function buildFutures(
       action: "setPositionTpSl",
       symbol,
       positionSide: positionSideRaw || undefined,
+      markPrice: markPriceRaw || undefined,
       ...patch,
     });
     if (!result.success) onDragError(result.error?.message ?? "未知错误");

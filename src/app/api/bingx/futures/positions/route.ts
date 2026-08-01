@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     const secret = decrypt(apiKeys[0].secret_encrypted);
 
     const body = await request.json();
-    const { action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice, amount, directionType, percent } = body;
+    const { action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice, markPrice, amount, directionType, percent } = body;
 
     try {
       switch (action) {
@@ -326,28 +326,42 @@ export async function POST(request: NextRequest) {
           // 服务端兜底校验数量级，不依赖调用方（持仓面板表单、图表拖拽线……
           // 未来还可能有别的入口）各自实现同样的检查。方向对但差了几个数量级
           // 的价格（比如把止损打成 1）本地方向校验挡不住，只能靠 BingX 拒单，
-          // 报错又很含糊——这里先按当前标记价做一次合理性检查，直接给出明确原因。
-          const positions = await getFuturesPositions(apiKey, secret, symbol);
-          const pos = positions.find((p) => p.positionSide === (positionSide === "SHORT" ? "SHORT" : "LONG"));
-          const mark = pos ? parseFloat(pos.markPrice) : NaN;
-          if (Number.isFinite(mark) && mark > 0) {
-            const isFarFromMark = (v: unknown) => {
-              const n = Number(v);
-              return Number.isFinite(n) && n > 0 && (n < mark * 0.2 || n > mark * 5);
-            };
-            if (isFarFromMark(takeProfitPrice) || isFarFromMark(stopLossPrice)) {
-              return NextResponse.json(
-                {
-                  success: false,
-                  error: {
-                    message: `TP/SL price is too far from the mark price (${mark})`,
-                    i18nKey: "trading.price_too_far_from_mark",
-                    limit: mark.toFixed(4),
-                  },
+          // 报错又很含糊——这里按标记价做一次合理性检查，直接给出明确原因。
+          //
+          // 标记价优先用调用方随请求带来的 markPrice（前端此刻手上就有最新值，
+          // 直接可信）；带不了才回退到再查一次持仓列表——之前只走回退路径，
+          // 一旦按 positionSide 反查持仓失败（时序、字段不匹配等任何原因）
+          // mark 就是 NaN，校验被静默跳过，等于形同虚设，这正是上一版校验
+          // 明明加了却挡不住 stopPrice=1 的原因。查不到就直接拒绝（fail
+          // closed），不再放行未经校验的价格。
+          let mark = parseFloat(String(markPrice ?? ""));
+          if (!Number.isFinite(mark) || mark <= 0) {
+            const positions = await getFuturesPositions(apiKey, secret, symbol);
+            const pos = positions.find((p) => p.positionSide === (positionSide === "SHORT" ? "SHORT" : "LONG"));
+            mark = pos ? parseFloat(pos.markPrice) : NaN;
+          }
+          if (!Number.isFinite(mark) || mark <= 0) {
+            return NextResponse.json(
+              { success: false, error: { message: "Could not determine mark price to validate TP/SL against" } },
+              { status: 400 }
+            );
+          }
+          const isFarFromMark = (v: unknown) => {
+            const n = Number(v);
+            return Number.isFinite(n) && n > 0 && (n < mark * 0.2 || n > mark * 5);
+          };
+          if (isFarFromMark(takeProfitPrice) || isFarFromMark(stopLossPrice)) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: {
+                  message: `TP/SL price is too far from the mark price (${mark})`,
+                  i18nKey: "trading.price_too_far_from_mark",
+                  limit: mark.toFixed(4),
                 },
-                { status: 400 }
-              );
-            }
+              },
+              { status: 400 }
+            );
           }
 
           // 必须按账户实际持仓模式决定 positionSide：单向模式下传 LONG/SHORT

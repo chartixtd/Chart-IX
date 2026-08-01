@@ -186,6 +186,10 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
       const json = await postJson("/api/bingx/futures/positions", {
         action: "setPositionTpSl", symbol: position.symbol, positionSide: position.positionSide,
         takeProfitPrice: tp || undefined, stopLossPrice: sl || undefined,
+        // 客户端此刻手上就有最新标记价，直接带上给服务端做数量级校验用——
+        // 不依赖服务端再查一次持仓列表去反查标记价（那次查询可能因为时序、
+        // symbol/positionSide 匹配不上等原因静默查不到，校验就形同虚设）。
+        markPrice: position.markPrice,
       });
       if (!json.success) {
         const message = translateError(json, t);

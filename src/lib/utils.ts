@@ -29,6 +29,17 @@ export function formatPrice(price: number): string {
   return getFormatter(8).format(price);
 }
 
+/**
+ * 按交易对真实精度格式化，而不是笼统 toFixed(4)——固定 4 位小数对低价格
+ * 品种（比如 <0.01U 的币）精度不够，价格会被截断成一串没有意义的 0；
+ * precision 未知时（合约规格还没取到）退回 fallback，不让界面直接崩掉。
+ */
+export function formatBySpec(value: number, precision: number | undefined, fallback = 4): string {
+  if (!Number.isFinite(value)) return "-";
+  const decimals = precision ?? fallback;
+  return getFormatter(decimals).format(value);
+}
+
 export function formatPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }

@@ -169,6 +169,31 @@ export function useFuturesOpenOrders(enabled = true) {
   });
 }
 
+interface FuturesContractSpec {
+  symbol: string;
+  pricePrecision: number;
+  quantityPrecision: number;
+}
+
+/**
+ * 交易对的真实价格/数量小数位，按 symbol 查表用。之前持仓、订单列表全部
+ * 硬编码 toFixed(4)，低价格品种（比如 <0.01U 的币）小数位不够，价格会被
+ * 截断成一串没有意义的 0；高价格/大数量品种又会多余展示无意义的尾零。
+ * 合约规格半小时内基本不变，用较长的 staleTime 避免每次切换 tab 都重新拉。
+ */
+export function useFuturesContracts(enabled = true) {
+  return useQuery<Map<string, FuturesContractSpec>>({
+    queryKey: ["trading", "futures-contracts"],
+    queryFn: async () => {
+      const rows = await getJson<FuturesContractSpec[]>("/api/bingx/market/symbols?market=futures");
+      return new Map(rows.map((r) => [r.symbol, r]));
+    },
+    staleTime: 30 * 60_000,
+    enabled,
+    retry: false,
+  });
+}
+
 /** Futures wallet equity / available margin (account-level, unrelated to current chart symbol) */
 export function useFuturesBalance(enabled = true) {
   return useQuery<{ availableMargin: string; equity: string } | null>({

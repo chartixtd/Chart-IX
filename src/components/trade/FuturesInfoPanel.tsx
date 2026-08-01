@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { Spinner } from "@/components/ui/Spinner";
-import { cn } from "@/lib/utils";
+import { cn, formatBySpec } from "@/lib/utils";
 import { translateError } from "@/components/trade/order-form/OrderForm";
 import {
-  useFuturesPositions, useFuturesOpenOrders, useFuturesBalance,
+  useFuturesPositions, useFuturesOpenOrders, useFuturesBalance, useFuturesContracts,
   type FuturesPosition, type FuturesOpenOrder,
 } from "@/hooks/useTradingAccount";
 import { useUserDataStream } from "@/hooks/useUserDataStream";
@@ -43,6 +43,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const { data: positions = [], isLoading: positionsLoading } = useFuturesPositions();
   const { data: orders = [], isLoading: ordersLoading } = useFuturesOpenOrders();
   const { data: balance = null } = useFuturesBalance();
+  const { data: contracts } = useFuturesContracts();
   const loading = positionsLoading || ordersLoading;
 
   const [tab, setTab] = useState<Tab>("positions");
@@ -261,7 +262,9 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
             <p className="px-3 py-4 text-xs text-text-muted text-center">No open orders</p>
           ) : (
             <div className="divide-y divide-border-default/50">
-              {orders.map((o) => (
+              {orders.map((o) => {
+                const spec = contracts?.get(o.symbol);
+                return (
                 <div key={o.orderId} className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-bg-hover/50">
                   <div>
                     <span className="text-text-primary font-medium">{o.symbol}</span>
@@ -301,9 +304,13 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                   ) : (
                     <div className="flex items-center gap-3">
                       <span className="text-text-muted">
-                        {o.type === "LIMIT" ? parseFloat(o.price).toFixed(4) : "MKT"}
+                        {isConditionalOrder(o.type) && o.stopPrice
+                          ? `触发 ${formatBySpec(parseFloat(o.stopPrice), spec?.pricePrecision)}`
+                          : o.type === "LIMIT"
+                            ? formatBySpec(parseFloat(o.price), spec?.pricePrecision)
+                            : "MKT"}
                       </span>
-                      <span className="text-text-primary">{parseFloat(o.origQty)}</span>
+                      <span className="text-text-primary">{formatBySpec(parseFloat(o.origQty), spec?.quantityPrecision)}</span>
                       <button
                         onClick={() => startEdit(o)}
                         className="text-text-muted hover:text-gold"
@@ -320,7 +327,8 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )
         )}

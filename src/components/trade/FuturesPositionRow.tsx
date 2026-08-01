@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { cn } from "@/lib/utils";
-import type { FuturesPosition } from "@/hooks/useTradingAccount";
+import { cn, formatBySpec } from "@/lib/utils";
+import { useFuturesContracts, type FuturesPosition } from "@/hooks/useTradingAccount";
 
 interface ActionResult {
   ok: boolean;
@@ -26,6 +26,8 @@ export function FuturesPositionRow({
   position: pos, highlighted, onClose, onReduceOnlyClose, onReverse, onSaveTpSl,
 }: FuturesPositionRowProps) {
   const t = useTranslations();
+  const { data: contracts } = useFuturesContracts();
+  const spec = contracts?.get(pos.symbol);
   const [closing, setClosing] = useState(false);
   const [reducingPct, setReducingPct] = useState<number | null>(null);
   const [reversing, setReversing] = useState(false);
@@ -142,10 +144,10 @@ export function FuturesPositionRow({
       </div>
 
       <div className="grid grid-cols-2 gap-x-2 text-xs">
-        <span className="text-text-muted">Size</span><span className="text-text-primary text-right">{parseFloat(pos.positionAmt).toFixed(4)}</span>
-        <span className="text-text-muted">Entry</span><span className="text-text-primary text-right">{parseFloat(pos.avgPrice).toFixed(4)}</span>
-        <span className="text-text-muted">Mark</span><span className="text-text-primary text-right">{parseFloat(pos.markPrice).toFixed(4)}</span>
-        <span className="text-text-muted">Liq</span><span className="text-text-primary text-right">{parseFloat(pos.liquidationPrice).toFixed(4)}</span>
+        <span className="text-text-muted">Size</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.positionAmt), spec?.quantityPrecision)}</span>
+        <span className="text-text-muted">Entry</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.avgPrice), spec?.pricePrecision)}</span>
+        <span className="text-text-muted">Mark</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.markPrice), spec?.pricePrecision)}</span>
+        <span className="text-text-muted">Liq</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.liquidationPrice), spec?.pricePrecision)}</span>
         <span className="text-text-muted">PnL</span>
         <span className={cn("text-right font-medium", pnl >= 0 ? "text-success" : "text-danger")}>
           {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT

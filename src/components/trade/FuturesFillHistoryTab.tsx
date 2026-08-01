@@ -1,8 +1,8 @@
 "use client";
 
-import { useFuturesFillHistory } from "@/hooks/useTradingAccount";
+import { useFuturesFillHistory, useFuturesContracts } from "@/hooks/useTradingAccount";
 import { Spinner } from "@/components/ui/Spinner";
-import { cn } from "@/lib/utils";
+import { cn, formatBySpec } from "@/lib/utils";
 
 function formatTime(ts: number) {
   return new Date(ts).toLocaleString("en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -10,6 +10,7 @@ function formatTime(ts: number) {
 
 export function FuturesFillHistoryTab() {
   const { data: fills = [], isLoading } = useFuturesFillHistory();
+  const { data: contracts } = useFuturesContracts();
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-8"><Spinner className="h-5 w-5" /></div>;
@@ -21,21 +22,24 @@ export function FuturesFillHistoryTab() {
 
   return (
     <div className="divide-y divide-border-default/50">
-      {fills.map((f) => (
+      {fills.map((f) => {
+        const spec = contracts?.get(f.symbol);
+        return (
         <div key={`${f.orderId}-${f.tradeId ?? f.time}`} className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-bg-hover/50">
           <div className="flex items-center gap-1.5">
             <span className="text-text-primary font-medium">{f.symbol}</span>
             <span className={cn("font-semibold", f.side === "BUY" ? "text-success" : "text-danger")}>
               {f.side}
             </span>
-            <span className="text-text-primary">{parseFloat(f.qty)}</span>
+            <span className="text-text-primary">{formatBySpec(parseFloat(f.qty), spec?.quantityPrecision)}</span>
           </div>
           <div className="flex items-center gap-3 text-text-muted">
-            <span>{parseFloat(f.price).toFixed(4)}</span>
+            <span>{formatBySpec(parseFloat(f.price), spec?.pricePrecision)}</span>
             <span>{formatTime(f.time)}</span>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -439,8 +439,17 @@ async function postOrder(url: string, body: Record<string, unknown>) {
  */
 export function translateError(json: { error?: { i18nKey?: string; message?: string; limit?: unknown } }, t: ReturnType<typeof useTranslations>): string {
   const key = json.error?.i18nKey;
+  const rawMessage = json.error?.message;
   if (key && t.has(key)) {
-    return t(key, { limit: String(json.error?.limit ?? "") });
+    const translated = t(key, { limit: String(json.error?.limit ?? "") });
+    // bingx_error.* 是按错误码分桶的通用翻译（例如 109400/100400/80014 都归到
+    // invalid_params），同一个桶里可能对应好几种完全不同的 BingX 原始报错。
+    // 附上原文才能真正定位是价格精度、持仓模式还是别的字段不对，不然每次都要
+    // 靠猜。trading.reject.* 等精确码翻译已经说清楚原因，不需要再附加。
+    if (key.startsWith("bingx_error.") && rawMessage) {
+      return `${translated} (${rawMessage})`;
+    }
+    return translated;
   }
-  return json.error?.message || "Order failed";
+  return rawMessage || "Order failed";
 }

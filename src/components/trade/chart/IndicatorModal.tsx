@@ -3,12 +3,17 @@
 import { useMemo, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import {
-  INDICATORS, CATEGORY_LABELS, legendLabel, type IndicatorCategory, type IndicatorDef,
+  INDICATORS, CATEGORY_LABELS, legendLabel, resolvePlotStyle, type IndicatorCategory, type IndicatorDef,
 } from "@/lib/chart/indicator-registry";
 import { useChartStore, resolveDef } from "@/stores/chartStore";
 import { cn } from "@/lib/utils";
+import { ColorPicker } from "./ColorPicker";
+import { LineStyleControl, type DrawingLineStyle } from "./LineStyleControl";
 
 const CATEGORIES: (IndicatorCategory | "all")[] = ["all", "trend", "momentum", "volatility", "volume"];
+
+const LINE_STYLE_TO_DRAWING: Record<number, DrawingLineStyle> = { 0: "solid", 1: "dotted", 2: "dashed", 3: "dashed", 4: "dotted" };
+const DRAWING_TO_LINE_STYLE: Record<DrawingLineStyle, 0 | 1 | 2> = { solid: 0, dotted: 1, dashed: 2 };
 
 const CATEGORY_TAB_LABELS: Record<IndicatorCategory | "all", string> = {
   all: "全部",
@@ -24,6 +29,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
   const addIndicator = useChartStore((s) => s.addIndicator);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const updateIndicatorParams = useChartStore((s) => s.updateIndicatorParams);
+  const updateIndicatorStyle = useChartStore((s) => s.updateIndicatorStyle);
   const toggleIndicatorVisible = useChartStore((s) => s.toggleIndicatorVisible);
   const resetIndicatorToDefaults = useChartStore((s) => s.resetIndicatorToDefaults);
   const clearIndicators = useChartStore((s) => s.clearIndicators);
@@ -210,6 +216,26 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                             />
                           </label>
                         ))}
+                        {def.plots.map((plot) => {
+                          const resolved = resolvePlotStyle(def, a.styleOverrides, plot.key);
+                          return (
+                            <div key={plot.key} className="space-y-1">
+                              <span className="text-[11px] text-text-secondary">{plot.label ?? plot.key}</span>
+                              <ColorPicker
+                                value={resolved.color}
+                                onChange={(color) => updateIndicatorStyle(a.instanceId, plot.key, { color })}
+                              />
+                              {plot.kind !== "histogram" && plot.kind !== "dots" && (
+                                <LineStyleControl
+                                  width={resolved.lineWidth}
+                                  style={LINE_STYLE_TO_DRAWING[resolved.lineStyle]}
+                                  onWidthChange={(lineWidth) => updateIndicatorStyle(a.instanceId, plot.key, { lineWidth })}
+                                  onStyleChange={(s) => updateIndicatorStyle(a.instanceId, plot.key, { lineStyle: DRAWING_TO_LINE_STYLE[s] })}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                         <button
                           onClick={() => resetIndicatorToDefaults(a.instanceId)}
                           className="text-[11px] text-text-muted hover:text-gold"

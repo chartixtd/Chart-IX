@@ -775,6 +775,7 @@
     "tp_must_be_below": "Ambil untung mesti di bawah harga tanda semasa untuk kedudukan pendek",
     "sl_must_be_below": "Henti rugi mesti di bawah harga tanda semasa untuk kedudukan panjang",
     "sl_must_be_above": "Henti rugi mesti melebihi harga tanda semasa untuk kedudukan pendek",
+    "price_too_far_from_mark": "Harga terlalu jauh daripada harga tanda semasa ({mark}) — sila semak semula",
     "direction_hint": "Panjang = buka atau tambah kedudukan panjang, Pendek = buka atau tambah kedudukan pendek; untuk menutup kedudukan, gunakan butang Tutup pada panel Pesanan.",
     "high_leverage_warning": "Leveraj tinggi {leverage}x: pergerakan lawan kira-kira 1/{leverage} boleh mencetuskan kecairan.",
     "order_placed": "Pesanan berjaya dibuat · {id}",

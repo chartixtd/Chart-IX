@@ -66,6 +66,14 @@ export function FuturesPositionRow({
       setTpSlError(isLong ? t("trading.sl_must_be_below") : t("trading.sl_must_be_above"));
       return;
     }
+    // 只校验方向（上面两条）挡不住"少打两个零"这类离谱输入——比如止损打成 1，
+    // 仍然满足"低于标记价"，会一路发到 BingX 才被拒（报错还很含糊）。这里补一
+    // 道数量级检查，在本地就能给出明确提示。
+    const isFarFromMark = (price: number) => price < mark * 0.2 || price > mark * 5;
+    if ((hasTp && isFarFromMark(tp)) || (hasSl && isFarFromMark(sl))) {
+      setTpSlError(t("trading.price_too_far_from_mark", { mark: mark.toFixed(4) }));
+      return;
+    }
     setSavingTpSl(true);
     setTpSlError(null);
     const result = await onSaveTpSl(pos, hasTp ? String(tp) : "", hasSl ? String(sl) : "");

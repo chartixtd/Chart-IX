@@ -122,76 +122,121 @@ export function FuturesPositionRow({
     if (!result.ok) setActionError(result.message ?? "Failed to reverse position");
   };
 
+  const stats: Array<{ label: string; value: string }> = [
+    { label: "Size", value: formatBySpec(Math.abs(qty), spec?.quantityPrecision) },
+    { label: "Entry", value: formatBySpec(parseFloat(pos.avgPrice), spec?.pricePrecision) },
+    { label: "Mark", value: formatBySpec(mark, spec?.pricePrecision) },
+    { label: "Liq", value: formatBySpec(parseFloat(pos.liquidationPrice), spec?.pricePrecision) },
+    { label: "Margin", value: `${margin.toFixed(2)}` },
+    { label: "Value", value: `${notional.toFixed(2)}` },
+  ];
+
   return (
-    <div className={cn("px-3 py-2 hover:bg-bg-hover/50", highlighted && "bg-gold/5")}>
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-semibold text-text-primary">{pos.symbol}</span>
-          <span className={cn("text-xs font-semibold", isLong ? "text-success" : "text-danger")}>
+    <div className={cn("px-3 py-3 transition-colors hover:bg-bg-hover/40", highlighted && "bg-gold/[0.04]")}>
+      {/* 标识行：symbol + 方向徽记 + 保证金模式/杠杆，操作按钮靠右 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-text-primary">{pos.symbol}</span>
+          <span
+            className={cn(
+              "rounded-xs px-1.5 py-0.5 text-[10px] font-semibold tracking-wide",
+              isLong ? "bg-success-bg text-success" : "bg-danger-bg text-danger"
+            )}
+          >
             {isLong ? "LONG" : "SHORT"}
           </span>
-          <span className="text-xs text-text-muted">{pos.isolated ? "isolated" : "cross"} · {pos.leverage}x</span>
+          <span className="text-[11px] text-text-muted">{pos.isolated ? "isolated" : "cross"} · {pos.leverage}x</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => (editingTpSl ? setEditingTpSl(false) : startTpSl())} className="text-xs text-text-muted hover:text-gold">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => (editingTpSl ? setEditingTpSl(false) : startTpSl())}
+            className={cn(
+              "rounded-xs border px-2 py-1 text-[11px] font-medium transition-colors",
+              editingTpSl
+                ? "border-gold/50 bg-gold/10 text-gold"
+                : "border-border-default text-text-secondary hover:border-gold/40 hover:text-gold"
+            )}
+          >
             {editingTpSl ? t("common.cancel") : "TP/SL"}
           </button>
           <button
             onClick={() => setReverseConfirmOpen(true)}
             disabled={closing || reducingPct !== null || reversing}
-            className="text-xs text-text-muted hover:text-gold disabled:opacity-50"
+            className="rounded-xs border border-border-default px-2 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:border-gold/40 hover:text-gold disabled:opacity-40"
           >
-            {reversing ? "..." : "Reverse"}
+            {reversing ? "…" : "Reverse"}
           </button>
           <button
             onClick={handleClose}
             disabled={closing || reducingPct !== null || reversing}
-            className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
+            className="rounded-xs border border-danger/30 bg-danger-bg px-2 py-1 text-[11px] font-medium text-danger transition-colors hover:border-danger/60 disabled:opacity-40"
           >
-            {closing ? "..." : "Close"}
+            {closing ? "…" : "Close"}
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-2 text-xs">
-        <span className="text-text-muted">Size</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.positionAmt), spec?.quantityPrecision)}</span>
-        <span className="text-text-muted">Entry</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.avgPrice), spec?.pricePrecision)}</span>
-        <span className="text-text-muted">Mark</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.markPrice), spec?.pricePrecision)}</span>
-        <span className="text-text-muted">Liq</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.liquidationPrice), spec?.pricePrecision)}</span>
-        <span className="text-text-muted">Margin</span><span className="text-text-primary text-right">{margin.toFixed(2)} USDT</span>
-        <span className="text-text-muted">Value</span><span className="text-text-primary text-right">{notional.toFixed(2)} USDT</span>
-        <span className="text-text-muted">PnL</span>
-        <span className={cn("text-right font-medium", pnl >= 0 ? "text-success" : "text-danger")}>
-          {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT
+      {/* PnL 是整行里最重要的数字，单独一行放大；ROI 用色块标出正负 */}
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className={cn("font-mono text-lg font-semibold tabular-nums", pnl >= 0 ? "text-success" : "text-danger")}>
+          {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}
         </span>
-        <span className="text-text-muted">ROI</span>
-        <span className={cn("text-right font-medium", roi >= 0 ? "text-success" : "text-danger")}>
+        <span className="text-xs text-text-muted">USDT</span>
+        <span
+          className={cn(
+            "rounded-xs px-1.5 py-0.5 font-mono text-xs font-medium tabular-nums",
+            roi >= 0 ? "bg-success-bg text-success" : "bg-danger-bg text-danger"
+          )}
+        >
           {roi >= 0 ? "+" : ""}{roi.toFixed(2)}%
-        </span>
-        <span className="text-text-muted">TP / SL</span>
-        <span className="text-right text-text-primary">
-          {currentTp ? formatBySpec(parseFloat(currentTp), spec?.pricePrecision) : "-"}
-          {" / "}
-          {currentSl ? formatBySpec(parseFloat(currentSl), spec?.pricePrecision) : "-"}
         </span>
       </div>
 
+      {/* 次要数据用统一的标签在上、等宽数字在下的格子铺开，比一行一个 label:value 更好扫读 */}
+      <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2 sm:grid-cols-6">
+        {stats.map((s) => (
+          <div key={s.label}>
+            <div className="text-[10px] uppercase tracking-wide text-text-muted">{s.label}</div>
+            <div className="font-mono text-xs tabular-nums text-text-primary">{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 当前止盈止损用色块徽记而不是一串"数字/数字"，一眼能看出有没有设置、设的是哪边 */}
+      <div className="mt-2 flex items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-wide text-text-muted">TP/SL</span>
+        {currentTp ? (
+          <span className="rounded-xs bg-success-bg px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-success">
+            {formatBySpec(parseFloat(currentTp), spec?.pricePrecision)}
+          </span>
+        ) : (
+          <span className="text-[11px] text-text-muted/60">—</span>
+        )}
+        {currentSl ? (
+          <span className="rounded-xs bg-danger-bg px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-danger">
+            {formatBySpec(parseFloat(currentSl), spec?.pricePrecision)}
+          </span>
+        ) : (
+          <span className="text-[11px] text-text-muted/60">—</span>
+        )}
+      </div>
+
       {/* 部分平仓：按比例快捷按钮，点了直接下市价只减仓单，不需要额外输入数量 */}
-      <div className="mt-1.5 flex items-center gap-1">
-        <span className="text-xs text-text-muted mr-1">Reduce</span>
+      <div className="mt-2 flex items-center gap-1">
+        <span className="mr-1 text-[11px] text-text-muted">Reduce</span>
         {CLOSE_PERCENTS.map((p) => (
           <button
             key={p}
             onClick={() => handleReduceOnlyClose(p)}
             disabled={reducingPct !== null || closing || reversing}
-            className="rounded-xs border border-border-default px-1.5 py-0.5 text-xs text-text-muted hover:border-gold hover:text-gold disabled:opacity-50"
+            className="rounded-xs border border-border-default px-1.5 py-0.5 text-[11px] text-text-muted transition-colors hover:border-gold/40 hover:text-gold disabled:opacity-50"
           >
-            {reducingPct === p ? "..." : `${p}%`}
+            {reducingPct === p ? "…" : `${p}%`}
           </button>
         ))}
       </div>
 
-      {actionError && <p className="mt-1 text-xs text-danger">{actionError}</p>}
+      {actionError && <p className="mt-1.5 text-xs text-danger">{actionError}</p>}
 
       {editingTpSl && (
         <div className="mt-2 space-y-1.5 rounded border border-border-default p-2">

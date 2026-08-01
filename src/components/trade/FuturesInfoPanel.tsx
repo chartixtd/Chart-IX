@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { cn, formatBySpec } from "@/lib/utils";
 import { translateError } from "@/components/trade/order-form/OrderForm";
 import {
-  useFuturesPositions, useFuturesOpenOrders, useFuturesBalance, useFuturesContracts,
+  useFuturesPositions, useFuturesOpenOrders, useFuturesContracts,
   type FuturesPosition, type FuturesOpenOrder,
 } from "@/hooks/useTradingAccount";
 import { useUserDataStream } from "@/hooks/useUserDataStream";
@@ -42,7 +42,6 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
   const queryClient = useQueryClient();
   const { data: positions = [], isLoading: positionsLoading } = useFuturesPositions();
   const { data: orders = [], isLoading: ordersLoading } = useFuturesOpenOrders();
-  const { data: balance = null } = useFuturesBalance();
   const { data: contracts } = useFuturesContracts();
   const loading = positionsLoading || ordersLoading;
 
@@ -347,21 +346,6 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
 
         {tab === "history" && <FuturesOrderHistoryTab />}
         {tab === "fills" && <FuturesFillHistoryTab />}
-      </div>
-
-      {/* Wallet — futures account margin/equity, always visible at the bottom */}
-      <div className="shrink-0 border-t border-border-default px-3 py-2">
-        <span className="text-xs font-medium text-text-secondary">合约钱包</span>
-        {balance ? (
-          <div className="mt-1 grid grid-cols-2 gap-x-2 text-xs">
-            <span className="text-text-muted">权益 Equity</span>
-            <span className="text-text-primary text-right">{parseFloat(balance.equity).toFixed(2)} USDT</span>
-            <span className="text-text-muted">可用保证金</span>
-            <span className="text-text-primary text-right">{parseFloat(balance.availableMargin).toFixed(2)} USDT</span>
-          </div>
-        ) : (
-          <p className="mt-1 text-xs text-text-muted">—</p>
-        )}
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import { OrdersPanel } from "@/components/trade/OrdersPanel";
 import { PaperOrdersPanel } from "@/components/trade/PaperOrdersPanel";
 import { OrderBook } from "@/components/trade/OrderBook";
 import { FuturesInfoPanel } from "@/components/trade/FuturesInfoPanel";
+import { FuturesWalletSummary } from "@/components/trade/FuturesWalletSummary";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useSpotTicker } from "@/hooks/useMarketData";
@@ -436,7 +437,10 @@ export default function TradePage() {
           <ResizeHandle />
 
           <Panel defaultSize={20} minSize={14} maxSize={32}>
-            <div className="h-full overflow-auto">{tradePanel}</div>
+            <div className="flex h-full flex-col overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-auto">{tradePanel}</div>
+              {market === "futures" && <div className="shrink-0"><FuturesWalletSummary /></div>}
+            </div>
           </Panel>
         </PanelGroup>
       </div>
@@ -481,6 +485,7 @@ export default function TradePage() {
           {mobileTab === "trade" && (
             <div className="flex h-full flex-col divide-y divide-border-default">
               <div className="shrink-0">{tradePanel}</div>
+              {market === "futures" && <div className="shrink-0"><FuturesWalletSummary /></div>}
               <div className="min-h-[16rem] flex-1">{ordersPanel}</div>
             </div>
           )}

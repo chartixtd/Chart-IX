@@ -137,15 +137,21 @@ describe("setPositionTpSl position mode handling", () => {
 });
 
 // 回归测试：修复"下单之后没法再改止盈止损"——之前每次调用都无条件挂新单，
-// 第二次设置要么被 BingX 拒绝、要么静默叠加一张旧单不动的问题
+// 第二次设置要么被 BingX 拒绝、要么静默叠加一张旧单不动的问题。
+//
+// 注意：不能用 clientOrderId 认领旧单——BingX 文档明确 clientOrderId 只支持
+// MARKET/LIMIT，给 STOP_MARKET/TAKE_PROFIT_MARKET 传这个字段会被整单拒绝
+// （这正是上一版修复自己引入的新故障，见 futures.ts 注释）。改用形状匹配：
+// type + positionSide 相同、且 origQty 为空/0（closePosition=true 的单不能带
+// quantity，全代码库只有这个函数会挂这种单）。
 describe("setPositionTpSl replaces the previous order instead of stacking a new one", () => {
-  it("cancels the previously-tagged TP order before placing the new one", async () => {
+  it("cancels the previous same-type/side TP order before placing the new one", async () => {
     signedRequest.mockImplementation(async (..._args: unknown[]) => {
       const [, , method, path] = _args as [string, string, string, string];
       if (method === "GET" && path === "/openApi/swap/v2/trade/openOrders") {
         return {
           orders: [
-            { orderId: "999", symbol: "SOL-USDT", clientOrderId: "cix-tpsl-tp-long-SOLUSDT", type: "TAKE_PROFIT_MARKET" },
+            { orderId: "999", symbol: "SOL-USDT", positionSide: "LONG", type: "TAKE_PROFIT_MARKET", origQty: "0" },
           ],
         };
       }
@@ -161,7 +167,7 @@ describe("setPositionTpSl replaces the previous order instead of stacking a new 
     );
     expect(cancelCall).toBeDefined();
     expect(cancelCall?.[4]).toMatchObject({ symbol: "SOL-USDT", orderId: "999" });
-    // 撤销必须发生在挂新单之前，不然会撞上"同一个 clientOrderId 仍然有效"的限制
+    // 撤销必须发生在挂新单之前，不然新旧两张同方向条件单会同时存在
     const cancelIndex = signedRequest.mock.calls.indexOf(cancelCall!);
     const placeIndex = signedRequest.mock.calls.findIndex(
       (call) => call[2] === "POST" && call[3] === "/openApi/swap/v2/trade/order"
@@ -169,7 +175,7 @@ describe("setPositionTpSl replaces the previous order instead of stacking a new 
     expect(cancelIndex).toBeLessThan(placeIndex);
   });
 
-  it("does not cancel anything when there is no previously-tagged order open", async () => {
+  it("does not cancel anything when there is no previous matching order open", async () => {
     await setPositionTpSl("k", "s", {
       symbol: "SOL-USDT", positionSide: "LONG", takeProfitPrice: "85", dualSide: true,
     });
@@ -177,13 +183,13 @@ describe("setPositionTpSl replaces the previous order instead of stacking a new 
     expect(cancelCall).toBeUndefined();
   });
 
-  it("never cancels an order that this feature didn't tag itself (e.g. a conditional order the user placed manually)", async () => {
+  it("never cancels a conditional order the user placed manually (has a real quantity)", async () => {
     signedRequest.mockImplementation(async (..._args: unknown[]) => {
       const [, , method, path] = _args as [string, string, string, string];
       if (method === "GET" && path === "/openApi/swap/v2/trade/openOrders") {
         return {
           orders: [
-            { orderId: "555", symbol: "SOL-USDT", clientOrderId: "my-own-manually-placed-stop", type: "STOP_MARKET" },
+            { orderId: "555", symbol: "SOL-USDT", positionSide: "LONG", type: "STOP_MARKET", origQty: "1.5" },
           ],
         };
       }
@@ -198,17 +204,32 @@ describe("setPositionTpSl replaces the previous order instead of stacking a new 
     expect(cancelCall).toBeUndefined();
   });
 
-  it("tags the placed leg with a deterministic clientOrderId scoped to symbol/side/leg", async () => {
-    await setPositionTpSl("k", "s", {
-      symbol: "SOL-USDT", positionSide: "LONG", takeProfitPrice: "85", dualSide: true,
+  it("never cancels a matching order on the opposite position side (hedge mode)", async () => {
+    signedRequest.mockImplementation(async (..._args: unknown[]) => {
+      const [, , method, path] = _args as [string, string, string, string];
+      if (method === "GET" && path === "/openApi/swap/v2/trade/openOrders") {
+        return {
+          orders: [
+            { orderId: "777", symbol: "SOL-USDT", positionSide: "SHORT", type: "STOP_MARKET", origQty: "0" },
+          ],
+        };
+      }
+      return { order: { orderId: "1" } };
     });
-    expect(callAt(0).body.clientOrderId).toBe("cix-tpsl-tp-long-SOLUSDT");
+
+    await setPositionTpSl("k", "s", {
+      symbol: "SOL-USDT", positionSide: "LONG", stopLossPrice: "70", dualSide: true,
+    });
+
+    const cancelCall = signedRequest.mock.calls.find((call) => call[2] === "DELETE");
+    expect(cancelCall).toBeUndefined();
   });
 
-  it("uses a different clientOrderId for SHORT so LONG/SHORT legs on the same symbol never collide", async () => {
+  it("never sends clientOrderId for TP/SL legs (BingX rejects it for STOP_MARKET/TAKE_PROFIT_MARKET)", async () => {
     await setPositionTpSl("k", "s", {
-      symbol: "SOL-USDT", positionSide: "SHORT", stopLossPrice: "90", dualSide: true,
+      symbol: "SOL-USDT", positionSide: "LONG", takeProfitPrice: "85", stopLossPrice: "70", dualSide: true,
     });
-    expect(callAt(0).body.clientOrderId).toBe("cix-tpsl-sl-short-SOLUSDT");
+    expect(callAt(0).body.clientOrderId).toBeUndefined();
+    expect(callAt(1).body.clientOrderId).toBeUndefined();
   });
 });

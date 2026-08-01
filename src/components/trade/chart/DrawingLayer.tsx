@@ -405,6 +405,52 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       );
     }
 
+    if (d.tool === "circle") {
+      const cx = (x1 + x2) / 2;
+      const cy = (y1 + y2) / 2;
+      const rx = Math.abs(x2 - x1) / 2;
+      const ry = Math.abs(y2 - y1) / 2;
+      return (
+        <g key={d.id}>
+          <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={stroke} fillOpacity={d.opacity} stroke="transparent" strokeWidth={12}
+            style={{ pointerEvents: (activeTool ? "none" : "all") as "none" | "all", cursor: "move" }}
+            onPointerDown={(e) => onShapePointerDown(e, d)} onPointerMove={onShapePointerMove} onPointerUp={onShapePointerUp} />
+          <ellipse cx={cx} cy={cy} rx={rx} ry={ry} {...common} fill={stroke} fillOpacity={d.opacity} />
+          {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y2} r={3.5} fill={stroke} /></>}
+        </g>
+      );
+    }
+
+    if (d.tool === "triangle") {
+      const points = `${(x1 + x2) / 2},${Math.min(y1, y2)} ${x1},${Math.max(y1, y2)} ${x2},${Math.max(y1, y2)}`;
+      return (
+        <g key={d.id}>
+          <polygon points={points} fill={stroke} fillOpacity={d.opacity} stroke="transparent" strokeWidth={12}
+            style={{ pointerEvents: (activeTool ? "none" : "all") as "none" | "all", cursor: "move" }}
+            onPointerDown={(e) => onShapePointerDown(e, d)} onPointerMove={onShapePointerMove} onPointerUp={onShapePointerUp} />
+          <polygon points={points} {...common} fill={stroke} fillOpacity={d.opacity} />
+          {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y2} r={3.5} fill={stroke} /></>}
+        </g>
+      );
+    }
+
+    if (d.tool === "arrow") {
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headLen = 10;
+      const hx1 = x2 - headLen * Math.cos(angle - Math.PI / 6);
+      const hy1 = y2 - headLen * Math.sin(angle - Math.PI / 6);
+      const hx2 = x2 - headLen * Math.cos(angle + Math.PI / 6);
+      const hy2 = y2 - headLen * Math.sin(angle + Math.PI / 6);
+      return (
+        <g key={d.id}>
+          <line x1={x1} y1={y1} x2={x2} y2={y2} {...hit} />
+          <line x1={x1} y1={y1} x2={x2} y2={y2} {...common} />
+          <polyline points={`${hx1},${hy1} ${x2},${y2} ${hx2},${hy2}`} fill="none" stroke={stroke} strokeWidth={common.strokeWidth} vectorEffect="non-scaling-stroke" />
+          {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y2} r={3.5} fill={stroke} /></>}
+        </g>
+      );
+    }
+
     if (d.tool === "fib") {
       const lo = Math.min(x1, x2);
       const hi = Math.max(x1, x2);

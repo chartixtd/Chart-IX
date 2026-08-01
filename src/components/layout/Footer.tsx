@@ -20,8 +20,8 @@ export function Footer() {
 
   return (
     <footer className="border-t border-border-default bg-bg-secondary/40">
-      <div className="mx-auto max-w-7xl px-4 py-14">
-        <div className="flex flex-col items-center gap-6 text-center">
+      <div className="mx-auto max-w-2xl px-4 py-8">
+        <div className="flex flex-col items-center gap-4 text-center">
           <div className="flex items-center gap-2.5">
             <img src="/logo.png" alt="Chart-IX" className="h-8 w-auto opacity-90" />
             <span className="font-display text-lg leading-none tracking-tight text-text-primary">

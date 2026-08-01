@@ -44,6 +44,8 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
 
   // In-progress shape (press → drag → release)
   const [draft, setDraft] = useState<{ tool: DrawingTool; a: DrawingPoint; b: DrawingPoint } | null>(null);
+  // Third-point pending state, only used by 3-point tools (currently: channel only)
+  const [pendingChannel, setPendingChannel] = useState<{ a: DrawingPoint; b: DrawingPoint } | null>(null);
   // Pending text annotation awaiting input
   const [pendingText, setPendingText] = useState<DrawingPoint | null>(null);
   const [textValue, setTextValue] = useState("");
@@ -73,6 +75,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (e.key === "Escape") {
         setDraft(null);
+        setPendingChannel(null);
         setPendingText(null);
         setActiveTool(null);
         setSelected(null);
@@ -123,6 +126,17 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
     if (!p) return;
     e.currentTarget.setPointerCapture(e.pointerId);
 
+    if (pendingChannel) {
+      addDrawing(symbol, {
+        tool: "channel",
+        points: [pendingChannel.a, pendingChannel.b, p],
+        color: drawingColor,
+      });
+      setPendingChannel(null);
+      if (!keepToolActive) setActiveTool(null);
+      return;
+    }
+
     if (activeTool === "text") {
       setPendingText(p);
       setTextValue("");
@@ -148,6 +162,11 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
     // Ignore accidental click-without-drag so a stray click leaves no zero-size shape
     const moved = p.time !== draft.a.time || p.price !== draft.a.price;
     if (moved) {
+      if (draft.tool === "channel") {
+        setPendingChannel({ a: draft.a, b: p });
+        setDraft(null);
+        return; // wait for the third click (channel offset) instead of finishing here
+      }
       addDrawing(symbol, { tool: draft.tool, points: [draft.a, p], color: drawingColor });
     }
     setDraft(null);
@@ -264,6 +283,34 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
               strokeDasharray="3 2"
               strokeWidth={1}
             />
+          )}
+        </g>
+      );
+    }
+
+    if (d.tool === "channel") {
+      const [pa, pb, pc] = d.points;
+      if (!pb) return null;
+      const ax = xOf(pa.time), ay = yOf(pa.price);
+      const bx = xOf(pb.time), by = yOf(pb.price);
+      if (ax === null || ay === null || bx === null || by === null) return null;
+      // Offset line: parallel to A-B, passing through the third point (or a small default offset while pending).
+      const offsetPrice = pc ? pc.price - (pa.price + ((pb.price - pa.price) * (pc.time - pa.time)) / (pb.time - pa.time || 1)) : 0;
+      const cy1 = yOf(pa.price + offsetPrice);
+      const cy2 = yOf(pb.price + offsetPrice);
+      if (cy1 === null || cy2 === null) return null;
+      return (
+        <g key={d.id}>
+          <line x1={ax} y1={ay} x2={bx} y2={by} {...hit} />
+          <line x1={ax} y1={ay} x2={bx} y2={by} {...common} />
+          <line x1={ax} y1={cy1} x2={bx} y2={cy2} {...common} />
+          <line x1={ax} y1={ay} x2={ax} y2={cy1} stroke={stroke} strokeWidth={1} strokeOpacity={0.4} strokeDasharray="2 3" />
+          {sel && (
+            <>
+              <circle cx={ax} cy={ay} r={3.5} fill={stroke} />
+              <circle cx={bx} cy={by} r={3.5} fill={stroke} />
+              <circle cx={ax} cy={cy1} r={3.5} fill={stroke} />
+            </>
           )}
         </g>
       );
@@ -442,6 +489,17 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
             },
             true
           )}
+        {pendingChannel && (
+          <line
+            x1={xOf(pendingChannel.a.time) ?? 0}
+            y1={yOf(pendingChannel.a.price) ?? 0}
+            x2={xOf(pendingChannel.b.time) ?? 0}
+            y2={yOf(pendingChannel.b.price) ?? 0}
+            stroke={drawingColor}
+            strokeWidth={2}
+            strokeDasharray="4 3"
+          />
+        )}
       </svg>
 
       {/* Inline text entry for the annotation tool */}

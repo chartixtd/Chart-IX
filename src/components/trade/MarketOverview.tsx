@@ -8,7 +8,7 @@ import { useFavoritesStore } from "@/stores/favorites";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
-import { MarketHeatmap } from "@/components/trade/MarketHeatmap";
+import { OrderBook } from "@/components/trade/OrderBook";
 import type { BingXTicker } from "@/types/bingx";
 
 const WS_SUBSCRIBE_LIMIT = 30;
@@ -20,6 +20,8 @@ const OVERSCAN = 8;
 interface MarketOverviewProps {
   onSelectSymbol?: (symbol: string) => void;
   activeSymbol?: string;
+  /** 盘口视图里点击某一档价格时回调，价格是解析后的 number */
+  onOrderBookPriceClick?: (price: number) => void;
 }
 
 // Subscribes to its own symbol's live price — a tick only re-renders this one
@@ -99,9 +101,9 @@ const LoadingDummy = memo(function LoadingDummy() {
   );
 });
 
-export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOverviewProps) {
+export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookPriceClick }: MarketOverviewProps) {
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState<"list" | "heatmap">("list");
+  const [viewMode, setViewMode] = useState<"list" | "orderbook">("list");
   const { data: tickers, isLoading } = useSpotTickers();
   const favorites = useFavoritesStore((s) => s.favorites);
 
@@ -193,19 +195,19 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "" }: MarketOver
             列表
           </button>
           <button
-            onClick={() => setViewMode("heatmap")}
+            onClick={() => setViewMode("orderbook")}
             className={cn(
               "flex-1 rounded-xs py-1 text-xs font-medium transition-colors",
-              viewMode === "heatmap" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+              viewMode === "orderbook" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
-            热力图
+            盘口
           </button>
         </div>
       </div>
-      {viewMode === "heatmap" ? (
+      {viewMode === "orderbook" ? (
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-          <MarketHeatmap />
+          <OrderBook symbol={activeSymbol} onPriceClick={onOrderBookPriceClick} />
         </div>
       ) : (
         <div className="flex flex-1 flex-col overflow-hidden">

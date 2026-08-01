@@ -384,14 +384,20 @@ export default function TradePage() {
           breakpoint — so the responsive show/hide toggle has to live on a plain
           wrapper div instead of directly on PanelGroup's own className. */}
       <div className="hidden flex-1 overflow-hidden lg:flex">
-        <PanelGroup direction="horizontal" autoSaveId="chart-ix-trade-layout" className="flex-1">
-          <Panel defaultSize={15} minSize={10} maxSize={25} className="border-r border-border-default">
-            <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} />
+        {/* v2：去掉了独立盘口栏（并入 MarketOverview 的"盘口"切换），改版 id
+            避免旧用户浏览器里存的 3 栏→4 栏比例套用到现在的 3 栏布局上 */}
+        <PanelGroup direction="horizontal" autoSaveId="chart-ix-trade-layout-v2" className="flex-1">
+          <Panel defaultSize={20} minSize={12} maxSize={30} className="border-r border-border-default">
+            <MarketOverview
+              onSelectSymbol={handleSymbolSelect}
+              activeSymbol={symbol}
+              onOrderBookPriceClick={handleOrderBookPriceClick}
+            />
           </Panel>
 
           <ResizeHandle />
 
-          <Panel defaultSize={52} minSize={30}>
+          <Panel defaultSize={58} minSize={32}>
             {/* 持仓/挂单/历史/成交面板挤在最右侧窄栏里显示不全，改成图表下方的
                 横向面板，宽度跟图表一致，字段能摆开——原来那一栏只留下单表单 */}
             <PanelGroup direction="vertical" autoSaveId="chart-ix-trade-chart-column">
@@ -423,20 +429,7 @@ export default function TradePage() {
 
           <ResizeHandle />
 
-          <Panel defaultSize={13} minSize={8} maxSize={22} className="border-r border-border-default">
-            <div className="flex h-full flex-col overflow-hidden">
-              <div className="shrink-0 border-b border-border-default px-3 py-2">
-                <span className="text-xs font-medium text-text-secondary">盘口</span>
-              </div>
-              <div className="flex-1 overflow-auto">
-                <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />
-              </div>
-            </div>
-          </Panel>
-
-          <ResizeHandle />
-
-          <Panel defaultSize={20} minSize={14} maxSize={32}>
+          <Panel defaultSize={22} minSize={16} maxSize={34}>
             <div className="flex h-full flex-col overflow-hidden">
               <div className="min-h-0 flex-1 overflow-auto">{tradePanel}</div>
               {market === "futures" && <div className="shrink-0"><FuturesWalletSummary /></div>}

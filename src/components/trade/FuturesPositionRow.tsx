@@ -149,19 +149,36 @@ export function FuturesPositionRow({
 
   return (
     <div className={cn("px-3 py-3 transition-colors hover:bg-bg-hover/40", highlighted && "bg-gold/[0.04]")}>
-      {/* 标识行：symbol + 方向徽记 + 保证金模式/杠杆，操作按钮靠右 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-text-primary">{pos.symbol}</span>
-          <span
-            className={cn(
-              "rounded-xs px-1.5 py-0.5 text-[10px] font-semibold tracking-wide",
-              isLong ? "bg-success-bg text-success" : "bg-danger-bg text-danger"
-            )}
-          >
-            {isLong ? "LONG" : "SHORT"}
-          </span>
-          <span className="text-[11px] text-text-muted">{pos.isolated ? "isolated" : "cross"} · {pos.leverage}x</span>
+      {/* 标识行：symbol + 方向徽记 + 保证金模式/杠杆 + PnL/ROI 挤在同一行，
+          操作按钮靠右——PnL 挪上来跟标识信息合并，省掉原来单独一整行 */}
+      <div className="flex flex-wrap items-center justify-between gap-y-1.5">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-text-primary">{pos.symbol}</span>
+            <span
+              className={cn(
+                "rounded-xs px-1.5 py-0.5 text-[10px] font-semibold tracking-wide",
+                isLong ? "bg-success-bg text-success" : "bg-danger-bg text-danger"
+              )}
+            >
+              {isLong ? "LONG" : "SHORT"}
+            </span>
+            <span className="text-[11px] text-text-muted">{pos.isolated ? "isolated" : "cross"} · {pos.leverage}x</span>
+          </div>
+          <div className="flex items-baseline gap-1.5 border-l border-border-default pl-3">
+            <span className={cn("font-mono text-base font-semibold tabular-nums", pnl >= 0 ? "text-success" : "text-danger")}>
+              {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}
+            </span>
+            <span className="text-[11px] text-text-muted">USDT</span>
+            <span
+              className={cn(
+                "rounded-xs px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums",
+                roi >= 0 ? "bg-success-bg text-success" : "bg-danger-bg text-danger"
+              )}
+            >
+              {roi >= 0 ? "+" : ""}{roi.toFixed(2)}%
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -187,64 +204,48 @@ export function FuturesPositionRow({
         </div>
       </div>
 
-      {/* PnL 是整行里最重要的数字，单独一行放大；ROI 用色块标出正负 */}
-      <div className="mt-2 flex items-baseline gap-2">
-        <span className={cn("font-mono text-lg font-semibold tabular-nums", pnl >= 0 ? "text-success" : "text-danger")}>
-          {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}
-        </span>
-        <span className="text-xs text-text-muted">USDT</span>
-        <span
-          className={cn(
-            "rounded-xs px-1.5 py-0.5 font-mono text-xs font-medium tabular-nums",
-            roi >= 0 ? "bg-success-bg text-success" : "bg-danger-bg text-danger"
-          )}
-        >
-          {roi >= 0 ? "+" : ""}{roi.toFixed(2)}%
-        </span>
-      </div>
-
-      {/* 次要数据用统一的标签在上、等宽数字在下的格子铺开，比一行一个 label:value 更好扫读 */}
-      <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2 sm:grid-cols-6">
+      {/* 次要数据 + 止盈止损 + 减仓快捷按钮合并成一行，自动换行；比之前四行
+          分开（数据格子/止盈止损/减仓各一行）省下不少纵向空间，信息量不变 */}
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1.5">
         {stats.map((s) => (
-          <div key={s.label}>
-            <div className="text-[10px] uppercase tracking-wide text-text-muted">{s.label}</div>
-            <div className="font-mono text-xs tabular-nums text-text-primary">{s.value}</div>
+          <div key={s.label} className="flex items-baseline gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-text-muted">{s.label}</span>
+            <span className="font-mono text-xs tabular-nums text-text-primary">{s.value}</span>
           </div>
         ))}
-      </div>
 
-      {/* 当前止盈止损用色块徽记而不是一串"数字/数字"，一眼能看出有没有设置、设的是哪边 */}
-      <div className="mt-2 flex items-center gap-1.5">
-        <span className="text-[10px] uppercase tracking-wide text-text-muted">TP/SL</span>
-        {currentTp ? (
-          <span className="rounded-xs bg-success-bg px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-success">
-            {formatBySpec(parseFloat(currentTp), spec?.pricePrecision)}
-          </span>
-        ) : (
-          <span className="text-[11px] text-text-muted/60">—</span>
-        )}
-        {currentSl ? (
-          <span className="rounded-xs bg-danger-bg px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-danger">
-            {formatBySpec(parseFloat(currentSl), spec?.pricePrecision)}
-          </span>
-        ) : (
-          <span className="text-[11px] text-text-muted/60">—</span>
-        )}
-      </div>
+        <div className="flex items-baseline gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-text-muted">TP/SL</span>
+          {currentTp ? (
+            <span className="rounded-xs bg-success-bg px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-success">
+              {formatBySpec(parseFloat(currentTp), spec?.pricePrecision)}
+            </span>
+          ) : (
+            <span className="text-[11px] text-text-muted/60">—</span>
+          )}
+          {currentSl ? (
+            <span className="rounded-xs bg-danger-bg px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-danger">
+              {formatBySpec(parseFloat(currentSl), spec?.pricePrecision)}
+            </span>
+          ) : (
+            <span className="text-[11px] text-text-muted/60">—</span>
+          )}
+        </div>
 
-      {/* 部分平仓：按比例快捷按钮，点了直接下市价只减仓单，不需要额外输入数量 */}
-      <div className="mt-2 flex items-center gap-1">
-        <span className="mr-1 text-[11px] text-text-muted">Reduce</span>
-        {CLOSE_PERCENTS.map((p) => (
-          <button
-            key={p}
-            onClick={() => handleReduceOnlyClose(p)}
-            disabled={reducingPct !== null || closing || reversing}
-            className="rounded-xs border border-border-default px-1.5 py-0.5 text-[11px] text-text-muted transition-colors hover:border-gold/40 hover:text-gold disabled:opacity-50"
-          >
-            {reducingPct === p ? "…" : `${p}%`}
-          </button>
-        ))}
+        {/* 部分平仓：按比例快捷按钮，点了直接下市价只减仓单，不需要额外输入数量 */}
+        <div className="ml-auto flex items-center gap-1">
+          <span className="mr-0.5 text-[11px] text-text-muted">Reduce</span>
+          {CLOSE_PERCENTS.map((p) => (
+            <button
+              key={p}
+              onClick={() => handleReduceOnlyClose(p)}
+              disabled={reducingPct !== null || closing || reversing}
+              className="rounded-xs border border-border-default px-1.5 py-0.5 text-[11px] text-text-muted transition-colors hover:border-gold/40 hover:text-gold disabled:opacity-50"
+            >
+              {reducingPct === p ? "…" : `${p}%`}
+            </button>
+          ))}
+        </div>
       </div>
 
       {actionError && <p className="mt-1.5 text-xs text-danger">{actionError}</p>}

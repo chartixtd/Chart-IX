@@ -932,3 +932,52 @@ export function computeAwesomeOscillator(
   const slow = computeMA(median, slowPeriod);
   return fast.map((f, i) => (f === null || slow[i] === null ? null : f - slow[i]!));
 }
+
+/**
+ * Williams Alligator — three SMMA (Wilder-smoothed) lines of the median
+ * price, each displaced forward in time by its own `shift`. Jaw (slowest,
+ * blue) = SMMA(13) shifted 8; Teeth (medium, red) = SMMA(8) shifted 5;
+ * Lips (fastest, green) = SMMA(5) shifted 3, in the traditional parameters.
+ */
+export function computeAlligator(
+  highs: number[],
+  lows: number[],
+  jawPeriod = 13,
+  jawShift = 8,
+  teethPeriod = 8,
+  teethShift = 5,
+  lipsPeriod = 5,
+  lipsShift = 3
+): { jaw: (number | null)[]; teeth: (number | null)[]; lips: (number | null)[] } {
+  const n = highs.length;
+  const median = highs.map((h, i) => (h + lows[i]) / 2);
+
+  const smma = (src: number[], period: number): (number | null)[] => {
+    const out: (number | null)[] = new Array(src.length).fill(null);
+    if (src.length < period) return out;
+    let sum = 0;
+    for (let i = 0; i < period; i++) sum += src[i];
+    let prev = sum / period;
+    out[period - 1] = prev;
+    for (let i = period; i < src.length; i++) {
+      prev = (prev * (period - 1) + src[i]) / period;
+      out[i] = prev;
+    }
+    return out;
+  };
+
+  const shift = (src: (number | null)[], amount: number): (number | null)[] => {
+    const out: (number | null)[] = new Array(n).fill(null);
+    for (let i = 0; i < n; i++) {
+      const from = i - amount;
+      if (from >= 0 && from < src.length) out[i] = src[from];
+    }
+    return out;
+  };
+
+  return {
+    jaw: shift(smma(median, jawPeriod), jawShift),
+    teeth: shift(smma(median, teethPeriod), teethShift),
+    lips: shift(smma(median, lipsPeriod), lipsShift),
+  };
+}

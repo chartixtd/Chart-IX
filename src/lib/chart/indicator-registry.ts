@@ -15,7 +15,7 @@ import {
   computeRSI, computeMACD, computeStochastic, computeKDJ, computeStochRSI, computeCCI, computeWilliamsR,
   computeMomentum, computeROC, computeTRIX, computeCMO, computeDPO,
   computeUltimateOscillator, computeADX, computeAroon,
-  computeOBV, computeMFI, computeCMF, computeAwesomeOscillator,
+  computeOBV, computeMFI, computeCMF, computeAwesomeOscillator, computeAlligator,
 } from "@/lib/indicators";
 
 export type IndicatorCategory = "trend" | "volatility" | "momentum" | "volume";
@@ -187,6 +187,23 @@ export const INDICATORS: IndicatorDef[] = [
     compute: (i, p) => {
       const r = computeIchimoku(i.high, i.low, p.tenkan, p.kijun, p.senkouB);
       return { tenkan: r.tenkan, kijun: r.kijun, senkouA: r.senkouA, senkouB: r.senkouB };
+    },
+  },
+  {
+    id: "alligator", name: "鳄鱼线 Williams Alligator", short: "Alligator", category: "trend", placement: "main",
+    params: [
+      p1("jawPeriod", "颚线周期", 13), p1("jawShift", "颚线位移", 8),
+      p1("teethPeriod", "齿线周期", 8), p1("teethShift", "齿线位移", 5),
+      p1("lipsPeriod", "唇线周期", 5), p1("lipsShift", "唇线位移", 3),
+    ],
+    plots: [
+      { key: "jaw", label: "颚线 Jaw", color: C.blue },
+      { key: "teeth", label: "齿线 Teeth", color: C.rose },
+      { key: "lips", label: "唇线 Lips", color: C.green },
+    ],
+    compute: (i, p) => {
+      const r = computeAlligator(i.high, i.low, p.jawPeriod, p.jawShift, p.teethPeriod, p.teethShift, p.lipsPeriod, p.lipsShift);
+      return { jaw: r.jaw, teeth: r.teeth, lips: r.lips };
     },
   },
   {

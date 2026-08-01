@@ -84,3 +84,28 @@ describe("computeHullMA", () => {
     expect(last!).toBeGreaterThan(prior!);
   });
 });
+
+import { computeAlligator } from "./indicators";
+
+describe("computeAlligator", () => {
+  const highs = Array.from({ length: 60 }, (_, i) => 105 + Math.sin(i / 6) * 5 + i * 0.1);
+  const lows = Array.from({ length: 60 }, (_, i) => 95 + Math.sin(i / 6) * 5 + i * 0.1);
+
+  it("shifts each line forward by its own shift amount (nulls at the start)", () => {
+    const { jaw, lips } = computeAlligator(highs, lows, 13, 8, 8, 5, 5, 3);
+    // lips (shift 3) should have a value strictly before jaw (shift 8) does
+    const firstLipsIdx = lips.findIndex((v) => v !== null);
+    const firstJawIdx = jaw.findIndex((v) => v !== null);
+    expect(firstLipsIdx).toBeGreaterThan(-1);
+    expect(firstJawIdx).toBeGreaterThan(-1);
+    expect(firstLipsIdx).toBeLessThan(firstJawIdx);
+  });
+
+  it("produces finite values once all three lines are warmed up", () => {
+    const { jaw, teeth, lips } = computeAlligator(highs, lows, 13, 8, 8, 5, 5, 3);
+    const lastIdx = highs.length - 1;
+    expect(jaw[lastIdx]).not.toBeNull();
+    expect(teeth[lastIdx]).not.toBeNull();
+    expect(lips[lastIdx]).not.toBeNull();
+  });
+});

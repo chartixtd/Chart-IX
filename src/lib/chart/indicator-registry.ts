@@ -8,7 +8,7 @@
  * TradingView convenience: MA(20) + MA(50) + MA(200) side by side).
  */
 import {
-  computeMA, computeEMA, computeWMA, computeDEMA, computeTEMA, computeVWMA,
+  computeMA, computeEMA, computeWMA, computeHullMA, computeDEMA, computeTEMA, computeVWMA,
   computeVWAP, computeParabolicSAR, computeSuperTrend, computeIchimoku,
   computeBollingerBands, computeKeltnerChannels, computeDonchianChannels,
   computeEnvelope, computeATR, computeStdDev,
@@ -123,6 +123,12 @@ export const INDICATORS: IndicatorDef[] = [
     params: [p1("period", "周期", 20)],
     plots: [{ key: "wma", color: C.cyan }],
     compute: (i, p) => ({ wma: computeWMA(i.close, p.period) }),
+  },
+  {
+    id: "hma", name: "赫尔均线 Hull MA", short: "HMA", category: "trend", placement: "main",
+    params: [p1("period", "周期", 9)],
+    plots: [{ key: "hma", color: C.fuchsia }],
+    compute: (i, p) => ({ hma: computeHullMA(i.close, p.period) }),
   },
   {
     id: "dema", name: "DEMA 双重指数均线", short: "DEMA", category: "trend", placement: "main",

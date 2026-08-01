@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeKDJ, computeStochRSI, computeAwesomeOscillator } from "./indicators";
+import { computeKDJ, computeStochRSI, computeAwesomeOscillator, computeHullMA } from "./indicators";
 
 describe("computeKDJ", () => {
   const highs = [10, 11, 12, 11, 10, 9, 10, 11, 12, 13, 12, 11];
@@ -64,5 +64,23 @@ describe("computeAwesomeOscillator", () => {
     const ao = computeAwesomeOscillator(highs, lows, 5, 34);
     expect(ao[40]).not.toBeNull();
     expect(Number.isFinite(ao[40])).toBe(true);
+  });
+});
+
+describe("computeHullMA", () => {
+  const closes = Array.from({ length: 40 }, (_, i) => 100 + i * 0.5);
+
+  it("stays null before enough bars for the full WMA(sqrt(period)) chain", () => {
+    const hma = computeHullMA(closes, 9);
+    expect(hma[2]).toBeNull();
+  });
+
+  it("tracks a steadily rising series with a rising value", () => {
+    const hma = computeHullMA(closes, 9);
+    const last = hma[closes.length - 1];
+    const prior = hma[closes.length - 5];
+    expect(last).not.toBeNull();
+    expect(prior).not.toBeNull();
+    expect(last!).toBeGreaterThan(prior!);
   });
 });

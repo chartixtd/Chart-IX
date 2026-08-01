@@ -298,6 +298,31 @@ export function computeOBV(closes: number[], volumes: number[]): (number | null)
   return result;
 }
 
+/** Hull Moving Average — WMA(2*WMA(n/2) - WMA(n), sqrt(n)); faster to turn than a plain EMA. */
+export function computeHullMA(closes: number[], period = 9): (number | null)[] {
+  const halfPeriod = Math.max(1, Math.round(period / 2));
+  const sqrtPeriod = Math.max(1, Math.round(Math.sqrt(period)));
+  const wmaHalf = computeWMA(closes, halfPeriod);
+  const wmaFull = computeWMA(closes, period);
+  const diff = closes.map((_, i) =>
+    wmaHalf[i] === null || wmaFull[i] === null ? null : 2 * wmaHalf[i]! - wmaFull[i]!
+  );
+  // WMA over `diff` needs its own null-safe pass since computeWMA assumes a plain number[].
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  const denom = (sqrtPeriod * (sqrtPeriod + 1)) / 2;
+  for (let i = sqrtPeriod - 1; i < diff.length; i++) {
+    let weighted = 0;
+    let complete = true;
+    for (let x = 0; x < sqrtPeriod; x++) {
+      const v = diff[i - x];
+      if (v === null) { complete = false; break; }
+      weighted += v * (sqrtPeriod - x);
+    }
+    if (complete) result[i] = weighted / denom;
+  }
+  return result;
+}
+
 /** ADX - Wilder's Average Directional Index over `period` bars (default 14). */
 export function computeADX(
   highs: number[],

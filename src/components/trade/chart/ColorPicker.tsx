@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DRAWING_COLORS } from "@/stores/chartStore";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +14,10 @@ const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 export function ColorPicker({ value, onChange, presets = DRAWING_COLORS }: ColorPickerProps) {
   const [text, setText] = useState(value);
+
+  useEffect(() => {
+    setText(value);
+  }, [value]);
 
   const commit = (v: string) => {
     setText(v);

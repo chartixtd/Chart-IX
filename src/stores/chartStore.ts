@@ -69,7 +69,7 @@ export const DRAWING_COLORS = ["#c9a24b", "#60a5fa", "#22c55e", "#ef4444", "#c08
 
 export const DEFAULT_DRAWING_LINE_WIDTH: Drawing["lineWidth"] = 2;
 export const DEFAULT_DRAWING_LINE_STYLE: DrawingLineStyle = "solid";
-export const DEFAULT_DRAWING_OPACITY = 0.15;
+export const DEFAULT_DRAWING_OPACITY = 0.08;
 export const DEFAULT_DRAWING_FONT_SIZE = 12;
 
 export const DEFAULT_APPLIED_INDICATORS: AppliedIndicator[] = [
@@ -230,6 +230,45 @@ interface ChartState {
   setSelectedDrawing: (id: string | null) => void;
 }
 
+/**
+ * Reconciles persisted (localStorage) state with the store's fresh defaults.
+ * Exported standalone (rather than inlined in the `persist` config) so it can be
+ * unit-tested directly without depending on zustand's persist middleware actually
+ * attaching storage (it no-ops in non-browser test environments).
+ */
+export function mergeChartState(
+  persisted: unknown,
+  current: ChartState
+): ChartState {
+  const p = (persisted ?? {}) as Partial<ChartState>;
+  return {
+    ...current,
+    ...p,
+    // Drop instances whose definition no longer exists so a removed
+    // registry entry can't leave an unrenderable ghost in the legend.
+    appliedIndicators: (p.appliedIndicators ?? current.appliedIndicators).filter((a) =>
+      INDICATOR_BY_ID.has(a.defId)
+    ),
+    // Backfill style fields on drawings persisted before those fields existed
+    // (missing lineWidth/lineStyle/opacity would otherwise render, e.g., rectangles
+    // as solid opaque blocks via the SVG default fill-opacity of 1).
+    drawings: Object.fromEntries(
+      Object.entries(p.drawings ?? current.drawings).map(([sym, ds]) => [
+        sym,
+        (ds as Partial<Drawing>[]).map(
+          (d) =>
+            ({
+              lineWidth: DEFAULT_DRAWING_LINE_WIDTH,
+              lineStyle: DEFAULT_DRAWING_LINE_STYLE,
+              opacity: DEFAULT_DRAWING_OPACITY,
+              ...d,
+            }) as Drawing
+        ),
+      ])
+    ),
+  };
+}
+
 export const useChartStore = create<ChartState>()(
   persist(
     (set) => ({
@@ -388,18 +427,7 @@ export const useChartStore = create<ChartState>()(
         drawingColor: s.drawingColor,
         keepToolActive: s.keepToolActive,
       }),
-      merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<ChartState>;
-        return {
-          ...current,
-          ...p,
-          // Drop instances whose definition no longer exists so a removed
-          // registry entry can't leave an unrenderable ghost in the legend.
-          appliedIndicators: (p.appliedIndicators ?? current.appliedIndicators).filter((a) =>
-            INDICATOR_BY_ID.has(a.defId)
-          ),
-        };
-      },
+      merge: (persisted, current) => mergeChartState(persisted, current),
     }
   )
 );

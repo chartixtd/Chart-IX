@@ -14,6 +14,9 @@ interface FuturesPositionRowProps {
   position: FuturesPosition;
   /** 当前图表 symbol 是否匹配这条持仓——只影响高亮，不影响列表内容 */
   highlighted: boolean;
+  /** 当前生效的止盈/止损触发价——BingX 持仓接口本身不带这个，由调用方从挂单列表反查后传入 */
+  currentTp?: string;
+  currentSl?: string;
   onClose: (position: FuturesPosition) => Promise<ActionResult>;
   onReduceOnlyClose: (position: FuturesPosition, percent: number) => Promise<ActionResult>;
   onReverse: (position: FuturesPosition) => Promise<ActionResult>;
@@ -23,7 +26,7 @@ interface FuturesPositionRowProps {
 const CLOSE_PERCENTS = [25, 50, 75, 100];
 
 export function FuturesPositionRow({
-  position: pos, highlighted, onClose, onReduceOnlyClose, onReverse, onSaveTpSl,
+  position: pos, highlighted, currentTp, currentSl, onClose, onReduceOnlyClose, onReverse, onSaveTpSl,
 }: FuturesPositionRowProps) {
   const t = useTranslations();
   const { data: contracts } = useFuturesContracts();
@@ -43,6 +46,13 @@ export function FuturesPositionRow({
   const pnl = parseFloat(pos.unrealizedProfit);
   const isLong = pos.positionSide === "LONG";
   const mark = parseFloat(pos.markPrice);
+  const qty = parseFloat(pos.positionAmt);
+  const margin = parseFloat(pos.initialMargin);
+  // BingX 持仓接口不直接返回仓位名义价值，按数量 × 标记价现算，不依赖
+  // 未经验证的 notional 字段（该字段在 BingX 文档里叫 positionValue，
+  // 名字对不上，实测很可能是 undefined）
+  const notional = Math.abs(qty) * mark;
+  const roi = margin > 0 ? (pnl / margin) * 100 : 0;
 
   const startTpSl = () => {
     setTpValue("");
@@ -148,9 +158,21 @@ export function FuturesPositionRow({
         <span className="text-text-muted">Entry</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.avgPrice), spec?.pricePrecision)}</span>
         <span className="text-text-muted">Mark</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.markPrice), spec?.pricePrecision)}</span>
         <span className="text-text-muted">Liq</span><span className="text-text-primary text-right">{formatBySpec(parseFloat(pos.liquidationPrice), spec?.pricePrecision)}</span>
+        <span className="text-text-muted">Margin</span><span className="text-text-primary text-right">{margin.toFixed(2)} USDT</span>
+        <span className="text-text-muted">Value</span><span className="text-text-primary text-right">{notional.toFixed(2)} USDT</span>
         <span className="text-text-muted">PnL</span>
         <span className={cn("text-right font-medium", pnl >= 0 ? "text-success" : "text-danger")}>
           {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT
+        </span>
+        <span className="text-text-muted">ROI</span>
+        <span className={cn("text-right font-medium", roi >= 0 ? "text-success" : "text-danger")}>
+          {roi >= 0 ? "+" : ""}{roi.toFixed(2)}%
+        </span>
+        <span className="text-text-muted">TP / SL</span>
+        <span className="text-right text-text-primary">
+          {currentTp ? formatBySpec(parseFloat(currentTp), spec?.pricePrecision) : "-"}
+          {" / "}
+          {currentSl ? formatBySpec(parseFloat(currentSl), spec?.pricePrecision) : "-"}
         </span>
       </div>
 

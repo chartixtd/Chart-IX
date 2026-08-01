@@ -31,6 +31,8 @@ export interface FuturesPosition {
   markPrice: string;
   liquidationPrice: string;
   isolated: boolean;
+  /** 实际占用的保证金，来自 BingX 的 initialMargin 字段 */
+  initialMargin: string;
 }
 
 export interface FuturesOpenOrder {

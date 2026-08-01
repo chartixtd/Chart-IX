@@ -242,17 +242,29 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
             <p className="px-3 py-4 text-xs text-text-muted text-center">No positions</p>
           ) : (
             <div className="divide-y divide-border-default/50">
-              {positions.map((pos) => (
+              {positions.map((pos) => {
+                // 持仓行本身不带止盈止损值——BingX 的持仓接口不返回这个，
+                // 只能从挂单列表里反查同 symbol/positionSide 的条件单
+                const currentTp = orders.find(
+                  (o) => o.symbol === pos.symbol && o.positionSide === pos.positionSide && o.type.toUpperCase().includes("TAKE_PROFIT")
+                )?.stopPrice;
+                const currentSl = orders.find(
+                  (o) => o.symbol === pos.symbol && o.positionSide === pos.positionSide && o.type.toUpperCase().includes("STOP")
+                )?.stopPrice;
+                return (
                 <FuturesPositionRow
                   key={pos.positionId}
                   position={pos}
                   highlighted={pos.symbol === symbol}
+                  currentTp={currentTp}
+                  currentSl={currentSl}
                   onClose={handleClose}
                   onReduceOnlyClose={handleReduceOnlyClose}
                   onReverse={handleReverse}
                   onSaveTpSl={handleSaveTpSl}
                 />
-              ))}
+                );
+              })}
             </div>
           )
         )}

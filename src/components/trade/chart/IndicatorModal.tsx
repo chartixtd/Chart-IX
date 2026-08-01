@@ -171,7 +171,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                       >
                         {a.visible ? "👁" : "🚫"}
                       </button>
-                      {def.params.length > 0 && (
+                      {(def.params.length > 0 || def.plots.length > 0) && (
                         <button
                           onClick={() => setEditingId(isEditing ? null : a.instanceId)}
                           title="参数设置"

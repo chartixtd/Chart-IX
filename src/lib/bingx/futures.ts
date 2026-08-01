@@ -284,15 +284,25 @@ export async function setPositionTpSl(
   // 顺序提交而非并发：BingX 对同一 symbol 的连续下单有频率限制，
   // 并发容易触发 80012/80013 service busy
   for (const leg of legs) {
-    await placeFuturesOrder(apiKey, secret, {
-      symbol: params.symbol,
-      side: closeSide,
-      positionSide,
-      type: leg.type,
-      stopPrice: leg.stopPrice,
-      closePosition: true,
-      workingType,
-    });
+    try {
+      await placeFuturesOrder(apiKey, secret, {
+        symbol: params.symbol,
+        side: closeSide,
+        positionSide,
+        type: leg.type,
+        stopPrice: leg.stopPrice,
+        closePosition: true,
+        workingType,
+      });
+    } catch (e) {
+      // BingX 的报错信息本身有时很含糊（例如 "quantity or stopPrice is
+      // must"，明明已经传了 stopPrice）。附上这条腿实际发出的参数，下次报错
+      // 时不用再靠猜就能看出到底是哪个字段、什么值触发的。
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        `${msg} [leg=${leg.type} stopPrice=${leg.stopPrice} side=${closeSide} positionSide=${positionSide} closePosition=true workingType=${workingType}]`
+      );
+    }
   }
 }
 

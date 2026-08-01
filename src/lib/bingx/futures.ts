@@ -251,14 +251,36 @@ export async function setPositionTpSl(
   const positionSide: FuturesPositionSide = params.dualSide === false ? "BOTH" : holdingSide;
   const workingType = params.workingType ?? "MARK_PRICE";
 
-  const legs: Array<{ type: FuturesOrderType; stopPrice: string }> = [];
+  const legs: Array<{ type: FuturesOrderType; stopPrice: string; clientOrderId: string }> = [];
   if (params.takeProfitPrice) {
-    legs.push({ type: "TAKE_PROFIT_MARKET", stopPrice: params.takeProfitPrice });
+    legs.push({
+      type: "TAKE_PROFIT_MARKET",
+      stopPrice: params.takeProfitPrice,
+      clientOrderId: tpSlClientOrderId(params.symbol, holdingSide, "tp"),
+    });
   }
   if (params.stopLossPrice) {
-    legs.push({ type: "STOP_MARKET", stopPrice: params.stopLossPrice });
+    legs.push({
+      type: "STOP_MARKET",
+      stopPrice: params.stopLossPrice,
+      clientOrderId: tpSlClientOrderId(params.symbol, holdingSide, "sl"),
+    });
   }
   if (legs.length === 0) return;
+
+  // BingX 没有"改触发价"的接口，每次调用这个函数只能撤旧挂新——不先撤销上一次
+  // 挂的那张，"修改止盈止损"就会变成不断叠加新的条件单（第二次设置要么被
+  // BingX 拒绝、要么静默多挂一张，UI 也读不到已有值所以看不出问题）。用固定
+  // 可复现的 clientOrderId 认领"上次是不是我们自己挂的"，只撤销这次要重新
+  // 设置的那条腿，用户在 Pro 模式下自己下的止损/止盈单永远不会带这个前缀，
+  // 不会被误撤。
+  const openOrders = await getFuturesOpenOrders(apiKey, secret, params.symbol);
+  for (const leg of legs) {
+    const stale = openOrders.find((o) => o.clientOrderId === leg.clientOrderId);
+    if (stale) {
+      await cancelFuturesOrder(apiKey, secret, params.symbol, stale.orderId);
+    }
+  }
 
   // 顺序提交而非并发：BingX 对同一 symbol 的连续下单有频率限制，
   // 并发容易触发 80012/80013 service busy
@@ -271,8 +293,20 @@ export async function setPositionTpSl(
       stopPrice: leg.stopPrice,
       closePosition: true,
       workingType,
+      clientOrderId: leg.clientOrderId,
     });
   }
+}
+
+/**
+ * 固定、可复现的 clientOrderId：同一 symbol + 持仓方向 + 止盈/止损腿每次
+ * 生成同一个值，下次调用 setPositionTpSl 时才能精确找到上一次挂的那张单
+ * 并撤销，而不会误撤别的条件单。BingX 限制 clientOrderId 1-40 字符、
+ * 且同一个 ID 不能用于两张仍然有效的单，所以旧单必须先撤销才能复用。
+ */
+function tpSlClientOrderId(symbol: string, side: "LONG" | "SHORT", leg: "tp" | "sl"): string {
+  const cleanSymbol = symbol.replace(/[^A-Za-z0-9]/g, "");
+  return `cix-tpsl-${leg}-${side.toLowerCase()}-${cleanSymbol}`.slice(0, 40);
 }
 
 // ==================== 杠杆 & 保证金模式 ====================

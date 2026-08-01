@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  INDICATORS, INDICATOR_BY_ID, defaultParams, legendLabel, type IndicatorInput,
+  INDICATORS, INDICATOR_BY_ID, defaultParams, legendLabel, resolvePlotStyle, type IndicatorInput,
 } from "./indicator-registry";
 
 /** Deterministic 200-bar OHLCV series with a trend, a cycle, and varied volume. */
@@ -144,5 +144,28 @@ describe("legendLabel", () => {
   it("omits the suffix for param-less indicators", () => {
     expect(legendLabel(INDICATOR_BY_ID.get("volume")!, {})).toBe("Vol");
     expect(legendLabel(INDICATOR_BY_ID.get("vwap")!, {})).toBe("VWAP");
+  });
+});
+
+describe("resolvePlotStyle", () => {
+  const maDef = INDICATOR_BY_ID.get("ma")!;
+  const maPlot = maDef.plots[0];
+
+  it("falls back to the registry's default plot color/width/style when there is no override", () => {
+    const resolved = resolvePlotStyle(maDef, undefined, "ma");
+    expect(resolved.color).toBe(maPlot.color);
+    expect(resolved.lineWidth).toBe(maPlot.lineWidth ?? 1);
+    expect(resolved.lineStyle).toBe(maPlot.lineStyle ?? 0);
+  });
+
+  it("uses the override's color when one is set for that plot key", () => {
+    const resolved = resolvePlotStyle(maDef, { ma: { color: "#ff0000" } }, "ma");
+    expect(resolved.color).toBe("#ff0000");
+    expect(resolved.lineWidth).toBe(maPlot.lineWidth ?? 1); // unset fields still fall back
+  });
+
+  it("returns the registry default for a plot key with no matching override entry", () => {
+    const resolved = resolvePlotStyle(maDef, { someOtherKey: { color: "#ff0000" } }, "ma");
+    expect(resolved.color).toBe(maPlot.color);
   });
 });

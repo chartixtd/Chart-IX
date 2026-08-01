@@ -35,3 +35,22 @@ describe("DRAWING_TOOLS", () => {
     expect(new Set(DRAWING_TOOLS.map((t) => t.tool)).size).toBe(15);
   });
 });
+
+describe("updateIndicatorStyle", () => {
+  it("sets a style override for one plot without touching other plots or params", () => {
+    useChartStore.getState().addIndicator("bb"); // multi-plot indicator: upper/middle/lower
+    const instanceId = useChartStore.getState().appliedIndicators[0].instanceId;
+    useChartStore.getState().updateIndicatorStyle(instanceId, "upper", { color: "#ff0000" });
+    const a = useChartStore.getState().appliedIndicators[0];
+    expect(a.styleOverrides?.upper?.color).toBe("#ff0000");
+    expect(a.styleOverrides?.middle).toBeUndefined();
+  });
+
+  it("resetIndicatorToDefaults also clears styleOverrides", () => {
+    useChartStore.getState().addIndicator("ma");
+    const instanceId = useChartStore.getState().appliedIndicators[0].instanceId;
+    useChartStore.getState().updateIndicatorStyle(instanceId, "ma", { color: "#ff0000" });
+    useChartStore.getState().resetIndicatorToDefaults(instanceId);
+    expect(useChartStore.getState().appliedIndicators[0].styleOverrides).toBeUndefined();
+  });
+});

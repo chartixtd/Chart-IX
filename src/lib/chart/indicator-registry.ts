@@ -427,3 +427,31 @@ export function legendLabel(def: IndicatorDef, params: Record<string, number>): 
   const vals = def.params.map((p) => params[p.key]).filter((v) => v !== undefined);
   return vals.length ? `${def.short} ${vals.join(" ")}` : def.short;
 }
+
+/** A single plot's overridable style fields — mirrors the relevant subset of PlotDef. */
+export interface PlotStyleOverride {
+  color?: string;
+  lineWidth?: 1 | 2 | 3 | 4;
+  lineStyle?: 0 | 1 | 2 | 3 | 4;
+}
+
+/**
+ * Resolves a plot's effective color/width/style: the instance's per-plot
+ * override when present, falling back to the registry's static default.
+ * `overrides` is `AppliedIndicator["styleOverrides"]` — typed loosely here
+ * (not imported from chartStore.ts) to avoid a circular import, since
+ * chartStore.ts already imports from this module.
+ */
+export function resolvePlotStyle(
+  def: IndicatorDef,
+  overrides: Record<string, PlotStyleOverride> | undefined,
+  plotKey: string
+): { color: string; lineWidth: 1 | 2 | 3 | 4; lineStyle: 0 | 1 | 2 | 3 | 4 } {
+  const plot = def.plots.find((p) => p.key === plotKey);
+  const override = overrides?.[plotKey];
+  return {
+    color: override?.color ?? plot?.color ?? "#c9a24b",
+    lineWidth: override?.lineWidth ?? plot?.lineWidth ?? 1,
+    lineStyle: override?.lineStyle ?? plot?.lineStyle ?? 0,
+  };
+}

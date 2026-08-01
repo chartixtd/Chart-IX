@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { INDICATOR_BY_ID, defaultParams, type IndicatorDef } from "@/lib/chart/indicator-registry";
+import {
+  INDICATOR_BY_ID, defaultParams, type IndicatorDef, type PlotStyleOverride,
+} from "@/lib/chart/indicator-registry";
 
 // ==================== Applied indicators ====================
 
@@ -10,6 +12,7 @@ export interface AppliedIndicator {
   defId: string;
   params: Record<string, number>;
   visible: boolean;
+  styleOverrides?: Record<string, PlotStyleOverride>;
 }
 
 // ==================== Drawings ====================
@@ -208,6 +211,7 @@ interface ChartState {
   addIndicator: (defId: string, params?: Record<string, number>) => void;
   removeIndicator: (instanceId: string) => void;
   updateIndicatorParams: (instanceId: string, params: Record<string, number>) => void;
+  updateIndicatorStyle: (instanceId: string, plotKey: string, patch: PlotStyleOverride) => void;
   toggleIndicatorVisible: (instanceId: string) => void;
   clearIndicators: () => void;
   resetIndicatorToDefaults: (instanceId: string) => void;
@@ -296,6 +300,21 @@ export const useChartStore = create<ChartState>()(
           ),
         })),
 
+      updateIndicatorStyle: (instanceId, plotKey, patch) =>
+        set((s) => ({
+          appliedIndicators: s.appliedIndicators.map((a) =>
+            a.instanceId === instanceId
+              ? {
+                  ...a,
+                  styleOverrides: {
+                    ...a.styleOverrides,
+                    [plotKey]: { ...a.styleOverrides?.[plotKey], ...patch },
+                  },
+                }
+              : a
+          ),
+        })),
+
       toggleIndicatorVisible: (instanceId) =>
         set((s) => ({
           appliedIndicators: s.appliedIndicators.map((a) =>
@@ -309,7 +328,9 @@ export const useChartStore = create<ChartState>()(
         set((s) => ({
           appliedIndicators: s.appliedIndicators.map((a) => {
             const def = INDICATOR_BY_ID.get(a.defId);
-            return a.instanceId === instanceId && def ? { ...a, params: defaultParams(def) } : a;
+            return a.instanceId === instanceId && def
+              ? { ...a, params: defaultParams(def), styleOverrides: undefined }
+              : a;
           }),
         })),
 

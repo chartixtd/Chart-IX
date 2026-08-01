@@ -68,6 +68,14 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
     };
   }, [chart, containerRef]);
 
+  // ---- Leaving the channel tool (cursor button, switching tools) clears any pending third-point state ----
+  useEffect(() => {
+    if (activeTool !== "channel") {
+      setPendingChannel(null);
+      setDraft(null);
+    }
+  }, [activeTool]);
+
   // ---- Esc cancels the armed tool / draft; Delete removes the selection ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

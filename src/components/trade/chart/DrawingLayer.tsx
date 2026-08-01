@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import type { IChartApi, ISeriesApi, Logical, UTCTimestamp } from "lightweight-charts";
 import { useChartStore, type Drawing, type DrawingPoint, type DrawingTool } from "@/stores/chartStore";
 import { timeToLogical, logicalToTime, snapToBar } from "@/lib/chart/coords";
+import { DrawingSettingsModal } from "./DrawingSettingsModal";
 
 /** Tools that commit on a single click; the rest need a press-drag-release. */
 const ONE_POINT_TOOLS: ReadonlySet<DrawingTool> = new Set(["hline", "vline", "text"]);
@@ -51,6 +52,8 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
   // Pending text annotation awaiting input
   const [pendingText, setPendingText] = useState<DrawingPoint | null>(null);
   const [textValue, setTextValue] = useState("");
+  // Drawing whose style settings modal is open, opened via double-click
+  const [settingsDrawingId, setSettingsDrawingId] = useState<string | null>(null);
   // Whole-shape drag of an existing drawing
   const dragRef = useRef<{ id: string; origin: DrawingPoint; points: DrawingPoint[] } | null>(null);
 
@@ -233,6 +236,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       onPointerDown: (e: ReactPointerEvent<SVGElement>) => onShapePointerDown(e, d),
       onPointerMove: onShapePointerMove,
       onPointerUp: onShapePointerUp,
+      onDoubleClick: () => setSettingsDrawingId(d.id),
     };
 
     const [a, b] = d.points;
@@ -279,6 +283,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
             onPointerDown={(e) => onShapePointerDown(e, d)}
             onPointerMove={onShapePointerMove}
             onPointerUp={onShapePointerUp}
+            onDoubleClick={() => setSettingsDrawingId(d.id)}
           >
             {d.text || "文字"}
           </text>
@@ -393,6 +398,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
             onPointerDown={(e) => onShapePointerDown(e, d)}
             onPointerMove={onShapePointerMove}
             onPointerUp={onShapePointerUp}
+            onDoubleClick={() => setSettingsDrawingId(d.id)}
           />
           <rect x={rx} y={ry} width={rw} height={rh} {...common} fill={stroke} fillOpacity={d.opacity} />
           {sel && (
@@ -414,7 +420,8 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
         <g key={d.id}>
           <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={stroke} fillOpacity={d.opacity} stroke="transparent" strokeWidth={12}
             style={{ pointerEvents: (activeTool ? "none" : "all") as "none" | "all", cursor: "move" }}
-            onPointerDown={(e) => onShapePointerDown(e, d)} onPointerMove={onShapePointerMove} onPointerUp={onShapePointerUp} />
+            onPointerDown={(e) => onShapePointerDown(e, d)} onPointerMove={onShapePointerMove} onPointerUp={onShapePointerUp}
+            onDoubleClick={() => setSettingsDrawingId(d.id)} />
           <ellipse cx={cx} cy={cy} rx={rx} ry={ry} {...common} fill={stroke} fillOpacity={d.opacity} />
           {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y2} r={3.5} fill={stroke} /></>}
         </g>
@@ -427,7 +434,8 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
         <g key={d.id}>
           <polygon points={points} fill={stroke} fillOpacity={d.opacity} stroke="transparent" strokeWidth={12}
             style={{ pointerEvents: (activeTool ? "none" : "all") as "none" | "all", cursor: "move" }}
-            onPointerDown={(e) => onShapePointerDown(e, d)} onPointerMove={onShapePointerMove} onPointerUp={onShapePointerUp} />
+            onPointerDown={(e) => onShapePointerDown(e, d)} onPointerMove={onShapePointerMove} onPointerUp={onShapePointerUp}
+            onDoubleClick={() => setSettingsDrawingId(d.id)} />
           <polygon points={points} {...common} fill={stroke} fillOpacity={d.opacity} />
           {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y2} r={3.5} fill={stroke} /></>}
         </g>
@@ -683,6 +691,13 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
           style={{ left: textX, top: Math.max(0, textY - 22) }}
         />
       )}
+
+      {settingsDrawingId && (() => {
+        const d = (drawings ?? []).find((dr) => dr.id === settingsDrawingId);
+        return d ? (
+          <DrawingSettingsModal symbol={symbol} drawing={d} onClose={() => setSettingsDrawingId(null)} />
+        ) : null;
+      })()}
     </>
   );
 }

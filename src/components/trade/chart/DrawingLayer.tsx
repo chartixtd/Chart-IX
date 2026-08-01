@@ -10,6 +10,12 @@ const ONE_POINT_TOOLS: ReadonlySet<DrawingTool> = new Set(["hline", "vline", "te
 
 const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
+const DASH_ARRAY: Record<Drawing["lineStyle"], string | undefined> = {
+  solid: undefined,
+  dashed: "6 4",
+  dotted: "1.5 3",
+};
+
 interface Props {
   symbol: string;
   chart: IChartApi | null;
@@ -184,9 +190,9 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
     const stroke = d.color;
     const common = {
       stroke,
-      strokeWidth: sel ? 2 : 1.5,
+      strokeWidth: sel ? d.lineWidth + 0.5 : d.lineWidth,
       fill: "none",
-      strokeDasharray: isDraft ? "4 3" : undefined,
+      strokeDasharray: isDraft ? "4 3" : DASH_ARRAY[d.lineStyle],
       vectorEffect: "non-scaling-stroke" as const,
     };
     // A fat transparent copy under each shape makes thin lines easy to grab.
@@ -320,7 +326,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
             width={rw}
             height={rh}
             fill={stroke}
-            fillOpacity={0.08}
+            fillOpacity={d.opacity}
             stroke="transparent"
             strokeWidth={12}
             style={{
@@ -331,7 +337,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
             onPointerMove={onShapePointerMove}
             onPointerUp={onShapePointerUp}
           />
-          <rect x={rx} y={ry} width={rw} height={rh} {...common} fill={stroke} fillOpacity={0.08} />
+          <rect x={rx} y={ry} width={rw} height={rh} {...common} fill={stroke} fillOpacity={d.opacity} />
           {sel && (
             <>
               <circle cx={x1} cy={y1} r={3.5} fill={stroke} />
@@ -425,7 +431,15 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
         {(drawings ?? []).map((d) => renderShape(d))}
         {draft &&
           renderShape(
-            { id: "__draft__", tool: draft.tool, points: [draft.a, draft.b], color: drawingColor },
+            {
+              id: "__draft__",
+              tool: draft.tool,
+              points: [draft.a, draft.b],
+              color: drawingColor,
+              lineWidth: 2,
+              lineStyle: "solid",
+              opacity: 0.15,
+            },
             true
           )}
       </svg>

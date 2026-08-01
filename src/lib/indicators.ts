@@ -1045,3 +1045,34 @@ export function computeChaikinOscillator(
   }
   return out;
 }
+
+/** Vortex Indicator — VI+/VI- compare directional price movement against true range over `period` bars. */
+export function computeVortex(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period = 14
+): { viPlus: (number | null)[]; viMinus: (number | null)[] } {
+  const n = closes.length;
+  const vmPlus: number[] = new Array(n).fill(0);
+  const vmMinus: number[] = new Array(n).fill(0);
+  const tr: number[] = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    vmPlus[i] = Math.abs(highs[i] - lows[i - 1]);
+    vmMinus[i] = Math.abs(lows[i] - highs[i - 1]);
+    tr[i] = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1]));
+  }
+  const viPlus: (number | null)[] = new Array(n).fill(null);
+  const viMinus: (number | null)[] = new Array(n).fill(null);
+  for (let i = period; i < n; i++) {
+    let sumVmPlus = 0, sumVmMinus = 0, sumTr = 0;
+    for (let x = i - period + 1; x <= i; x++) {
+      sumVmPlus += vmPlus[x];
+      sumVmMinus += vmMinus[x];
+      sumTr += tr[x];
+    }
+    viPlus[i] = sumTr === 0 ? 0 : sumVmPlus / sumTr;
+    viMinus[i] = sumTr === 0 ? 0 : sumVmMinus / sumTr;
+  }
+  return { viPlus, viMinus };
+}

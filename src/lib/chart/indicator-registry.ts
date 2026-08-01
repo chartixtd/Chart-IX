@@ -14,7 +14,7 @@ import {
   computeEnvelope, computeATR, computeStdDev,
   computeRSI, computeMACD, computeStochastic, computeKDJ, computeStochRSI, computeCCI, computeWilliamsR,
   computeMomentum, computeROC, computeTRIX, computeCMO, computeDPO,
-  computeUltimateOscillator, computeADX, computeAroon,
+  computeUltimateOscillator, computeADX, computeAroon, computeVortex,
   computeOBV, computeMFI, computeCMF, computeAwesomeOscillator, computeAlligator, computePivotPoints, computeChaikinOscillator,
 } from "@/lib/indicators";
 
@@ -225,6 +225,19 @@ export const INDICATORS: IndicatorDef[] = [
       return { up: r.up, down: r.down };
     },
     guides: [30, 70],
+  },
+  {
+    id: "vortex", name: "涡旋指标 Vortex Indicator", short: "Vortex", category: "trend", placement: "pane",
+    params: [p1("period", "周期", 14)],
+    plots: [
+      { key: "viPlus", label: "VI+", color: C.up },
+      { key: "viMinus", label: "VI-", color: C.down },
+    ],
+    compute: (i, p) => {
+      const r = computeVortex(i.high, i.low, i.close, p.period);
+      return { viPlus: r.viPlus, viMinus: r.viMinus };
+    },
+    guides: [1],
   },
 
   // ---------------- Volatility ----------------

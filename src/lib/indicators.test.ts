@@ -159,3 +159,27 @@ describe("computeChaikinOscillator", () => {
     for (const v of osc) expect(Number.isNaN(v as number)).toBe(false);
   });
 });
+
+import { computeVortex } from "./indicators";
+
+describe("computeVortex", () => {
+  const n = 40;
+  const highs = Array.from({ length: n }, (_, i) => 105 + Math.sin(i / 5) * 4 + i * 0.15);
+  const lows = Array.from({ length: n }, (_, i) => 95 + Math.sin(i / 5) * 4 + i * 0.15);
+  const closes = Array.from({ length: n }, (_, i) => 100 + Math.sin(i / 5) * 4 + i * 0.15);
+
+  it("stays null before period bars have accumulated", () => {
+    const { viPlus, viMinus } = computeVortex(highs, lows, closes, 14);
+    expect(viPlus[5]).toBeNull();
+    expect(viMinus[5]).toBeNull();
+  });
+
+  it("produces positive finite values once warmed up (VI+/VI- are always >= 0)", () => {
+    const { viPlus, viMinus } = computeVortex(highs, lows, closes, 14);
+    for (let i = 20; i < n; i++) {
+      expect(viPlus[i]).not.toBeNull();
+      expect(viPlus[i]!).toBeGreaterThanOrEqual(0);
+      expect(viMinus[i]!).toBeGreaterThanOrEqual(0);
+    }
+  });
+});

@@ -775,7 +775,7 @@
     "tp_must_be_below": "做空的止盈价需低于当前标记价",
     "sl_must_be_below": "做多的止损价需低于当前标记价",
     "sl_must_be_above": "做空的止损价需高于当前标记价",
-    "price_too_far_from_mark": "价格与当前标记价（{mark}）相差过大，请确认输入是否正确",
+    "price_too_far_from_mark": "价格与当前标记价（{limit}）相差过大，请确认输入是否正确",
     "direction_hint": "做多 = 开多或加多，做空 = 开空或加空；平仓请到「订单」面板点平仓。",
     "high_leverage_warning": "{leverage}x 高杠杆：价格反向波动约 {leverage} 分之一即可能触发强平。",
     "order_placed": "下单成功 · {id}",

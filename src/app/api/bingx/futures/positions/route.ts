@@ -323,6 +323,33 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ success: true, data: { marginType: applied.marginType } });
         }
         case "setPositionTpSl": {
+          // 服务端兜底校验数量级，不依赖调用方（持仓面板表单、图表拖拽线……
+          // 未来还可能有别的入口）各自实现同样的检查。方向对但差了几个数量级
+          // 的价格（比如把止损打成 1）本地方向校验挡不住，只能靠 BingX 拒单，
+          // 报错又很含糊——这里先按当前标记价做一次合理性检查，直接给出明确原因。
+          const positions = await getFuturesPositions(apiKey, secret, symbol);
+          const pos = positions.find((p) => p.positionSide === (positionSide === "SHORT" ? "SHORT" : "LONG"));
+          const mark = pos ? parseFloat(pos.markPrice) : NaN;
+          if (Number.isFinite(mark) && mark > 0) {
+            const isFarFromMark = (v: unknown) => {
+              const n = Number(v);
+              return Number.isFinite(n) && n > 0 && (n < mark * 0.2 || n > mark * 5);
+            };
+            if (isFarFromMark(takeProfitPrice) || isFarFromMark(stopLossPrice)) {
+              return NextResponse.json(
+                {
+                  success: false,
+                  error: {
+                    message: `TP/SL price is too far from the mark price (${mark})`,
+                    i18nKey: "trading.price_too_far_from_mark",
+                    limit: mark.toFixed(4),
+                  },
+                },
+                { status: 400 }
+              );
+            }
+          }
+
           // 必须按账户实际持仓模式决定 positionSide：单向模式下传 LONG/SHORT
           // 会被 BingX 拒绝（109400），与下单路径用同一套判断
           const dualSide = await getDualSideMode(authData.user.id, apiKey, secret);

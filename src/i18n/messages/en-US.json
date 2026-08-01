@@ -775,7 +775,7 @@
     "tp_must_be_below": "Take profit must be below the current mark price for a short position",
     "sl_must_be_below": "Stop loss must be below the current mark price for a long position",
     "sl_must_be_above": "Stop loss must be above the current mark price for a short position",
-    "price_too_far_from_mark": "Price is too far from the current mark price ({mark}) — please double-check it",
+    "price_too_far_from_mark": "Price is too far from the current mark price ({limit}) — please double-check it",
     "direction_hint": "Long = open or add to a long position, Short = open or add to a short position; to close a position, use the Close button in the Orders panel.",
     "high_leverage_warning": "{leverage}x high leverage: a move of roughly 1/{leverage} against your position may trigger liquidation.",
     "order_placed": "Order placed · {id}",

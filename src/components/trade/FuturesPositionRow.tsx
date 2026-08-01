@@ -71,7 +71,7 @@ export function FuturesPositionRow({
     // 道数量级检查，在本地就能给出明确提示。
     const isFarFromMark = (price: number) => price < mark * 0.2 || price > mark * 5;
     if ((hasTp && isFarFromMark(tp)) || (hasSl && isFarFromMark(sl))) {
-      setTpSlError(t("trading.price_too_far_from_mark", { mark: mark.toFixed(4) }));
+      setTpSlError(t("trading.price_too_far_from_mark", { limit: mark.toFixed(4) }));
       return;
     }
     setSavingTpSl(true);

@@ -10,6 +10,8 @@ const ONE_POINT_TOOLS: ReadonlySet<DrawingTool> = new Set(["hline", "vline", "te
 
 const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
+const FIB_EXTENSION_LEVELS = [0, 0.618, 1, 1.272, 1.618, 2, 2.618];
+
 const DASH_ARRAY: Record<Drawing["lineStyle"], string | undefined> = {
   solid: undefined,
   dashed: "6 4",
@@ -448,6 +450,64 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
               <circle cx={x2} cy={y2} r={3.5} fill={stroke} />
             </>
           )}
+        </g>
+      );
+    }
+
+    if (d.tool === "fib-extension") {
+      const lo = Math.min(x1, x2);
+      const hi = Math.max(x1, x2);
+      return (
+        <g key={d.id}>
+          <line x1={x1} y1={y1} x2={x2} y2={y2} {...hit} />
+          {FIB_EXTENSION_LEVELS.map((lvl) => {
+            const price = a.price + (b.price - a.price) * lvl;
+            const y = yOf(price);
+            if (y === null) return null;
+            return (
+              <g key={lvl}>
+                <line
+                  x1={lo} y1={y} x2={hi} y2={y}
+                  stroke={stroke}
+                  strokeWidth={sel ? 1.5 : 1}
+                  strokeOpacity={lvl === 0 || lvl === 1 ? 0.9 : 0.55}
+                  strokeDasharray={lvl === 0 || lvl === 1 ? undefined : "3 3"}
+                />
+                <text x={lo + 2} y={y - 3} fill={stroke} fontSize={9} fontFamily="monospace" opacity={0.85}>
+                  {(lvl * 100).toFixed(1)}% {price.toPrecision(6)}
+                </text>
+              </g>
+            );
+          })}
+          {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y2} r={3.5} fill={stroke} /></>}
+        </g>
+      );
+    }
+
+    if (d.tool === "fib-fan") {
+      return (
+        <g key={d.id}>
+          <line x1={x1} y1={y1} x2={x2} y2={y2} {...hit} />
+          {FIB_LEVELS.filter((l) => l > 0).map((lvl) => {
+            const targetPrice = a.price + (b.price - a.price) * lvl;
+            const ty = yOf(targetPrice);
+            if (ty === null) return null;
+            const rdx = x2 - x1;
+            const rdy = ty - y1;
+            const rlen = Math.hypot(rdx, rdy) || 1;
+            const rscale = (W + H) / rlen;
+            return (
+              <line
+                key={lvl}
+                x1={x1} y1={y1}
+                x2={x1 + rdx * rscale} y2={y1 + rdy * rscale}
+                stroke={stroke}
+                strokeWidth={sel ? 1.5 : 1}
+                strokeOpacity={0.6}
+              />
+            );
+          })}
+          {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y2} r={3.5} fill={stroke} /></>}
         </g>
       );
     }

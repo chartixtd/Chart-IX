@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     const secret = decrypt(apiKeys[0].secret_encrypted);
 
     const body = await request.json();
-    const { action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice, markPrice, amount, directionType, percent } = body;
+    const { action, symbol, positionSide, positionId, leverage, marginType, stopLossPrice, takeProfitPrice, amount, directionType, percent } = body;
 
     try {
       switch (action) {
@@ -323,43 +323,54 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ success: true, data: { marginType: applied.marginType } });
         }
         case "setPositionTpSl": {
-          // 服务端兜底校验数量级，不依赖调用方（持仓面板表单、图表拖拽线……
-          // 未来还可能有别的入口）各自实现同样的检查。方向对但差了几个数量级
-          // 的价格（比如把止损打成 1）本地方向校验挡不住，只能靠 BingX 拒单，
-          // 报错又很含糊——这里按标记价做一次合理性检查，直接给出明确原因。
-          //
-          // 标记价优先用调用方随请求带来的 markPrice（前端此刻手上就有最新值，
-          // 直接可信）；带不了才回退到再查一次持仓列表——之前只走回退路径，
-          // 一旦按 positionSide 反查持仓失败（时序、字段不匹配等任何原因）
-          // mark 就是 NaN，校验被静默跳过，等于形同虚设，这正是上一版校验
-          // 明明加了却挡不住 stopPrice=1 的原因。查不到就直接拒绝（fail
-          // closed），不再放行未经校验的价格。
-          let mark = parseFloat(String(markPrice ?? ""));
-          if (!Number.isFinite(mark) || mark <= 0) {
-            const positions = await getFuturesPositions(apiKey, secret, symbol);
-            const pos = positions.find((p) => p.positionSide === (positionSide === "SHORT" ? "SHORT" : "LONG"));
-            mark = pos ? parseFloat(pos.markPrice) : NaN;
-          }
-          if (!Number.isFinite(mark) || mark <= 0) {
+          // BingX 对冲模式下不接受 closePosition=true 免传 quantity 这个"标准
+          // 用法"（实测仍拒单），必须显式带触发时要平掉的实际数量——因此这里
+          // 总要先按最新持仓量现算 quantity，不信任客户端传来的任何数量
+          // （与 reduceOnlyClose 的既有原则一致）。这次查询顺带把标记价也拿到
+          // 了，直接用它做数量级合理性校验，不用再额外拿一次、也不用依赖
+          // 客户端传的 markPrice——查不到持仓就直接拒绝（fail closed）。
+          const positions = await getFuturesPositions(apiKey, secret, symbol);
+          const pos = positions.find((p) => p.positionSide === (positionSide === "SHORT" ? "SHORT" : "LONG"));
+          if (!pos) {
             return NextResponse.json(
-              { success: false, error: { message: "Could not determine mark price to validate TP/SL against" } },
-              { status: 400 }
+              { success: false, error: { message: "Position not found" } },
+              { status: 404 }
             );
           }
-          const isFarFromMark = (v: unknown) => {
-            const n = Number(v);
-            return Number.isFinite(n) && n > 0 && (n < mark * 0.2 || n > mark * 5);
-          };
-          if (isFarFromMark(takeProfitPrice) || isFarFromMark(stopLossPrice)) {
-            return NextResponse.json(
-              {
-                success: false,
-                error: {
-                  message: `TP/SL price is too far from the mark price (${mark})`,
-                  i18nKey: "trading.price_too_far_from_mark",
-                  limit: mark.toFixed(4),
+
+          const mark = parseFloat(pos.markPrice);
+          if (Number.isFinite(mark) && mark > 0) {
+            const isFarFromMark = (v: unknown) => {
+              const n = Number(v);
+              return Number.isFinite(n) && n > 0 && (n < mark * 0.2 || n > mark * 5);
+            };
+            if (isFarFromMark(takeProfitPrice) || isFarFromMark(stopLossPrice)) {
+              return NextResponse.json(
+                {
+                  success: false,
+                  error: {
+                    message: `TP/SL price is too far from the mark price (${mark})`,
+                    i18nKey: "trading.price_too_far_from_mark",
+                    limit: mark.toFixed(4),
+                  },
                 },
-              },
+                { status: 400 }
+              );
+            }
+          }
+
+          const spec = await getSymbolSpec(symbol, "futures", pos.positionSide === "SHORT" ? "SHORT" : "LONG");
+          if (!spec) {
+            return NextResponse.json(
+              { success: false, error: { message: "Symbol spec unavailable" } },
+              { status: 502 }
+            );
+          }
+          const rawQty = floorToPrecision(Math.abs(parseFloat(pos.positionAmt)), spec.quantityPrecision);
+          const quantity = formatQty(rawQty, spec);
+          if (!(parseFloat(quantity) > 0)) {
+            return NextResponse.json(
+              { success: false, error: { message: "Position has no open quantity" } },
               { status: 400 }
             );
           }
@@ -368,7 +379,7 @@ export async function POST(request: NextRequest) {
           // 会被 BingX 拒绝（109400），与下单路径用同一套判断
           const dualSide = await getDualSideMode(authData.user.id, apiKey, secret);
           await setPositionTpSl(apiKey, secret, {
-            symbol, positionSide, stopLossPrice, takeProfitPrice, dualSide,
+            symbol, positionSide, stopLossPrice, takeProfitPrice, dualSide, quantity,
           });
           return NextResponse.json({ success: true });
         }

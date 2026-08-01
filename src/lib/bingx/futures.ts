@@ -223,10 +223,18 @@ export async function getPositionHistory(
  * BingX-swap-api-doc#37 明确回复过）。此前按该路径请求，服务端一律返回参数
  * 错误码，前端表现为「订单参数不合法，请检查数量、价格与持仓模式」。
  *
- * 正确做法是走普通下单接口挂两张 reduce-only 的条件市价单：
- *   止盈 → TAKE_PROFIT_MARKET，止损 → STOP_MARKET
- * 方向与持仓相反（LONG 用 SELL 平，SHORT 用 BUY 平），并用 closePosition=true
- * 表示触发时整仓平掉，这样无需传 quantity。触发价统一用标记价，避免插针误触。
+ * 正确做法是走普通下单接口挂两张条件市价单：止盈 → TAKE_PROFIT_MARKET，
+ * 止损 → STOP_MARKET，方向与持仓相反（LONG 用 SELL 平，SHORT 用 BUY 平）。
+ *
+ * 曾经按文档字面意思用 closePosition=true 代替传 quantity（文档写"cannot be
+ * used with quantity"，暗示这样就够了），但对冲模式下 BingX 实测仍然拒单，
+ * 报「parameter quantity or stopPrice is must」——即使 stopPrice 明明带了。
+ * 对照 ccxt 里跑得通的真实实现（bingx.py createOrderRequest 里给持仓设置
+ * SL/TP 的分支）才发现：对冲模式下 BingX 根本不认 closePosition，必须显式传
+ * 实际持仓数量作为 quantity，方向靠 positionSide（LONG/SHORT）本身表达"平仓"
+ * 语义，reduceOnly 反而不能传（对冲模式下这个参数不被接受）。单向模式则相反：
+ * positionSide 固定 BOTH，用 reduceOnly=true 表达平仓语义。这里改成两种模式
+ * 下都显式带 quantity，不再依赖 closePosition。
  */
 export async function setPositionTpSl(
   apiKey: string, secret: string,
@@ -236,6 +244,8 @@ export async function setPositionTpSl(
     stopLossPrice?: string;
     takeProfitPrice?: string;
     workingType?: FuturesWorkingType;
+    /** 触发时平仓的实际数量——服务端应按最新持仓量现算，不信任任何缓存值 */
+    quantity: string;
     /**
      * 账户是否为对冲模式。单向模式（false）下 BingX 要求 positionSide 必须是
      * BOTH，传 LONG/SHORT 会被拒（109400 PositionSide must be BOTH in one-way
@@ -248,7 +258,8 @@ export async function setPositionTpSl(
   // 平多要卖出，平空要买入。注意方向取自持仓方向，与 positionSide 字段无关：
   // 单向模式下 positionSide 是 BOTH，但平仓方向仍由实际持仓多空决定。
   const closeSide: FuturesSide = holdingSide === "LONG" ? "SELL" : "BUY";
-  const positionSide: FuturesPositionSide = params.dualSide === false ? "BOTH" : holdingSide;
+  const isDualSide = params.dualSide !== false;
+  const positionSide: FuturesPositionSide = isDualSide ? holdingSide : "BOTH";
   const workingType = params.workingType ?? "MARK_PRICE";
 
   const legs: Array<{ type: FuturesOrderType; stopPrice: string }> = [];
@@ -260,20 +271,16 @@ export async function setPositionTpSl(
   // 挂的那张，"修改止盈止损"就会变成不断叠加新的条件单（第二次设置要么被
   // BingX 拒绝、要么静默多挂一张，UI 也读不到已有值所以看不出问题）。
   //
-  // 本来想用固定的 clientOrderId 认领"上次是不是我们自己挂的"，但 BingX 官方
-  // 文档明确 clientOrderId 只支持 MARKET/LIMIT 两种订单类型——给 STOP_MARKET/
-  // TAKE_PROFIT_MARKET 传这个字段会被直接拒单（109400 订单参数不合法，这正是
-  // 上一版修复自己引入的新故障）。改用"形状匹配"识别旧单：closePosition=true
-  // 的条件单不能带 quantity（与文档一致），整个代码库里只有这个函数会挂
-  // closePosition=true 的 STOP_MARKET/TAKE_PROFIT_MARKET——用户在 Pro 模式下
-  // 自己挂的同类型条件单都是常规开仓/加仓单，一定带真实数量，origQty 不会是
-  // 空/0，因此不会被这里误撤。
+  // 不能用 clientOrderId 认领"上次是不是我们自己挂的"——BingX 官方文档明确
+  // clientOrderId 只支持 MARKET/LIMIT 两种订单类型，给 STOP_MARKET/
+  // TAKE_PROFIT_MARKET 传这个字段会被直接拒单。也不能再用"没有 quantity"当
+  // 特征了（现在自己挂的单也带真实 quantity）。改为直接按 type+positionSide
+  // 撤销所有匹配的旧条件单——用户想改的就是这仓位的止盈止损，哪怕撞上自己
+  // 手动挂的同方向同类型条件单，"编辑止盈止损"这个操作本身预期也是替换掉它。
   const openOrders = await getFuturesOpenOrders(apiKey, secret, params.symbol);
   const legTypes = new Set(legs.map((leg) => leg.type));
   const isStaleTpSlOrder = (order: FuturesOrder) =>
-    legTypes.has(order.type as FuturesOrderType) &&
-    order.positionSide === positionSide &&
-    (!order.origQty || parseFloat(order.origQty) === 0);
+    legTypes.has(order.type as FuturesOrderType) && order.positionSide === positionSide;
 
   for (const order of openOrders) {
     if (isStaleTpSlOrder(order)) {
@@ -291,16 +298,16 @@ export async function setPositionTpSl(
         positionSide,
         type: leg.type,
         stopPrice: leg.stopPrice,
-        closePosition: true,
+        quantity: params.quantity,
+        // 对冲模式下这个参数不被接受（会被拒单）；单向模式下用它显式表达
+        // "只减仓"，避免数量算错时意外反手开新仓
+        reduceOnly: isDualSide ? undefined : true,
         workingType,
       });
     } catch (e) {
-      // BingX 的报错信息本身有时很含糊（例如 "quantity or stopPrice is
-      // must"，明明已经传了 stopPrice）。附上这条腿实际发出的参数，下次报错
-      // 时不用再靠猜就能看出到底是哪个字段、什么值触发的。
       const msg = e instanceof Error ? e.message : String(e);
       throw new Error(
-        `${msg} [leg=${leg.type} stopPrice=${leg.stopPrice} side=${closeSide} positionSide=${positionSide} closePosition=true workingType=${workingType}]`
+        `${msg} [leg=${leg.type} stopPrice=${leg.stopPrice} quantity=${params.quantity} side=${closeSide} positionSide=${positionSide} workingType=${workingType}]`
       );
     }
   }

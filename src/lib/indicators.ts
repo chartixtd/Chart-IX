@@ -851,3 +851,46 @@ export function computeKDJ(
   }
   return { k, d, j };
 }
+
+export function computeStochRSI(
+  closes: number[],
+  rsiPeriod = 14,
+  stochPeriod = 14,
+  kSmooth = 3,
+  dSmooth = 3
+): { k: (number | null)[]; d: (number | null)[] } {
+  const n = closes.length;
+  const rsi = computeRSI(closes, rsiPeriod);
+  const rawK: (number | null)[] = new Array(n).fill(null);
+  for (let i = rsiPeriod + stochPeriod - 1; i < n; i++) {
+    let highest = -Infinity;
+    let lowest = Infinity;
+    let complete = true;
+    for (let x = i - stochPeriod + 1; x <= i; x++) {
+      const v = rsi[x];
+      if (v === null) { complete = false; break; }
+      if (v > highest) highest = v;
+      if (v < lowest) lowest = v;
+    }
+    if (!complete) continue;
+    const range = highest - lowest;
+    rawK[i] = range === 0 ? 0 : ((rsi[i]! - lowest) / range) * 100;
+  }
+  const smooth = (src: (number | null)[], period: number): (number | null)[] => {
+    const out: (number | null)[] = new Array(n).fill(null);
+    for (let i = period - 1; i < n; i++) {
+      let sum = 0;
+      let complete = true;
+      for (let x = i - period + 1; x <= i; x++) {
+        const v = src[x];
+        if (v === null) { complete = false; break; }
+        sum += v;
+      }
+      if (complete) out[i] = sum / period;
+    }
+    return out;
+  };
+  const k = smooth(rawK, kSmooth);
+  const d = smooth(k, dSmooth);
+  return { k, d };
+}

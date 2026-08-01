@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeKDJ } from "./indicators";
+import { computeKDJ, computeStochRSI } from "./indicators";
 
 describe("computeKDJ", () => {
   const highs = [10, 11, 12, 11, 10, 9, 10, 11, 12, 13, 12, 11];
@@ -24,6 +24,29 @@ describe("computeKDJ", () => {
     const lastIdx = closes.length - 1;
     if (k[lastIdx] !== null && d[lastIdx] !== null) {
       expect(j[lastIdx]).toBeCloseTo(3 * k[lastIdx]! - 2 * d[lastIdx]!, 6);
+    }
+  });
+});
+
+describe("computeStochRSI", () => {
+  const closes = Array.from({ length: 60 }, (_, i) => 100 + Math.sin(i / 5) * 10 + i * 0.2);
+
+  it("stays null until rsiPeriod + stochPeriod bars have accumulated", () => {
+    const { k } = computeStochRSI(closes, 14, 14, 3, 3);
+    expect(k[20]).toBeNull();
+  });
+
+  it("produces K values within [0, 100] once warmed up", () => {
+    const { k, d } = computeStochRSI(closes, 14, 14, 3, 3);
+    for (let i = 30; i < closes.length; i++) {
+      if (k[i] !== null) {
+        expect(k[i]!).toBeGreaterThanOrEqual(0);
+        expect(k[i]!).toBeLessThanOrEqual(100);
+      }
+      if (d[i] !== null) {
+        expect(d[i]!).toBeGreaterThanOrEqual(0);
+        expect(d[i]!).toBeLessThanOrEqual(100);
+      }
     }
   });
 });

@@ -15,6 +15,21 @@ function getStoragePath(url: string): string | null {
   }
 }
 
+const EXT_CONTENT_TYPES: Record<string, string> = {
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  m4v: "video/x-m4v",
+  ogg: "video/ogg",
+};
+
+/** Guess content type from the file extension so we don't need an extra
+ *  upstream round-trip just to read the Content-Type header. */
+function guessContentType(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return EXT_CONTENT_TYPES[ext] ?? "video/mp4";
+}
+
 /** Proxy a range request to Supabase and return the response */
 async function proxyRange(
   signedUrl: string,
@@ -35,7 +50,10 @@ async function proxyRange(
   headers.set("Content-Range", `bytes ${rangeStart}-${rangeStart + actualLength - 1}/${totalSize}`);
   headers.set("Content-Length", String(actualLength));
   headers.set("Accept-Ranges", "bytes");
-  headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  // Truncated preview bytes are identical for every free-tier viewer of this
+  // video, so let the browser reuse them across seeks within one session
+  // instead of re-fetching the same range from our server every time.
+  headers.set("Cache-Control", "private, max-age=300");
   headers.set("Content-Disposition", "inline");
   headers.set("X-Content-Type-Options", "nosniff");
 
@@ -102,10 +120,19 @@ export async function GET(
 
   const signedUrl = signedData.signedUrl;
 
-  // 5. Get Content-Type from upstream (HEAD or first chunk)
-  let upstreamContentType = "video/mp4";
+  // 5. Full access (not a capped free preview): no byte-range enforcement
+  // needed, so redirect straight to Supabase's storage CDN instead of
+  // proxying every byte through our own server. This was the main cause of
+  // slow playback — every chunk previously made two upstream fetches (one
+  // just to read Content-Type, one for the actual bytes) and then streamed
+  // through our server as a second hop before reaching the browser.
+  if (!isFreePreview) {
+    return NextResponse.redirect(signedUrl, { status: 302 });
+  }
 
-  // 6. Handle Range requests from browser
+  const upstreamContentType = guessContentType(storagePath);
+
+  // 6. Free preview: proxy so we can cap the served byte range
   const rangeHeader = request.headers.get("range");
 
   if (rangeHeader) {
@@ -113,41 +140,20 @@ export async function GET(
     if (match) {
       const rangeStart = parseInt(match[1]);
       const rangeEndRaw = match[2];
-      const requestedEnd = rangeEndRaw ? parseInt(rangeEndRaw) : (maxBytes > 0 ? maxBytes - 1 : rangeStart + 1024 * 1024 - 1);
+      const requestedEnd = rangeEndRaw ? parseInt(rangeEndRaw) : maxBytes - 1;
 
-      // Free preview: reject ranges past the limit
-      if (isFreePreview && rangeStart >= maxBytes) {
+      if (rangeStart >= maxBytes) {
         return new NextResponse(null, {
           status: 416,
           headers: { "Content-Range": `bytes */${maxBytes}` },
         });
       }
 
-      const cappedEnd = isFreePreview ? Math.min(requestedEnd, maxBytes - 1) : requestedEnd;
-
-      // Get content type from a small initial range if needed
-      if (upstreamContentType === "video/mp4") {
-        const headRes = await fetch(signedUrl, {
-          headers: { Range: `bytes=0-0` },
-        });
-        upstreamContentType = headRes.headers.get("Content-Type") ?? "video/mp4";
-      }
-
-      const effectiveTotal = isFreePreview ? maxBytes : fullSize;
-      return proxyRange(signedUrl, rangeStart, cappedEnd, effectiveTotal, upstreamContentType);
+      const cappedEnd = Math.min(requestedEnd, maxBytes - 1);
+      return proxyRange(signedUrl, rangeStart, cappedEnd, maxBytes, upstreamContentType);
     }
   }
 
-  // 7. No Range header → serve initial chunk
-  // Get content type
-  const headRes = await fetch(signedUrl, {
-    headers: { Range: `bytes=0-0` },
-  });
-  upstreamContentType = headRes.headers.get("Content-Type") ?? "video/mp4";
-
-  // Determine how much to serve
-  const serveEnd = isFreePreview ? maxBytes - 1 : Math.min(fullSize - 1, 10 * 1024 * 1024 - 1); // Pro: first 10MB initial
-  const effectiveTotal = isFreePreview ? maxBytes : fullSize;
-
-  return proxyRange(signedUrl, 0, serveEnd, effectiveTotal, upstreamContentType);
+  // 7. No Range header → serve initial capped chunk
+  return proxyRange(signedUrl, 0, maxBytes - 1, maxBytes, upstreamContentType);
 }

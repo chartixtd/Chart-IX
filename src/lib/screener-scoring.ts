@@ -1,7 +1,23 @@
 import type { BingXTicker } from "@/types/bingx";
+import type { MarketCapEntry, MarketCapMap } from "@/lib/market-cap";
+import {
+  getMarketCapScore,
+  normalizeSymbolForMarketCap,
+  TOP_MARKET_CAP_EXCLUDED,
+  MARKET_CAP_FALLBACK_SCORE,
+} from "@/lib/market-cap";
+
+export type Direction = "long" | "short";
 
 /** screener 自动重新筛选间隔：1 小时 */
 export const SCREENER_REFRESH_MS = 3_600_000;
+
+/** 每个方向输出的条数 */
+export const GROUP_SIZE = 10;
+
+const MIN_QUOTE_VOLUME = 1_000_000;
+const MIN_AMPLITUDE = 1.5;
+const MAX_CHASE_PERCENT = 15;
 
 export interface ScreenerResult {
   symbol: string;
@@ -11,150 +27,189 @@ export interface ScreenerResult {
   lowPrice: number;
   quoteVolume: number;
   amplitude: number;
+  marketCap: number | null;
+  marketCapRank: number | null;
   openInterest: number;
   fundingRate: number;
   oiVolumeRatio: number;
   score: number;
 }
 
-/** 硬性淘汰：触发任一规则返回 true（淘汰） */
-export function hardFilter(ticker: BingXTicker, direction: "long" | "short"): boolean {
-  const high = parseFloat(ticker.highPrice);
-  const low = parseFloat(ticker.lowPrice);
-  const quoteVolume = parseFloat(ticker.quoteVolume);
-  const priceChangePercent = parseFloat(ticker.priceChangePercent);
-
-  if (isNaN(high) || isNaN(low) || isNaN(quoteVolume) || isNaN(priceChangePercent)) return true;
-  if (low <= 0) return true;
-
-  // 1. 流动性不足：24h 成交量 < 100 万美元
-  if (quoteVolume < 1_000_000) return true;
-
-  // 2. 死盘无波动：振幅 < 1.5%
-  const amplitude = ((high - low) / low) * 100;
-  if (amplitude < 1.5) return true;
-
-  // 3. 拒绝追高
-  if (direction === "long" && priceChangePercent > 15) return true;
-
-  // 4. 拒绝追空
-  if (direction === "short" && priceChangePercent < -15) return true;
-
-  return false;
+export interface ScreenerGroups {
+  long: ScreenerResult[];
+  short: ScreenerResult[];
 }
 
-/** 综合打分 0-100 */
-export function scoreToken(
-  ticker: BingXTicker,
-  openInterest: number,
-  fundingRate: number
-): number {
+interface Parsed {
+  high: number;
+  low: number;
+  last: number;
+  quoteVolume: number;
+  changePercent: number;
+  amplitude: number;
+}
+
+function parse(ticker: BingXTicker): Parsed | null {
   const high = parseFloat(ticker.highPrice);
   const low = parseFloat(ticker.lowPrice);
   const last = Number(ticker.lastPrice);
   const quoteVolume = parseFloat(ticker.quoteVolume);
+  const changePercent = parseFloat(ticker.priceChangePercent);
 
-  if (isNaN(high) || isNaN(low) || isNaN(last) || isNaN(quoteVolume)) return 0;
-  if (low <= 0 || isNaN(openInterest) || isNaN(fundingRate)) return 0;
+  if (![high, low, last, quoteVolume, changePercent].every(Number.isFinite)) return null;
+  if (low <= 0) return null;
 
-  const amplitude = ((high - low) / low) * 100;
+  return { high, low, last, quoteVolume, changePercent, amplitude: ((high - low) / low) * 100 };
+}
 
-  // --- 振幅 (25%) ---
-  let ampScore: number;
-  if (amplitude >= 2 && amplitude <= 5) {
-    ampScore = 100;
-  } else if (amplitude >= 1.5 && amplitude < 2) {
-    ampScore = ((amplitude - 1.5) / 0.5) * 100;
-  } else if (amplitude > 5 && amplitude <= 12) {
-    ampScore = 100 - ((amplitude - 5) / 7) * 100;
-  } else {
-    ampScore = 0;
+/** 硬性淘汰：触发任一规则返回 true（淘汰） */
+export function hardFilter(ticker: BingXTicker, direction: Direction): boolean {
+  const p = parse(ticker);
+  if (!p) return true;
+  if (p.quoteVolume < MIN_QUOTE_VOLUME) return true;
+  if (p.amplitude < MIN_AMPLITUDE) return true;
+  if (direction === "long" && p.changePercent > MAX_CHASE_PERCENT) return true;
+  if (direction === "short" && p.changePercent < -MAX_CHASE_PERCENT) return true;
+  return false;
+}
+
+/** 市值排名进前 50 的主流大币排除出候选池；查不到市值的不算大币 */
+export function isExcludedByMarketCap(entry: MarketCapEntry | undefined): boolean {
+  return entry !== undefined && entry.rank <= TOP_MARKET_CAP_EXCLUDED;
+}
+
+/** 做多池与做空池的并集，供上层按需拉 OI/资金费率 */
+export function selectCandidateSymbols(
+  tickers: BingXTicker[],
+  marketCapMap: MarketCapMap | null
+): string[] {
+  const symbols = new Set<string>();
+  for (const ticker of tickers) {
+    if (!ticker.symbol.endsWith("-USDT")) continue;
+    const capKey = normalizeSymbolForMarketCap(ticker.symbol);
+    if (marketCapMap && isExcludedByMarketCap(marketCapMap[capKey])) continue;
+    if (!hardFilter(ticker, "long") || !hardFilter(ticker, "short")) {
+      symbols.add(ticker.symbol);
+    }
   }
+  return [...symbols];
+}
 
-  // --- 流动性 (25%) ---
-  const logVol = Math.log10(quoteVolume);
-  // $1M (6) -> 0%, $100M (8) -> 100%
-  const liqScore = Math.max(0, Math.min(100, ((logVol - 6) / 2) * 100));
+function amplitudeScore(amplitude: number): number {
+  if (amplitude >= 2 && amplitude <= 5) return 100;
+  if (amplitude >= MIN_AMPLITUDE && amplitude < 2) return ((amplitude - MIN_AMPLITUDE) / 0.5) * 100;
+  if (amplitude > 5 && amplitude <= 12) return 100 - ((amplitude - 5) / 7) * 100;
+  return 0;
+}
 
-  // --- OI/量比 (20%) ---
-  const oiVolRatio = quoteVolume > 0 ? openInterest / quoteVolume : 0;
-  let oiScore: number;
-  if (oiVolRatio >= 0.3 && oiVolRatio <= 1.5) {
-    oiScore = 100;
-  } else if (oiVolRatio < 0.3) {
-    oiScore = (oiVolRatio / 0.3) * 100;
-  } else if (oiVolRatio > 1.5 && oiVolRatio <= 3) {
-    oiScore = 100 - ((oiVolRatio - 1.5) / 1.5) * 100;
-  } else {
-    oiScore = 0;
-  }
+/**
+ * 反转逻辑：费率为负说明空头在付钱给多头（空头拥挤），对做多有利；反之亦然。
+ * ±0.05% 是这里的饱和阈值。
+ */
+function fundingScore(fundingRate: number, direction: Direction): number {
+  if (!Number.isFinite(fundingRate)) return 50;
+  const signed = direction === "long" ? -fundingRate : fundingRate;
+  if (signed >= 0.0005) return 100;
+  if (signed <= -0.0005) return 0;
+  return ((signed + 0.0005) / 0.001) * 100;
+}
 
-  // --- 费率健康度 (15%) ---
-  const absRate = Math.abs(fundingRate);
-  let frScore: number;
-  if (absRate < 0.0003) {
-    frScore = 100;
-  } else if (absRate <= 0.001) {
-    frScore = 100 - ((absRate - 0.0003) / 0.0007) * 100;
-  } else {
-    frScore = 0;
-  }
+function oiRatioScore(ratio: number): number {
+  if (ratio >= 0.3 && ratio <= 1.5) return 100;
+  if (ratio < 0.3) return (ratio / 0.3) * 100;
+  if (ratio <= 3) return 100 - ((ratio - 1.5) / 1.5) * 100;
+  return 0;
+}
 
-  // --- 趋势位置 (15%) ---
-  const position = high > low ? (last - low) / (high - low) : 0.5;
-  let trendScore: number;
-  // 日内范围中间位置最优（非极端高位/低位）
-  if (position >= 0.3 && position <= 0.7) {
-    trendScore = 100;
-  } else if (position < 0.3) {
-    trendScore = (position / 0.3) * 100;
-  } else {
-    trendScore = 100 - ((position - 0.7) / 0.3) * 100;
-  }
+/** 要有顺方向动量，但不能已经跑太远——3% 附近是甜点，越接近淘汰线 15% 分越低 */
+function momentumScore(changePercent: number, direction: Direction): number {
+  const signed = direction === "long" ? changePercent : -changePercent;
+  if (signed <= 0) return 0;
+  if (signed <= 3) return (signed / 3) * 100;
+  if (signed <= MAX_CHASE_PERCENT) return 100 - ((signed - 3) / (MAX_CHASE_PERCENT - 3)) * 100;
+  return 0;
+}
 
+/** 做多希望价格在日内区间的偏下半段（不接飞刀也不追高），做空反之 */
+function positionScore(p: Parsed, direction: Direction): number {
+  const raw = p.high > p.low ? (p.last - p.low) / (p.high - p.low) : 0.5;
+  const clamped = Math.max(0, Math.min(1, raw));
+  const eff = direction === "long" ? clamped : 1 - clamped;
+  if (eff >= 0.2 && eff <= 0.5) return 100;
+  if (eff < 0.2) return (eff / 0.2) * 100;
+  return 100 - ((eff - 0.5) / 0.5) * 100;
+}
+
+function scoreToken(
+  p: Parsed,
+  direction: Direction,
+  openInterest: number,
+  fundingRate: number,
+  marketCapScore: number
+): number {
+  const oiRatio = p.quoteVolume > 0 ? openInterest / p.quoteVolume : 0;
   return Math.round(
-    ampScore * 0.25 +
-    liqScore * 0.25 +
-    oiScore * 0.20 +
-    frScore * 0.15 +
-    trendScore * 0.15
+    marketCapScore * 0.25 +
+      amplitudeScore(p.amplitude) * 0.2 +
+      fundingScore(fundingRate, direction) * 0.2 +
+      oiRatioScore(oiRatio) * 0.15 +
+      momentumScore(p.changePercent, direction) * 0.1 +
+      positionScore(p, direction) * 0.1
   );
 }
 
-/** 批量计算筛选结果并排序 */
-export function computeScreenerResults(
+function buildGroup(
   tickers: BingXTicker[],
-  direction: "long" | "short",
+  direction: Direction,
   oiMap: Record<string, number>,
-  frMap: Record<string, number>
+  frMap: Record<string, number>,
+  marketCapMap: MarketCapMap | null
 ): ScreenerResult[] {
-  const results: ScreenerResult[] = [];
+  const rows: ScreenerResult[] = [];
 
   for (const ticker of tickers) {
+    if (!ticker.symbol.endsWith("-USDT")) continue;
+
+    const entry = marketCapMap?.[normalizeSymbolForMarketCap(ticker.symbol)];
+    if (marketCapMap && isExcludedByMarketCap(entry)) continue;
     if (hardFilter(ticker, direction)) continue;
 
-    const high = parseFloat(ticker.highPrice);
-    const low = parseFloat(ticker.lowPrice);
-    const quoteVolume = parseFloat(ticker.quoteVolume);
-    const oi = oiMap[ticker.symbol] ?? 0;
-    const fr = frMap[ticker.symbol] ?? 0;
+    const p = parse(ticker);
+    if (!p) continue;
 
-    const score = scoreToken(ticker, oi, fr);
+    const openInterest = oiMap[ticker.symbol] ?? 0;
+    const fundingRate = frMap[ticker.symbol] ?? 0;
+    const marketCapScore = marketCapMap ? getMarketCapScore(entry) : MARKET_CAP_FALLBACK_SCORE;
 
-    results.push({
+    rows.push({
       symbol: ticker.symbol,
-      lastPrice: Number(ticker.lastPrice),
-      priceChangePercent: parseFloat(ticker.priceChangePercent),
-      highPrice: high,
-      lowPrice: low,
-      quoteVolume,
-      amplitude: ((high - low) / low) * 100,
-      openInterest: oi,
-      fundingRate: fr,
-      oiVolumeRatio: quoteVolume > 0 ? oi / quoteVolume : 0,
-      score,
+      lastPrice: p.last,
+      priceChangePercent: p.changePercent,
+      highPrice: p.high,
+      lowPrice: p.low,
+      quoteVolume: p.quoteVolume,
+      amplitude: p.amplitude,
+      marketCap: entry?.marketCap ?? null,
+      marketCapRank: entry?.rank ?? null,
+      openInterest,
+      fundingRate,
+      oiVolumeRatio: p.quoteVolume > 0 ? openInterest / p.quoteVolume : 0,
+      score: scoreToken(p, direction, openInterest, fundingRate, marketCapScore),
     });
   }
 
-  return results.sort((a, b) => b.score - a.score);
+  return rows.sort((a, b) => b.score - a.score).slice(0, GROUP_SIZE);
+}
+
+/** 一次算出做多优势 / 做空优势两组 Top N */
+export function computeScreenerGroups(
+  tickers: BingXTicker[],
+  oiMap: Record<string, number>,
+  frMap: Record<string, number>,
+  marketCapMap: MarketCapMap | null
+): ScreenerGroups {
+  return {
+    long: buildGroup(tickers, "long", oiMap, frMap, marketCapMap),
+    short: buildGroup(tickers, "short", oiMap, frMap, marketCapMap),
+  };
 }

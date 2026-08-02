@@ -12,6 +12,7 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import type { Video, VideoCategory } from "@/types";
+import { needsCompression, compressVideo } from "@/lib/video-compress";
 
 interface VideosManagerProps {
   videos: Video[];
@@ -37,8 +38,10 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
   // Upload modal state
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState<"compressing" | "uploading">("uploading");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
+  const [sizeWarning, setSizeWarning] = useState("");
 
   // Confirm dialog state
   const [confirmDelete, setConfirmDelete] = useState<{ id: string } | null>(null);
@@ -70,6 +73,8 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
     setTier("free");
     setUploadError("");
     setUploadProgress(0);
+    setUploadPhase("uploading");
+    setSizeWarning("");
     setEditingVideo(null);
   };
 
@@ -166,17 +171,39 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
 
     setUploading(true);
     setUploadError("");
+    setSizeWarning("");
+    setUploadPhase("uploading");
     setUploadProgress(10);
 
     try {
+      let fileToUpload = videoFile;
+
+      if (needsCompression(videoFile.size)) {
+        setUploadPhase("compressing");
+        setUploadProgress(0);
+        try {
+          fileToUpload = await compressVideo(videoFile, (pct) => setUploadProgress(pct));
+        } catch (err) {
+          setUploadError(err instanceof Error ? err.message : t("videos_list.upload_failed"));
+          setUploading(false);
+          return;
+        }
+        if (fileToUpload.size > 80 * 1024 * 1024) {
+          setSizeWarning(t("videos_list.still_over_limit_warning", { size: (fileToUpload.size / (1024 * 1024)).toFixed(1) }));
+        }
+      }
+
+      setUploadPhase("uploading");
+      setUploadProgress(10);
+
       const supabase = createClient();
 
       // Generate unique filename
-      const fileExt = videoFile.name.split(".").pop()?.toLowerCase() ?? "mp4";
+      const fileExt = fileToUpload.name.split(".").pop()?.toLowerCase() ?? "mp4";
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${fileExt}`;
 
       // Get signed upload URL to bypass Supabase API gateway size limits
-      const mimeType = videoFile.type || "video/mp4";
+      const mimeType = fileToUpload.type || "video/mp4";
       const { data: signedData, error: signedErr } = await supabase.storage
         .from("videos")
         .createSignedUploadUrl(fileName, { upsert: false });
@@ -192,7 +219,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
       // Upload via signed URL (direct to storage, bypasses gateway)
       const uploadResponse = await fetch(signedData.signedUrl, {
         method: "PUT",
-        body: videoFile,
+        body: fileToUpload,
         headers: { "Content-Type": mimeType },
       });
 
@@ -226,7 +253,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
           storage_url: publicUrl,
           thumbnail_url: thumbnailUrl.trim() || null,
           duration_seconds: duration ? parseInt(duration) : 0,
-          file_size_bytes: videoFile.size,
+          file_size_bytes: fileToUpload.size,
           tier_required: tier,
           language,
         }),
@@ -561,11 +588,11 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
             </div>
           )}
 
-          {/* Upload progress — only for new uploads */}
-          {!editingVideo && uploading && uploadProgress > 0 && (
+          {/* Upload/compression progress — only for new uploads */}
+          {!editingVideo && uploading && (
             <div>
               <div className="flex items-center justify-between text-xs text-text-muted mb-1">
-                <span>{t("videos_list.uploading")}</span>
+                <span>{uploadPhase === "compressing" ? t("videos_list.compressing") : t("videos_list.uploading")}</span>
                 <span>{uploadProgress}%</span>
               </div>
               <div className="h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
@@ -575,6 +602,9 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
                 />
               </div>
             </div>
+          )}
+          {!editingVideo && sizeWarning && (
+            <p className="text-xs text-gold">{sizeWarning}</p>
           )}
 
           {/* Language selector — always visible */}

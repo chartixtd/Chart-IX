@@ -6,7 +6,7 @@ vi.mock("./client", () => ({
   bingxClient: { publicRequest: (...args: unknown[]) => publicRequest(...args) },
 }));
 
-const { getSpotTicker, getSpotKlines, getFuturesKlines } = await import("./market");
+const { getSpotTicker, getSpotKlines, getFuturesKlines, getFuturesTickers } = await import("./market");
 
 beforeEach(() => {
   publicRequest.mockReset();
@@ -91,5 +91,34 @@ describe("getFuturesKlines", () => {
       "/openApi/swap/v3/quote/klines",
       { symbol: "BTC-USDT", interval: "1h", limit: 100, startTime: undefined, endTime: undefined }
     );
+  });
+});
+
+describe("getFuturesTickers", () => {
+  it("requests the swap ticker endpoint without a symbol param", async () => {
+    publicRequest.mockResolvedValue([]);
+    await getFuturesTickers();
+    expect(publicRequest).toHaveBeenCalledWith("/openApi/swap/v2/quote/ticker");
+  });
+
+  it("returns the array response as-is", async () => {
+    publicRequest.mockResolvedValue([
+      { symbol: "PEPE-USDT", lastPrice: "0.0000131", quoteVolume: "42000000" },
+      { symbol: "WIF-USDT", lastPrice: "1.83", quoteVolume: "18000000" },
+    ]);
+    const tickers = await getFuturesTickers();
+    expect(tickers).toHaveLength(2);
+    expect(tickers[0].symbol).toBe("PEPE-USDT");
+  });
+
+  // 上层直接对结果 .filter/.map，非数组响应必须在这里被吃掉而不是穿透出去。
+  it("returns an empty array when BingX responds with a non-array body", async () => {
+    publicRequest.mockResolvedValue({ symbol: "PEPE-USDT" });
+    expect(await getFuturesTickers()).toEqual([]);
+  });
+
+  it("returns an empty array when BingX responds with null", async () => {
+    publicRequest.mockResolvedValue(null);
+    expect(await getFuturesTickers()).toEqual([]);
   });
 });

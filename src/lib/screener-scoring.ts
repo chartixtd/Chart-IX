@@ -1,5 +1,8 @@
 import type { BingXTicker } from "@/types/bingx";
 
+/** screener 自动重新筛选间隔：1 小时 */
+export const SCREENER_REFRESH_MS = 3_600_000;
+
 export interface ScreenerResult {
   symbol: string;
   lastPrice: number;

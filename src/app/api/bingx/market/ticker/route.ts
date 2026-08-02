@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSpotTicker, getSpotTickers, getFuturesTicker } from "@/lib/bingx/market";
+import { getSpotTicker, getSpotTickers, getFuturesTicker, getFuturesTickers } from "@/lib/bingx/market";
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
     // 批量获取
     if (!symbol) {
-      const data = await getSpotTickers();
+      const data = market === "futures" ? await getFuturesTickers() : await getSpotTickers();
       return NextResponse.json({ success: true, data });
     }
 

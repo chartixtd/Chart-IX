@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMarketStore } from "@/stores/market";
+import { SCREENER_REFRESH_MS } from "@/lib/screener-scoring";
 import type { BingXSymbol, BingXTicker, BingXKline, BingXDepth, BingXTrade, BingXOpenInterest, BingXFundingRate } from "@/types/bingx";
 
 async function fetchApi<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
@@ -61,6 +62,17 @@ export function useFuturesTicker(symbol: string) {
     refetchInterval: 5_000,
     staleTime: 2_000,
     enabled: !!symbol,
+  });
+}
+
+// 合约批量行情 —— screener 专用。全市场几百个合约的快照体积不小，
+// 且 screener 本身按小时重筛，所以刷新节奏跟 screener 对齐而不是跟现货列表对齐。
+export function useFuturesTickers() {
+  return useQuery({
+    queryKey: ["bingx", "tickers", "futures"],
+    queryFn: () => fetchApi<BingXTicker[]>("ticker", { market: "futures" }),
+    refetchInterval: SCREENER_REFRESH_MS,
+    staleTime: SCREENER_REFRESH_MS / 2,
   });
 }
 

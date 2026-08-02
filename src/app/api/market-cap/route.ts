@@ -5,6 +5,7 @@ const COINGECKO_MARKETS = "https://api.coingecko.com/api/v3/coins/markets";
 const PAGES = [1, 2, 3, 4];
 const PER_PAGE = 250;
 const CACHE_SECONDS = 3600;
+const PAGE_TIMEOUT_MS = 8000;
 
 interface RawRow {
   symbol?: unknown;
@@ -43,8 +44,22 @@ async function fetchPage(page: number): Promise<CoinGeckoMarketRow[]> {
   return normalize(json);
 }
 
+/**
+ * 只给等待设上限，不给 fetch 传 signal —— Next 15 的 fetch 被数据缓存包过一层，
+ * 带 signal 有可能让这次请求绕开 revalidate 缓存，那样反而会把 CoinGecko 打爆。
+ * 超时后这次 fetch 仍在后台跑完并写入缓存，正好给下一次请求预热。
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`CoinGecko page timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 export async function GET() {
-  const settled = await Promise.allSettled(PAGES.map(fetchPage));
+  const settled = await Promise.allSettled(PAGES.map((page) => withTimeout(fetchPage(page), PAGE_TIMEOUT_MS)));
 
   const rows: CoinGeckoMarketRow[] = [];
   for (const result of settled) {

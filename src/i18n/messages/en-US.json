@@ -575,6 +575,8 @@
       "supported_formats": "MP4, WebM, MOV supported",
       "remove_file": "Remove file",
       "uploading": "Uploading...",
+      "compressing": "Compressing...",
+      "still_over_limit_warning": "This video is still {size} MB after compression due to its length. Consider trimming or splitting it.",
       "thumbnail_url": "Thumbnail",
       "thumbnail_hint": "Leaving thumbnail empty will keep the current one.",
       "thumbnail_upload": "Upload from device",

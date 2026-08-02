@@ -575,6 +575,8 @@
       "supported_formats": "MP4, WebM, MOV disokong",
       "remove_file": "Buang fail",
       "uploading": "Memuat naik...",
+      "compressing": "Memampatkan...",
+      "still_over_limit_warning": "Video ini masih {size} MB selepas dimampatkan kerana tempohnya. Pertimbangkan untuk memotong atau membahagikan video.",
       "thumbnail_url": "Thumbnail",
       "thumbnail_hint": "Biarkan kosong untuk mengekalkan thumbnail sedia ada.",
       "thumbnail_upload": "Muat naik dari peranti",

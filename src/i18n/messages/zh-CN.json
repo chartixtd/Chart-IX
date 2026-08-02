@@ -575,6 +575,8 @@
       "supported_formats": "支持 MP4、WebM、MOV 格式",
       "remove_file": "移除文件",
       "uploading": "上传中...",
+      "compressing": "压缩中...",
+      "still_over_limit_warning": "该视频时长较长，压缩后仍为 {size} MB，建议考虑分段或缩短时长。",
       "thumbnail_url": "缩略图",
       "thumbnail_hint": "留空则不更改当前缩略图。",
       "thumbnail_upload": "从设备上传",

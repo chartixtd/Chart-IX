@@ -16,7 +16,13 @@ export function DrawingSettingsModal({
   onClose: () => void;
 }) {
   const updateDrawing = useChartStore((s) => s.updateDrawing);
+  const removeDrawing = useChartStore((s) => s.removeDrawing);
   const [fontSize, setFontSize] = useState(drawing.fontSize ?? 12);
+
+  const handleDelete = () => {
+    removeDrawing(symbol, drawing.id);
+    onClose();
+  };
 
   const showFill = drawing.tool === "rect" || drawing.tool === "channel" || drawing.tool === "circle" || drawing.tool === "triangle";
   const showFontSize = drawing.tool === "text";
@@ -61,6 +67,12 @@ export function DrawingSettingsModal({
             />
           </div>
         )}
+        <button
+          onClick={handleDelete}
+          className="w-full rounded border border-danger/30 bg-danger-bg py-2 text-sm font-medium text-danger transition-colors hover:border-danger/60"
+        >
+          删除图形
+        </button>
       </div>
     </Modal>
   );

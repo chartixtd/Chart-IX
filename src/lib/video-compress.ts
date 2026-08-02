@@ -59,3 +59,100 @@ export function computeCompressionPlan(durationSeconds: number, sourceHeight: nu
     stillOverLimit: estimatedBytes > COMPRESSION_THRESHOLD_BYTES,
   };
 }
+
+interface VideoMetadata {
+  durationSeconds: number;
+  height: number;
+}
+
+function getVideoMetadata(file: File): Promise<VideoMetadata> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      const durationSeconds = video.duration;
+      const height = video.videoHeight;
+      URL.revokeObjectURL(url);
+      if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || height <= 0) {
+        reject(new Error("Unable to read video duration/resolution"));
+        return;
+      }
+      resolve({ durationSeconds, height });
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Unable to load video file for compression"));
+    };
+    video.src = url;
+  });
+}
+
+let ffmpegInstance: import("@ffmpeg/ffmpeg").FFmpeg | null = null;
+let ffmpegLoadPromise: Promise<import("@ffmpeg/ffmpeg").FFmpeg> | null = null;
+
+// Single-threaded core (no COOP/COEP headers required) — see Global Constraints.
+const FFMPEG_CORE_BASE_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+
+async function loadFFmpeg(): Promise<import("@ffmpeg/ffmpeg").FFmpeg> {
+  if (ffmpegInstance) return ffmpegInstance;
+  if (ffmpegLoadPromise) return ffmpegLoadPromise;
+
+  ffmpegLoadPromise = (async () => {
+    const { FFmpeg } = await import("@ffmpeg/ffmpeg");
+    const { toBlobURL } = await import("@ffmpeg/util");
+    const ffmpeg = new FFmpeg();
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript"),
+      wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
+    });
+    ffmpegInstance = ffmpeg;
+    return ffmpeg;
+  })();
+
+  return ffmpegLoadPromise;
+}
+
+export async function compressVideo(file: File, onProgress: (pct: number) => void): Promise<File> {
+  const { fetchFile } = await import("@ffmpeg/util");
+  const { durationSeconds, height } = await getVideoMetadata(file);
+  const plan = computeCompressionPlan(durationSeconds, height);
+
+  const ffmpeg = await loadFFmpeg();
+
+  const inputExt = file.name.split(".").pop()?.toLowerCase() || "mp4";
+  const inputName = `input.${inputExt}`;
+  const outputName = "output.mp4";
+
+  const handleProgress = ({ progress }: { progress: number }) => {
+    onProgress(Math.min(100, Math.max(0, Math.round(progress * 100))));
+  };
+  ffmpeg.on("progress", handleProgress);
+
+  try {
+    await ffmpeg.writeFile(inputName, await fetchFile(file));
+
+    await ffmpeg.exec([
+      "-i", inputName,
+      "-vf", `scale=-2:${plan.height}`,
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-b:v", `${plan.videoBitrateKbps}k`,
+      "-maxrate", `${plan.videoBitrateKbps}k`,
+      "-bufsize", `${plan.videoBitrateKbps * 2}k`,
+      "-c:a", "aac",
+      "-b:a", `${plan.audioBitrateKbps}k`,
+      outputName,
+    ]);
+
+    const data = await ffmpeg.readFile(outputName);
+    const arrayData = data instanceof Uint8Array ? data : new TextEncoder().encode(data as string);
+    const blob = new Blob([arrayData as BlobPart], { type: "video/mp4" });
+    const newName = file.name.replace(/\.[^./]+$/, "") + "-compressed.mp4";
+    return new File([blob], newName, { type: "video/mp4" });
+  } finally {
+    ffmpeg.off("progress", handleProgress);
+    await ffmpeg.deleteFile(inputName).catch(() => {});
+    await ffmpeg.deleteFile(outputName).catch(() => {});
+  }
+}

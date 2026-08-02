@@ -1,6 +1,10 @@
-export const COMPRESSION_THRESHOLD_BYTES = 80 * 1024 * 1024;
+// Supabase's Free plan enforces a hard 50MB-per-file cap project-wide,
+// regardless of any bucket-level file size setting — uploads above it are
+// rejected with a 413 before our code ever sees them. Target well under
+// that (not just under 80MB) so compressed output actually clears it.
+export const COMPRESSION_THRESHOLD_BYTES = 50 * 1024 * 1024;
 
-const TARGET_BYTES = Math.floor(COMPRESSION_THRESHOLD_BYTES * 0.92);
+const TARGET_BYTES = Math.floor(COMPRESSION_THRESHOLD_BYTES * 0.85);
 const AUDIO_KBPS = 96;
 
 interface ResolutionStep {
@@ -28,7 +32,7 @@ export function needsCompression(fileSizeBytes: number): boolean {
 /**
  * Picks the highest resolution the size-budget bitrate can support at an
  * acceptable quality floor for that resolution. If even the lowest floor
- * (480p @ 500kbps) doesn't fit the 80MB budget, the floor bitrate is used
+ * (480p @ 500kbps) doesn't fit the 50MB budget, the floor bitrate is used
  * anyway — callers should check the actual output size after compression.
  */
 export function computeCompressionPlan(durationSeconds: number, sourceHeight: number): CompressionPlan {

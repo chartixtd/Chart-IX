@@ -16,10 +16,10 @@ describe("needsCompression", () => {
 });
 
 describe("computeCompressionPlan", () => {
-  it("clamps to the 500kbps floor for a typical 10-minute 1080p source", () => {
+  it("steps down to 480p and follows the byte budget for a typical 10-minute 1080p source", () => {
     const plan = computeCompressionPlan(600, 1080);
     expect(plan.height).toBe(480);
-    expect(plan.videoBitrateKbps).toBe(500);
+    expect(plan.videoBitrateKbps).toBe(498);
     expect(plan.audioBitrateKbps).toBe(96);
   });
 
@@ -35,9 +35,9 @@ describe("computeCompressionPlan", () => {
     expect(plan.videoBitrateKbps).toBe(1092);
   });
 
-  it("clamps to the 500kbps floor for an extremely long source", () => {
+  it("never exceeds the byte budget — falls to the technical minimum bitrate for an extremely long source rather than inflating past it", () => {
     const plan = computeCompressionPlan(7200, 1080);
     expect(plan.height).toBe(480);
-    expect(plan.videoBitrateKbps).toBe(500);
+    expect(plan.videoBitrateKbps).toBe(100);
   });
 });

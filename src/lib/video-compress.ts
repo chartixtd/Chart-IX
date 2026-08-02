@@ -6,13 +6,21 @@ export const COMPRESSION_THRESHOLD_BYTES = 50 * 1024 * 1024;
 
 const TARGET_BYTES = Math.floor(COMPRESSION_THRESHOLD_BYTES * 0.85);
 const AUDIO_KBPS = 96;
+// Not a quality target — purely a technical floor so the byte-budget math
+// never hands ffmpeg a zero or negative bitrate for pathologically long
+// sources. The byte budget always wins over this; quality is sacrificed
+// before the upload is ever allowed to exceed the size cap.
+const MIN_VIDEO_KBPS = 100;
 
 interface ResolutionStep {
   height: number;
   floorKbps: number;
 }
 
-// Ordered highest to lowest — the loop below relies on this order.
+// Ordered highest to lowest — the loop below relies on this order. These
+// floors only steer which resolution looks best at a given bitrate; they
+// never push the bitrate itself above what the size budget allows (a
+// rejected upload is worse than a softer picture — see MIN_VIDEO_KBPS).
 const RESOLUTION_STEPS: ResolutionStep[] = [
   { height: 1080, floorKbps: 2000 },
   { height: 720, floorKbps: 1200 },
@@ -30,14 +38,16 @@ export function needsCompression(fileSizeBytes: number): boolean {
 }
 
 /**
- * Picks the highest resolution the size-budget bitrate can support at an
- * acceptable quality floor for that resolution. If even the lowest floor
- * (480p @ 500kbps) doesn't fit the 50MB budget, the floor bitrate is used
- * anyway — callers should check the actual output size after compression.
+ * Always targets the byte budget exactly (bitrate × duration ≈ TARGET_BYTES)
+ * so the output reliably clears the hard size cap regardless of source
+ * length. Resolution is picked to look as good as possible at whatever
+ * bitrate the budget allows — dropping to a lower resolution when the
+ * budget is tight makes the same bitrate look better — but resolution
+ * never causes the bitrate to exceed the budget.
  */
 export function computeCompressionPlan(durationSeconds: number, sourceHeight: number): CompressionPlan {
   const targetTotalKbps = (TARGET_BYTES * 8) / (1000 * durationSeconds);
-  const rawVideoKbps = targetTotalKbps - AUDIO_KBPS;
+  const rawVideoKbps = Math.max(targetTotalKbps - AUDIO_KBPS, MIN_VIDEO_KBPS);
 
   const lowestStep = RESOLUTION_STEPS[RESOLUTION_STEPS.length - 1];
   let chosenStep = lowestStep;
@@ -48,7 +58,7 @@ export function computeCompressionPlan(durationSeconds: number, sourceHeight: nu
     }
   }
 
-  const videoBitrateKbps = Math.round(Math.max(rawVideoKbps, chosenStep.floorKbps));
+  const videoBitrateKbps = Math.round(rawVideoKbps);
   // libx264 requires an even height; clear the low bit to round odd values down.
   const height = Math.min(chosenStep.height, sourceHeight) & ~1;
 

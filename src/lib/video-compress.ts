@@ -19,8 +19,6 @@ export interface CompressionPlan {
   height: number;
   videoBitrateKbps: number;
   audioBitrateKbps: number;
-  estimatedBytes: number;
-  stillOverLimit: boolean;
 }
 
 export function needsCompression(fileSizeBytes: number): boolean {
@@ -31,8 +29,7 @@ export function needsCompression(fileSizeBytes: number): boolean {
  * Picks the highest resolution the size-budget bitrate can support at an
  * acceptable quality floor for that resolution. If even the lowest floor
  * (480p @ 500kbps) doesn't fit the 80MB budget, the floor bitrate is used
- * anyway and `stillOverLimit` is set — callers must not treat that as an
- * error, only as a warning to surface.
+ * anyway — callers should check the actual output size after compression.
  */
 export function computeCompressionPlan(durationSeconds: number, sourceHeight: number): CompressionPlan {
   const targetTotalKbps = (TARGET_BYTES * 8) / (1000 * durationSeconds);
@@ -48,15 +45,13 @@ export function computeCompressionPlan(durationSeconds: number, sourceHeight: nu
   }
 
   const videoBitrateKbps = Math.round(Math.max(rawVideoKbps, chosenStep.floorKbps));
-  const height = Math.min(chosenStep.height, sourceHeight);
-  const estimatedBytes = Math.ceil(((videoBitrateKbps + AUDIO_KBPS) * 1000 * durationSeconds) / 8);
+  // libx264 requires an even height; clear the low bit to round odd values down.
+  const height = Math.min(chosenStep.height, sourceHeight) & ~1;
 
   return {
     height,
     videoBitrateKbps,
     audioBitrateKbps: AUDIO_KBPS,
-    estimatedBytes,
-    stillOverLimit: estimatedBytes > COMPRESSION_THRESHOLD_BYTES,
   };
 }
 
@@ -65,12 +60,26 @@ interface VideoMetadata {
   height: number;
 }
 
+const METADATA_TIMEOUT_MS = 30_000;
+
 function getVideoMetadata(file: File): Promise<VideoMetadata> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
     video.preload = "metadata";
+
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      reject(new Error("Unable to read video metadata (timed out)"));
+    }, METADATA_TIMEOUT_MS);
+
     video.onloadedmetadata = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
       const durationSeconds = video.duration;
       const height = video.videoHeight;
       URL.revokeObjectURL(url);
@@ -81,6 +90,9 @@ function getVideoMetadata(file: File): Promise<VideoMetadata> {
       resolve({ durationSeconds, height });
     };
     video.onerror = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
       URL.revokeObjectURL(url);
       reject(new Error("Unable to load video file for compression"));
     };
@@ -108,7 +120,12 @@ async function loadFFmpeg(): Promise<import("@ffmpeg/ffmpeg").FFmpeg> {
     });
     ffmpegInstance = ffmpeg;
     return ffmpeg;
-  })();
+  })().catch((err) => {
+    // Clear the cache on failure so a later call retries instead of
+    // replaying the same rejected promise forever.
+    ffmpegLoadPromise = null;
+    throw err;
+  });
 
   return ffmpegLoadPromise;
 }
@@ -142,6 +159,8 @@ export async function compressVideo(file: File, onProgress: (pct: number) => voi
       "-bufsize", `${plan.videoBitrateKbps * 2}k`,
       "-c:a", "aac",
       "-b:a", `${plan.audioBitrateKbps}k`,
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
       outputName,
     ]);
 

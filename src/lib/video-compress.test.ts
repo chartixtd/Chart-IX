@@ -21,29 +21,23 @@ describe("computeCompressionPlan", () => {
     expect(plan.height).toBe(480);
     expect(plan.videoBitrateKbps).toBe(933);
     expect(plan.audioBitrateKbps).toBe(96);
-    expect(plan.estimatedBytes).toBe(77175000);
-    expect(plan.stillOverLimit).toBe(false);
   });
 
   it("keeps source resolution and stays under the target for a short 1080p source", () => {
     const plan = computeCompressionPlan(200, 1080);
     expect(plan.height).toBe(1080);
     expect(plan.videoBitrateKbps).toBe(2991);
-    expect(plan.stillOverLimit).toBe(false);
   });
 
   it("never upscales a source below 480p", () => {
     const plan = computeCompressionPlan(300, 360);
     expect(plan.height).toBe(360);
     expect(plan.videoBitrateKbps).toBe(1962);
-    expect(plan.stillOverLimit).toBe(false);
   });
 
-  it("clamps to the 500kbps floor and flags stillOverLimit for an extremely long source", () => {
+  it("clamps to the 500kbps floor for an extremely long source", () => {
     const plan = computeCompressionPlan(7200, 1080);
     expect(plan.height).toBe(480);
     expect(plan.videoBitrateKbps).toBe(500);
-    expect(plan.estimatedBytes).toBe(536400000);
-    expect(plan.stillOverLimit).toBe(true);
   });
 });

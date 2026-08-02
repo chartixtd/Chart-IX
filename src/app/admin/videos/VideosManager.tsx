@@ -12,7 +12,7 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import type { Video, VideoCategory } from "@/types";
-import { needsCompression, compressVideo } from "@/lib/video-compress";
+import { needsCompression, compressVideo, COMPRESSION_THRESHOLD_BYTES } from "@/lib/video-compress";
 
 interface VideosManagerProps {
   videos: Video[];
@@ -79,6 +79,11 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
   };
 
   const closeModal = () => {
+    // Never allow the modal to dismiss while an upload/compression job is
+    // in flight — closing it would orphan the running handleUpload() call,
+    // which keeps compressing/uploading in the background and can collide
+    // with a second job started from a freshly reopened modal.
+    if (uploading) return;
     setShowUpload(false);
     resetForm();
   };
@@ -188,7 +193,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
           setUploading(false);
           return;
         }
-        if (fileToUpload.size > 80 * 1024 * 1024) {
+        if (fileToUpload.size > COMPRESSION_THRESHOLD_BYTES) {
           setSizeWarning(t("videos_list.still_over_limit_warning", { size: (fileToUpload.size / (1024 * 1024)).toFixed(1) }));
         }
       }
@@ -724,7 +729,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
           {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
 
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={closeModal}>
+            <Button variant="ghost" onClick={closeModal} disabled={uploading}>
               {tc("common.cancel")}
             </Button>
             {editingVideo ? (

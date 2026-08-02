@@ -3,6 +3,7 @@ import {
   buildMarketCapMap,
   getMarketCapScore,
   formatCompactUsd,
+  normalizeSymbolForMarketCap,
   TOP_MARKET_CAP_EXCLUDED,
   MARKET_CAP_FALLBACK_SCORE,
 } from "./market-cap";
@@ -80,6 +81,39 @@ describe("formatCompactUsd", () => {
     expect(formatCompactUsd(143_000_000)).toBe("$143.00M");
     expect(formatCompactUsd(52_000)).toBe("$52.00K");
     expect(formatCompactUsd(940)).toBe("$940.00");
+  });
+});
+
+describe("normalizeSymbolForMarketCap", () => {
+  it("strips 1000 multiplier prefix from BingX contract symbols", () => {
+    expect(normalizeSymbolForMarketCap("1000PEPE")).toBe("PEPE");
+    expect(normalizeSymbolForMarketCap("1000SHIB")).toBe("SHIB");
+    expect(normalizeSymbolForMarketCap("1000CAT")).toBe("CAT");
+    expect(normalizeSymbolForMarketCap("1000CHEEMS")).toBe("CHEEMS");
+  });
+
+  it("strips 10000 multiplier prefix from BingX contract symbols", () => {
+    expect(normalizeSymbolForMarketCap("10000SATS")).toBe("SATS");
+    expect(normalizeSymbolForMarketCap("10000NEX")).toBe("NEX");
+  });
+
+  it("strips 1000000 multiplier prefix from BingX contract symbols", () => {
+    expect(normalizeSymbolForMarketCap("1000000BABYDOGE")).toBe("BABYDOGE");
+    expect(normalizeSymbolForMarketCap("1000000MOG")).toBe("MOG");
+    expect(normalizeSymbolForMarketCap("1000000BOB")).toBe("BOB");
+  });
+
+  it("leaves genuine token names starting with digit-patterns unchanged", () => {
+    expect(normalizeSymbolForMarketCap("1INCH")).toBe("1INCH");
+    expect(normalizeSymbolForMarketCap("0G")).toBe("0G");
+    expect(normalizeSymbolForMarketCap("2Z")).toBe("2Z");
+    expect(normalizeSymbolForMarketCap("4")).toBe("4");
+  });
+
+  it("leaves ordinary symbols unchanged", () => {
+    expect(normalizeSymbolForMarketCap("WIF")).toBe("WIF");
+    expect(normalizeSymbolForMarketCap("SOLANA")).toBe("SOLANA");
+    expect(normalizeSymbolForMarketCap("BTC")).toBe("BTC");
   });
 });
 

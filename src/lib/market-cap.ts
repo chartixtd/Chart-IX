@@ -58,3 +58,12 @@ export function formatCompactUsd(value: number): string {
   if (abs >= 1_000) return `$${(value / 1_000).toFixed(2)}K`;
   return `$${value.toFixed(2)}`;
 }
+
+/**
+ * BingX 对低价币用合约乘数命名（1000PEPE-USDT 就是 PEPE 的千倍合约），
+ * 但市值是代币本身的属性，与合约乘数无关，所以查市值前要先剥掉乘数前缀。
+ * 只剥 1 后面跟 3 个以上 0 的形式；1INCH、0G、2Z、4 这些是真实币名，不能动。
+ */
+export function normalizeSymbolForMarketCap(symbol: string): string {
+  return symbol.replace(/^10{3,}(?=[A-Z])/, "");
+}

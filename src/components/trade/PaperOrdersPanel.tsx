@@ -10,6 +10,8 @@ interface PaperOrdersPanelProps {
   symbol: string;
 }
 
+type Tab = "positions" | "orders" | "fills";
+
 interface PaperLimitOrderRow {
   id: string;
   account_id: string;
@@ -81,6 +83,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   const { data: orders, isLoading: ordersLoading } = usePaperOrders();
   const closePaperPosition = useClosePaperPosition();
 
+  const [tab, setTab] = useState<Tab>("positions");
   const [limitOrders, setLimitOrders] = useState<PaperLimitOrderRow[]>([]);
   const [limitLoading, setLimitLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
@@ -162,14 +165,32 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
     );
   }
 
+  const TABS: { key: Tab; label: string }[] = [
+    { key: "positions", label: `Positions (${positions.length})` },
+    { key: "orders", label: `Orders (${limitOrders.length})` },
+    { key: "fills", label: "Fills" },
+  ];
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Positions */}
-      <div className="overflow-auto">
-        <div className="px-3 py-2 border-b border-border-default">
-          <span className="text-xs font-medium text-text-secondary">Positions ({positions.length})</span>
-        </div>
-        {positions.length === 0 ? (
+      <div className="flex border-b border-border-default shrink-0">
+        {TABS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={cn(
+              "flex-1 px-2 py-2 text-xs font-medium transition-colors",
+              tab === key ? "text-text-primary border-b-2 border-gold" : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-auto">
+      {tab === "positions" && (
+        positions.length === 0 ? (
           <p className="px-3 py-4 text-xs text-text-muted text-center">暂无持仓 / No open positions</p>
         ) : (
           positions.map((p) => (
@@ -187,24 +208,18 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
               active={p.symbol === symbol}
             />
           ))
-        )}
-      </div>
+        )
+      )}
 
-      {/* Limit Orders */}
-      <div className="border-t border-border-default">
-        <div className="px-3 py-2 border-b border-border-default">
-          <span className="text-xs font-medium text-text-secondary">
-            Limit Orders ({limitOrders.length})
-          </span>
-        </div>
-        {limitLoading ? (
+      {tab === "orders" && (
+        limitLoading ? (
           <div className="flex items-center justify-center py-4">
             <Spinner className="h-4 w-4" />
           </div>
         ) : limitOrders.length === 0 ? (
           <p className="px-3 py-4 text-xs text-text-muted text-center">No pending limit orders</p>
         ) : (
-          <div className="max-h-40 overflow-auto divide-y divide-border-default/50">
+          <div className="divide-y divide-border-default/50">
             {limitOrders.map((lo) => (
               <div key={lo.id} className="px-3 py-1.5 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5">
@@ -265,22 +280,18 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
               </div>
             ))}
           </div>
-        )}
-      </div>
+        )
+      )}
 
-      {/* Trade history — every symbol */}
-      <div className="border-t border-border-default flex-1 overflow-auto">
-        <div className="px-3 py-2 border-b border-border-default">
-          <span className="text-xs font-medium text-text-secondary">Recent Fills</span>
-        </div>
-        {ordersLoading ? (
+      {tab === "fills" && (
+        ordersLoading ? (
           <div className="flex items-center justify-center py-4">
             <Spinner className="h-4 w-4" />
           </div>
         ) : !orders?.length ? (
           <p className="px-3 py-4 text-xs text-text-muted text-center">No recent trades</p>
         ) : (
-          <div className="max-h-40 overflow-auto divide-y divide-border-default/50">
+          <div className="divide-y divide-border-default/50">
             {orders.map((order) => (
               <div key={order.id} className="px-3 py-1.5 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5">
@@ -297,7 +308,8 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
               </div>
             ))}
           </div>
-        )}
+        )
+      )}
       </div>
 
       {/* Wallet — paper account balance, always visible at the bottom */}

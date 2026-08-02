@@ -17,6 +17,8 @@ interface OrdersPanelProps {
   symbol: string;
 }
 
+type Tab = "orders" | "fills" | "wallet";
+
 const PRIORITY_ASSETS = ["USDT", "BTC", "ETH"];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -63,6 +65,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     queryClient.invalidateQueries({ queryKey: ["trading", "spot-balances"] });
   }
 
+  const [tab, setTab] = useState<Tab>("orders");
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -154,17 +157,34 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
     );
   }
 
+  const TABS: { key: Tab; label: string }[] = [
+    { key: "orders", label: `Open Orders (${orders.length})` },
+    { key: "fills", label: "Fills" },
+    { key: "wallet", label: `现货钱包 (${balances.length})` },
+  ];
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Active Orders — every open symbol, not just the one on the chart */}
-      <div className="flex-1 overflow-auto">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-border-default">
-          <span className="text-xs font-medium text-text-secondary">
-            Open Orders ({orders.length})
-          </span>
-        </div>
+      {/* 按合约面板同款的整宽标签页布局——原来三段各自限死 max-h 叠在一起，
+          图表挪到下面变宽之后反而显得局促，改成每个标签独占整块空间 */}
+      <div className="flex border-b border-border-default shrink-0">
+        {TABS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={cn(
+              "flex-1 px-2 py-2 text-xs font-medium transition-colors",
+              tab === key ? "text-text-primary border-b-2 border-gold" : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-        {orders.length === 0 ? (
+      <div className="flex-1 overflow-auto">
+      {tab === "orders" && (
+        orders.length === 0 ? (
           <p className="px-3 py-4 text-xs text-text-muted text-center">No open orders</p>
         ) : (
           <div className="divide-y divide-border-default/50">
@@ -239,18 +259,14 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
               </div>
             ))}
           </div>
-        )}
-      </div>
+        )
+      )}
 
-      {/* Recent Trades — every symbol */}
-      <div className="border-t border-border-default">
-        <div className="px-3 py-2 border-b border-border-default">
-          <span className="text-xs font-medium text-text-secondary">Recent Fills</span>
-        </div>
-        {trades.length === 0 ? (
+      {tab === "fills" && (
+        trades.length === 0 ? (
           <p className="px-3 py-4 text-xs text-text-muted text-center">No recent trades</p>
         ) : (
-          <div className="max-h-40 overflow-auto divide-y divide-border-default/50">
+          <div className="divide-y divide-border-default/50">
             {trades.map((trade) => (
               <div key={trade.id} className="px-3 py-1.5 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5">
@@ -272,18 +288,16 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
               </div>
             ))}
           </div>
-        )}
-      </div>
+        )
+      )}
 
-      {/* Wallet — spot balances, always visible at the bottom */}
-      <div className="shrink-0 border-t border-border-default px-3 py-2">
-        <span className="text-xs font-medium text-text-secondary">现货钱包 ({balances.length})</span>
-        {balances.length === 0 ? (
-          <p className="mt-1 text-xs text-text-muted">—</p>
+      {tab === "wallet" && (
+        balances.length === 0 ? (
+          <p className="px-3 py-4 text-xs text-text-muted text-center">—</p>
         ) : (
-          <div className="mt-1 max-h-32 overflow-auto divide-y divide-border-default/50">
+          <div className="divide-y divide-border-default/50">
             {balances.map((b) => (
-              <div key={b.asset} className="py-1 flex items-center justify-between text-xs">
+              <div key={b.asset} className="px-3 py-2 flex items-center justify-between text-xs">
                 <span className="font-medium text-text-primary">{b.asset}</span>
                 <div className="flex items-center gap-3">
                   <span className="text-text-muted">
@@ -298,7 +312,8 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
               </div>
             ))}
           </div>
-        )}
+        )
+      )}
       </div>
     </div>
   );

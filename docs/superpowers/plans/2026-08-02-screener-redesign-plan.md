@@ -1095,9 +1095,19 @@ export function useScreenerData(): ScreenerData {
   const tickersQuery = useFuturesTickers();
   const marketCapQuery = useMarketCap();
 
-  // 市值请求彻底失败时不阻塞筛选：传 null 让打分退回中性分并跳过排名排除
-  const marketCapMap = marketCapQuery.isError ? null : marketCapQuery.data ?? null;
+  // 市值请求彻底失败时不阻塞筛选：传 null 让打分退回中性分并跳过排名排除。
+  // 空 map（{}）也必须归一成 null——它是真值，会让每个币都走"查不到市值"
+  // 那条路拿满分，等于把 BTC 当成微型盘塞进小市值筛选器。
+  const marketCapMap = useMemo(() => {
+    if (marketCapQuery.isError) return null;
+    const data = marketCapQuery.data;
+    if (!data || Object.keys(data).length === 0) return null;
+    return data;
+  }, [marketCapQuery.isError, marketCapQuery.data]);
   const marketCapReady = marketCapQuery.isError || marketCapQuery.data !== undefined;
+
+  // 市值维度退化成中性分的两种情况：请求失败，或拿到的 map 是空的
+  const marketCapUnavailable = marketCapReady && marketCapMap === null;
 
   const candidateSymbols = useMemo(() => {
     if (!tickersQuery.data || !marketCapReady) return [];
@@ -1143,7 +1153,7 @@ export function useScreenerData(): ScreenerData {
     short: groups.short,
     isLoading: tickersQuery.isPending || !marketCapReady || isDetailLoading,
     isDetailLoading,
-    marketCapUnavailable: marketCapQuery.isError,
+    marketCapUnavailable,
     error: (tickersQuery.error as Error | null) ?? null,
     lastUpdated: tickersQuery.dataUpdatedAt,
     refetch: () => {

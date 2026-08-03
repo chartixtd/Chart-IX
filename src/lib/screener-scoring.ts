@@ -109,6 +109,17 @@ export function isExcludedByMarketCap(entry: MarketCapEntry | undefined): boolea
   return entry !== undefined && entry.rank <= TOP_MARKET_CAP_EXCLUDED;
 }
 
+/**
+ * BingX 在永续里混了一批代币化的股票/商品/指数/外汇（NCSK=股票、NCCO=商品、
+ * NCSI=指数、NCFX=外汇），它们不是加密货币，不该出现在小市值币筛选器里。
+ * 这些标的在 CoinGecko 查不到市值，会走「查不到=微型盘」那条路白拿 25% 权重的
+ * 满分，实测能把 Tesla、Oracle 这种直接顶上榜首。
+ * 用四个明确前缀而不是裸 "NC"，避免误伤 NCASH 这类真实币种。
+ */
+export function isSyntheticProduct(symbol: string): boolean {
+  return /^NC(SK|CO|SI|FX)/.test(symbol);
+}
+
 /** 做多池与做空池的并集，供上层按需拉 OI/资金费率 */
 export function selectCandidateSymbols(
   tickers: BingXTicker[],
@@ -118,6 +129,7 @@ export function selectCandidateSymbols(
   const symbols = new Set<string>();
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
+    if (isSyntheticProduct(ticker.symbol)) continue;
     const capKey = stripContractMultiplier(ticker.symbol);
     if (marketCapMap && isExcludedByMarketCap(marketCapMap[capKey])) continue;
     const change24h = change24hMap[ticker.symbol];
@@ -206,6 +218,7 @@ function buildGroup(
 
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
+    if (isSyntheticProduct(ticker.symbol)) continue;
 
     const entry = marketCapMap?.[stripContractMultiplier(ticker.symbol)];
     if (marketCapMap && isExcludedByMarketCap(entry)) continue;

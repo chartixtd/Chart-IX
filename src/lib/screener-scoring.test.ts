@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   hardFilter,
   isExcludedByMarketCap,
+  isSyntheticProduct,
   selectCandidateSymbols,
   computeScreenerGroups,
   buildChange24hMap,
@@ -141,6 +142,28 @@ describe("isExcludedByMarketCap", () => {
   });
 });
 
+describe("isSyntheticProduct", () => {
+  it("flags tokenized stocks (NCSK), commodities (NCCO), indices (NCSI) and forex (NCFX)", () => {
+    expect(isSyntheticProduct("NCSKTSLA2USD-USDT")).toBe(true);
+    expect(isSyntheticProduct("NCCOGOLD2USD-USDT")).toBe(true);
+    expect(isSyntheticProduct("NCSINASDAQ1002USD-USDT")).toBe(true);
+    expect(isSyntheticProduct("NCFXEUR2USD-USDT")).toBe(true);
+  });
+
+  it("does not flag genuine crypto symbols", () => {
+    expect(isSyntheticProduct("BTC-USDT")).toBe(false);
+    expect(isSyntheticProduct("WIF-USDT")).toBe(false);
+    expect(isSyntheticProduct("MIRANETWORK-USDT")).toBe(false);
+    expect(isSyntheticProduct("1000SHIB-USDT")).toBe(false);
+  });
+
+  // 假阳性防护：NCASH（Nucleus Vision）是真实币种，只是恰好以 "NC" 开头。
+  // 用裸 "NC" 前缀会把它误杀，必须用四个明确前缀（NCSK/NCCO/NCSI/NCFX）才行。
+  it("does not flag NCASH-USDT, a genuine token whose name starts with NC (false-positive guard)", () => {
+    expect(isSyntheticProduct("NCASH-USDT")).toBe(false);
+  });
+});
+
 describe("selectCandidateSymbols", () => {
   const caps: MarketCapMap = {
     "BTC-USDT": { marketCap: 1_200_000_000_000, rank: 1 },
@@ -186,6 +209,13 @@ describe("selectCandidateSymbols", () => {
     const withInch: MarketCapMap = { "1INCH-USDT": { marketCap: 300_000_000, rank: 250 } };
     const symbols = selectCandidateSymbols([ticker({ symbol: "1INCH-USDT" })], withInch);
     expect(symbols).toEqual(["1INCH-USDT"]);
+  });
+
+  // 代币化股票在 CoinGecko 查不到市值，量能和振幅又天然达标，如果不按前缀排除，
+  // 会跟真实小市值币一起通过候选池筛选。
+  it("drops a synthetic tokenized-stock symbol that would otherwise qualify as a candidate", () => {
+    const symbols = selectCandidateSymbols([ticker({ symbol: "NCSKTSLA2USD-USDT" })], null);
+    expect(symbols).toEqual([]);
   });
 });
 
@@ -312,6 +342,23 @@ describe("computeScreenerGroups", () => {
 
   // priceChangePercent 现在是查表结果，不是 ticker 自身的字段：查不到就是 null
   // （表格据此显示 "-"），查得到就是现货的真实 24h 涨跌。
+  // 生产环境实测的失败场景：代币化股票（如 NCSKTSLA2USD，即 Tesla）在 CoinGecko
+  // 查不到市值，走「查不到=微型盘」分支白拿 25% 权重的满分（100），量能 ~1.2M 刚过门槛，
+  // 振幅 ~2.5% 又落在打分甜点区，结果比真实小市值币分还高，顶到榜首。
+  // 这里复现同样的行情特征（无市值条目 + ~1.2M 量能 + ~2.5% 振幅），断言两组都不包含它。
+  it("keeps a synthetic tokenized-stock symbol out of both groups even though it would otherwise score 100 on smallness (production failure mode)", () => {
+    const synthetic = ticker({
+      symbol: "NCSKTSLA2USD-USDT",
+      lowPrice: "1000",
+      highPrice: "1025", // amplitude = 2.5%
+      lastPrice: "1007.5",
+      quoteVolume: "1200000",
+    });
+    const groups = computeScreenerGroups([synthetic], {}, {}, {});
+    expect(groups.long.some((r) => r.symbol === "NCSKTSLA2USD-USDT")).toBe(false);
+    expect(groups.short.some((r) => r.symbol === "NCSKTSLA2USD-USDT")).toBe(false);
+  });
+
   it("reports priceChangePercent as null when unassociated and as the spot value when associated", () => {
     const noMap = computeScreenerGroups([ticker({ symbol: "SMALL-USDT" })], {}, {}, caps);
     expect(noMap.long[0].priceChangePercent).toBeNull();

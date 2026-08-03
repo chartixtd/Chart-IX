@@ -41,7 +41,7 @@ export default function ScreenerPage() {
               {t("next_refresh")} {formatCountdown(remaining)}
             </span>
           )}
-          {/* 一次点击会触发四个 refetch，连点成倍放大；刷新中直接禁用 */}
+          {/* 现在只是单个 query.refetch()；刷新中仍直接禁用，避免连点排队重复请求 */}
           <Button variant="ghost" size="sm" onClick={refetch} disabled={isRefreshing}>
             {t("refresh_now")}
           </Button>

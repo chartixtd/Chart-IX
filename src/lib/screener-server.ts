@@ -50,6 +50,12 @@ async function runWithConcurrency(tasks: Array<() => Promise<void>>, limit: numb
  *
  * 逐个失败一律吞掉、只收有限值：缺失的币在打分时走中性分支
  * （见 screener-scoring 里的 oiRatioScore / fundingScore），不影响其余币的排名。
+ *
+ * 但两个维度各自统计成功次数：候选池非空时若某一维度整体拿到 0 个有限值
+ * （比如 BingX 把 OI/资金费率这两条限流或封禁了），说明不是「个别币缺数据」
+ * 而是「这个维度整体失效」——继续算下去只会产出一份看起来正常、实则 35%
+ * 权重（资金费率 20% + OI 15%）全是中性噪音的榜单，还会被 TTL 缓存原样钉住一小时。
+ * 抛错交给上层：有旧结果就沿用旧结果（stale-while-error），没有就让路由报 502。
  */
 async function fetchDetailMaps(symbols: string[]): Promise<{
   oiMap: Record<string, number>;
@@ -57,13 +63,18 @@ async function fetchDetailMaps(symbols: string[]): Promise<{
 }> {
   const oiMap: Record<string, number> = {};
   const frMap: Record<string, number> = {};
+  let oiSuccessCount = 0;
+  let frSuccessCount = 0;
 
   const tasks: Array<() => Promise<void>> = [];
   for (const symbol of symbols) {
     tasks.push(async () => {
       try {
         const value = parseFloat((await getFuturesOpenInterest(symbol)).openInterest);
-        if (Number.isFinite(value)) oiMap[symbol] = value;
+        if (Number.isFinite(value)) {
+          oiMap[symbol] = value;
+          oiSuccessCount++;
+        }
       } catch {
         // 单个币的持仓量拿不到 —— 保持 map 里没有这个 key，打分时走中性分
       }
@@ -71,7 +82,10 @@ async function fetchDetailMaps(symbols: string[]): Promise<{
     tasks.push(async () => {
       try {
         const value = parseFloat((await getFuturesFundingRate(symbol)).lastFundingRate);
-        if (Number.isFinite(value)) frMap[symbol] = value;
+        if (Number.isFinite(value)) {
+          frMap[symbol] = value;
+          frSuccessCount++;
+        }
       } catch {
         // 同上：资金费率缺失默认 0，fundingScore(0) 恰好是中性 50
       }
@@ -79,6 +93,14 @@ async function fetchDetailMaps(symbols: string[]): Promise<{
   }
 
   await runWithConcurrency(tasks, DETAIL_CONCURRENCY);
+
+  if (symbols.length > 0 && oiSuccessCount === 0) {
+    throw new Error("Open interest unavailable for entire candidate pool");
+  }
+  if (symbols.length > 0 && frSuccessCount === 0) {
+    throw new Error("Funding rate unavailable for entire candidate pool");
+  }
+
   return { oiMap, frMap };
 }
 
@@ -86,8 +108,10 @@ async function fetchDetailMaps(symbols: string[]): Promise<{
  * 服务端一次算出两组榜单。原先这套流水线跑在每个用户的浏览器里，
  * 每人每轮约 82 次上游请求且算出的结果完全相同；搬到服务端后全站每小时算一次。
  *
- * 失败语义：只有**合约 ticker** 这一路失败才让整个计算抛错（没有它无法产出任何结果）。
- * 现货、市值、持仓量、资金费率任一失败都降级，不中断流程。
+ * 失败语义：**合约 ticker** 失败必抛错（没有它无法产出任何结果）；
+ * 持仓量、资金费率两个维度若**整体**（候选池非空却 0 个成功）拿不到数据也抛错——
+ * 见 fetchDetailMaps。除此之外，现货、市值失败，以及持仓量/资金费率的
+ * 个别币缺失，都只降级、不中断流程。
  */
 export async function computeScreenerPayload(): Promise<ScreenerPayload> {
   const [futuresSettled, spotSettled, marketCapSettled] = await Promise.allSettled([

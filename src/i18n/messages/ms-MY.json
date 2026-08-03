@@ -717,7 +717,6 @@
   },
   "screener": {
     "title": "Penapis Pasaran",
-    "subtitle": "Niaga Hadapan · syiling kecil untuk dagangan harian",
     "no_results": "Tiada syiling yang memenuhi kriteria. Sila cuba lagi nanti.",
     "error": "Gagal memuatkan data",
     "retry": "Cuba Lagi",
@@ -740,7 +739,14 @@
       "actions": "Tindakan"
     },
     "action_long": "Beli",
-    "action_short": "Jual"
+    "action_short": "Jual",
+    "guide": {
+      "title": "Bagaimana membaca papan ini?",
+      "score": "Kualiti syiling itu sendiri, 0–100. Ditimbang merentas enam dimensi: permodalan pasaran (lebih kecil lebih tinggi), amplitud, kadar pembiayaan, faedah terbuka, perubahan 24j dan kedudukan dalam julat harian.",
+      "edge": "Arah kecenderungan syiling dan sebanyak mana — bersamaan skor beli tolak skor jual. Semakin besar nombornya, semakin jelas isyarat arahnya.",
+      "sorting": "Papan ini disusun mengikut Kelebihan, bukan Skor. Lebih separuh daripada enam dimensi memberi skor sama untuk beli dan jual, jadi menyusun ikut Skor sahaja akan meletakkan syiling yang hampir sama dalam kedua-dua kumpulan. Kelebihan yang menunjukkan sebelah mana syiling itu benar-benar condong.",
+      "example": "Contoh: syiling A dapat 73 beli dan 71 jual — kelebihan hanya +2, kualiti baik tetapi arah tidak jelas. Syiling B dapat 61 beli dan 39 jual — kelebihan +22, skor lebih rendah tetapi condong jelas ke beli. Papan meletakkan B di atas A."
+    }
   },
   "seo": {
     "title": "Platform Pendidikan Dagangan Kripto & Dagangan Langsung",

@@ -1,60 +1,81 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useScreenerData } from "@/hooks/useScreenerData";
 import { ScreenerTable } from "@/components/screener/ScreenerTable";
 import { Button } from "@/components/ui/Button";
+import { SCREENER_REFRESH_MS } from "@/lib/screener-scoring";
+
+function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
 
 export default function ScreenerPage() {
   const t = useTranslations("screener");
-  const [market, setMarket] = useState<"spot" | "futures">("futures");
-  const { results, isLoading, error, refetch } = useScreenerData("long");
+  const { long, short, isLoading, marketCapUnavailable, error, isRefreshing, lastUpdated, refetch } =
+    useScreenerData();
+
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const remaining = lastUpdated > 0 ? lastUpdated + SCREENER_REFRESH_MS - now : null;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-text-primary">{t("title")}</h1>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded bg-bg-tertiary p-0.5">
-            <button
-              className={`px-3 py-1 text-xs rounded transition-colors ${
-                market === "spot" ? "bg-bg-primary text-text-primary shadow-sm" : "text-text-secondary hover:text-text-primary"
-              }`}
-              onClick={() => setMarket("spot")}
-            >
-              {t("spot")}
-            </button>
-            <button
-              className={`px-3 py-1 text-xs rounded transition-colors ${
-                market === "futures" ? "bg-bg-primary text-text-primary shadow-sm" : "text-text-secondary hover:text-text-primary"
-              }`}
-              onClick={() => setMarket("futures")}
-            >
-              {t("futures")}
-            </button>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => refetch()}>
-            {t("refresh")}
+    <div className="mx-auto max-w-[110rem] px-4 py-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h1 className="text-xl font-bold text-text-primary">{t("title")}</h1>
+          <p className="text-xs text-text-secondary mt-0.5">{t("subtitle")}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* 报错时不显示倒计时——那会是一个冻在 00:00 的假进度 */}
+          {!error && remaining !== null && (
+            <span className="text-xs text-text-secondary tabular-nums">
+              {t("next_refresh")} {formatCountdown(remaining)}
+            </span>
+          )}
+          {/* 一次点击会触发四个 refetch，连点成倍放大；刷新中直接禁用 */}
+          <Button variant="ghost" size="sm" onClick={refetch} disabled={isRefreshing}>
+            {t("refresh_now")}
           </Button>
         </div>
       </div>
 
-      {/* Error state */}
-      {error && (
-        <div className="flex flex-col items-center justify-center py-10 text-text-secondary gap-2">
+      {marketCapUnavailable && (
+        <p className="mb-3 rounded-sm border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold">
+          {t("market_cap_unavailable")}
+        </p>
+      )}
+
+      {error ? (
+        <div className="flex flex-col items-center justify-center gap-2 py-10 text-text-secondary">
           <p className="text-sm">{t("error")}</p>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <Button variant="outline" size="sm" onClick={refetch}>
             {t("retry")}
           </Button>
         </div>
-      )}
-
-      {/* Table */}
-      {!error && (
-        <div className="rounded-lg border border-border-default bg-bg-primary overflow-hidden">
-          <ScreenerTable results={results} isLoading={isLoading} market={market} />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <section className="rounded-lg border border-border-default bg-bg-primary overflow-hidden">
+            <h2 className="border-b border-border-default px-3 py-2 text-sm font-semibold text-success">
+              {t("long_group")}
+            </h2>
+            <ScreenerTable results={long} isLoading={isLoading} direction="long" />
+          </section>
+          <section className="rounded-lg border border-border-default bg-bg-primary overflow-hidden">
+            <h2 className="border-b border-border-default px-3 py-2 text-sm font-semibold text-danger">
+              {t("short_group")}
+            </h2>
+            <ScreenerTable results={short} isLoading={isLoading} direction="short" />
+          </section>
         </div>
       )}
     </div>

@@ -143,3 +143,9 @@ export async function getFuturesFundingRate(symbol: string): Promise<BingXFundin
     symbol,
   });
 }
+
+/** 批量获取合约24小时行情（不传 symbol 时 BingX 返回全部永续合约） */
+export async function getFuturesTickers(): Promise<BingXTicker[]> {
+  const res = await bingxClient.publicRequest<BingXTicker[]>("/openApi/swap/v2/quote/ticker");
+  return Array.isArray(res) ? res : [];
+}

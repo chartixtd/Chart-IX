@@ -16,6 +16,7 @@
 - 每组输出 `GROUP_SIZE = 10` 条。
 - 市值数据整体不可用时不阻塞筛选：市值维度统一给 `MARKET_CAP_FALLBACK_SCORE = 50`，且不执行排名排除。
 - 单个币在 CoinGecko 数据里查不到 → 不淘汰，市值维度给 100 分（视为极小盘）。
+- 用 BingX symbol 查市值前必须先过 `stripContractMultiplier()` 剥掉合约乘数前缀（BingX 把 SHIB 的千倍合约挂成 `1000SHIB-USDT`，直接拿去查会漏掉，导致 top-50 大币被当成微型盘）。
 - 打分权重固定：市值 25%、振幅 20%、资金费率方向 20%、OI/量比 15%、24h 动量方向 10%、趋势位置 10%（合计 100）。
 - 项目内 API 响应格式统一为 `{ success: boolean, data: T }` 或 `{ success: false, error: { code, message } }`。
 - `BingXTicker.lastPrice` 类型是 `string | number`（现货返回 number，合约返回 string），任何读取都必须过 `Number()` / `parseFloat()`。
@@ -479,7 +480,7 @@ git commit -m "feat(screener): add batch futures ticker fetching"
 - Test: `src/lib/screener-scoring.test.ts`（新建）
 
 **Interfaces:**
-- Consumes: `BingXTicker` from `@/types/bingx`；`MarketCapMap`、`MarketCapEntry`、`getMarketCapScore`、`TOP_MARKET_CAP_EXCLUDED`、`MARKET_CAP_FALLBACK_SCORE` from `@/lib/market-cap`（Task 1）
+- Consumes: `BingXTicker` from `@/types/bingx`；`MarketCapMap`、`MarketCapEntry`、`getMarketCapScore`、`stripContractMultiplier`、`TOP_MARKET_CAP_EXCLUDED`、`MARKET_CAP_FALLBACK_SCORE` from `@/lib/market-cap`（Task 1）
 - Produces:
   - `type Direction = "long" | "short"`
   - `const SCREENER_REFRESH_MS = 3_600_000`（Task 3 已加，保留）
@@ -622,6 +623,21 @@ describe("selectCandidateSymbols", () => {
     const symbols = selectCandidateSymbols([ticker({ symbol: "WIF-USDC" })], caps);
     expect(symbols).toEqual([]);
   });
+
+  // BingX 把 SHIB 的千倍合约挂成 1000SHIB-USDT，而 CoinGecko 只认 shib。
+  // 不剥乘数前缀的话，SHIB 这种 top-50 大币会整个绕过市值排除。
+  it("drops a top-50 coin that BingX lists with a contract multiplier prefix", () => {
+    const withShib: MarketCapMap = { ...caps, "SHIB-USDT": { marketCap: 6_000_000_000, rank: 20 } };
+    const symbols = selectCandidateSymbols([ticker({ symbol: "1000SHIB-USDT" })], withShib);
+    expect(symbols).toEqual([]);
+  });
+
+  // 1INCH 不是乘数命名，是真实币名，必须原样查得到。
+  it("does not strip digits from genuine digit-leading token names", () => {
+    const withInch: MarketCapMap = { "1INCH-USDT": { marketCap: 300_000_000, rank: 250 } };
+    const symbols = selectCandidateSymbols([ticker({ symbol: "1INCH-USDT" })], withInch);
+    expect(symbols).toEqual(["1INCH-USDT"]);
+  });
 });
 
 describe("computeScreenerGroups", () => {
@@ -706,6 +722,21 @@ describe("computeScreenerGroups", () => {
     expect(row.score).toBeLessThanOrEqual(100);
   });
 
+  it("reads market cap through the multiplier-stripped symbol", () => {
+    const withPepe: MarketCapMap = { "PEPE-USDT": { marketCap: 7_000_000_000, rank: 30 } };
+    // rank 30 在前 50 内 —— 剥掉 1000 前缀后必须被排除
+    const excluded = computeScreenerGroups([ticker({ symbol: "1000PEPE-USDT" })], {}, {}, withPepe);
+    expect(excluded.long).toEqual([]);
+
+    // 同一个币若排在 50 名之外，则应保留并带上真实市值
+    const smallPepe: MarketCapMap = { "PEPE-USDT": { marketCap: 400_000_000, rank: 130 } };
+    const kept = computeScreenerGroups([ticker({ symbol: "1000PEPE-USDT" })], {}, {}, smallPepe);
+    expect(kept.long).toHaveLength(1);
+    expect(kept.long[0].symbol).toBe("1000PEPE-USDT");
+    expect(kept.long[0].marketCap).toBe(400_000_000);
+    expect(kept.long[0].marketCapRank).toBe(130);
+  });
+
   it("treats a missing OI or funding entry as zero rather than dropping the row", () => {
     const groups = computeScreenerGroups([ticker({ symbol: "SMALL-USDT" })], {}, {}, caps);
     expect(groups.long).toHaveLength(1);
@@ -729,6 +760,7 @@ import type { BingXTicker } from "@/types/bingx";
 import type { MarketCapEntry, MarketCapMap } from "@/lib/market-cap";
 import {
   getMarketCapScore,
+  stripContractMultiplier,
   TOP_MARKET_CAP_EXCLUDED,
   MARKET_CAP_FALLBACK_SCORE,
 } from "@/lib/market-cap";
@@ -812,7 +844,8 @@ export function selectCandidateSymbols(
   const symbols = new Set<string>();
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
-    if (marketCapMap && isExcludedByMarketCap(marketCapMap[ticker.symbol])) continue;
+    const capKey = stripContractMultiplier(ticker.symbol);
+    if (marketCapMap && isExcludedByMarketCap(marketCapMap[capKey])) continue;
     if (!hardFilter(ticker, "long") || !hardFilter(ticker, "short")) {
       symbols.add(ticker.symbol);
     }
@@ -895,7 +928,7 @@ function buildGroup(
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
 
-    const entry = marketCapMap?.[ticker.symbol];
+    const entry = marketCapMap?.[stripContractMultiplier(ticker.symbol)];
     if (marketCapMap && isExcludedByMarketCap(entry)) continue;
     if (hardFilter(ticker, direction)) continue;
 
@@ -1062,9 +1095,19 @@ export function useScreenerData(): ScreenerData {
   const tickersQuery = useFuturesTickers();
   const marketCapQuery = useMarketCap();
 
-  // 市值请求彻底失败时不阻塞筛选：传 null 让打分退回中性分并跳过排名排除
-  const marketCapMap = marketCapQuery.isError ? null : marketCapQuery.data ?? null;
+  // 市值请求彻底失败时不阻塞筛选：传 null 让打分退回中性分并跳过排名排除。
+  // 空 map（{}）也必须归一成 null——它是真值，会让每个币都走"查不到市值"
+  // 那条路拿满分，等于把 BTC 当成微型盘塞进小市值筛选器。
+  const marketCapMap = useMemo(() => {
+    if (marketCapQuery.isError) return null;
+    const data = marketCapQuery.data;
+    if (!data || Object.keys(data).length === 0) return null;
+    return data;
+  }, [marketCapQuery.isError, marketCapQuery.data]);
   const marketCapReady = marketCapQuery.isError || marketCapQuery.data !== undefined;
+
+  // 市值维度退化成中性分的两种情况：请求失败，或拿到的 map 是空的
+  const marketCapUnavailable = marketCapReady && marketCapMap === null;
 
   const candidateSymbols = useMemo(() => {
     if (!tickersQuery.data || !marketCapReady) return [];
@@ -1110,7 +1153,7 @@ export function useScreenerData(): ScreenerData {
     short: groups.short,
     isLoading: tickersQuery.isPending || !marketCapReady || isDetailLoading,
     isDetailLoading,
-    marketCapUnavailable: marketCapQuery.isError,
+    marketCapUnavailable,
     error: (tickersQuery.error as Error | null) ?? null,
     lastUpdated: tickersQuery.dataUpdatedAt,
     refetch: () => {

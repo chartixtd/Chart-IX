@@ -2,7 +2,7 @@ import type { BingXTicker } from "@/types/bingx";
 import type { MarketCapEntry, MarketCapMap } from "@/lib/market-cap";
 import {
   getMarketCapScore,
-  normalizeSymbolForMarketCap,
+  stripContractMultiplier,
   TOP_MARKET_CAP_EXCLUDED,
   MARKET_CAP_FALLBACK_SCORE,
 } from "@/lib/market-cap";
@@ -22,7 +22,8 @@ const MAX_CHASE_PERCENT = 15;
 export interface ScreenerResult {
   symbol: string;
   lastPrice: number;
-  priceChangePercent: number;
+  /** 真 24h 涨跌（来自现货 ticker）；关联不到对应现货交易对时为 null，表格应显示 "-" */
+  priceChangePercent: number | null;
   highPrice: number;
   lowPrice: number;
   quoteVolume: number;
@@ -45,7 +46,6 @@ interface Parsed {
   low: number;
   last: number;
   quoteVolume: number;
-  changePercent: number;
   amplitude: number;
 }
 
@@ -54,22 +54,53 @@ function parse(ticker: BingXTicker): Parsed | null {
   const low = parseFloat(ticker.lowPrice);
   const last = Number(ticker.lastPrice);
   const quoteVolume = parseFloat(ticker.quoteVolume);
-  const changePercent = parseFloat(ticker.priceChangePercent);
 
-  if (![high, low, last, quoteVolume, changePercent].every(Number.isFinite)) return null;
+  if (![high, low, last, quoteVolume].every(Number.isFinite)) return null;
   if (low <= 0) return null;
 
-  return { high, low, last, quoteVolume, changePercent, amplitude: ((high - low) / low) * 100 };
+  return { high, low, last, quoteVolume, amplitude: ((high - low) / low) * 100 };
+}
+
+/**
+ * 合约 ticker 的 priceChangePercent 只覆盖约 3 分钟，不能当 24h 用；
+ * 现货 ticker 才是真 24h（实测 openTime->closeTime 正好 1440 分钟）。
+ * 这里按「剥掉乘数前缀后的 symbol」把现货 24h 涨跌关联到合约上，
+ * 关联不到的合约不进 map —— 上层据此走中性分、且不做追高淡汰。
+ *
+ * 注意现货接口返回的是带百分号的字符串（如 "0.47%"），parseFloat 会正确截断。
+ */
+export function buildChange24hMap(
+  futuresTickers: BingXTicker[],
+  spotTickers: BingXTicker[]
+): Record<string, number> {
+  const spotBySymbol = new Map<string, number>();
+  for (const spot of spotTickers) {
+    const pct = parseFloat(String(spot.priceChangePercent));
+    if (Number.isFinite(pct)) spotBySymbol.set(spot.symbol, pct);
+  }
+
+  const map: Record<string, number> = {};
+  for (const futures of futuresTickers) {
+    const pct = spotBySymbol.get(stripContractMultiplier(futures.symbol));
+    if (pct !== undefined) map[futures.symbol] = pct;
+  }
+  return map;
 }
 
 /** 硬性淘汰：触发任一规则返回 true（淘汰） */
-export function hardFilter(ticker: BingXTicker, direction: Direction): boolean {
+export function hardFilter(
+  ticker: BingXTicker,
+  direction: Direction,
+  change24h: number | undefined
+): boolean {
   const p = parse(ticker);
   if (!p) return true;
   if (p.quoteVolume < MIN_QUOTE_VOLUME) return true;
   if (p.amplitude < MIN_AMPLITUDE) return true;
-  if (direction === "long" && p.changePercent > MAX_CHASE_PERCENT) return true;
-  if (direction === "short" && p.changePercent < -MAX_CHASE_PERCENT) return true;
+  if (change24h !== undefined) {
+    if (direction === "long" && change24h > MAX_CHASE_PERCENT) return true;
+    if (direction === "short" && change24h < -MAX_CHASE_PERCENT) return true;
+  }
   return false;
 }
 
@@ -81,14 +112,16 @@ export function isExcludedByMarketCap(entry: MarketCapEntry | undefined): boolea
 /** 做多池与做空池的并集，供上层按需拉 OI/资金费率 */
 export function selectCandidateSymbols(
   tickers: BingXTicker[],
-  marketCapMap: MarketCapMap | null
+  marketCapMap: MarketCapMap | null,
+  change24hMap: Record<string, number> = {}
 ): string[] {
   const symbols = new Set<string>();
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
-    const capKey = normalizeSymbolForMarketCap(ticker.symbol);
+    const capKey = stripContractMultiplier(ticker.symbol);
     if (marketCapMap && isExcludedByMarketCap(marketCapMap[capKey])) continue;
-    if (!hardFilter(ticker, "long") || !hardFilter(ticker, "short")) {
+    const change24h = change24hMap[ticker.symbol];
+    if (!hardFilter(ticker, "long", change24h) || !hardFilter(ticker, "short", change24h)) {
       symbols.add(ticker.symbol);
     }
   }
@@ -121,9 +154,11 @@ function oiRatioScore(ratio: number): number {
   return 0;
 }
 
-/** 要有顺方向动量，但不能已经跑太远——3% 附近是甜点，越接近淘汰线 15% 分越低 */
-function momentumScore(changePercent: number, direction: Direction): number {
-  const signed = direction === "long" ? changePercent : -changePercent;
+/** 要有顺方向动量，但不能已经跑太远——3% 附近是甜点，越接近淘汰线 15% 分越低。
+ *  拿不到 24h 涨跌时给中性分，不奖不罚。 */
+function momentumScore(change24h: number | undefined, direction: Direction): number {
+  if (change24h === undefined || !Number.isFinite(change24h)) return 50;
+  const signed = direction === "long" ? change24h : -change24h;
   if (signed <= 0) return 0;
   if (signed <= 3) return (signed / 3) * 100;
   if (signed <= MAX_CHASE_PERCENT) return 100 - ((signed - 3) / (MAX_CHASE_PERCENT - 3)) * 100;
@@ -145,7 +180,8 @@ function scoreToken(
   direction: Direction,
   openInterest: number,
   fundingRate: number,
-  marketCapScore: number
+  marketCapScore: number,
+  change24h: number | undefined
 ): number {
   const oiRatio = p.quoteVolume > 0 ? openInterest / p.quoteVolume : 0;
   return Math.round(
@@ -153,7 +189,7 @@ function scoreToken(
       amplitudeScore(p.amplitude) * 0.2 +
       fundingScore(fundingRate, direction) * 0.2 +
       oiRatioScore(oiRatio) * 0.15 +
-      momentumScore(p.changePercent, direction) * 0.1 +
+      momentumScore(change24h, direction) * 0.1 +
       positionScore(p, direction) * 0.1
   );
 }
@@ -163,16 +199,18 @@ function buildGroup(
   direction: Direction,
   oiMap: Record<string, number>,
   frMap: Record<string, number>,
-  marketCapMap: MarketCapMap | null
+  marketCapMap: MarketCapMap | null,
+  change24hMap: Record<string, number>
 ): ScreenerResult[] {
   const rows: ScreenerResult[] = [];
 
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
 
-    const entry = marketCapMap?.[normalizeSymbolForMarketCap(ticker.symbol)];
+    const entry = marketCapMap?.[stripContractMultiplier(ticker.symbol)];
     if (marketCapMap && isExcludedByMarketCap(entry)) continue;
-    if (hardFilter(ticker, direction)) continue;
+    const change24h = change24hMap[ticker.symbol];
+    if (hardFilter(ticker, direction, change24h)) continue;
 
     const p = parse(ticker);
     if (!p) continue;
@@ -184,7 +222,7 @@ function buildGroup(
     rows.push({
       symbol: ticker.symbol,
       lastPrice: p.last,
-      priceChangePercent: p.changePercent,
+      priceChangePercent: change24h ?? null,
       highPrice: p.high,
       lowPrice: p.low,
       quoteVolume: p.quoteVolume,
@@ -194,7 +232,7 @@ function buildGroup(
       openInterest,
       fundingRate,
       oiVolumeRatio: p.quoteVolume > 0 ? openInterest / p.quoteVolume : 0,
-      score: scoreToken(p, direction, openInterest, fundingRate, marketCapScore),
+      score: scoreToken(p, direction, openInterest, fundingRate, marketCapScore, change24h),
     });
   }
 
@@ -206,10 +244,11 @@ export function computeScreenerGroups(
   tickers: BingXTicker[],
   oiMap: Record<string, number>,
   frMap: Record<string, number>,
-  marketCapMap: MarketCapMap | null
+  marketCapMap: MarketCapMap | null,
+  change24hMap: Record<string, number> = {}
 ): ScreenerGroups {
   return {
-    long: buildGroup(tickers, "long", oiMap, frMap, marketCapMap),
-    short: buildGroup(tickers, "short", oiMap, frMap, marketCapMap),
+    long: buildGroup(tickers, "long", oiMap, frMap, marketCapMap, change24hMap),
+    short: buildGroup(tickers, "short", oiMap, frMap, marketCapMap, change24hMap),
   };
 }

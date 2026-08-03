@@ -95,10 +95,14 @@ export function ScreenerTable({ results, isLoading, direction }: ScreenerTablePr
               <td
                 className={cn(
                   "px-3 py-2.5 text-sm tabular-nums",
-                  row.priceChangePercent >= 0 ? "text-success" : "text-danger"
+                  row.priceChangePercent === null
+                    ? "text-text-secondary"
+                    : row.priceChangePercent >= 0
+                      ? "text-success"
+                      : "text-danger"
                 )}
               >
-                {formatPercent(row.priceChangePercent)}
+                {row.priceChangePercent === null ? "-" : formatPercent(row.priceChangePercent)}
               </td>
               <td className="px-3 py-2.5 text-sm text-text-primary tabular-nums">
                 {row.amplitude.toFixed(1)}%

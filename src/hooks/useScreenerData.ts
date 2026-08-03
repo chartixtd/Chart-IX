@@ -2,11 +2,12 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useFuturesTickers } from "@/hooks/useMarketData";
+import { useFuturesTickers, useSpotTickers } from "@/hooks/useMarketData";
 import { useMarketCap } from "@/hooks/useMarketCap";
 import {
   selectCandidateSymbols,
   computeScreenerGroups,
+  buildChange24hMap,
   SCREENER_REFRESH_MS,
 } from "@/lib/screener-scoring";
 import type { ScreenerResult } from "@/lib/screener-scoring";
@@ -55,6 +56,15 @@ export interface ScreenerData {
 export function useScreenerData(): ScreenerData {
   const tickersQuery = useFuturesTickers();
   const marketCapQuery = useMarketCap();
+  const spotTickersQuery = useSpotTickers();
+
+  // 合约 ticker 的 priceChangePercent 只是 ~3 分钟窗口，动量维度和追高淡汰都需要
+  // 现货 ticker 的真 24h 涨跌。现货请求失败或还没回来时退化成空 map——不阻塞页面，
+  // 也不并入下面的 error/isLoading，所有币走中性动量分、不做追高淡汰。
+  const change24hMap = useMemo(() => {
+    if (!tickersQuery.data || !spotTickersQuery.data) return {};
+    return buildChange24hMap(tickersQuery.data, spotTickersQuery.data);
+  }, [tickersQuery.data, spotTickersQuery.data]);
 
   // 市值请求彻底失败时不阻塞筛选：传 null 让打分退回中性分并跳过排名排除。
   // 空 map（{}）也必须归一成 null——它是真值，会让每个币都走"查不到市值"
@@ -72,8 +82,8 @@ export function useScreenerData(): ScreenerData {
 
   const candidateSymbols = useMemo(() => {
     if (!tickersQuery.data || !marketCapReady) return [];
-    return selectCandidateSymbols(tickersQuery.data, marketCapMap);
-  }, [tickersQuery.data, marketCapMap, marketCapReady]);
+    return selectCandidateSymbols(tickersQuery.data, marketCapMap, change24hMap);
+  }, [tickersQuery.data, marketCapMap, marketCapReady, change24hMap]);
 
   const oiQuery = useQuery({
     queryKey: ["bingx", "screener", "oi", candidateSymbols],
@@ -103,9 +113,10 @@ export function useScreenerData(): ScreenerData {
       tickersQuery.data,
       oiQuery.data ?? {},
       frQuery.data ?? {},
-      marketCapMap
+      marketCapMap,
+      change24hMap
     );
-  }, [tickersQuery.data, marketCapMap, marketCapReady, oiQuery.data, frQuery.data]);
+  }, [tickersQuery.data, marketCapMap, marketCapReady, oiQuery.data, frQuery.data, change24hMap]);
 
   const isDetailLoading = candidateSymbols.length > 0 && (oiQuery.isPending || frQuery.isPending);
 

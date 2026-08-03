@@ -60,10 +60,11 @@ export function formatCompactUsd(value: number): string {
 }
 
 /**
- * BingX 对低价币用合约乘数命名（1000PEPE-USDT 就是 PEPE 的千倍合约），
- * 但市值是代币本身的属性，与合约乘数无关，所以查市值前要先剥掉乘数前缀。
+ * BingX 对低价币用合约乘数命名（1000PEPE-USDT 就是 PEPE 的千倍合约）。
+ * 剥掉这个乘数前缀是一个通用需求：查市值时代币本身的属性与合约乘数无关；
+ * 关联现货 24h 涨跌时现货交易对也不带这个乘数前缀。两处都要先剥前缀再关联。
  * 只剥 1 后面跟 3 个以上 0 的形式；1INCH、0G、2Z、4 这些是真实币名，不能动。
  */
-export function normalizeSymbolForMarketCap(symbol: string): string {
+export function stripContractMultiplier(symbol: string): string {
   return symbol.replace(/^10{3,}(?=[A-Z])/, "");
 }

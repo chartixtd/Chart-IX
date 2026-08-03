@@ -3,11 +3,15 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import type { ScreenerPayload } from "@/lib/screener-server";
 import type { ScreenerResult, Direction } from "@/lib/screener-scoring";
 
+export type TelegramMessageLang = "en" | "zh";
+
 export interface TelegramPushSettings {
   enabled: boolean;
   /** Decrypted; null when never configured */
   botToken: string | null;
   chatId: string | null;
+  /** Language the pushed message text itself is written in — independent of the admin UI's language */
+  messageLang: TelegramMessageLang;
   showPrice: boolean;
   showChange24h: boolean;
   showAmplitude: boolean;
@@ -25,6 +29,7 @@ interface TelegramPushRow {
   enabled: boolean;
   bot_token_encrypted: string | null;
   chat_id: string | null;
+  message_lang: TelegramMessageLang;
   show_price: boolean;
   show_change_24h: boolean;
   show_amplitude: boolean;
@@ -43,6 +48,7 @@ function rowToSettings(row: TelegramPushRow): TelegramPushSettings {
     enabled: row.enabled,
     botToken: row.bot_token_encrypted ? decrypt(row.bot_token_encrypted) : null,
     chatId: row.chat_id,
+    messageLang: row.message_lang,
     showPrice: row.show_price,
     showChange24h: row.show_change_24h,
     showAmplitude: row.show_amplitude,
@@ -77,6 +83,7 @@ export interface TelegramPushUpdate {
   /** Pass to rotate the stored token; omit to leave it untouched. */
   botToken?: string;
   chatId?: string;
+  messageLang?: TelegramMessageLang;
   showPrice?: boolean;
   showChange24h?: boolean;
   showAmplitude?: boolean;
@@ -100,6 +107,7 @@ export async function updateTelegramPushSettings(
     patch.bot_token_encrypted = update.botToken.trim() ? encrypt(update.botToken.trim()) : null;
   }
   if (update.chatId !== undefined) patch.chat_id = update.chatId.trim() || null;
+  if (update.messageLang !== undefined) patch.message_lang = update.messageLang;
   if (update.showPrice !== undefined) patch.show_price = update.showPrice;
   if (update.showChange24h !== undefined) patch.show_change_24h = update.showChange24h;
   if (update.showAmplitude !== undefined) patch.show_amplitude = update.showAmplitude;
@@ -141,32 +149,84 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+const MESSAGE_STRINGS: Record<
+  TelegramMessageLang,
+  {
+    title: string;
+    long: string;
+    short: string;
+    noCandidates: string;
+    price: string;
+    change24h: string;
+    amplitude: string;
+    marketCap: string;
+    volume: string;
+    oiRatio: string;
+    funding: string;
+    score: string;
+    edge: string;
+  }
+> = {
+  en: {
+    title: "Chart-IX Screener",
+    long: "Long",
+    short: "Short",
+    noCandidates: "(no candidates)",
+    price: "Price",
+    change24h: "24h",
+    amplitude: "Amp",
+    marketCap: "MCap",
+    volume: "Vol",
+    oiRatio: "OI/Vol",
+    funding: "Funding",
+    score: "Score",
+    edge: "Edge",
+  },
+  zh: {
+    title: "Chart-IX 筛选器",
+    long: "做多",
+    short: "做空",
+    noCandidates: "（暂无符合条件的品种）",
+    price: "价格",
+    change24h: "24h涨跌",
+    amplitude: "振幅",
+    marketCap: "市值",
+    volume: "成交量",
+    oiRatio: "OI/量",
+    funding: "费率",
+    score: "评分",
+    edge: "优势",
+  },
+};
+
 function formatRow(r: ScreenerResult, settings: TelegramPushSettings): string {
+  const s = MESSAGE_STRINGS[settings.messageLang];
   const symbol = escapeHtml(r.symbol.replace("-USDT", ""));
   const extras: string[] = [];
-  if (settings.showPrice) extras.push(`Price ${fmtPrice(r.lastPrice)}`);
+  if (settings.showPrice) extras.push(`${s.price} ${fmtPrice(r.lastPrice)}`);
   if (settings.showChange24h && r.priceChangePercent !== null) {
-    extras.push(`24h ${fmtPercent(r.priceChangePercent)}`);
+    extras.push(`${s.change24h} ${fmtPercent(r.priceChangePercent)}`);
   }
-  if (settings.showAmplitude) extras.push(`Amp ${r.amplitude.toFixed(1)}%`);
+  if (settings.showAmplitude) extras.push(`${s.amplitude} ${r.amplitude.toFixed(1)}%`);
   if (settings.showMarketCap && r.marketCap !== null) {
-    extras.push(`MCap $${(r.marketCap / 1_000_000).toFixed(1)}M`);
+    extras.push(`${s.marketCap} $${(r.marketCap / 1_000_000).toFixed(1)}M`);
   }
-  if (settings.showVolume) extras.push(`Vol $${(r.quoteVolume / 1_000_000).toFixed(1)}M`);
+  if (settings.showVolume) extras.push(`${s.volume} $${(r.quoteVolume / 1_000_000).toFixed(1)}M`);
   if (settings.showOiRatio && r.oiVolumeRatio !== null) {
-    extras.push(`OI/Vol ${r.oiVolumeRatio.toFixed(2)}`);
+    extras.push(`${s.oiRatio} ${r.oiVolumeRatio.toFixed(2)}`);
   }
-  if (settings.showFunding) extras.push(`Funding ${fmtPercent(r.fundingRate * 100)}`);
-  if (settings.showScore) extras.push(`Score ${r.score.toFixed(0)}`);
-  if (settings.showEdge) extras.push(`Edge ${r.edge.toFixed(0)}`);
+  if (settings.showFunding) extras.push(`${s.funding} ${fmtPercent(r.fundingRate * 100)}`);
+  if (settings.showScore) extras.push(`${s.score} ${r.score.toFixed(0)}`);
+  if (settings.showEdge) extras.push(`${s.edge} ${r.edge.toFixed(0)}`);
 
   return extras.length > 0 ? `<b>${symbol}</b> — ${extras.join(" · ")}` : `<b>${symbol}</b>`;
 }
 
 function formatGroup(direction: Direction, rows: ScreenerResult[], settings: TelegramPushSettings): string {
+  const s = MESSAGE_STRINGS[settings.messageLang];
   const emoji = direction === "long" ? "🟢" : "🔴";
-  const label = direction === "long" ? "做多 Long" : "做空 Short";
-  if (rows.length === 0) return `${emoji} <b>${label}</b>\n(no candidates)`;
+  const label = direction === "long" ? s.long : s.short;
+  if (rows.length === 0) return `${emoji} <b>${label}</b>\n${s.noCandidates}`;
   const lines = rows.map((r, i) => `${i + 1}. ${formatRow(r, settings)}`);
   return `${emoji} <b>${label}</b>\n${lines.join("\n")}`;
 }
@@ -175,9 +235,10 @@ export function formatScreenerMessage(
   payload: ScreenerPayload,
   settings: TelegramPushSettings
 ): string {
+  const s = MESSAGE_STRINGS[settings.messageLang];
   const timestamp = new Date(payload.computedAt).toISOString().replace("T", " ").slice(0, 16);
   return [
-    `📊 <b>Chart-IX 筛选器</b> · ${timestamp} UTC`,
+    `📊 <b>${s.title}</b> · ${timestamp} UTC`,
     "",
     formatGroup("long", payload.long, settings),
     "",

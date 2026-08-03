@@ -6,10 +6,13 @@ import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 
+type MessageLang = "en" | "zh";
+
 interface PublicSettings {
   enabled: boolean;
   chatId: string | null;
   botTokenConfigured: boolean;
+  messageLang: MessageLang;
   showPrice: boolean;
   showChange24h: boolean;
   showAmplitude: boolean;
@@ -44,6 +47,7 @@ export function TelegramPushEditor({ initial }: { initial: PublicSettings }) {
   const [botToken, setBotToken] = useState("");
   const [botTokenConfigured, setBotTokenConfigured] = useState(initial.botTokenConfigured);
   const [chatId, setChatId] = useState(initial.chatId ?? "");
+  const [messageLang, setMessageLang] = useState<MessageLang>(initial.messageLang);
   const [fields, setFields] = useState<Record<FieldKey, boolean>>(() => {
     const f = {} as Record<FieldKey, boolean>;
     for (const { key } of FIELD_TOGGLES) f[key] = initial[key];
@@ -61,6 +65,7 @@ export function TelegramPushEditor({ initial }: { initial: PublicSettings }) {
       const body: Record<string, unknown> = {
         enabled,
         chatId,
+        messageLang,
         ...fields,
       };
       // Only send botToken if the admin actually typed a new one — an empty
@@ -155,6 +160,20 @@ export function TelegramPushEditor({ initial }: { initial: PublicSettings }) {
               className="w-full rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-gold focus:outline-none"
             />
             <p className="mt-1 text-xs text-text-muted">{t("telegram_push_list.chat_id_hint")}</p>
+          </div>
+
+          <div>
+            <label className="block text-xs text-text-secondary mb-1">
+              {t("telegram_push_list.message_lang")}
+            </label>
+            <select
+              value={messageLang}
+              onChange={(e) => setMessageLang(e.target.value as MessageLang)}
+              className="w-full rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:border-gold focus:outline-none"
+            >
+              <option value="en">{t("telegram_push_list.message_lang_en")}</option>
+              <option value="zh">{t("telegram_push_list.message_lang_zh")}</option>
+            </select>
           </div>
 
           <p className="text-xs text-text-muted">

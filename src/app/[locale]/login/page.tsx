@@ -2,6 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
@@ -54,7 +55,7 @@ export default function LoginPage() {
     <div className="hero-ground grain flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
       <Card className="w-full max-w-md shadow-card-lg" padding="lg">
         <div className="text-center">
-          <img src="/logo.png" alt="Chart-IX" className="mx-auto h-11 w-auto" />
+          <Image src="/logo.png" alt="Chart-IX" width={240} height={160} priority className="mx-auto h-11 w-auto" />
           <h1 className="mt-5 font-display text-3xl tracking-tight">
             <span className="text-text-primary">Chart</span>
             <span className="text-gold">-IX</span>

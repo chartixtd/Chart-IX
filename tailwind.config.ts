@@ -35,9 +35,9 @@ const config: Config = {
         "info-bg": "rgba(91, 141, 239, 0.1)",
       },
       fontFamily: {
-        display: ['"Marcellus"', '"Noto Serif SC"', "Georgia", "serif"],
-        sans: ['"Inter"', '"Noto Sans SC"', "system-ui", "sans-serif"],
-        mono: ['"JetBrains Mono"', "monospace"],
+        display: ["var(--font-marcellus)", '"Noto Serif SC"', "Georgia", "serif"],
+        sans: ["var(--font-inter)", '"Noto Sans SC"', "system-ui", "sans-serif"],
+        mono: ["var(--font-jetbrains-mono)", "monospace"],
       },
       letterSpacing: {
         tightest: "-0.04em",

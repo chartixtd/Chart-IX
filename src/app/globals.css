@@ -84,7 +84,7 @@
   }
 
   .font-display {
-    font-family: "Marcellus", "Noto Serif SC", Georgia, serif;
+    font-family: var(--font-marcellus), "Noto Serif SC", Georgia, serif;
   }
 
   /* Reduced motion: honor system preference across authored motion */

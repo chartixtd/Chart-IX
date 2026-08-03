@@ -1,69 +1,10 @@
-"use client";
-
-import { useTranslations, useLocale } from "next-intl";
+import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import { useSpotTicker } from "@/hooks/useMarketData";
-import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
-import { formatPrice, formatPercent } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { HotCoinsRail } from "./HotCoinsRail";
 
 const TRUST_KEYS = ["trust_1", "trust_2", "trust_3", "trust_4"] as const;
 const HOW_KEYS = ["how_1", "how_2", "how_3"] as const;
-const HOT_SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT"] as const;
-
-// A restrained live quote — silent proof, not a trading panel.
-function HotQuote({ symbol }: { symbol: string }) {
-  const { data: ticker } = useSpotTicker(symbol);
-  const base = symbol.split("-")[0];
-  const pct = ticker ? parseFloat(ticker.priceChangePercent) : 0;
-  const up = pct >= 0;
-
-  return (
-    <div className="flex items-baseline gap-2.5 whitespace-nowrap">
-      <span className="font-display text-sm tracking-tight text-text-primary">{base}</span>
-      {ticker ? (
-        <>
-          <span className="font-mono text-sm tabular-nums text-text-secondary">
-            {formatPrice(Number(ticker.lastPrice))}
-          </span>
-          <span className={cn("font-mono text-xs tabular-nums", up ? "text-success" : "text-danger")}>
-            {formatPercent(pct)}
-          </span>
-        </>
-      ) : (
-        <span className="h-3 w-16 animate-pulse rounded-xs bg-bg-tertiary" />
-      )}
-    </div>
-  );
-}
-
-// Full-width quote rail across the top of the hero — a private-bank ticker,
-// four hot pairs only, hairline-separated.
-function HotCoinsRail() {
-  const t = useTranslations("home");
-  useBingXWebSocket([...HOT_SYMBOLS]);
-
-  return (
-    <div className="flex items-center gap-5 overflow-x-auto sm:gap-8">
-      <span className="flex shrink-0 items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-text-muted">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
-        {t("market_overview")}
-      </span>
-      <div className="flex items-center gap-5 sm:gap-7">
-        {HOT_SYMBOLS.map((s, i) => (
-          <div key={s} className="flex items-center gap-5 sm:gap-7">
-            {i > 0 && <span className="h-4 w-px bg-border-default" />}
-            <HotQuote symbol={s} />
-          </div>
-        ))}
-      </div>
-      <span className="ml-auto hidden shrink-0 text-[10px] uppercase tracking-[0.18em] text-text-muted md:inline">
-        BingX · Live
-      </span>
-    </div>
-  );
-}
 
 // Hairline gold line-icons drawn in the world's own grammar (no emoji).
 function TrustIcon({ i, className }: { i: number; className?: string }) {
@@ -140,9 +81,8 @@ function FeatureIcon({ i, className }: { i: number; className?: string }) {
   );
 }
 
-export default function HomeClient() {
-  const t = useTranslations("home");
-  const locale = useLocale();
+export default async function HomeClient({ locale }: { locale: string }) {
+  const t = await getTranslations({ locale, namespace: "home" });
 
   return (
     <div>

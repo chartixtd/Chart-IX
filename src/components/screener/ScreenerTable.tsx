@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -29,7 +30,11 @@ interface ScreenerTableProps {
   direction: Direction;
 }
 
-export function ScreenerTable({ results, isLoading, direction }: ScreenerTableProps) {
+export const ScreenerTable = memo(function ScreenerTable({
+  results,
+  isLoading,
+  direction,
+}: ScreenerTableProps) {
   const t = useTranslations("screener");
 
   const header = (
@@ -175,4 +180,4 @@ export function ScreenerTable({ results, isLoading, direction }: ScreenerTablePr
       </table>
     </div>
   );
-}
+});

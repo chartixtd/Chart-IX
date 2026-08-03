@@ -15,5 +15,5 @@ export default async function HomePage({
     redirect(`/${locale}/dashboard`);
   }
 
-  return <HomeClient />;
+  return <HomeClient locale={locale} />;
 }

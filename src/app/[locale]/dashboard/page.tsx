@@ -564,7 +564,13 @@ export default function DashboardPage() {
                 >
                   <div className="h-10 w-16 shrink-0 overflow-hidden rounded-sm bg-bg-tertiary">
                     {video.thumbnail_url && (
-                      <img src={video.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                      <img
+                        src={video.thumbnail_url}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                        decoding="async"
+                      />
                     )}
                   </div>
                   <span className="truncate text-sm text-text-secondary hover:text-gold">

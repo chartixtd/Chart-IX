@@ -95,6 +95,8 @@ export function VideosView({
                       src={video.thumbnail_url}
                       alt={video.title[locale] ?? ""}
                       className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-text-muted">

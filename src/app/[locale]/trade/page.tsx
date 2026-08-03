@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, memo, useCallback, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -9,7 +10,20 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { MarketOverview } from "@/components/trade/MarketOverview";
-import { KlineChart } from "@/components/trade/KlineChart";
+
+// lightweight-charts is a large canvas-based dependency — split into its own
+// chunk instead of shipping it in the initial /trade bundle.
+const KlineChart = dynamic(
+  () => import("@/components/trade/KlineChart").then((m) => m.KlineChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full w-full items-center justify-center text-sm text-text-muted">
+        Loading chart…
+      </div>
+    ),
+  }
+);
 import { FearGreedIndex } from "@/components/trade/FearGreedIndex";
 import { OrderForm } from "@/components/trade/order-form/OrderForm";
 import { OrdersPanel } from "@/components/trade/OrdersPanel";

@@ -1,6 +1,28 @@
 import type { Metadata } from "next";
+import { Inter, JetBrains_Mono, Marcellus } from "next/font/google";
 import { SITE_URL } from "@/lib/constants";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-inter",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  display: "swap",
+  variable: "--font-jetbrains-mono",
+});
+
+const marcellus = Marcellus({
+  subsets: ["latin"],
+  weight: ["400"],
+  display: "swap",
+  variable: "--font-marcellus",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -25,19 +47,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`dark ${inter.variable} ${jetbrainsMono.variable} ${marcellus.variable}`}
+      suppressHydrationWarning
+    >
       <head>
-        {/* Preconnect to Google Fonts for faster font loading */}
+        {/* CJK fonts (Noto Sans/Serif SC) aren't offered as latin-only subsets by next/font,
+            so they stay on Google's CDN to keep full Chinese glyph coverage; Inter/JetBrains
+            Mono/Marcellus are self-hosted above via next/font. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
           rel="preload"
           as="style"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Marcellus&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
         />
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Marcellus&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
         />
         <meta name="view-transition" content="same-origin" />
       </head>

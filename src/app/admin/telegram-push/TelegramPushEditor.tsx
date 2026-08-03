@@ -1,12 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 
 type MessageLang = "en" | "zh";
+
+// Cron fires every 4th UTC hour, minute 0 (see vercel.json). Unix epoch
+// (1970-01-01T00:00:00Z) is itself one of those boundaries, so this needs no
+// timezone-of-server lookup: just how far `now` sits past the last one.
+const PUSH_INTERVAL_MS = 4 * 60 * 60 * 1000;
+function msUntilNextScheduledPush(now: number): number {
+  return PUSH_INTERVAL_MS - (now % PUSH_INTERVAL_MS);
+}
+function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 interface PublicSettings {
   enabled: boolean;
@@ -55,7 +70,14 @@ export function TelegramPushEditor({ initial }: { initial: PublicSettings }) {
   });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [pushingNow, setPushingNow] = useState(false);
   const [lastPushedAt, setLastPushedAt] = useState(initial.lastPushedAt);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const toggleField = (key: FieldKey) => setFields((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -107,6 +129,24 @@ export function TelegramPushEditor({ initial }: { initial: PublicSettings }) {
       toast(t("telegram_push_list.test_failed"), "error");
     } finally {
       setTesting(false);
+    }
+  };
+
+  const pushNow = async () => {
+    setPushingNow(true);
+    try {
+      const res = await fetch("/api/admin/telegram-push/push-now", { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        toast(t("telegram_push_list.push_now_sent"), "success");
+        setLastPushedAt(data.data.lastPushedAt);
+      } else {
+        toast(data?.error ?? t("telegram_push_list.push_now_failed"), "error");
+      }
+    } catch {
+      toast(t("telegram_push_list.push_now_failed"), "error");
+    } finally {
+      setPushingNow(false);
     }
   };
 
@@ -177,7 +217,13 @@ export function TelegramPushEditor({ initial }: { initial: PublicSettings }) {
           </div>
 
           <p className="text-xs text-text-muted">
-            {t("telegram_push_list.interval_note")}
+            {enabled ? (
+              <>
+                {t("telegram_push_list.next_push")}: {formatCountdown(msUntilNextScheduledPush(now))}
+              </>
+            ) : (
+              t("telegram_push_list.push_disabled_note")
+            )}
             {lastPushedAt && (
               <>
                 {" · "}
@@ -187,12 +233,15 @@ export function TelegramPushEditor({ initial }: { initial: PublicSettings }) {
           </p>
         </div>
 
-        <div className="mt-4 flex items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button variant="primary" size="sm" loading={saving} onClick={save}>
             {t("telegram_push_list.save")}
           </Button>
           <Button variant="outline" size="sm" loading={testing} onClick={sendTest}>
             {t("telegram_push_list.send_test")}
+          </Button>
+          <Button variant="outline" size="sm" loading={pushingNow} onClick={pushNow}>
+            {t("telegram_push_list.push_now")}
           </Button>
         </div>
       </Card>

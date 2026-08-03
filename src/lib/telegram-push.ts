@@ -1,6 +1,6 @@
 import { encrypt, decrypt } from "@/lib/crypto";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
-import type { ScreenerPayload } from "@/lib/screener-server";
+import { getScreenerPayload, type ScreenerPayload } from "@/lib/screener-server";
 import type { ScreenerResult, Direction } from "@/lib/screener-scoring";
 
 export type TelegramMessageLang = "en" | "zh";
@@ -129,12 +129,14 @@ export async function updateTelegramPushSettings(
   return rowToSettings(data as TelegramPushRow);
 }
 
-async function markPushed(): Promise<void> {
+async function markPushed(): Promise<string> {
   const client = createServiceRoleClient();
+  const pushedAt = new Date().toISOString();
   await client
     .from("telegram_push_settings")
-    .update({ last_pushed_at: new Date().toISOString() })
+    .update({ last_pushed_at: pushedAt })
     .eq("id", 1);
+  return pushedAt;
 }
 
 function fmtPrice(n: number): string {
@@ -265,11 +267,32 @@ export async function sendTelegramMessage(
   if (!json.ok) throw new Error(`Telegram API error: ${json.description ?? "unknown"}`);
 }
 
+async function sendScreenerPush(
+  settings: TelegramPushSettings,
+  payload: ScreenerPayload
+): Promise<string> {
+  if (!settings.botToken || !settings.chatId) {
+    throw new Error("Bot token and chat ID must both be saved first");
+  }
+  const text = formatScreenerMessage(payload, settings);
+  await sendTelegramMessage(settings.botToken, settings.chatId, text);
+  return markPushed();
+}
+
+/** Called by the 4-hour cron — silently no-ops when the feature is switched off. */
 export async function pushScreenerToTelegram(payload: ScreenerPayload): Promise<void> {
   const settings = await getTelegramPushSettings();
   if (!settings.enabled || !settings.botToken || !settings.chatId) return;
+  await sendScreenerPush(settings, payload);
+}
 
-  const text = formatScreenerMessage(payload, settings);
-  await sendTelegramMessage(settings.botToken, settings.chatId, text);
-  await markPushed();
+/**
+ * Admin-triggered "push now" — bypasses the `enabled` flag (an explicit click means
+ * explicit intent) but still requires bot token + chat ID to be configured.
+ */
+export async function pushScreenerNow(): Promise<{ lastPushedAt: string }> {
+  const settings = await getTelegramPushSettings();
+  const payload = await getScreenerPayload();
+  const lastPushedAt = await sendScreenerPush(settings, payload);
+  return { lastPushedAt };
 }

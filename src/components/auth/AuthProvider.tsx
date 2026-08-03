@@ -99,12 +99,22 @@ export function AuthProvider({
     // Fetch auth on mount if server didn't provide a valid user identity.
     // `initialAuth` is always an object (even when user is null), so check
     // `userId` rather than truthiness of the prop itself.
-    if (!initialAuth?.userId) {
+    const hasServerAuth = Boolean(initialAuth?.userId);
+    if (!hasServerAuth) {
       fetchAuth();
     }
 
+    // Supabase fires INITIAL_SESSION once on subscribe. When the server already
+    // handed us the same session, re-fetching it is a wasted round trip on every
+    // page load — skip that first one and keep honoring every later event.
+    let initialSessionSettled = hasServerAuth;
+
     const supabase = createClient();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "INITIAL_SESSION" && initialSessionSettled) {
+        initialSessionSettled = false;
+        return;
+      }
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
         fetchAuth();
         if (event === "SIGNED_IN") {

@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useMemo, useCallback, useLayoutEffect, memo } from "react";
+import {
+  useState,
+  useMemo,
+  useCallback,
+  useLayoutEffect,
+  useDeferredValue,
+  memo,
+} from "react";
 import { useSpotTickers } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { useMarketStore } from "@/stores/market";
@@ -114,7 +121,10 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
 
   useBingXWebSocket(wsSymbols);
 
-  const searchLower = search.toLowerCase();
+  // BingX 现货/合约加起来近千个交易对，每敲一个字就全量过滤 + 重排会让输入框跟手感
+  // 变差。用 deferred 值驱动列表：输入框自己永远即时响应，列表在空闲时追上来。
+  const deferredSearch = useDeferredValue(search);
+  const searchLower = deferredSearch.toLowerCase();
   const filtered = useMemo(() => {
     if (!tickers) return [];
     const matches = searchLower

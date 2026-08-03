@@ -40,11 +40,17 @@ export function useSpotTickers() {
 // 单个行情 — WebSocket 实时数据优先
 export function useSpotTicker(symbol: string) {
   const wsTicker = useMarketStore((s) => s.tickers[symbol]);
+  const wsConnected = useMarketStore((s) => s.wsConnected);
+
+  // 一旦 WebSocket 开始推这个 symbol，下面 5 秒一次的 REST 结果就会被 wsTicker
+  // 完全盖掉——纯粹是白跑的请求（首页 4 个币就是每 5 秒 4 个）。这时把轮询降到
+  // 30 秒，只当作 WS 静默掉线时的兜底；WS 一断就自动回到 5 秒的实时节奏。
+  const wsLive = wsConnected && wsTicker !== undefined;
 
   const query = useQuery({
     queryKey: ["bingx", "ticker", "spot", symbol],
     queryFn: () => fetchApi<BingXTicker>("ticker", { symbol }),
-    refetchInterval: 5_000,
+    refetchInterval: wsLive ? 30_000 : 5_000,
     staleTime: 2_000,
     enabled: !!symbol,
   });

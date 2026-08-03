@@ -37,10 +37,16 @@ export default async function LocaleLayout({
   }
 
   // Load messages + prefetch auth in parallel on the server
-  const [messages, initialAuth] = await Promise.all([
+  const [allMessages, initialAuth] = await Promise.all([
     import(`@/i18n/messages/${locale}.json`).then((m) => m.default),
     getServerAuth(),
   ]);
+
+  // The `admin` namespace is a third of the whole message bundle and is only
+  // read under /admin, which sits outside this layout and loads its own copy
+  // via AdminLocaleProvider. Dropping it here keeps ~7KB of JSON out of the
+  // serialized RSC payload of every user-facing page.
+  const { admin: _admin, ...messages } = allMessages;
 
   return (
     <ClientLocaleLayout locale={locale} messages={messages} initialAuth={initialAuth}>

@@ -119,8 +119,38 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
 
   useEffect(() => {
     fetchLimitOrders();
-    const interval = setInterval(fetchLimitOrders, 5_000);
-    return () => clearInterval(interval);
+
+    // 这个轮询没走 react-query，所以不像别处那样会在标签页失焦时自动停下来。
+    // 手动跟着 visibility 开关：后台标签页里挂着的交易页不该每 5 秒打一次服务器，
+    // 切回来时立刻补一次，用户看到的仍是最新的挂单。
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (interval === null) interval = setInterval(fetchLimitOrders, 5_000);
+    };
+    const stop = () => {
+      if (interval !== null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        fetchLimitOrders();
+        start();
+      }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [fetchLimitOrders]);
 
   const handleCancelLimit = async (orderId: string) => {

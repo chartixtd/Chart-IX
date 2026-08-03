@@ -61,19 +61,24 @@ export default async function ArticleDetailPage({
 }) {
   const { slug } = await params;
 
-  // Server-side: fetch article
+  // The article lookup and the session read don't depend on each other, so
+  // they go out together — only the tier lookup has to wait for the user id.
   const supabase = await createClient();
-  const { data: article, error } = await supabase
-    .from("articles")
-    .select("*, category:article_categories(id, name, slug)")
-    .eq("slug", slug)
-    .eq("is_published", true)
-    .single();
+  const [
+    { data: article, error },
+    { data: { user } },
+  ] = await Promise.all([
+    supabase
+      .from("articles")
+      .select("*, category:article_categories(id, name, slug)")
+      .eq("slug", slug)
+      .eq("is_published", true)
+      .single(),
+    supabase.auth.getUser(),
+  ]);
 
   if (error || !article) notFound();
 
-  // Server-side: get user tier from session
-  const { data: { user } } = await supabase.auth.getUser();
   let userTier: string | null = null;
 
   if (user) {

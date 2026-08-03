@@ -31,6 +31,7 @@
     "dashboard": "Dashboard",
     "videos": "Video Library",
     "articles": "Articles",
+    "news": "News",
     "trade": "Trade",
     "screener": "Screener",
     "upgrade": "Upgrade to Pro",
@@ -660,6 +661,17 @@
     "by": "By",
     "all_categories": "All",
     "empty_search": "No articles found."
+  },
+  "news": {
+    "title": "Industry News",
+    "subtitle": "Live crypto headlines from CoinDesk and Cointelegraph, refreshed automatically.",
+    "all_sources": "All",
+    "no_news": "No news available right now.",
+    "fetch_error_title": "Failed to load news",
+    "just_now": "Just now",
+    "minutes_ago": "{count}m ago",
+    "hours_ago": "{count}h ago",
+    "days_ago": "{count}d ago"
   },
   "dashboard": {
     "welcome": "Welcome back",

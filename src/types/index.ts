@@ -150,6 +150,21 @@ export interface ArticleCategory {
   sort_order: number;
 }
 
+// ==================== 行业资讯（外部新闻源） ====================
+export type NewsLang = "zh" | "en";
+
+export interface NewsItem {
+  id: string;
+  title: string;
+  url: string;
+  source: string;
+  lang: NewsLang;
+  imageUrl: string | null;
+  /** ms epoch */
+  publishedAt: number;
+  summary: string;
+}
+
 // ==================== 交易 ====================
 export type MarketType = "spot" | "futures";
 export type OrderSide = "buy" | "sell";

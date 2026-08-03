@@ -31,6 +31,7 @@
     "dashboard": "我的主页",
     "videos": "视频库",
     "articles": "文章",
+    "news": "行业资讯",
     "trade": "交易",
     "screener": "筛选器",
     "upgrade": "升级 Pro",
@@ -660,6 +661,17 @@
     "by": "作者",
     "all_categories": "全部",
     "empty_search": "未找到文章。"
+  },
+  "news": {
+    "title": "行业资讯",
+    "subtitle": "实时汇总加密货币中文资讯，自动更新。",
+    "all_sources": "全部",
+    "no_news": "暂无资讯。",
+    "fetch_error_title": "资讯加载失败",
+    "just_now": "刚刚",
+    "minutes_ago": "{count} 分钟前",
+    "hours_ago": "{count} 小时前",
+    "days_ago": "{count} 天前"
   },
   "dashboard": {
     "welcome": "欢迎回来",

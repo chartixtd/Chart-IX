@@ -31,6 +31,7 @@
     "dashboard": "Papan Pemuka",
     "videos": "Perpustakaan Video",
     "articles": "Artikel",
+    "news": "Berita",
     "trade": "Dagangan",
     "screener": "Penapis",
     "upgrade": "Naik ke Pro",
@@ -660,6 +661,17 @@
     "by": "Oleh",
     "all_categories": "Semua",
     "empty_search": "Tiada artikel ditemui."
+  },
+  "news": {
+    "title": "Berita Industri",
+    "subtitle": "Berita kripto langsung daripada CoinDesk dan Cointelegraph, dikemas kini secara automatik.",
+    "all_sources": "Semua",
+    "no_news": "Tiada berita buat masa ini.",
+    "fetch_error_title": "Gagal memuatkan berita",
+    "just_now": "Sebentar tadi",
+    "minutes_ago": "{count}m lalu",
+    "hours_ago": "{count}j lalu",
+    "days_ago": "{count}h lalu"
   },
   "dashboard": {
     "welcome": "Selamat kembali",

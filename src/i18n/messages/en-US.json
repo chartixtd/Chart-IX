@@ -727,7 +727,6 @@
     "short_group": "Short Setups Top 10",
     "market_cap_unavailable": "Market cap data is unavailable; that dimension uses a neutral score.",
     "columns": {
-      "rank": "Rank",
       "symbol": "Symbol",
       "price": "Price",
       "change": "24h Change",

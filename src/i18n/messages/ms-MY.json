@@ -727,7 +727,6 @@
     "short_group": "Peluang Jual Top 10",
     "market_cap_unavailable": "Data permodalan pasaran tidak tersedia; dimensi itu guna skor neutral.",
     "columns": {
-      "rank": "Kedudukan",
       "symbol": "Simbol",
       "price": "Harga",
       "change": "24j Ubah",

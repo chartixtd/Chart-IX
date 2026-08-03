@@ -86,7 +86,11 @@ export function ScreenerTable({ results, isLoading, direction }: ScreenerTablePr
               className="border-b border-border-default hover:bg-bg-tertiary transition-colors"
             >
               <td className="px-3 py-2.5 text-xs text-text-secondary">{idx + 1}</td>
-              <td className="px-3 py-2.5 text-sm font-medium text-text-primary whitespace-nowrap">
+              {/* 长币名会把左右两张表撑成不同宽度，这里截断并把全名放进 title */}
+              <td
+                className="px-3 py-2.5 text-sm font-medium text-text-primary whitespace-nowrap max-w-[8rem] truncate"
+                title={row.symbol}
+              >
                 {row.symbol.replace("-USDT", "")}
               </td>
               <td className="px-3 py-2.5 text-sm text-text-primary tabular-nums">
@@ -114,7 +118,7 @@ export function ScreenerTable({ results, isLoading, direction }: ScreenerTablePr
                 {formatNumber(row.quoteVolume, 0)}
               </td>
               <td className="px-3 py-2.5 text-sm text-text-primary tabular-nums">
-                {row.oiVolumeRatio.toFixed(2)}
+                {row.oiVolumeRatio === null ? "-" : row.oiVolumeRatio.toFixed(2)}
               </td>
               <td
                 className={cn(

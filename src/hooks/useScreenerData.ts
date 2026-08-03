@@ -23,22 +23,38 @@ async function fetchApi<T>(endpoint: string, params: Record<string, string>): Pr
   return json.data;
 }
 
+/** 明细请求的并发上限。候选池实测 200-400 个币，无上限地一次性铺开会把上游打爆。 */
+const DETAIL_CONCURRENCY = 8;
+
+interface DetailMap {
+  map: Record<string, number>;
+  /** 拿到有效值的比例；0 表示这一维度全军覆没，上层据此报错而不是渲染一张假装正常的表 */
+  okRatio: number;
+}
+
 async function fetchDetailMap<T>(
   symbols: string[],
   endpoint: string,
   pick: (value: T) => number
-): Promise<Record<string, number>> {
+): Promise<DetailMap> {
   const map: Record<string, number> = {};
-  const settled = await Promise.allSettled(
-    symbols.map((symbol) => fetchApi<T>(endpoint, { symbol }))
-  );
-  settled.forEach((result, i) => {
-    if (result.status === "fulfilled") {
+  let ok = 0;
+
+  for (let i = 0; i < symbols.length; i += DETAIL_CONCURRENCY) {
+    const batch = symbols.slice(i, i + DETAIL_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map((symbol) => fetchApi<T>(endpoint, { symbol }))
+    );
+    settled.forEach((result, j) => {
+      if (result.status !== "fulfilled") return;
       const value = pick(result.value);
-      if (Number.isFinite(value)) map[symbols[i]] = value;
-    }
-  });
-  return map;
+      if (!Number.isFinite(value)) return;
+      map[batch[j]] = value;
+      ok += 1;
+    });
+  }
+
+  return { map, okRatio: symbols.length === 0 ? 1 : ok / symbols.length };
 }
 
 export interface ScreenerData {
@@ -48,6 +64,8 @@ export interface ScreenerData {
   isDetailLoading: boolean;
   marketCapUnavailable: boolean;
   error: Error | null;
+  /** 任一底层请求正在飞行中；用来禁用"立即刷新"按钮，避免连点成倍放大请求量 */
+  isRefreshing: boolean;
   /** 最近一次 ticker 数据落地的时间，ms epoch；0 表示还没成功过 */
   lastUpdated: number;
   refetch: () => void;
@@ -80,10 +98,22 @@ export function useScreenerData(): ScreenerData {
   // 市值维度退化成中性分的两种情况：请求失败，或拿到的 map 是空的
   const marketCapUnavailable = marketCapReady && marketCapMap === null;
 
+  // 现货落地前不要算候选池：那时 change24hMap 还是空的，追高过滤没生效，算出来的池子
+  // 跟现货到达后的池子不一样，会让下面两个明细查询的 key 变一次、全池再打一遍。
+  // 现货请求失败时 isPending 转 false、data 仍是 undefined，此时按空 change24hMap 正常降级。
+  //
+  // 排序后再进 key：BingX 返回数组的顺序抖动会让内容相同的池子被 React Query 当成新 key，
+  // 而现货是 30 秒轮询，每次都重算一遍候选池——不排序就会周期性触发全池重打。
   const candidateSymbols = useMemo(() => {
-    if (!tickersQuery.data || !marketCapReady) return [];
-    return selectCandidateSymbols(tickersQuery.data, marketCapMap, change24hMap);
-  }, [tickersQuery.data, marketCapMap, marketCapReady, change24hMap]);
+    if (!tickersQuery.data || !marketCapReady || spotTickersQuery.isPending) return [];
+    return selectCandidateSymbols(tickersQuery.data, marketCapMap, change24hMap).sort();
+  }, [
+    tickersQuery.data,
+    marketCapMap,
+    marketCapReady,
+    change24hMap,
+    spotTickersQuery.isPending,
+  ]);
 
   const oiQuery = useQuery({
     queryKey: ["bingx", "screener", "oi", candidateSymbols],
@@ -111,8 +141,8 @@ export function useScreenerData(): ScreenerData {
     if (!tickersQuery.data || !marketCapReady) return { long: [], short: [] };
     return computeScreenerGroups(
       tickersQuery.data,
-      oiQuery.data ?? {},
-      frQuery.data ?? {},
+      oiQuery.data?.map ?? {},
+      frQuery.data?.map ?? {},
       marketCapMap,
       change24hMap
     );
@@ -120,13 +150,33 @@ export function useScreenerData(): ScreenerData {
 
   const isDetailLoading = candidateSymbols.length > 0 && (oiQuery.isPending || frQuery.isPending);
 
+  // fetchDetailMap 内部用 allSettled，所以这两个查询永远不会 reject——okRatio 是唯一
+  // 能看出"这一维度 100% 失败"的信号。全军覆没时必须走错误态 + 重试按钮，
+  // 而不是渲染一张所有币 OI 都缺失、看起来完全正常的表。
+  const detailError = useMemo(() => {
+    if (candidateSymbols.length === 0) return null;
+    if (oiQuery.data && oiQuery.data.okRatio === 0) {
+      return new Error("Open interest unavailable for every candidate");
+    }
+    if (frQuery.data && frQuery.data.okRatio === 0) {
+      return new Error("Funding rate unavailable for every candidate");
+    }
+    return null;
+  }, [candidateSymbols.length, oiQuery.data, frQuery.data]);
+
   return {
     long: groups.long,
     short: groups.short,
-    isLoading: tickersQuery.isPending || !marketCapReady || isDetailLoading,
+    isLoading:
+      tickersQuery.isPending || spotTickersQuery.isPending || !marketCapReady || isDetailLoading,
     isDetailLoading,
     marketCapUnavailable,
-    error: (tickersQuery.error as Error | null) ?? null,
+    error: (tickersQuery.error as Error | null) ?? detailError,
+    isRefreshing:
+      tickersQuery.isFetching ||
+      marketCapQuery.isFetching ||
+      oiQuery.isFetching ||
+      frQuery.isFetching,
     lastUpdated: tickersQuery.dataUpdatedAt,
     refetch: () => {
       tickersQuery.refetch();

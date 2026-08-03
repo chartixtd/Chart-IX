@@ -38,6 +38,17 @@ export function buildMarketCapMap(rows: CoinGeckoMarketRow[]): MarketCapMap {
   return map;
 }
 
+/**
+ * CoinGecko 的第 1 页装着排名 1-250，正是市值排除规则要拦的那批。少了它，
+ * 大币会变成"查不到市值"→ 不排除 + 满分，而且前端毫无察觉。
+ * 宁可整体失败让前端走中性分兜底，也不能返回一份缺了头部的名单。
+ */
+export function hasTopRankCoverage(rows: CoinGeckoMarketRow[]): boolean {
+  return rows.some(
+    (row) => row.market_cap_rank !== null && row.market_cap_rank <= TOP_MARKET_CAP_EXCLUDED
+  );
+}
+
 /** 市值越小分越高。查不到市值的币按极小盘处理，给满分。 */
 export function getMarketCapScore(entry: MarketCapEntry | undefined): number {
   if (!entry) return 100;

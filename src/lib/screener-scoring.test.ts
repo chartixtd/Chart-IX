@@ -42,10 +42,15 @@ describe("hardFilter", () => {
     expect(hardFilter(ticker({ symbol: "DUST-USDT", quoteVolume: "500000" }), "long", undefined)).toBe(true);
   });
 
-  // 500,000 低于 1M 和 5M 两个候选门槛，改不出区分度；这里补一个正好卡在
-  // "高于 1M、低于 5M" 区间的存活样本，只有门槛真的是 1M 才会保留它。
-  it("keeps a coin whose volume clears the 1M floor even though it's far below a hypothetical higher floor", () => {
-    expect(hardFilter(ticker({ symbol: "THIN-USDT", quoteVolume: "2000000" }), "long", undefined)).toBe(false);
+  // 门槛已从 1M 提到 5M（流动性现在是纯门槛，没有任何打分维度再补偿它）。
+  // 500,000 在新旧两个门槛下都会被淘汰，分不出区别；这一对样本卡在 1M 与 5M 之间，
+  // 只有门槛真的是 5M 才会淘汰 2M 那个、同时保留 6M 那个。
+  it("drops a coin that would have cleared the old 1M floor but sits below the 5M floor", () => {
+    expect(hardFilter(ticker({ symbol: "THIN-USDT", quoteVolume: "2000000" }), "long", undefined)).toBe(true);
+  });
+
+  it("keeps a coin whose volume clears the 5M floor", () => {
+    expect(hardFilter(ticker({ symbol: "LIQUID-USDT", quoteVolume: "6000000" }), "long", undefined)).toBe(false);
   });
 
   it("drops flat coins whose 24h amplitude is under 1.5%", () => {
@@ -333,30 +338,74 @@ describe("computeScreenerGroups", () => {
     expect(kept.long[0].marketCapRank).toBe(130);
   });
 
-  it("treats a missing OI or funding entry as zero rather than dropping the row", () => {
+  // 缺失的 OI 现在报成 null 而不是 0：fetchDetailMap 只写入成功拿到的值，
+  // "请求失败" 和 "真的是 0" 必须能区分开（打分上前者中性、后者 0 分）。
+  // 资金费率仍然默认 0，因为 fundingScore(0) 恰好就是中性 50，碰巧优雅降级。
+  it("reports a missing OI as null and a missing funding rate as zero rather than dropping the row", () => {
     const groups = computeScreenerGroups([ticker({ symbol: "SMALL-USDT" })], {}, {}, caps);
     expect(groups.long).toHaveLength(1);
-    expect(groups.long[0].openInterest).toBe(0);
+    expect(groups.long[0].openInterest).toBeNull();
+    expect(groups.long[0].oiVolumeRatio).toBeNull();
     expect(groups.long[0].fundingRate).toBe(0);
+  });
+
+  // OI 请求部分失败时，旧实现让 `oiMap[symbol] ?? 0` 把失败的币砸到 oiRatioScore(0)=0，
+  // 白丢 15 分——排名于是纯粹按请求运气重排。现在未知走中性 50。
+  // 三个币除 OI 外完全一致（市值查不到=100、振幅3%=100、费率0=50、位置eff=0.3=100，
+  // 合计 25+20+10+5(动量未知,中性50)+10 = 70）：
+  //   HASOI  ratio=1.0（平台内）→ oiSub=100 → 70 + 15    = 85
+  //   NOOI   未知              → oiSub=50  → 70 + 7.5  = 77.5 -> 78
+  //   ZEROOI ratio=0           → oiSub=0   → 70 + 0    = 70
+  it("scores an unknown OI as neutral instead of zero, keeping it above a coin whose OI is genuinely zero", () => {
+    const base = { lowPrice: "1000", highPrice: "1030", lastPrice: "1009", quoteVolume: "50000000" };
+    const tickers = [
+      ticker({ symbol: "HASOI-USDT", ...base }),
+      ticker({ symbol: "NOOI-USDT", ...base }),
+      ticker({ symbol: "ZEROOI-USDT", ...base }),
+    ];
+    // NOOI-USDT 刻意不在 oiMap 里
+    const oi = { "HASOI-USDT": 50_000_000, "ZEROOI-USDT": 0 };
+    const groups = computeScreenerGroups(tickers, oi, {}, {});
+
+    expect(groups.long.map((r) => r.symbol)).toEqual(["HASOI-USDT", "NOOI-USDT", "ZEROOI-USDT"]);
+    expect(groups.long.map((r) => r.score)).toEqual([85, 78, 70]);
+
+    const noOi = groups.long[1];
+    expect(noOi.openInterest).toBeNull();
+    expect(noOi.oiVolumeRatio).toBeNull();
+    // 对照：真的是 0 的那个仍然报 0，不是 null——两种情况没有被混为一谈
+    expect(groups.long[2].openInterest).toBe(0);
+    expect(groups.long[2].oiVolumeRatio).toBe(0);
   });
 
   // priceChangePercent 现在是查表结果，不是 ticker 自身的字段：查不到就是 null
   // （表格据此显示 "-"），查得到就是现货的真实 24h 涨跌。
   // 生产环境实测的失败场景：代币化股票（如 NCSKTSLA2USD，即 Tesla）在 CoinGecko
-  // 查不到市值，走「查不到=微型盘」分支白拿 25% 权重的满分（100），量能 ~1.2M 刚过门槛，
+  // 查不到市值，走「查不到=微型盘」分支白拿 25% 权重的满分（100），量能刚过门槛，
   // 振幅 ~2.5% 又落在打分甜点区，结果比真实小市值币分还高，顶到榜首。
-  // 这里复现同样的行情特征（无市值条目 + ~1.2M 量能 + ~2.5% 振幅），断言两组都不包含它。
-  it("keeps a synthetic tokenized-stock symbol out of both groups even though it would otherwise score 100 on smallness (production failure mode)", () => {
+  // 量能取 12M 而不是实测的 1.2M：门槛提到 5M 之后 1.2M 会先被成交量淘汰，
+  // 那样这条断言就成了空转，证明不了前缀排除本身有效。
+  it("keeps a synthetic tokenized-stock symbol out of both groups even though it clears every filter and would score 100 on smallness (production failure mode)", () => {
     const synthetic = ticker({
       symbol: "NCSKTSLA2USD-USDT",
       lowPrice: "1000",
       highPrice: "1025", // amplitude = 2.5%
       lastPrice: "1007.5",
-      quoteVolume: "1200000",
+      quoteVolume: "12000000",
     });
     const groups = computeScreenerGroups([synthetic], {}, {}, {});
     expect(groups.long.some((r) => r.symbol === "NCSKTSLA2USD-USDT")).toBe(false);
     expect(groups.short.some((r) => r.symbol === "NCSKTSLA2USD-USDT")).toBe(false);
+
+    // 对照组：完全相同的行情，只把前缀换掉 —— 它确实通过了所有过滤，
+    // 说明上面被排除的原因只可能是前缀本身，而不是量能或振幅。
+    const control = computeScreenerGroups(
+      [ticker({ ...synthetic, symbol: "REALCOIN-USDT" })],
+      {},
+      {},
+      {}
+    );
+    expect(control.long.some((r) => r.symbol === "REALCOIN-USDT")).toBe(true);
   });
 
   it("reports priceChangePercent as null when unassociated and as the spot value when associated", () => {
@@ -517,19 +566,29 @@ describe("scoring dimension curves (weights and breakpoints, long direction)", (
 
   // change24h 现在来自 change24hMap（模拟现货 24h 涨跌关联结果），不再来自
   // ticker 自身的 priceChangePercent（那个字段已经从 parse() 里删掉，不参与打分）。
-  it("24h 动量方向 10%：signed<=0 =0，(0,3] 线性 0→100，(3,15] 线性 100→0，>15 =0；多头 signed=change24h", () => {
+  // 曲线已从「signed<=0 一律 0 分」改成以 +3% 为峰、两侧递减的形状。
+  // 旧曲线让「查不到 24h 涨跌」（中性 50）凭空胜过「真实走平 0%」（0 分），
+  // 而查不到现货对的恰恰是流动性最差的那批，叠加「市值查不到=100 分」，
+  // 整个筛选器在结构性地偏爱它最不了解的币。新曲线让走平和未知都落在中性 50。
+  it("24h 动量方向 10%：signed<=-15 =0，[-15,0) 线性 0→50，走平=50，(0,3] 线性 50→100，(3,15] 线性 100→0，>15 =0；多头 signed=change24h", () => {
     // 固定：市值1.0 振幅1.0 资金费率0.5 OI1.0 位置1.0 → 80 + 10*momSub
 
-    // change24h=0（下沿拐点）→ momSub=0 → 80
-    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 0 })).toBe(80);
+    // change24h=-20（负向范围外）→ momSub=0 → 80
+    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": -20 })).toBe(80);
 
-    // change24h=-10（反方向移动，signed<0）→ momSub=0 → 80（同一分支，不同输入，验证负值也归零）
-    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": -10 })).toBe(80);
+    // change24h=-15（负向下沿拐点）→ momSub=0 → 80
+    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": -15 })).toBe(80);
 
-    // change24h=1.5（上升段中点）→ momSub=1.5/3=0.5 → 80+5=85
-    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 1.5 })).toBe(85);
+    // change24h=-7.5（负半段中点）→ momSub=(50+(-7.5/15)*50)/100=0.25 → 80+2.5=82.5 -> 83
+    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": -7.5 })).toBe(83);
 
-    // change24h=3（峰值）→ momSub=1.0 → 80+10=90
+    // change24h=0（走平）→ momSub=0.5（中性，两个分支在这里必须给同一个值）→ 80+5=85
+    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 0 })).toBe(85);
+
+    // change24h=1.5（上升段中点）→ momSub=(50+(1.5/3)*50)/100=0.75 → 80+7.5=87.5 -> 88
+    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 1.5 })).toBe(88);
+
+    // change24h=3（峰值，两个分支在这里必须都给 100）→ momSub=1.0 → 80+10=90
     expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 3 })).toBe(90);
 
     // change24h=9（下降段中点）→ momSub=1-(9-3)/12=0.5 → 80+5=85
@@ -539,9 +598,17 @@ describe("scoring dimension curves (weights and breakpoints, long direction)", (
     expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 15 })).toBe(80);
 
     // change24h 未知（X-USDT 不在 change24hMap 里，即关联不到现货交易对）→
-    // momentumScore 中性分支返回 50 → momSub=0.5 → 80+5=85。
-    // 这就是本任务要修的核心行为：未知不再等于 0 分（旧行为会把它砸到 80）。
+    // momentumScore 中性分支返回 50 → momSub=0.5 → 80+5=85，与走平完全相同。
     expect(scoreOf({})).toBe(85);
+
+    // 三条关键不等式，把曲线的方向性钉死（逆向 < 走平 = 未知 < 峰值）：
+    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": -7.5 })).toBeLessThan(
+      scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 0 })
+    );
+    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 0 })).toBe(scoreOf({}));
+    expect(scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 0 })).toBeLessThan(
+      scoreOf({}, 50_000_000, 0, {}, { "X-USDT": 3 })
+    );
   });
 
   it("趋势位置 10%：eff∈[0.2,0.5] 平台=100，<0.2 线性 0→100，>0.5 线性 100→0；多头 eff=(last-low)/(high-low)", () => {
@@ -576,18 +643,18 @@ describe("direction asymmetry not covered by existing tests", () => {
   it("momentumScore inverts sign with direction: a long-favoring mover ranks first in groups.long, a short-favoring mover ranks first in groups.short", () => {
     // change24h 现在通过 change24hMap 传入（模拟现货 24h 涨跌关联结果），不再来自
     // ticker 自身的 priceChangePercent。
-    // A: change24h=-3 → 多头 signed=-3(<=0, momSub=0)；空头 signed=3(峰值, momSub=1.0)
-    // B: change24h=+3 → 多头 signed=3(峰值, momSub=1.0)；空头 signed=-3(<=0, momSub=0)
+    // A: change24h=-3 → 多头 signed=-3(负半段, momSub=(50-3/15*50)/100=0.4)；空头 signed=3(峰值, momSub=1.0)
+    // B: change24h=+3 → 多头 signed=3(峰值, momSub=1.0)；空头 signed=-3(负半段, momSub=0.4)
     // 其余维度对 A、B 完全一致：市值(map 里没有 A/B，capSub=1.0)、振幅(amp=3,ampSub=1.0)、
     // 资金费率(rate=0,fundSub=0.5)、OI(ratio=1.0,oiSub=1.0)。
     // 但 position 依赖同一个 lastPrice=1009，多空方向不同会翻转 eff，所以两个方向的总分
     // 基准不同，这里直接用手算好的总分而不是复用振幅测试里的基准：
     //   多头 position: eff=(1009-1000)/30=0.3（平台内，posSub=1.0）
     //   空头 position: eff=1-0.3=0.7（下降段，posSub=1-(0.7-0.5)/0.5=0.6）
-    // A 多头 = 25+20+10+15+10*0+10*1.0 = 80
-    // B 多头 = 25+20+10+15+10*1.0+10*1.0 = 90
-    // A 空头 = 25+20+10+15+10*1.0+10*0.6 = 86
-    // B 空头 = 25+20+10+15+10*0+10*0.6 = 76
+    // A 多头 = 25+20+10+15+10*0.4+10*1.0 = 84（新曲线下逆向 -3% 不再是 0 分，旧值 80）
+    // B 多头 = 25+20+10+15+10*1.0+10*1.0 = 90（未变）
+    // A 空头 = 25+20+10+15+10*1.0+10*0.6 = 86（未变）
+    // B 空头 = 25+20+10+15+10*0.4+10*0.6 = 80（新曲线下逆向 -3% 不再是 0 分，旧值 76）
     const A = ticker({
       symbol: "MOMA-USDT",
       lowPrice: "1000",
@@ -608,10 +675,10 @@ describe("direction asymmetry not covered by existing tests", () => {
     const groups = computeScreenerGroups([A, B], oi, fr, {}, change24h);
 
     expect(groups.long.map((r) => r.symbol)).toEqual(["MOMB-USDT", "MOMA-USDT"]);
-    expect(groups.long.map((r) => r.score)).toEqual([90, 80]);
+    expect(groups.long.map((r) => r.score)).toEqual([90, 84]);
 
     expect(groups.short.map((r) => r.symbol)).toEqual(["MOMA-USDT", "MOMB-USDT"]);
-    expect(groups.short.map((r) => r.score)).toEqual([86, 76]);
+    expect(groups.short.map((r) => r.score)).toEqual([86, 80]);
   });
 
   it("positionScore inverts sign with direction: a low-in-range coin ranks first in groups.long, a high-in-range coin ranks first in groups.short", () => {

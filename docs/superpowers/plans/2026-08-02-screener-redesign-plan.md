@@ -16,7 +16,7 @@
 - 每组输出 `GROUP_SIZE = 10` 条。
 - 市值数据整体不可用时不阻塞筛选：市值维度统一给 `MARKET_CAP_FALLBACK_SCORE = 50`，且不执行排名排除。
 - 单个币在 CoinGecko 数据里查不到 → 不淘汰，市值维度给 100 分（视为极小盘）。
-- 用 BingX symbol 查市值前必须先过 `normalizeSymbolForMarketCap()` 剥掉合约乘数前缀（BingX 把 SHIB 的千倍合约挂成 `1000SHIB-USDT`，直接拿去查会漏掉，导致 top-50 大币被当成微型盘）。
+- 用 BingX symbol 查市值前必须先过 `stripContractMultiplier()` 剥掉合约乘数前缀（BingX 把 SHIB 的千倍合约挂成 `1000SHIB-USDT`，直接拿去查会漏掉，导致 top-50 大币被当成微型盘）。
 - 打分权重固定：市值 25%、振幅 20%、资金费率方向 20%、OI/量比 15%、24h 动量方向 10%、趋势位置 10%（合计 100）。
 - 项目内 API 响应格式统一为 `{ success: boolean, data: T }` 或 `{ success: false, error: { code, message } }`。
 - `BingXTicker.lastPrice` 类型是 `string | number`（现货返回 number，合约返回 string），任何读取都必须过 `Number()` / `parseFloat()`。
@@ -480,7 +480,7 @@ git commit -m "feat(screener): add batch futures ticker fetching"
 - Test: `src/lib/screener-scoring.test.ts`（新建）
 
 **Interfaces:**
-- Consumes: `BingXTicker` from `@/types/bingx`；`MarketCapMap`、`MarketCapEntry`、`getMarketCapScore`、`normalizeSymbolForMarketCap`、`TOP_MARKET_CAP_EXCLUDED`、`MARKET_CAP_FALLBACK_SCORE` from `@/lib/market-cap`（Task 1）
+- Consumes: `BingXTicker` from `@/types/bingx`；`MarketCapMap`、`MarketCapEntry`、`getMarketCapScore`、`stripContractMultiplier`、`TOP_MARKET_CAP_EXCLUDED`、`MARKET_CAP_FALLBACK_SCORE` from `@/lib/market-cap`（Task 1）
 - Produces:
   - `type Direction = "long" | "short"`
   - `const SCREENER_REFRESH_MS = 3_600_000`（Task 3 已加，保留）
@@ -760,7 +760,7 @@ import type { BingXTicker } from "@/types/bingx";
 import type { MarketCapEntry, MarketCapMap } from "@/lib/market-cap";
 import {
   getMarketCapScore,
-  normalizeSymbolForMarketCap,
+  stripContractMultiplier,
   TOP_MARKET_CAP_EXCLUDED,
   MARKET_CAP_FALLBACK_SCORE,
 } from "@/lib/market-cap";
@@ -844,7 +844,7 @@ export function selectCandidateSymbols(
   const symbols = new Set<string>();
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
-    const capKey = normalizeSymbolForMarketCap(ticker.symbol);
+    const capKey = stripContractMultiplier(ticker.symbol);
     if (marketCapMap && isExcludedByMarketCap(marketCapMap[capKey])) continue;
     if (!hardFilter(ticker, "long") || !hardFilter(ticker, "short")) {
       symbols.add(ticker.symbol);
@@ -928,7 +928,7 @@ function buildGroup(
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
 
-    const entry = marketCapMap?.[normalizeSymbolForMarketCap(ticker.symbol)];
+    const entry = marketCapMap?.[stripContractMultiplier(ticker.symbol)];
     if (marketCapMap && isExcludedByMarketCap(entry)) continue;
     if (hardFilter(ticker, direction)) continue;
 

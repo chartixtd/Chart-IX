@@ -16,7 +16,7 @@ function formatCountdown(ms: number): string {
 
 export default function ScreenerPage() {
   const t = useTranslations("screener");
-  const { long, short, isLoading, marketCapUnavailable, error, lastUpdated, refetch } =
+  const { long, short, isLoading, marketCapUnavailable, error, isRefreshing, lastUpdated, refetch } =
     useScreenerData();
 
   const [now, setNow] = useState(() => Date.now());
@@ -36,12 +36,14 @@ export default function ScreenerPage() {
           <p className="text-xs text-text-secondary mt-0.5">{t("subtitle")}</p>
         </div>
         <div className="flex items-center gap-3">
-          {remaining !== null && (
+          {/* 报错时不显示倒计时——那会是一个冻在 00:00 的假进度 */}
+          {!error && remaining !== null && (
             <span className="text-xs text-text-secondary tabular-nums">
               {t("next_refresh")} {formatCountdown(remaining)}
             </span>
           )}
-          <Button variant="ghost" size="sm" onClick={refetch}>
+          {/* 一次点击会触发四个 refetch，连点成倍放大；刷新中直接禁用 */}
+          <Button variant="ghost" size="sm" onClick={refetch} disabled={isRefreshing}>
             {t("refresh_now")}
           </Button>
         </div>

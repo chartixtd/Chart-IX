@@ -15,7 +15,12 @@ export const SCREENER_REFRESH_MS = 3_600_000;
 /** 每个方向输出的条数 */
 export const GROUP_SIZE = 10;
 
-const MIN_QUOTE_VOLUME = 1_000_000;
+/**
+ * 流动性在这个模型里是纯门槛而不是打分维度（它和小市值目标直接冲突）。
+ * 旧模型有一条 25% 权重的流动性斜坡在补偿 100 万这个低门槛，现在没有任何东西补偿了：
+ * 100 万日成交折合每小时约 4 万美元换手，做日内短线根本吃不下量。
+ */
+const MIN_QUOTE_VOLUME = 5_000_000;
 const MIN_AMPLITUDE = 1.5;
 const MAX_CHASE_PERCENT = 15;
 
@@ -30,9 +35,11 @@ export interface ScreenerResult {
   amplitude: number;
   marketCap: number | null;
   marketCapRank: number | null;
-  openInterest: number;
+  /** 持仓量请求失败/缺失时为 null（区别于真的是 0），表格应显示 "-" */
+  openInterest: number | null;
   fundingRate: number;
-  oiVolumeRatio: number;
+  /** openInterest 为 null 时同样为 null，表格应显示 "-" */
+  oiVolumeRatio: number | null;
   score: number;
 }
 
@@ -159,20 +166,23 @@ function fundingScore(fundingRate: number, direction: Direction): number {
   return ((signed + 0.0005) / 0.001) * 100;
 }
 
-function oiRatioScore(ratio: number): number {
+/** 持仓量拿不到时（请求失败，而不是真的是 0）给中性 50，别让排名按请求运气重排。 */
+function oiRatioScore(ratio: number | undefined): number {
+  if (ratio === undefined || !Number.isFinite(ratio)) return 50;
   if (ratio >= 0.3 && ratio <= 1.5) return 100;
   if (ratio < 0.3) return (ratio / 0.3) * 100;
   if (ratio <= 3) return 100 - ((ratio - 1.5) / 1.5) * 100;
   return 0;
 }
 
-/** 要有顺方向动量，但不能已经跑太远——3% 附近是甜点，越接近淘汰线 15% 分越低。
- *  拿不到 24h 涨跌时给中性分，不奖不罚。 */
+/** 要有顺方向动量，但不能已经跑太远——+3% 是甜点。
+ *  走平给中性 50，逆向越深越低，追高越远越低；拿不到数据同样给 50，不奖不罚。 */
 function momentumScore(change24h: number | undefined, direction: Direction): number {
   if (change24h === undefined || !Number.isFinite(change24h)) return 50;
   const signed = direction === "long" ? change24h : -change24h;
-  if (signed <= 0) return 0;
-  if (signed <= 3) return (signed / 3) * 100;
+  if (signed <= -MAX_CHASE_PERCENT) return 0;
+  if (signed < 0) return 50 + (signed / MAX_CHASE_PERCENT) * 50;
+  if (signed <= 3) return 50 + (signed / 3) * 50;
   if (signed <= MAX_CHASE_PERCENT) return 100 - ((signed - 3) / (MAX_CHASE_PERCENT - 3)) * 100;
   return 0;
 }
@@ -187,22 +197,22 @@ function positionScore(p: Parsed, direction: Direction): number {
   return 100 - ((eff - 0.5) / 0.5) * 100;
 }
 
+/** 返回未取整的原始分。取整只在写进 ScreenerResult.score 时做——见 buildGroup。 */
 function scoreToken(
   p: Parsed,
   direction: Direction,
-  openInterest: number,
+  oiRatio: number | undefined,
   fundingRate: number,
   marketCapScore: number,
   change24h: number | undefined
 ): number {
-  const oiRatio = p.quoteVolume > 0 ? openInterest / p.quoteVolume : 0;
-  return Math.round(
+  return (
     marketCapScore * 0.25 +
-      amplitudeScore(p.amplitude) * 0.2 +
-      fundingScore(fundingRate, direction) * 0.2 +
-      oiRatioScore(oiRatio) * 0.15 +
-      momentumScore(change24h, direction) * 0.1 +
-      positionScore(p, direction) * 0.1
+    amplitudeScore(p.amplitude) * 0.2 +
+    fundingScore(fundingRate, direction) * 0.2 +
+    oiRatioScore(oiRatio) * 0.15 +
+    momentumScore(change24h, direction) * 0.1 +
+    positionScore(p, direction) * 0.1
   );
 }
 
@@ -214,7 +224,10 @@ function buildGroup(
   marketCapMap: MarketCapMap | null,
   change24hMap: Record<string, number>
 ): ScreenerResult[] {
-  const rows: ScreenerResult[] = [];
+  // 先按未取整的原始分排序，取整只在最后写进 score 时做：
+  // 六条曲线里有四条带平台段，整数打平很常见，先取整会让第 10 名的切分
+  // 由 BingX 返回数组的顺序决定，而不是由分数决定。
+  const scored: { raw: number; row: Omit<ScreenerResult, "score"> }[] = [];
 
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
@@ -228,28 +241,38 @@ function buildGroup(
     const p = parse(ticker);
     if (!p) continue;
 
-    const openInterest = oiMap[ticker.symbol] ?? 0;
+    // 刻意不写 `?? 0`：请求失败和"真的是 0"必须能区分开，
+    // 前者走 oiRatioScore 的中性分支，后者是一个真实的（很差的）0 分。
+    const openInterest = oiMap[ticker.symbol];
+    const oiVolumeRatio =
+      openInterest === undefined ? undefined : p.quoteVolume > 0 ? openInterest / p.quoteVolume : 0;
+    // 资金费率缺失默认 0 是安全的：fundingScore(0) 恰好就是中性 50。
     const fundingRate = frMap[ticker.symbol] ?? 0;
     const marketCapScore = marketCapMap ? getMarketCapScore(entry) : MARKET_CAP_FALLBACK_SCORE;
 
-    rows.push({
-      symbol: ticker.symbol,
-      lastPrice: p.last,
-      priceChangePercent: change24h ?? null,
-      highPrice: p.high,
-      lowPrice: p.low,
-      quoteVolume: p.quoteVolume,
-      amplitude: p.amplitude,
-      marketCap: entry?.marketCap ?? null,
-      marketCapRank: entry?.rank ?? null,
-      openInterest,
-      fundingRate,
-      oiVolumeRatio: p.quoteVolume > 0 ? openInterest / p.quoteVolume : 0,
-      score: scoreToken(p, direction, openInterest, fundingRate, marketCapScore, change24h),
+    scored.push({
+      raw: scoreToken(p, direction, oiVolumeRatio, fundingRate, marketCapScore, change24h),
+      row: {
+        symbol: ticker.symbol,
+        lastPrice: p.last,
+        priceChangePercent: change24h ?? null,
+        highPrice: p.high,
+        lowPrice: p.low,
+        quoteVolume: p.quoteVolume,
+        amplitude: p.amplitude,
+        marketCap: entry?.marketCap ?? null,
+        marketCapRank: entry?.rank ?? null,
+        openInterest: openInterest ?? null,
+        fundingRate,
+        oiVolumeRatio: oiVolumeRatio ?? null,
+      },
     });
   }
 
-  return rows.sort((a, b) => b.score - a.score).slice(0, GROUP_SIZE);
+  return scored
+    .sort((a, b) => b.raw - a.raw)
+    .slice(0, GROUP_SIZE)
+    .map(({ raw, row }) => ({ ...row, score: Math.round(raw) }));
 }
 
 /** 一次算出做多优势 / 做空优势两组 Top N */

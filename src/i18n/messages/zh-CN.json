@@ -727,7 +727,6 @@
     "short_group": "做空优势 Top 10",
     "market_cap_unavailable": "市值数据暂不可用，市值维度按默认分计算",
     "columns": {
-      "rank": "排名",
       "symbol": "币种",
       "price": "价格",
       "change": "24h涨跌",

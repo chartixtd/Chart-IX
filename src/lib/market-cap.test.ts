@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildMarketCapMap,
+  hasTopRankCoverage,
   getMarketCapScore,
   formatCompactUsd,
   stripContractMultiplier,
@@ -43,6 +44,48 @@ describe("buildMarketCapMap", () => {
       { symbol: "zero", market_cap: 0, market_cap_rank: 900 },
     ]);
     expect(map["ZERO-USDT"]).toBeUndefined();
+  });
+});
+
+// CoinGecko 分四页并发拉取，第 1 页装的是排名 1-250 —— 也就是市值排除规则唯一真正要
+// 拦的那批币。第 1 页被限流、2-4 页成功时，返回的 750 行是"非空但缺了头部"的名单：
+// BTC/ETH/SOL 在 map 里查不到 → 不被排除 + 市值维度拿满分，而前端的空 map 归一化
+// 不会触发，提示条也不显示，完全静默。这个函数就是那道校验。
+describe("hasTopRankCoverage", () => {
+  it("accepts a page set that reaches into the excluded top ranks", () => {
+    expect(
+      hasTopRankCoverage([
+        { symbol: "btc", market_cap: 1_200_000_000_000, market_cap_rank: 1 },
+        { symbol: "wif", market_cap: 400_000_000, market_cap_rank: 180 },
+      ])
+    ).toBe(true);
+  });
+
+  it("accepts rows that stop exactly at the exclusion boundary", () => {
+    expect(
+      hasTopRankCoverage([{ symbol: "edge", market_cap: 3_000_000_000, market_cap_rank: 50 }])
+    ).toBe(true);
+  });
+
+  // 这是 C1 的核心场景：页 2-4 成功、页 1 失败，行数很多但一个排除目标都没覆盖到。
+  it("rejects a non-empty page set that starts past the exclusion boundary (page 1 was rate-limited)", () => {
+    const rows = Array.from({ length: 750 }, (_, i) => ({
+      symbol: `coin${i}`,
+      market_cap: 100_000_000,
+      market_cap_rank: 251 + i,
+    }));
+    expect(rows).toHaveLength(750); // 对照：行数非零，空 map 归一化不会触发
+    expect(hasTopRankCoverage(rows)).toBe(false);
+  });
+
+  it("rejects an empty page set", () => {
+    expect(hasTopRankCoverage([])).toBe(false);
+  });
+
+  it("rejects rows whose ranks are all null", () => {
+    expect(
+      hasTopRankCoverage([{ symbol: "unranked", market_cap: 5_000_000, market_cap_rank: null }])
+    ).toBe(false);
   });
 });
 

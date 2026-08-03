@@ -59,13 +59,15 @@ export default function ArticlesClient({
   }
 
   const selectedCategory = categories.find((c) => c.slug === categoryParam);
+  // "News" now lives on its own /news page (live RSS feed), so drop it from the tabs here
+  const visibleCategories = categories.filter((c) => c.slug !== "news");
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12">
       <h1 className="text-3xl font-bold text-text-primary">{t("title")}</h1>
 
       {/* Category filter tabs */}
-      {categories.length > 0 && (
+      {visibleCategories.length > 0 && (
         <div className="mt-6 flex flex-wrap gap-2">
           <Link
             href={`/${locale}/articles`}
@@ -77,7 +79,7 @@ export default function ArticlesClient({
           >
             {t("all_categories")}
           </Link>
-          {categories.map((cat) => (
+          {visibleCategories.map((cat) => (
             <Link
               key={cat.id}
               href={`/${locale}/articles?category=${cat.slug}`}

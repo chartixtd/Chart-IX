@@ -143,12 +143,15 @@ export function ScreenerTable({ results, isLoading, direction }: ScreenerTablePr
                   {row.score}
                 </span>
               </td>
-              {/* 优势 = 本方向分 − 反方向分。这一列才是排序依据，score 只说明这个币本身好不好。 */}
+              {/* 优势 = 本方向分 − 反方向分。这一列才是排序依据，score 只说明这个币本身好不好。
+                  两组都只收未取整差值 > 0 的币，所以这里永远不会是负数：显示成 0 只可能是
+                  一个很小的正差值（0 到 0.5）被取整抹平了。那种情况用中性灰，别用红色——
+                  红色会读成"反向"，而它其实只是"优势小到看不出来"。 */}
               <td className="px-3 py-2.5 text-sm">
                 <span
                   className={cn(
                     "inline-flex items-center justify-center min-w-8 h-6 rounded px-1 text-xs font-bold",
-                    row.edge > 0 ? "bg-success/20 text-success" : "bg-danger/20 text-danger"
+                    row.edge > 0 ? "bg-success/20 text-success" : "text-text-secondary"
                   )}
                 >
                   {row.edge > 0 ? "+" : ""}

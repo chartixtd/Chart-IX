@@ -28,6 +28,19 @@ export const GROUP_SIZE = 10;
  * 头部是正常的（BTC 557M、ETH 383M、SOL 167M、AAVE 56M，衰减合理），只有长尾被夹住。
  */
 export const MIN_QUOTE_VOLUME = 7_000_000;
+
+/**
+ * 市值上限：按方向分差排序后，市值在排名里会被相减抵消，
+ * 所以「偏向小币种」这个目标只能靠门槛守住，不能再靠打分。
+ *
+ * 5 亿是照着实测候选池挑的（7M 量能门槛 + 前 50 排除之后剩 41 个）：
+ * ≤1000M 剩 37、**≤500M 剩 32**、≤300M 剩 31、≤200M 剩 25、≤100M 只剩 20 ——
+ * 20 个候选正好等于两组 20 个坑位，选择性归零。32 个候选配 20 个坑位才留得住筛选空间。
+ * 5 亿这条线切掉 AAVE(1415M)、1000PEPE(1198M)、BEAT(1124M)、ETC(1039M)、ENA(835M)、
+ * PUMP(817M)、RENDER(706M)、JUP(639M)、INJ(501M)，保留 TIA(311M)、LDO(270M)、ZRO、JTO、KAITO 及以下。
+ */
+export const MAX_MARKET_CAP = 500_000_000;
+
 const MIN_AMPLITUDE = 1.5;
 const MAX_CHASE_PERCENT = 15;
 
@@ -121,9 +134,17 @@ export function hardFilter(
   return false;
 }
 
-/** 市值排名进前 50 的主流大币排除出候选池；查不到市值的不算大币 */
+/**
+ * 两道市值门槛：排名进前 50 的主流大币、以及市值超过 MAX_MARKET_CAP 的大盘币，
+ * 都排除出候选池。查不到市值的不算大币——查不到 = 比 CoinGecko 第 1000 名还小，
+ * 正是我们要的微型盘，两道门槛都不该拦它。
+ *
+ * 调用点必须自己先判断 marketCapMap 是否为 null：市值数据整体拿不到时这两道门槛
+ * 一律失效（退化成中性分），否则一次 CoinGecko 故障就会把整块看板清空。
+ */
 export function isExcludedByMarketCap(entry: MarketCapEntry | undefined): boolean {
-  return entry !== undefined && entry.rank <= TOP_MARKET_CAP_EXCLUDED;
+  if (entry === undefined) return false;
+  return entry.rank <= TOP_MARKET_CAP_EXCLUDED || entry.marketCap > MAX_MARKET_CAP;
 }
 
 /**

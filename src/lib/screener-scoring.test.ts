@@ -9,6 +9,7 @@ import {
   buildChange24hMap,
   GROUP_SIZE,
   MIN_QUOTE_VOLUME,
+  MAX_MARKET_CAP,
   SCREENER_REFRESH_MS,
 } from "./screener-scoring";
 import type { MarketCapMap } from "./market-cap";
@@ -150,8 +151,33 @@ describe("isExcludedByMarketCap", () => {
     expect(isExcludedByMarketCap({ marketCap: 3_000_000_000, rank: 50 })).toBe(true);
   });
 
+  // 上面那两个 fixture 的市值同时也超过了市值上限，所以它们其实分不清是哪条规则拦下的。
+  // 这一条专门给排名规则做对照：市值只有 1 亿（远在上限之下），单靠排名也必须被排除。
+  it("excludes a top-50 coin whose cap is comfortably below the ceiling (the rank rule is not shadowed by the ceiling)", () => {
+    expect(isExcludedByMarketCap({ marketCap: 100_000_000, rank: 12 })).toBe(true);
+  });
+
   it("keeps coins ranked outside the top 50", () => {
     expect(isExcludedByMarketCap({ marketCap: 400_000_000, rank: 51 })).toBe(false);
+  });
+
+  // 市值上限：两组改成按方向分差排序之后，市值在两个方向上的得分完全相同、
+  // 在差值里被整个抵消——它再也影响不了排名了。实测榜单上因此出现了
+  // BEAT($1.12B)、1000PEPE($1.20B) 这种大盘币。「偏向小币种」这个目标现在
+  // 只能靠这道门槛守住，不能再靠打分。
+  // 相对 MAX_MARKET_CAP 取值而不是写死 5 亿：上限再动的时候这三条跟着动，
+  // 不会像写死的 fixture 那样悄悄掉到上限的同一侧变成空转。
+  it("excludes a coin sitting one unit above MAX_MARKET_CAP and keeps one sitting exactly on it", () => {
+    expect(isExcludedByMarketCap({ marketCap: MAX_MARKET_CAP + 1, rank: 200 })).toBe(true);
+    expect(isExcludedByMarketCap({ marketCap: MAX_MARKET_CAP, rank: 200 })).toBe(false); // 上限是 `>`，等于上限应当存活
+    expect(isExcludedByMarketCap({ marketCap: MAX_MARKET_CAP - 1, rank: 200 })).toBe(false);
+  });
+
+  // 上限必须夹在打分曲线的地板和天花板之间才有意义：低于地板会把所有币都拦掉，
+  // 高于天花板（2B）等于没设——曲线上 2B 以上本来就是 0 分。
+  it("sits between the market cap scoring floor and ceiling", () => {
+    expect(MAX_MARKET_CAP).toBeGreaterThan(10_000_000); // 打分曲线的 floor
+    expect(MAX_MARKET_CAP).toBeLessThan(2_000_000_000); // 打分曲线的 ceiling
   });
 
   // 在 CoinGecko 前 1000 名里查不到 = 比第 1000 名还小，正是我们要的小币。
@@ -209,6 +235,13 @@ describe("selectCandidateSymbols", () => {
     expect(symbols).toEqual(["BTC-USDT"]);
   });
 
+  // 市值上限必须两条资格路径都生效。只加在 buildGroup 那一侧的话，候选池仍然会
+  // 把这些大盘币算进去、给它们白打一轮 OI/资金费率请求，两条路径就此漂移。
+  it("drops a coin whose market cap is above the ceiling", () => {
+    const withBig: MarketCapMap = { "BIGCAP-USDT": { marketCap: MAX_MARKET_CAP + 1, rank: 120 } };
+    expect(selectCandidateSymbols([ticker({ symbol: "BIGCAP-USDT" })], withBig)).toEqual([]);
+  });
+
   it("ignores non-USDT pairs", () => {
     const symbols = selectCandidateSymbols([ticker({ symbol: "WIF-USDC" })], caps);
     expect(symbols).toEqual([]);
@@ -241,7 +274,10 @@ describe("computeScreenerGroups", () => {
   const caps: MarketCapMap = {
     "BTC-USDT": { marketCap: 1_200_000_000_000, rank: 1 },
     "SMALL-USDT": { marketCap: 20_000_000, rank: 700 },
-    "BIG-USDT": { marketCap: 1_800_000_000, rank: 70 },
+    // 4 亿而不是原来的 18 亿：18 亿现在会被 MAX_MARKET_CAP 直接拦在候选池外，
+    // 下面那条"小市值分更高"的断言会因为 BIG 整个消失而变成空转。
+    // 4 亿仍然明显大于 SMALL 的 2000 万，比较关系不变，但留在上限之内。
+    "BIG-USDT": { marketCap: 400_000_000, rank: 90 },
   };
 
   it("excludes top-50 coins from both groups", () => {
@@ -250,13 +286,42 @@ describe("computeScreenerGroups", () => {
     expect(groups.short).toEqual([]);
   });
 
+  it("excludes a coin above the market cap ceiling from both groups", () => {
+    const withBig: MarketCapMap = { "BIGCAP-USDT": { marketCap: MAX_MARKET_CAP + 1, rank: 120 } };
+    const groups = computeScreenerGroups([ticker({ symbol: "BIGCAP-USDT" })], {}, {}, withBig);
+    expect(groups.long).toEqual([]);
+    expect(groups.short).toEqual([]);
+  });
+
+  // 「在 CoinGecko 前 1000 名里查不到」= 比第 1000 名还小，正是我们要的微型盘。
+  // 市值上限只拦得住"已知且确实很大"的币，不能顺手把查不到的一起拦掉。
+  // map 必须非空，否则上限本来就整体失效，这条会变成空转。
+  it("keeps a coin with no market cap entry while the ceiling is active for others", () => {
+    const others: MarketCapMap = { "OTHER-USDT": { marketCap: 30_000_000, rank: 800 } };
+    const groups = computeScreenerGroups([ticker({ symbol: "UNKNOWN-USDT" })], {}, {}, others);
+    expect(groups.long).toHaveLength(1);
+    expect(groups.long[0].symbol).toBe("UNKNOWN-USDT");
+    expect(groups.long[0].marketCap).toBeNull();
+  });
+
+  // 市值数据整体拿不到时（map 为 null）市值上限必须完全失效，和排名排除一条口径：
+  // 一次 CoinGecko 故障应当退化成中性分，而不是把整块看板清空。
+  it("does not apply the market cap ceiling when the map is null", () => {
+    const t = ticker({ symbol: "HUGE-USDT" });
+    const withCap: MarketCapMap = { "HUGE-USDT": { marketCap: MAX_MARKET_CAP + 1, rank: 120 } };
+
+    expect(computeScreenerGroups([t], {}, {}, withCap).long).toEqual([]); // 对照：有数据时确实被拦掉
+    expect(computeScreenerGroups([t], {}, {}, null).long).toHaveLength(1); // 无数据时门槛失效
+  });
+
   // 市值是方向无关维度，在「本方向分 − 反方向分」里被整个消掉：它决定 score 的高低，
   // 但不再决定组内先后（两个币的 edge 在这里完全相同）。所以这条断言的是 score 本身。
   // 两个币除市值外完全一致：振幅3%(20) 资金费率0(10) OI ratio=0.5(15) 动量未知(5)
   // 位置 eff_long=(1.01-1)/0.03=1/3（平台，10）→ 方向无关部分 + 方向部分合计 60。
   //   SMALL cap=20M  → capSub=100-100*(log10(2e7)-log10(1e7))/(log10(2e9)-log10(1e7))=86.9175
   //                    → 60 + 25*0.869175 = 81.729 -> 82
-  //   BIG   cap=1.8B → capSub=1.9887 → 60 + 25*0.019887 = 60.497 -> 60
+  //   BIG   cap=400M → t=(log10(4e8)-7)/2.30103=1.60206/2.30103=0.696236 → capSub=30.3764
+  //                    → 60 + 25*0.303764 = 67.594 -> 68
   it("scores a smaller cap above a larger one when everything else matches", () => {
     const tickers = [ticker({ symbol: "SMALL-USDT" }), ticker({ symbol: "BIG-USDT" })];
     const oi = { "SMALL-USDT": 25_000_000, "BIG-USDT": 25_000_000 };
@@ -265,7 +330,7 @@ describe("computeScreenerGroups", () => {
     const bySymbol = Object.fromEntries(groups.long.map((r) => [r.symbol, r]));
 
     expect(bySymbol["SMALL-USDT"].score).toBe(82);
-    expect(bySymbol["BIG-USDT"].score).toBe(60);
+    expect(bySymbol["BIG-USDT"].score).toBe(68);
     expect(bySymbol["SMALL-USDT"].score).toBeGreaterThan(bySymbol["BIG-USDT"].score);
   });
 
@@ -542,22 +607,33 @@ describe("directional edge ranking", () => {
   });
 
   // 核心回归：绝对分高但方向持平的币，必须排在绝对分低但方向偏向明显的币后面。
-  // A: caps 里查不到 → 市值 25 分；fr=0（10/10）；last=1013.5 → eff_long=0.45（平台，p=1.0→10），
-  //    eff_short=0.55（p=1-(0.55-0.5)/0.5=0.9→9）
+  // A: fr=0（10/10）；last=1013.5 → eff_long=0.45（平台，p=1.0→10），
+  //    eff_short=0.55（p=1-(0.55-0.5)/0.5=0.9→9）；振幅 3%（20）
   //    A 多 = 25+20+10+15+5+10 = 85   A 空 = 25+20+10+15+5+9 = 84   差 = +1
-  // B: caps 里 cap=2e9（ceiling）→ 市值 0 分；fr=-0.0005（20/0）；last=1009（10/6）
-  //    B 多 = 0+20+20+15+5+10 = 70    B 空 = 0+20+0+15+5+6 = 46     差 = +24
-  // 按旧的绝对分排序 A(85) 会排在 B(70) 前面；按差值 B(+24) 必须排在 A(+1) 前面。
+  // B: 用振幅而不是市值来压低绝对分 —— 市值超过 MAX_MARKET_CAP 的币现在根本进不了候选池，
+  //    拿大市值当"低分币"的 fixture 会直接消失。振幅同样是方向无关维度，效果等价。
+  //    high=1015 → 振幅 1.5%（下沿拐点，ampSub=0 → 0 分）；last=1004.5 → eff_long=4.5/15=0.3（10/6）
+  //    fr=-0.0005（20/0）
+  //    B 多 = 25+0+20+15+5+10 = 75    B 空 = 25+0+0+15+5+6 = 51      差 = +24
+  // 按旧的绝对分排序 A(85) 会排在 B(75) 前面；按差值 B(+24) 必须排在 A(+1) 前面。
   it("ranks a lower-scoring coin with a strong edge above a higher-scoring coin with a flat edge", () => {
-    const tickers = [edgeTicker("EDGEA-USDT", "1013.5"), edgeTicker("EDGEB-USDT", "1009")];
+    const tickers = [
+      edgeTicker("EDGEA-USDT", "1013.5"),
+      ticker({
+        symbol: "EDGEB-USDT",
+        lowPrice: "1000",
+        highPrice: "1015",
+        lastPrice: "1004.5",
+        quoteVolume: "50000000",
+      }),
+    ];
     const oi = { "EDGEA-USDT": 50_000_000, "EDGEB-USDT": 50_000_000 };
     const fr = { "EDGEA-USDT": 0, "EDGEB-USDT": -0.0005 };
-    const caps2: MarketCapMap = { "EDGEB-USDT": { marketCap: 2_000_000_000, rank: 70 } };
 
-    const groups = computeScreenerGroups(tickers, oi, fr, caps2);
+    const groups = computeScreenerGroups(tickers, oi, fr, {});
 
     expect(groups.long.map((r) => r.symbol)).toEqual(["EDGEB-USDT", "EDGEA-USDT"]);
-    expect(groups.long.map((r) => r.score)).toEqual([70, 85]);
+    expect(groups.long.map((r) => r.score)).toEqual([75, 85]);
     expect(groups.long.map((r) => r.edge)).toEqual([24, 1]);
   });
 
@@ -675,7 +751,12 @@ describe("scoring dimension curves (weights and breakpoints, long direction)", (
     return candidates[0].longScore;
   }
 
-  it("市值 25%：floor(<=10M)=100，中间对数插值，ceiling(>=2B)=0，超出 ceiling 仍是 0", () => {
+  // 打分曲线本身的 ceiling 仍然是 2B，但 MAX_MARKET_CAP(5亿) 现在先一步生效：
+  // 市值超过 5 亿的币根本进不了候选池，曲线在 5 亿以上那一段已经无法从这条管线里触达。
+  // 2B / 5B 两个钳制点因此从这里移走 —— 它们在 market-cap.test.ts 的
+  // "gives a zero score at or above the $2B ceiling" 里直接对 getMarketCapScore 断言，
+  // 覆盖没有丢；这里改用 5 亿（恰好落在 MAX_MARKET_CAP 上，仍然合格）当大市值端点。
+  it("市值 25%：floor(<=10M)=100，中间对数插值，一路降到门槛上限 MAX_MARKET_CAP", () => {
     // 固定：振幅1.0 资金费率0.5 OI1.0 动量0.5(未知,中性) 位置1.0 → 60 + 25*capSub
     const capMap = (cap: number): MarketCapMap => ({ "X-USDT": { marketCap: cap, rank: 700 } });
 
@@ -687,11 +768,16 @@ describe("scoring dimension curves (weights and breakpoints, long direction)", (
     // 60 + 25*0.565412... = 74.1353... -> 74
     expect(scoreOf({}, 50_000_000, 0, capMap(100_000_000))).toBe(74);
 
-    // cap=2,000,000,000（ceiling）→ capSub=0 → 60 + 25*0 = 60
-    expect(scoreOf({}, 50_000_000, 0, capMap(2_000_000_000))).toBe(60);
+    // cap=500,000,000（= MAX_MARKET_CAP，门槛是 `>`，等于上限仍然合格）
+    // capSub = 100 - 100*(log10(5e8)-7)/2.30103 = 100 - 73.8352 = 26.1648
+    // 60 + 25*0.261648 = 66.5412 -> 67
+    expect(scoreOf({}, 50_000_000, 0, capMap(MAX_MARKET_CAP))).toBe(67);
 
-    // cap=5,000,000,000（超出 ceiling，仍应钳制在 0）→ 60
-    expect(scoreOf({}, 50_000_000, 0, capMap(5_000_000_000))).toBe(60);
+    // 再高一个单位就被 MAX_MARKET_CAP 拦掉，整个币不再是候选（不是"分变成 0"，是根本不参评）
+    const t = ticker({ symbol: "X-USDT", ...REF });
+    expect(
+      computeCandidateScores([t], { "X-USDT": 50_000_000 }, { "X-USDT": 0 }, capMap(MAX_MARKET_CAP + 1))
+    ).toEqual([]);
   });
 
   it("振幅 20%：[1.5,2) 线性上升，[2,5] 平台=100，(5,12] 线性下降，>12 或 <1.5 =0", () => {

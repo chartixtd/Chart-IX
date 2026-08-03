@@ -47,7 +47,10 @@ export interface ScreenerResult {
   fundingRate: number;
   /** openInterest 为 null 时同样为 null，表格应显示 "-" */
   oiVolumeRatio: number | null;
+  /** 当前方向的绝对分，0-100 —— 这个币本身好不好 */
   score: number;
+  /** 方向优势 = 当前方向分 − 反方向分，可正可负 —— 这个币偏向哪一边 */
+  edge: number;
 }
 
 export interface ScreenerGroups {
@@ -223,18 +226,33 @@ function scoreToken(
   );
 }
 
-function buildGroup(
+/** 一个候选币的两个方向分 + 两个方向的资格，未取整 */
+interface Scored {
+  row: Omit<ScreenerResult, "score" | "edge">;
+  longRaw: number;
+  shortRaw: number;
+  /** 该方向通过 hardFilter 才有资格进那一组；反方向的分照算，只是用来求差值 */
+  longEligible: boolean;
+  shortEligible: boolean;
+}
+
+/**
+ * 一次遍历算完两个方向 —— 这是「按方向分差排序」的前提：
+ * 分组时需要同时拿到 longRaw 和 shortRaw，一个方向一个方向地跑永远看不到对面的分。
+ *
+ * 资格与分数是两件事：hardFilter 分方向（追高只淘汰做多、追空只淘汰做空），
+ * 决定这个币能不能进那一组；但差值永远用两个方向的原始分算，
+ * 哪怕其中一个方向已经被 hardFilter 淘汰。两个方向都被淘汰的币才整个跳过
+ * —— 这一条必须和 selectCandidateSymbols 的口径保持一致，否则候选池和打分池会漂移。
+ */
+function collectScored(
   tickers: BingXTicker[],
-  direction: Direction,
   oiMap: Record<string, number>,
   frMap: Record<string, number>,
   marketCapMap: MarketCapMap | null,
   change24hMap: Record<string, number>
-): ScreenerResult[] {
-  // 先按未取整的原始分排序，取整只在最后写进 score 时做：
-  // 六条曲线里有四条带平台段，整数打平很常见，先取整会让第 10 名的切分
-  // 由 BingX 返回数组的顺序决定，而不是由分数决定。
-  const scored: { raw: number; row: Omit<ScreenerResult, "score"> }[] = [];
+): Scored[] {
+  const scored: Scored[] = [];
 
   for (const ticker of tickers) {
     if (!ticker.symbol.endsWith("-USDT")) continue;
@@ -243,7 +261,9 @@ function buildGroup(
     const entry = marketCapMap?.[stripContractMultiplier(ticker.symbol)];
     if (marketCapMap && isExcludedByMarketCap(entry)) continue;
     const change24h = change24hMap[ticker.symbol];
-    if (hardFilter(ticker, direction, change24h)) continue;
+    const longEligible = !hardFilter(ticker, "long", change24h);
+    const shortEligible = !hardFilter(ticker, "short", change24h);
+    if (!longEligible && !shortEligible) continue;
 
     const p = parse(ticker);
     if (!p) continue;
@@ -258,7 +278,10 @@ function buildGroup(
     const marketCapScore = marketCapMap ? getMarketCapScore(entry) : MARKET_CAP_FALLBACK_SCORE;
 
     scored.push({
-      raw: scoreToken(p, direction, oiVolumeRatio, fundingRate, marketCapScore, change24h),
+      longRaw: scoreToken(p, "long", oiVolumeRatio, fundingRate, marketCapScore, change24h),
+      shortRaw: scoreToken(p, "short", oiVolumeRatio, fundingRate, marketCapScore, change24h),
+      longEligible,
+      shortEligible,
       row: {
         symbol: ticker.symbol,
         lastPrice: p.last,
@@ -276,10 +299,70 @@ function buildGroup(
     });
   }
 
+  return scored;
+}
+
+export interface CandidateScores {
+  symbol: string;
+  /** 做多方向绝对分（已取整，与 ScreenerResult.score 同源） */
+  longScore: number;
+  /** 做空方向绝对分（已取整，与 ScreenerResult.score 同源） */
+  shortScore: number;
+  longEligible: boolean;
+  shortEligible: boolean;
+}
+
+/**
+ * 把每个候选的两个方向分摊开来，不分组、不排序、不做差值。
+ * 分组会把「反方向优势更大」的币整个藏起来（它进不了这一组），
+ * 但那个方向的分仍然真实存在且参与了差值——测试需要一个能直接看到它的入口。
+ */
+export function computeCandidateScores(
+  tickers: BingXTicker[],
+  oiMap: Record<string, number>,
+  frMap: Record<string, number>,
+  marketCapMap: MarketCapMap | null,
+  change24hMap: Record<string, number> = {}
+): CandidateScores[] {
+  return collectScored(tickers, oiMap, frMap, marketCapMap, change24hMap).map((s) => ({
+    symbol: s.row.symbol,
+    longScore: Math.round(s.longRaw),
+    shortScore: Math.round(s.shortRaw),
+    longEligible: s.longEligible,
+    shortEligible: s.shortEligible,
+  }));
+}
+
+/**
+ * 「做多优势」的字面意思就是做多相对做空的优势，所以按差值排而不是按绝对分排。
+ * 六个维度里 60% 不分方向（市值 + 振幅 + OI/量比），两份榜单按绝对分排时会被这 60%
+ * 主导，实测 10 个里有 9 个同时出现在两组——同一个币既"适合做多"又"适合做空"。
+ * 差值把这 60% 整个消掉，只剩方向信号，两组因此天然互斥。
+ *
+ * 差值 ≤ 0 的币一律不进组：它在这个方向上没有优势，放进"做多优势"是误导。
+ * 宁可某一组不足 GROUP_SIZE 个（市场一边倒时这是真实信息），也不塞反向的币。
+ *
+ * 先按未取整的原始差值排序，取整只在最后写进 score / edge 时做：
+ * 六条曲线里有四条带平台段，整数打平很常见，先取整会让第 10 名的切分
+ * 由 BingX 返回数组的顺序决定，而不是由差值决定。
+ */
+function buildGroup(scored: Scored[], direction: Direction): ScreenerResult[] {
+  const isLong = direction === "long";
+
   return scored
-    .sort((a, b) => b.raw - a.raw)
+    .filter((s) => (isLong ? s.longEligible : s.shortEligible))
+    .map((s) => ({
+      s,
+      edgeRaw: isLong ? s.longRaw - s.shortRaw : s.shortRaw - s.longRaw,
+    }))
+    .filter(({ edgeRaw }) => edgeRaw > 0)
+    .sort((a, b) => b.edgeRaw - a.edgeRaw)
     .slice(0, GROUP_SIZE)
-    .map(({ raw, row }) => ({ ...row, score: Math.round(raw) }));
+    .map(({ s, edgeRaw }) => ({
+      ...s.row,
+      score: Math.round(isLong ? s.longRaw : s.shortRaw),
+      edge: Math.round(edgeRaw),
+    }));
 }
 
 /** 一次算出做多优势 / 做空优势两组 Top N */
@@ -290,8 +373,9 @@ export function computeScreenerGroups(
   marketCapMap: MarketCapMap | null,
   change24hMap: Record<string, number> = {}
 ): ScreenerGroups {
+  const scored = collectScored(tickers, oiMap, frMap, marketCapMap, change24hMap);
   return {
-    long: buildGroup(tickers, "long", oiMap, frMap, marketCapMap, change24hMap),
-    short: buildGroup(tickers, "short", oiMap, frMap, marketCapMap, change24hMap),
+    long: buildGroup(scored, "long"),
+    short: buildGroup(scored, "short"),
   };
 }

@@ -5,6 +5,7 @@ import {
   isSyntheticProduct,
   selectCandidateSymbols,
   computeScreenerGroups,
+  computeCandidateScores,
   buildChange24hMap,
   GROUP_SIZE,
   MIN_QUOTE_VOLUME,
@@ -249,13 +250,23 @@ describe("computeScreenerGroups", () => {
     expect(groups.short).toEqual([]);
   });
 
-  it("ranks a smaller cap above a larger one when everything else matches", () => {
+  // 市值是方向无关维度，在「本方向分 − 反方向分」里被整个消掉：它决定 score 的高低，
+  // 但不再决定组内先后（两个币的 edge 在这里完全相同）。所以这条断言的是 score 本身。
+  // 两个币除市值外完全一致：振幅3%(20) 资金费率0(10) OI ratio=0.5(15) 动量未知(5)
+  // 位置 eff_long=(1.01-1)/0.03=1/3（平台，10）→ 方向无关部分 + 方向部分合计 60。
+  //   SMALL cap=20M  → capSub=100-100*(log10(2e7)-log10(1e7))/(log10(2e9)-log10(1e7))=86.9175
+  //                    → 60 + 25*0.869175 = 81.729 -> 82
+  //   BIG   cap=1.8B → capSub=1.9887 → 60 + 25*0.019887 = 60.497 -> 60
+  it("scores a smaller cap above a larger one when everything else matches", () => {
     const tickers = [ticker({ symbol: "SMALL-USDT" }), ticker({ symbol: "BIG-USDT" })];
     const oi = { "SMALL-USDT": 25_000_000, "BIG-USDT": 25_000_000 };
     const fr = { "SMALL-USDT": 0, "BIG-USDT": 0 };
     const groups = computeScreenerGroups(tickers, oi, fr, caps);
-    expect(groups.long[0].symbol).toBe("SMALL-USDT");
-    expect(groups.long[0].score).toBeGreaterThan(groups.long[1].score);
+    const bySymbol = Object.fromEntries(groups.long.map((r) => [r.symbol, r]));
+
+    expect(bySymbol["SMALL-USDT"].score).toBe(82);
+    expect(bySymbol["BIG-USDT"].score).toBe(60);
+    expect(bySymbol["SMALL-USDT"].score).toBeGreaterThan(bySymbol["BIG-USDT"].score);
   });
 
   // 反转逻辑：费率为负 = 空头拥挤 = 潜在轧空 = 利好做多。
@@ -272,25 +283,34 @@ describe("computeScreenerGroups", () => {
     expect(groups.short[0].symbol).toBe("POS-USDT");
   });
 
+  // 25 个币得先真的分成两拨才谈得上"两组各截断到 10"：差值为正才有资格进组，
+  // 所以这里用资金费率把前 12 个压向做多、后 13 个压向做空（默认行情的位置维度
+  // eff_long=1/3 → 10 分、eff_short=2/3 → 6.67 分，本身只提供 +3.33 的做多倾斜，
+  // ±0.0008 的费率给出 ±20 分，足以盖过它）：
+  //   前 12 个 fr=-0.0008 → 做多差值 = 20 + 3.33 = 23.33 > 0 → 12 个候选，截断到 10
+  //   后 13 个 fr=+0.0008 → 做空差值 = 20 - 3.33 = 16.67 > 0 → 13 个候选，截断到 10
   it("caps each group at GROUP_SIZE entries", () => {
     const tickers = Array.from({ length: 25 }, (_, i) =>
       ticker({ symbol: `C${i}-USDT`, quoteVolume: String(10_000_000 + i * 1_000_000) })
     );
-    const groups = computeScreenerGroups(tickers, {}, {}, {});
+    const fr = Object.fromEntries(tickers.map((t, i) => [t.symbol, i < 12 ? -0.0008 : 0.0008]));
+    const groups = computeScreenerGroups(tickers, {}, fr, {});
     expect(groups.long).toHaveLength(GROUP_SIZE);
     expect(groups.short).toHaveLength(GROUP_SIZE);
   });
 
-  // 之前这里是 `expect([...scores].sort()).toEqual(scores)` —— 对自身重新排序再比较，
-  // 任何实现（包括给所有币打相同分的实现）都能通过，没有信号。改成断言具体的、
-  // 可独立算出的排序结果：三条振幅不同、其余五个维度锁定一致的行情，
+  // 这条原本断言"组内按绝对分降序"，改成按方向分差排序后已经不成立了，但它锁定的那组
+  // 振幅算式仍然有价值，于是改钉一件更根本的事：**方向无关的维度只影响 score，不影响 edge**。
+  // 三条振幅不同、其余五个维度锁定一致的行情，
   // 振幅子分应为 3(amp=3,峰值,100) > 8.5(amp=8.5,下降段中点,50) > 1.5(amp=1.5,下降段起点,0)。
   // 没有传 change24hMap，三个 symbol 都关联不到 24h 涨跌 → 动量维度统一拿中性 50 分
   // （0.1*50=5，而不是旧版靠 priceChangePercent 锁定的 0.1*100=10），
   // 其余四个维度锁定分之和为 25(市值,查不到→100)+10(资金费率,rate=0→50)+15(OI,ratio=1.0→100)+10(位置,eff=0.3→100)=60，
   // 加上动量 5 = 65，再加振幅 20*ampSub：
   // 对应总分 85(振幅100) > 75(振幅50) > 65(振幅0)（算法见下面 "amplitude" 维度测试块的注释）。
-  it("sorts each group by descending score using an independently-computable ordering", () => {
+  // 而三个币的 edge 完全相同：三个方向维度（资金费率 10/10、动量 5/5、位置 10/6）
+  // 对它们一模一样 → edge = 10 - 6 = 4。振幅这 20 分在差值里被整个消掉。
+  it("lets a direction-neutral dimension move the score without moving the edge", () => {
     const base = {
       lowPrice: "1000",
       quoteVolume: "50000000",
@@ -303,8 +323,12 @@ describe("computeScreenerGroups", () => {
     const oi = { "ORD-LOW-USDT": 50_000_000, "ORD-MID-USDT": 50_000_000, "ORD-HIGH-USDT": 50_000_000 };
     const fr = { "ORD-LOW-USDT": 0, "ORD-MID-USDT": 0, "ORD-HIGH-USDT": 0 };
     const groups = computeScreenerGroups(tickers, oi, fr, {});
-    expect(groups.long.map((r) => r.symbol)).toEqual(["ORD-MID-USDT", "ORD-HIGH-USDT", "ORD-LOW-USDT"]);
-    expect(groups.long.map((r) => r.score)).toEqual([85, 75, 65]);
+    const bySymbol = Object.fromEntries(groups.long.map((r) => [r.symbol, r]));
+
+    expect(bySymbol["ORD-MID-USDT"].score).toBe(85);
+    expect(bySymbol["ORD-HIGH-USDT"].score).toBe(75);
+    expect(bySymbol["ORD-LOW-USDT"].score).toBe(65);
+    expect(groups.long.map((r) => r.edge)).toEqual([4, 4, 4]);
   });
 
   it("falls back to a neutral market cap score when the map is null", () => {
@@ -378,16 +402,21 @@ describe("computeScreenerGroups", () => {
     // NOOI-USDT 刻意不在 oiMap 里
     const oi = { "HASOI-USDT": 50_000_000, "ZEROOI-USDT": 0 };
     const groups = computeScreenerGroups(tickers, oi, {}, {});
+    // OI 是方向无关维度，三个币的 edge 相同，组内先后已经不由它决定了 ——
+    // 按 symbol 取行，别让这条断言退化成"回声输入顺序"。
+    const bySymbol = Object.fromEntries(groups.long.map((r) => [r.symbol, r]));
 
-    expect(groups.long.map((r) => r.symbol)).toEqual(["HASOI-USDT", "NOOI-USDT", "ZEROOI-USDT"]);
-    expect(groups.long.map((r) => r.score)).toEqual([85, 78, 70]);
+    expect(bySymbol["HASOI-USDT"].score).toBe(85);
+    expect(bySymbol["NOOI-USDT"].score).toBe(78);
+    expect(bySymbol["ZEROOI-USDT"].score).toBe(70);
+    expect(bySymbol["NOOI-USDT"].score).toBeGreaterThan(bySymbol["ZEROOI-USDT"].score);
 
-    const noOi = groups.long[1];
+    const noOi = bySymbol["NOOI-USDT"];
     expect(noOi.openInterest).toBeNull();
     expect(noOi.oiVolumeRatio).toBeNull();
     // 对照：真的是 0 的那个仍然报 0，不是 null——两种情况没有被混为一谈
-    expect(groups.long[2].openInterest).toBe(0);
-    expect(groups.long[2].oiVolumeRatio).toBe(0);
+    expect(bySymbol["ZEROOI-USDT"].openInterest).toBe(0);
+    expect(bySymbol["ZEROOI-USDT"].oiVolumeRatio).toBe(0);
   });
 
   // priceChangePercent 现在是查表结果，不是 ticker 自身的字段：查不到就是 null
@@ -437,6 +466,162 @@ describe("computeScreenerGroups", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 方向分差排序：两组不再各自按绝对分排，而是按「本方向分 − 反方向分」排。
+//
+// 下面这批测试共用一条参照行情，方向无关的三个维度全部锁死，只留方向相关的三个变动：
+//   市值(25%)   = 100 —— caps 传 {}，查不到 → getMarketCapScore(undefined)=100 → 25
+//   振幅(20%)   = 100 —— low=1000, high=1030 → amplitude=3%，落在 [2,5] 平台 → 20
+//   OI/量比(15%) = 100 —— openInterest=quoteVolume=50M → ratio=1.0，落在平台 → 15
+// 方向无关部分合计 60，且它在两个方向上完全相同 —— 所以它在差值里被整个消掉。
+// 剩下三个方向维度：资金费率 20*f、动量 10*m、趋势位置 10*p。
+//
+// 常用取值（手算备查）：
+//   fundingRate=-0.0005  → f_long=1.0(20)  f_short=0(0)
+//   fundingRate=-0.0001  → f_long=0.6(12)  f_short=0.4(8)
+//   fundingRate=0        → f_long=0.5(10)  f_short=0.5(10)
+//   fundingRate=+0.00025 → f_long=0.25(5)  f_short=0.75(15)
+//   fundingRate=+0.0005  → f_long=0(0)     f_short=1.0(20)
+//   lastPrice=1009 → eff_long=0.3（平台，p=1.0→10）  eff_short=0.7（p=1-(0.7-0.5)/0.5=0.6→6）
+//   lastPrice=1015 → eff_long=0.5（平台，p=1.0→10）  eff_short=0.5（平台，p=1.0→10）
+//   lastPrice=1027 → eff_long=0.9（p=1-(0.9-0.5)/0.5=0.2→2）eff_short=0.1（p=0.1/0.2=0.5→5）
+//   change24h 不传 → 多空两个方向都拿中性 50（m=0.5→5），在差值里同样被消掉
+describe("directional edge ranking", () => {
+  const EDGE_REF = { lowPrice: "1000", highPrice: "1030", quoteVolume: "50000000" };
+
+  /** 造一个只在 lastPrice / fundingRate 上有差别的候选 */
+  function edgeTicker(symbol: string, lastPrice: string): BingXTicker {
+    return ticker({ symbol, ...EDGE_REF, lastPrice });
+  }
+
+  // 五个币的手算分（方向无关部分 60 对所有币相同）：
+  //   L1 fr=-0.0005  last=1009 → 多 60+20+5+10=95  空 60+0+5+6=71   差 +24 / -24
+  //   L2 fr=+0       last=1009 → 多 60+10+5+10=85  空 60+10+5+6=81  差 +4  / -4
+  //   S1 fr=+0.0005  last=1027 → 多 60+0+5+2=67    空 60+20+5+5=90  差 -23 / +23
+  //   S2 fr=+0.00025 last=1027 → 多 60+5+5+2=72    空 60+15+5+5=85  差 -13 / +13
+  //   N1 fr=0        last=1015 → 多 60+10+5+10=85  空 60+10+5+10=85 差 0 / 0（两组都进不去）
+  const L1 = edgeTicker("L1-USDT", "1009");
+  const L2 = edgeTicker("L2-USDT", "1009");
+  const S1 = edgeTicker("S1-USDT", "1027");
+  const S2 = edgeTicker("S2-USDT", "1027");
+  const N1 = edgeTicker("N1-USDT", "1015");
+  // 刻意打乱输入顺序：两组的期望顺序（L1,L2 / S1,S2）都和输入顺序不同，
+  // 排序退化成"回声输入顺序"时这条会立刻失败。
+  const pool = [L2, S2, N1, L1, S1];
+  const poolOi = Object.fromEntries(pool.map((t) => [t.symbol, 50_000_000]));
+  const poolFr = {
+    "L1-USDT": -0.0005,
+    "L2-USDT": 0,
+    "S1-USDT": 0.0005,
+    "S2-USDT": 0.00025,
+    "N1-USDT": 0,
+  };
+
+  // 这是这次改动的全部目的：差值为正的币只可能落在一边，两组必然不相交。
+  // 改回按绝对分排序，这条会立刻失败（旧实现下 L1/L2/S1/S2 会大面积同时出现在两组里）。
+  it("never places the same coin in both groups", () => {
+    const groups = computeScreenerGroups(pool, poolOi, poolFr, {});
+    const longSymbols = new Set(groups.long.map((r) => r.symbol));
+    const overlap = groups.short.filter((r) => longSymbols.has(r.symbol));
+
+    expect(overlap).toEqual([]);
+    // 防空转：两组都得真的有东西，否则"不相交"毫无意义
+    expect(groups.long.length).toBeGreaterThan(0);
+    expect(groups.short.length).toBeGreaterThan(0);
+  });
+
+  it("orders each group by descending edge, not by descending absolute score", () => {
+    const groups = computeScreenerGroups(pool, poolOi, poolFr, {});
+
+    expect(groups.long.map((r) => r.symbol)).toEqual(["L1-USDT", "L2-USDT"]);
+    expect(groups.long.map((r) => r.score)).toEqual([95, 85]);
+    expect(groups.long.map((r) => r.edge)).toEqual([24, 4]);
+
+    expect(groups.short.map((r) => r.symbol)).toEqual(["S1-USDT", "S2-USDT"]);
+    expect(groups.short.map((r) => r.score)).toEqual([90, 85]);
+    expect(groups.short.map((r) => r.edge)).toEqual([23, 13]);
+  });
+
+  // 核心回归：绝对分高但方向持平的币，必须排在绝对分低但方向偏向明显的币后面。
+  // A: caps 里查不到 → 市值 25 分；fr=0（10/10）；last=1013.5 → eff_long=0.45（平台，p=1.0→10），
+  //    eff_short=0.55（p=1-(0.55-0.5)/0.5=0.9→9）
+  //    A 多 = 25+20+10+15+5+10 = 85   A 空 = 25+20+10+15+5+9 = 84   差 = +1
+  // B: caps 里 cap=2e9（ceiling）→ 市值 0 分；fr=-0.0005（20/0）；last=1009（10/6）
+  //    B 多 = 0+20+20+15+5+10 = 70    B 空 = 0+20+0+15+5+6 = 46     差 = +24
+  // 按旧的绝对分排序 A(85) 会排在 B(70) 前面；按差值 B(+24) 必须排在 A(+1) 前面。
+  it("ranks a lower-scoring coin with a strong edge above a higher-scoring coin with a flat edge", () => {
+    const tickers = [edgeTicker("EDGEA-USDT", "1013.5"), edgeTicker("EDGEB-USDT", "1009")];
+    const oi = { "EDGEA-USDT": 50_000_000, "EDGEB-USDT": 50_000_000 };
+    const fr = { "EDGEA-USDT": 0, "EDGEB-USDT": -0.0005 };
+    const caps2: MarketCapMap = { "EDGEB-USDT": { marketCap: 2_000_000_000, rank: 70 } };
+
+    const groups = computeScreenerGroups(tickers, oi, fr, caps2);
+
+    expect(groups.long.map((r) => r.symbol)).toEqual(["EDGEB-USDT", "EDGEA-USDT"]);
+    expect(groups.long.map((r) => r.score)).toEqual([70, 85]);
+    expect(groups.long.map((r) => r.edge)).toEqual([24, 1]);
+  });
+
+  // 差值 ≤ 0 就是"这个方向上没有优势"，塞进这一组是误导——宁可这组不足 10 个。
+  it("keeps a coin whose opposite-direction score is higher out of that group", () => {
+    const groups = computeScreenerGroups(pool, poolOi, poolFr, {});
+    // S1 多头 67 < 空头 90 → 差值为负，不该出现在做多组
+    expect(groups.long.some((r) => r.symbol === "S1-USDT")).toBe(false);
+    expect(groups.short.some((r) => r.symbol === "S1-USDT")).toBe(true);
+  });
+
+  it("keeps a coin whose two directional scores are exactly equal out of both groups", () => {
+    const groups = computeScreenerGroups(pool, poolOi, poolFr, {});
+    // N1 多空同为 85 → 差值恰好 0，两边都没有优势
+    expect(groups.long.some((r) => r.symbol === "N1-USDT")).toBe(false);
+    expect(groups.short.some((r) => r.symbol === "N1-USDT")).toBe(false);
+  });
+
+  // 市场一边倒时某一组不足 10 个是真实信息，不能靠塞反向币补满。
+  it("returns fewer than GROUP_SIZE rows when only a few coins have a positive edge", () => {
+    const groups = computeScreenerGroups(pool, poolOi, poolFr, {});
+    expect(groups.long).toHaveLength(2);
+    expect(groups.short).toHaveLength(2);
+    expect(GROUP_SIZE).toBeGreaterThan(2); // 防空转：确认 2 确实是"不足 10"而不是上限本身
+  });
+
+  // edge 就是两个方向绝对分之差，这里用 computeCandidateScores 把两个方向的分都摊开来对。
+  it("reports edge as the exact difference between the two directional scores", () => {
+    const [l1] = computeCandidateScores([L1], poolOi, poolFr, {});
+    expect(l1.longScore).toBe(95);
+    expect(l1.shortScore).toBe(71);
+
+    const groups = computeScreenerGroups([L1], poolOi, poolFr, {});
+    expect(groups.long[0].score).toBe(95);
+    expect(groups.long[0].edge).toBe(24); // 95 - 71
+  });
+
+  // hardFilter 是分方向的（追高只淘汰做多、追空只淘汰做空），但差值永远用两个方向的分算。
+  // PUMP: change24h=+22 → 做多被 hardFilter 淘汰；两个方向的动量都落在范围外拿 0 分
+  //   （多头 signed=22>15 → 0；空头 signed=-22<=-15 → 0）
+  //   last=1027 → 多头 p=0.2(2)，空头 p=0.5(5)；fr=0 → 10/10
+  //   多 = 25+20+10+15+0+2 = 72（这个分不会出现在任何一组里，但差值要用它）
+  //   空 = 25+20+10+15+0+5 = 75
+  //   做空组差值 = 75 - 72 = +3。若实现把"被淘汰的方向"当成 0 分，差值会变成 75。
+  it("computes edge from both directional scores even when one direction was dropped by hardFilter", () => {
+    const pump = edgeTicker("PUMP-USDT", "1027");
+    const oi = { "PUMP-USDT": 50_000_000 };
+    const change24h = { "PUMP-USDT": 22 };
+
+    const [scores] = computeCandidateScores([pump], oi, {}, {}, change24h);
+    expect(scores.longEligible).toBe(false); // 追高，做多方向被淘汰
+    expect(scores.shortEligible).toBe(true);
+    expect(scores.longScore).toBe(72); // 被淘汰的方向仍然算得出分
+    expect(scores.shortScore).toBe(75);
+
+    const groups = computeScreenerGroups([pump], oi, {}, {}, change24h);
+    expect(groups.long).toEqual([]);
+    expect(groups.short).toHaveLength(1);
+    expect(groups.short[0].score).toBe(75);
+    expect(groups.short[0].edge).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 六个打分维度逐一钉住：曲线形状 + 权重。
 //
 // 方法：固定一条"参照行情"，除被测维度外，其余五个维度都钉在一个已知子分上，
@@ -466,6 +651,10 @@ describe("scoring dimension curves (weights and breakpoints, long direction)", (
     lastPrice: "1009", // eff = (1009-1000)/(1030-1000) = 0.3
     quoteVolume: "50000000",
   };
+  // 这里读 computeCandidateScores 而不是 groups.long[0].score：分组现在按方向分差取，
+  // 做多分低于做空分的币根本进不了做多组（例如本块里 fundingRate>0 的那几档，
+  // 或 eff=0.5 这种两个方向打平的位置），但它的做多分依然真实存在、依然要被钉住。
+  // 用绝对分入口测绝对分，分组规则的变化不该把维度曲线的覆盖率带走。
   function scoreOf(
     overrides: Partial<BingXTicker>,
     oi = 50_000_000,
@@ -474,9 +663,16 @@ describe("scoring dimension curves (weights and breakpoints, long direction)", (
     change24hMap: Record<string, number> = {}
   ) {
     const t = ticker({ symbol: "X-USDT", ...REF, ...overrides });
-    const groups = computeScreenerGroups([t], { "X-USDT": oi }, { "X-USDT": fr }, marketCapMap, change24hMap);
-    expect(groups.long).toHaveLength(1); // 前置断言：确认没有被 hardFilter 误杀
-    return groups.long[0].score;
+    const candidates = computeCandidateScores(
+      [t],
+      { "X-USDT": oi },
+      { "X-USDT": fr },
+      marketCapMap,
+      change24hMap
+    );
+    expect(candidates).toHaveLength(1); // 前置断言：确认没有被市值/前缀规则整个剔除
+    expect(candidates[0].longEligible).toBe(true); // 前置断言：确认没有被 hardFilter 误杀
+    return candidates[0].longScore;
   }
 
   it("市值 25%：floor(<=10M)=100，中间对数插值，ceiling(>=2B)=0，超出 ceiling 仍是 0", () => {
@@ -668,6 +864,13 @@ describe("direction asymmetry not covered by existing tests", () => {
     // B 多头 = 25+20+10+15+10*1.0+10*1.0 = 90（未变）
     // A 空头 = 25+20+10+15+10*1.0+10*0.6 = 86（未变）
     // B 空头 = 25+20+10+15+10*0.4+10*0.6 = 80（新曲线下逆向 -3% 不再是 0 分，旧值 76）
+    //
+    // 改成按方向分差排序后，这四个分决定的不再是"谁在组里排前面"，而是"谁有资格进组"：
+    //   A 做多差值 = 84 - 86 = -2 → A 进不了做多组（它其实是个偏空的币）
+    //   B 做多差值 = 90 - 80 = +10 → 做多组只剩 B
+    //   A 做空差值 = 86 - 84 = +2 → 做空组只剩 A
+    //   B 做空差值 = 80 - 90 = -10 → B 进不了做空组
+    // 方向翻转被删掉或反转时，两组会立刻换人或塌空，比原来的顺序断言更硬。
     const A = ticker({
       symbol: "MOMA-USDT",
       lowPrice: "1000",
@@ -687,11 +890,13 @@ describe("direction asymmetry not covered by existing tests", () => {
     const change24h = { "MOMA-USDT": -3, "MOMB-USDT": 3 };
     const groups = computeScreenerGroups([A, B], oi, fr, {}, change24h);
 
-    expect(groups.long.map((r) => r.symbol)).toEqual(["MOMB-USDT", "MOMA-USDT"]);
-    expect(groups.long.map((r) => r.score)).toEqual([90, 84]);
+    expect(groups.long.map((r) => r.symbol)).toEqual(["MOMB-USDT"]);
+    expect(groups.long.map((r) => r.score)).toEqual([90]);
+    expect(groups.long.map((r) => r.edge)).toEqual([10]);
 
-    expect(groups.short.map((r) => r.symbol)).toEqual(["MOMA-USDT", "MOMB-USDT"]);
-    expect(groups.short.map((r) => r.score)).toEqual([86, 80]);
+    expect(groups.short.map((r) => r.symbol)).toEqual(["MOMA-USDT"]);
+    expect(groups.short.map((r) => r.score)).toEqual([86]);
+    expect(groups.short.map((r) => r.edge)).toEqual([2]);
   });
 
   it("positionScore inverts sign with direction: a low-in-range coin ranks first in groups.long, a high-in-range coin ranks first in groups.short", () => {
@@ -706,6 +911,10 @@ describe("direction asymmetry not covered by existing tests", () => {
     // B 多头 = 25+20+10+15+5+10*0.2 = 77
     // A 空头 = 25+20+10+15+5+10*0.2 = 77
     // B 空头 = 25+20+10+15+5+10*0.5 = 80
+    //
+    // 按方向分差排序后，position 是这里唯一的方向来源，差值就完全由它决定：
+    //   A 做多差值 = 80 - 77 = +3 → 只有 A 进做多组；B 做多差值 = -3，进不去
+    //   B 做空差值 = 80 - 77 = +3 → 只有 B 进做空组；A 做空差值 = -3，进不去
     const A = ticker({
       symbol: "POSA-USDT",
       lowPrice: "1000",
@@ -724,10 +933,12 @@ describe("direction asymmetry not covered by existing tests", () => {
     const fr = { "POSA-USDT": 0, "POSB-USDT": 0 };
     const groups = computeScreenerGroups([A, B], oi, fr, {});
 
-    expect(groups.long.map((r) => r.symbol)).toEqual(["POSA-USDT", "POSB-USDT"]);
-    expect(groups.long.map((r) => r.score)).toEqual([80, 77]);
+    expect(groups.long.map((r) => r.symbol)).toEqual(["POSA-USDT"]);
+    expect(groups.long.map((r) => r.score)).toEqual([80]);
+    expect(groups.long.map((r) => r.edge)).toEqual([3]);
 
-    expect(groups.short.map((r) => r.symbol)).toEqual(["POSB-USDT", "POSA-USDT"]);
-    expect(groups.short.map((r) => r.score)).toEqual([80, 77]);
+    expect(groups.short.map((r) => r.symbol)).toEqual(["POSB-USDT"]);
+    expect(groups.short.map((r) => r.score)).toEqual([80]);
+    expect(groups.short.map((r) => r.edge)).toEqual([3]);
   });
 });

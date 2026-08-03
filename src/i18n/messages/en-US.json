@@ -717,7 +717,6 @@
   },
   "screener": {
     "title": "Market Screener",
-    "subtitle": "Futures · small-cap intraday setups",
     "no_results": "No coins match the current criteria. Please try again later.",
     "error": "Failed to load data",
     "retry": "Retry",
@@ -740,7 +739,14 @@
       "actions": "Actions"
     },
     "action_long": "Long",
-    "action_short": "Short"
+    "action_short": "Short",
+    "guide": {
+      "title": "How do I read this board?",
+      "score": "How good the coin is on its own, 0–100. Weighted across six dimensions: market cap (smaller scores higher), amplitude, funding rate, open interest, 24h change and intraday position.",
+      "edge": "Which way the coin leans and by how much — it equals long score minus short score. The bigger the number, the clearer the directional signal.",
+      "sorting": "The board is ranked by Edge, not by Score. More than half the six dimensions score the same for long and short, so ranking by Score alone would put nearly the same coins in both groups. Edge is what tells you which side a coin actually favours.",
+      "example": "Example: coin A scores 73 long and 71 short — an edge of just +2, decent quality but no clear direction. Coin B scores 61 long and 39 short — an edge of +22, a lower score but a clear long lean. The board ranks B above A."
+    }
   },
   "seo": {
     "title": "Crypto Trading Education & Live Trading Platform",

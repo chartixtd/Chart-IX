@@ -41,7 +41,20 @@ export const MIN_QUOTE_VOLUME = 7_000_000;
  */
 export const MAX_MARKET_CAP = 500_000_000;
 
-const MIN_AMPLITUDE = 1.5;
+/**
+ * 市值下限。3000万以下的盘子太容易被单笔资金推动，日内进出容易被埋。
+ * 注意：查不到市值 = 无法证明达标 = 排除（与上限的语义不同，上限只排除"已知超标"）。
+ */
+export const MIN_MARKET_CAP = 30_000_000;
+
+/**
+ * 24h 振幅下限。1.5% 太松：日内短线要的是「今天真的在动」，
+ * 1.5% 的区间扣掉手续费和滑点基本没有可操作空间。
+ * 3% 正好落在打分曲线 [2,5] 满分平台的内部——过线的币一进来就在甜点区。
+ * 实测这条线配合 700万量能门槛与 3000万–5亿 市值区间后候选池仍有 23 个，够两组各 10。
+ */
+export const MIN_AMPLITUDE = 3.0;
+
 const MAX_CHASE_PERCENT = 15;
 
 export interface ScreenerResult {
@@ -135,16 +148,25 @@ export function hardFilter(
 }
 
 /**
- * 两道市值门槛：排名进前 50 的主流大币、以及市值超过 MAX_MARKET_CAP 的大盘币，
- * 都排除出候选池。查不到市值的不算大币——查不到 = 比 CoinGecko 第 1000 名还小，
- * 正是我们要的微型盘，两道门槛都不该拦它。
+ * 三道市值门槛：排名进前 50 的主流大币、市值超过 MAX_MARKET_CAP 的大盘币、
+ * 以及市值低于 MIN_MARKET_CAP 的微型盘，都排除出候选池。
  *
- * 调用点必须自己先判断 marketCapMap 是否为 null：市值数据整体拿不到时这两道门槛
- * 一律失效（退化成中性分），否则一次 CoinGecko 故障就会把整块看板清空。
+ * 查不到市值的币同样排除：下限是一个「必须证明达标」的条件，
+ * 在 CoinGecko 前 1000 名里查不到就无法证明市值 ≥ 3000万，只能当不达标处理。
+ * 这跟上限的语义相反（上限只拦「已知超标」），也正是这条规则的目的——
+ * HYPERLANE / TAKE / AIO 这类查不到市值却靠满分市值维度霸榜的币会被挡在门外。
+ *
+ * 调用点必须自己先判断 marketCapMap 是否为 null：市值数据整体拿不到时这三道门槛
+ * 一律失效（退化成中性分），否则一次 CoinGecko 故障会让所有币都「查不到」→
+ * 全部被下限排除 → 整块看板直接空掉。
  */
 export function isExcludedByMarketCap(entry: MarketCapEntry | undefined): boolean {
-  if (entry === undefined) return false;
-  return entry.rank <= TOP_MARKET_CAP_EXCLUDED || entry.marketCap > MAX_MARKET_CAP;
+  if (entry === undefined) return true;
+  return (
+    entry.rank <= TOP_MARKET_CAP_EXCLUDED ||
+    entry.marketCap > MAX_MARKET_CAP ||
+    entry.marketCap < MIN_MARKET_CAP
+  );
 }
 
 /**
@@ -178,9 +200,13 @@ export function selectCandidateSymbols(
   return [...symbols];
 }
 
+/**
+ * 没有下段上升区间：振幅下限已经由 hardFilter 保证 ≥ MIN_AMPLITUDE(3%)，
+ * 能落到这里的最低振幅就是 3%，本身就在 [2,5] 这段满分平台之内。
+ * （曾经有一段 [MIN_AMPLITUDE,2) 的线性上升，下限提到 3% 后它要求 `>=3 && <2`，永不成立。）
+ */
 function amplitudeScore(amplitude: number): number {
   if (amplitude >= 2 && amplitude <= 5) return 100;
-  if (amplitude >= MIN_AMPLITUDE && amplitude < 2) return ((amplitude - MIN_AMPLITUDE) / 0.5) * 100;
   if (amplitude > 5 && amplitude <= 12) return 100 - ((amplitude - 5) / 7) * 100;
   return 0;
 }

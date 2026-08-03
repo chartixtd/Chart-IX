@@ -33,7 +33,6 @@ export default function ScreenerPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h1 className="text-xl font-bold text-text-primary">{t("title")}</h1>
-          <p className="text-xs text-text-secondary mt-0.5">{t("subtitle")}</p>
         </div>
         <div className="flex items-center gap-3">
           {/* 报错时不显示倒计时——那会是一个冻在 00:00 的假进度 */}
@@ -42,12 +41,24 @@ export default function ScreenerPage() {
               {t("next_refresh")} {formatCountdown(remaining)}
             </span>
           )}
-          {/* 一次点击会触发四个 refetch，连点成倍放大；刷新中直接禁用 */}
+          {/* 现在只是单个 query.refetch()；刷新中仍直接禁用，避免连点排队重复请求 */}
           <Button variant="ghost" size="sm" onClick={refetch} disabled={isRefreshing}>
             {t("refresh_now")}
           </Button>
         </div>
       </div>
+
+      <details className="mb-4 rounded-lg border border-border-default bg-bg-secondary">
+        <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-text-primary">
+          {t("guide.title")}
+        </summary>
+        <div className="space-y-3 border-t border-border-default px-4 py-3 text-xs leading-relaxed text-text-secondary">
+          <p><span className="font-semibold text-text-primary">{t("columns.score")}</span> — {t("guide.score")}</p>
+          <p><span className="font-semibold text-text-primary">{t("columns.edge")}</span> — {t("guide.edge")}</p>
+          <p>{t("guide.sorting")}</p>
+          <p className="rounded-sm bg-bg-tertiary px-3 py-2">{t("guide.example")}</p>
+        </div>
+      </details>
 
       {marketCapUnavailable && (
         <p className="mb-3 rounded-sm border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold">

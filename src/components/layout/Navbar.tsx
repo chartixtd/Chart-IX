@@ -11,7 +11,9 @@ import { PriceAlertBell } from "@/components/alerts/PriceAlertBell";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
-const GUEST_NAV_ITEMS = ["home", "videos", "articles", "news", "trade", "screener"] as const;
+// Signed-out visitors only see Home — the product nav (videos/articles/news/trade/screener)
+// is gated behind login, so it shouldn't tease unauthenticated users on the marketing page.
+const GUEST_NAV_ITEMS = ["home"] as const;
 const USER_NAV_ITEMS = ["dashboard", "videos", "articles", "news", "trade", "screener"] as const;
 
 export function Navbar() {

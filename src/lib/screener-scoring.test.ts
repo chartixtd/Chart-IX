@@ -7,6 +7,7 @@ import {
   computeScreenerGroups,
   buildChange24hMap,
   GROUP_SIZE,
+  MIN_QUOTE_VOLUME,
   SCREENER_REFRESH_MS,
 } from "./screener-scoring";
 import type { MarketCapMap } from "./market-cap";
@@ -42,15 +43,26 @@ describe("hardFilter", () => {
     expect(hardFilter(ticker({ symbol: "DUST-USDT", quoteVolume: "500000" }), "long", undefined)).toBe(true);
   });
 
-  // 门槛已从 1M 提到 5M（流动性现在是纯门槛，没有任何打分维度再补偿它）。
-  // 500,000 在新旧两个门槛下都会被淘汰，分不出区别；这一对样本卡在 1M 与 5M 之间，
-  // 只有门槛真的是 5M 才会淘汰 2M 那个、同时保留 6M 那个。
-  it("drops a coin that would have cleared the old 1M floor but sits below the 5M floor", () => {
-    expect(hardFilter(ticker({ symbol: "THIN-USDT", quoteVolume: "2000000" }), "long", undefined)).toBe(true);
+  // 门槛值改过两次（1M → 5M → 7M），所以这一对断言全部相对 MIN_QUOTE_VOLUME 取值：
+  // 门槛再动的时候它们跟着动，不会像写死的 fixture 那样悄悄掉到门槛下面变成空转。
+  // ±1 是能取到的最小步长，卡在拐点两侧，任何方向的差一错误都会被抓到。
+  it("drops a coin sitting one unit below MIN_QUOTE_VOLUME and keeps one sitting exactly on it", () => {
+    const under = ticker({ symbol: "UNDER-USDT", quoteVolume: String(MIN_QUOTE_VOLUME - 1) });
+    const onFloor = ticker({ symbol: "FLOOR-USDT", quoteVolume: String(MIN_QUOTE_VOLUME) });
+    const over = ticker({ symbol: "OVER-USDT", quoteVolume: String(MIN_QUOTE_VOLUME + 1) });
+
+    expect(hardFilter(under, "long", undefined)).toBe(true);
+    expect(hardFilter(onFloor, "long", undefined)).toBe(false); // 门槛是 `<`，等于门槛应当存活
+    expect(hardFilter(over, "long", undefined)).toBe(false);
   });
 
-  it("keeps a coin whose volume clears the 5M floor", () => {
-    expect(hardFilter(ticker({ symbol: "LIQUID-USDT", quoteVolume: "6000000" }), "long", undefined)).toBe(false);
+  // BingX 长尾的 quoteVolume 是被拍平的：实测 144 个不相干的币全挤在 619-691 万，
+  // 门槛设在 5M 会正好落进这段假数据里。7M 是为了跨过整条假带才选的，
+  // 这条断言把"假带上沿以下的成交量一律不可信、必须淘汰"钉住。
+  it("drops a coin sitting inside BingX's clamped long-tail volume band (the reason the floor is 7M, not 5M)", () => {
+    expect(MIN_QUOTE_VOLUME).toBeGreaterThan(6_913_330); // 假带实测上沿
+    const clamped = ticker({ symbol: "CLAMPED-USDT", quoteVolume: "6500000" });
+    expect(hardFilter(clamped, "long", undefined)).toBe(true);
   });
 
   it("drops flat coins whose 24h amplitude is under 1.5%", () => {
@@ -383,8 +395,9 @@ describe("computeScreenerGroups", () => {
   // 生产环境实测的失败场景：代币化股票（如 NCSKTSLA2USD，即 Tesla）在 CoinGecko
   // 查不到市值，走「查不到=微型盘」分支白拿 25% 权重的满分（100），量能刚过门槛，
   // 振幅 ~2.5% 又落在打分甜点区，结果比真实小市值币分还高，顶到榜首。
-  // 量能取 12M 而不是实测的 1.2M：门槛提到 5M 之后 1.2M 会先被成交量淘汰，
-  // 那样这条断言就成了空转，证明不了前缀排除本身有效。
+  // 量能取 12M 而不是实测的 1.2M：门槛提到 7M 之后 1.2M 会先被成交量淘汰，
+  // 那样这条断言就成了空转，证明不了前缀排除本身有效。12M 同时也跨过了
+  // BingX 长尾那条被拍平的假成交量带（619-691 万），不会随门槛微调而失效。
   it("keeps a synthetic tokenized-stock symbol out of both groups even though it clears every filter and would score 100 on smallness (production failure mode)", () => {
     const synthetic = ticker({
       symbol: "NCSKTSLA2USD-USDT",

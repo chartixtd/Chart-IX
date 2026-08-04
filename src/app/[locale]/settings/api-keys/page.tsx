@@ -148,7 +148,7 @@ export default function ApiKeysPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-12">
+      <div className="mx-auto max-w-3xl px-4 py-6 lg:py-12">
         <div className="flex items-center justify-center py-24">
           <Spinner className="h-8 w-8" />
         </div>
@@ -157,13 +157,13 @@ export default function ApiKeysPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-3xl px-4 py-6 lg:py-12">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">{t("title")}</h1>
           <p className="mt-1 text-sm text-text-secondary">{t("description")}</p>
         </div>
-        <Button onClick={() => setShowAddModal(true)}>{t("add_key")}</Button>
+        <Button onClick={() => setShowAddModal(true)} className="w-full sm:w-auto">{t("add_key")}</Button>
       </div>
 
       {error && (
@@ -180,7 +180,7 @@ export default function ApiKeysPage() {
         ) : (
           keys.map((key) => (
             <Card key={key.id} padding="md">
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="truncate text-sm font-semibold text-text-primary">{key.label}</h3>
@@ -196,7 +196,7 @@ export default function ApiKeysPage() {
                     </Badge>
                   </div>
                   <div className="space-y-1">
-                    <p className="font-mono text-sm text-text-secondary">
+                    <p className="break-all font-mono text-sm text-text-secondary">
                       {key.api_key_masked ?? t("masked_unavailable")}
                     </p>
                     <p className="text-xs text-text-muted">
@@ -208,7 +208,7 @@ export default function ApiKeysPage() {
                     <button
                       onClick={() => patchKey(key.id, "reverify")}
                       disabled={busyId === key.id}
-                      className="text-text-muted hover:text-gold disabled:opacity-50"
+                      className="-m-2 p-2 text-text-muted hover:text-gold disabled:opacity-50"
                     >
                       {busyId === key.id ? t("validating") : t("reverify")}
                     </button>
@@ -216,7 +216,7 @@ export default function ApiKeysPage() {
                       <button
                         onClick={() => patchKey(key.id, "setPrimary")}
                         disabled={busyId === key.id}
-                        className="text-text-muted hover:text-gold disabled:opacity-50"
+                        className="-m-2 p-2 text-text-muted hover:text-gold disabled:opacity-50"
                       >
                         {t("set_primary")}
                       </button>
@@ -228,6 +228,7 @@ export default function ApiKeysPage() {
                   size="sm"
                   loading={deleting && showDeleteConfirm === key.id}
                   onClick={() => setShowDeleteConfirm(key.id)}
+                  className="w-full sm:w-auto"
                 >
                   {t("delete_key")}
                 </Button>

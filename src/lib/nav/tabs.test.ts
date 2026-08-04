@@ -60,7 +60,7 @@ describe("resolveActiveTab", () => {
 });
 
 describe("buildMoreEntries", () => {
-  const base = { locale: "zh-CN", tier: "free", role: "user" };
+  const base = { locale: "zh-CN", tier: "free", role: "user", userId: "u1" };
 
   it("免费用户能看到升级入口", () => {
     const keys = buildMoreEntries(base).map((e) => e.key);
@@ -84,7 +84,7 @@ describe("buildMoreEntries", () => {
   });
 
   it("常规入口按既定顺序排列并带语言前缀", () => {
-    const entries = buildMoreEntries({ locale: "ms-MY", tier: "pro", role: "user" });
+    const entries = buildMoreEntries({ locale: "ms-MY", tier: "pro", role: "user", userId: "u1" });
     expect(entries.map((e) => e.key)).toEqual([
       "news",
       "orders",
@@ -98,5 +98,15 @@ describe("buildMoreEntries", () => {
   it("auth 尚未加载完成时（tier 为 null）不显示升级入口，避免闪现", () => {
     const keys = buildMoreEntries({ ...base, tier: null }).map((e) => e.key);
     expect(keys).not.toContain("upgrade");
+  });
+
+  it("未登录（或 auth 未加载完）时不显示 alerts/notifications 入口，避免访问后拿到 401 出现假的服务异常提示", () => {
+    const loggedOutKeys = buildMoreEntries({ ...base, userId: null }).map((e) => e.key);
+    expect(loggedOutKeys).not.toContain("alerts");
+    expect(loggedOutKeys).not.toContain("notifications");
+
+    const loggedInKeys = buildMoreEntries(base).map((e) => e.key);
+    expect(loggedInKeys).toContain("alerts");
+    expect(loggedInKeys).toContain("notifications");
   });
 });

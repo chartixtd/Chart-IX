@@ -18,8 +18,14 @@ export default function MorePage() {
   const router = useRouter();
 
   const entries = useMemo(
-    () => buildMoreEntries({ locale, tier: auth.tier ?? null, role: auth.role ?? null }),
-    [locale, auth.tier, auth.role]
+    () =>
+      buildMoreEntries({
+        locale,
+        tier: auth.tier ?? null,
+        role: auth.role ?? null,
+        userId: auth.userId ?? null,
+      }),
+    [locale, auth.tier, auth.role, auth.userId]
   );
 
   const handleLogout = useCallback(async () => {

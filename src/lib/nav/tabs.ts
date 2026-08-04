@@ -51,15 +51,19 @@ export function buildMoreEntries(input: {
   locale: string;
   tier: string | null;
   role: string | null;
+  /** null/undefined = 未登录（或 auth 还没加载完）。alerts/notifications 两个
+   * 入口都指向需要登录才有意义的功能——未登录访问会拿到 401，页面上会显示
+   * 「服务异常」之类的假警报，所以这两个入口本身也要在未登录时收起来 */
+  userId?: string | null;
 }): MoreEntry[] {
-  const { locale, tier, role } = input;
+  const { locale, tier, role, userId } = input;
   const entries: MoreEntry[] = [
     { key: "news", href: `/${locale}/news` },
     { key: "orders", href: `/${locale}/orders` },
-    { key: "alerts", href: `/${locale}/more/alerts` },
-    { key: "settings", href: `/${locale}/settings` },
-    { key: "notifications", href: `/${locale}/more/notifications` },
   ];
+  if (userId) entries.push({ key: "alerts", href: `/${locale}/more/alerts` });
+  entries.push({ key: "settings", href: `/${locale}/settings` });
+  if (userId) entries.push({ key: "notifications", href: `/${locale}/more/notifications` });
 
   // tier 为 null 表示 auth 还没加载完。此时不显示升级入口，
   // 避免 Pro 用户在加载窗口内看到升级链接闪一下（沿用 Navbar 的既有判断）

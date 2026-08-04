@@ -22,6 +22,10 @@ export default function NotificationsPage() {
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [heartbeat, setHeartbeat] = useState<Heartbeat>(null);
   const [error, setError] = useState(false);
+  // 心跳请求还没返回时不能默认「异常」——未登录用户会拿到 401，
+  // heartbeat 停在初始的 null，若不单独跟踪「有没有加载完」就会被下面
+  // 的 stale 判断误读成巡检停摆，展示一条从未订阅过的用户看不懂的假警报
+  const [heartbeatLoaded, setHeartbeatLoaded] = useState(false);
 
   useEffect(() => {
     void fetch("/api/user/notification-prefs")
@@ -29,6 +33,11 @@ export default function NotificationsPage() {
       .then((json: { prefs: Prefs; heartbeat: Heartbeat }) => {
         setPrefs(json.prefs);
         setHeartbeat(json.heartbeat);
+        setHeartbeatLoaded(true);
+      })
+      .catch(() => {
+        // 请求失败（网络错误等）同样不能默认「异常」——保持 heartbeatLoaded
+        // 为 false，banner 就不会渲染，而不是渲染一条误导性的假警报
       });
   }, []);
 
@@ -73,9 +82,10 @@ export default function NotificationsPage() {
   // 心跳超过 5 分钟没更新就认为巡检停了。静默失效比报错糟糕得多，
   // 用户有权知道自己依赖的功能还活着没有。
   const stale =
-    !heartbeat ||
-    heartbeat.last_status !== "ok" ||
-    Date.now() - new Date(heartbeat.last_run_at).getTime() > 5 * 60 * 1000;
+    heartbeatLoaded &&
+    (!heartbeat ||
+      heartbeat.last_status !== "ok" ||
+      Date.now() - new Date(heartbeat.last_run_at).getTime() > 5 * 60 * 1000);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
@@ -83,16 +93,18 @@ export default function NotificationsPage() {
         {t("more_notifications")}
       </h1>
 
-      <p
-        className={cn(
-          "mt-4 rounded-xs border px-3 py-2 text-xs",
-          stale
-            ? "border-danger/30 bg-danger-bg text-danger"
-            : "border-success/30 bg-success-bg text-success"
-        )}
-      >
-        {stale ? tPwa("service_status_stale") : tPwa("service_status_ok")}
-      </p>
+      {heartbeatLoaded && (
+        <p
+          className={cn(
+            "mt-4 rounded-xs border px-3 py-2 text-xs",
+            stale
+              ? "border-danger/30 bg-danger-bg text-danger"
+              : "border-success/30 bg-success-bg text-success"
+          )}
+        >
+          {stale ? tPwa("service_status_stale") : tPwa("service_status_ok")}
+        </p>
+      )}
 
       {error && (
         <p className="mt-3 rounded-xs border border-danger/30 bg-danger-bg px-3 py-2 text-xs text-danger">

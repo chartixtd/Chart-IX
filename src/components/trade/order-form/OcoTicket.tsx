@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useSpotTicker } from "@/hooks/useMarketData";
 import { useSpotBalances } from "@/hooks/useTradingAccount";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -23,6 +24,7 @@ interface OcoTicketProps {
  */
 export function OcoTicket({ symbol, direction }: OcoTicketProps) {
   const t = useTranslations();
+  const online = useOnlineStatus();
   const baseAsset = symbol.split("-")[0] ?? symbol;
   const side: "BUY" | "SELL" = direction === "LONG" ? "BUY" : "SELL";
 
@@ -115,10 +117,18 @@ export function OcoTicket({ symbol, direction }: OcoTicketProps) {
         <Input placeholder="0.00" inputMode="decimal" value={notional} onChange={(e) => setNotional(e.target.value)} className="text-sm" />
       </div>
 
+      {/* OCO 是与 OrderForm 主流程并列的独立下单入口，同样要挂离线门控——
+          否则断网时用户还能点这个按钮，误以为 OCO 挂单成功了（见本任务修复报告 Fix 2）。 */}
+      {!online && (
+        <p className="mb-2 rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs text-warning">
+          {t("trade.offline_disabled")}
+        </p>
+      )}
+
       <Button
         className="w-full"
         variant={direction === "LONG" ? "green" : "red"}
-        disabled={!canSubmit()}
+        disabled={!canSubmit() || !online}
         onClick={() => setConfirmOpen(true)}
       >
         {t(direction === "LONG" ? "trading.side.buy" : "trading.side.sell")} {baseAsset} OCO

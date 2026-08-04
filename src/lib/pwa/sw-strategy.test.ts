@@ -78,4 +78,9 @@ describe("shouldCache", () => {
       "passthrough"
     );
   });
+
+  it("后台管理页导航不缓存——不做离线适配，且要避免共享设备残留登出后的后台数据", () => {
+    expect(shouldCache(`${ORIGIN}/admin/users`, "navigate", ORIGIN)).toBe("passthrough");
+    expect(shouldCache(`${ORIGIN}/admin`, "navigate", ORIGIN)).toBe("passthrough");
+  });
 });

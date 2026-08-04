@@ -17,6 +17,13 @@
     if (sameOrigin && url.pathname.indexOf("/api/") === 0) return "never";
     // RSC payload 与构建 ID 强绑定，缓存后遇上新部署会产生偶发的水合错误
     if (sameOrigin && url.searchParams.has("_rsc")) return "never";
+    // 后台管理页不做移动端/离线适配，不该被缓存；如果缓存了，共用设备上
+    // 退出登录后渲染好的后台 HTML（用户列表、操作日志、风控设置）还会残留
+    // 在 Cache Storage 里，比缺一份离线体验严重得多，所以直接排除而不是
+    // 缓存后再指望每个登出入口都记得去清
+    if (sameOrigin && (url.pathname === "/admin" || url.pathname.indexOf("/admin/") === 0)) {
+      return "passthrough";
+    }
 
     if (url.hostname === "fonts.googleapis.com") return "fonts-swr";
     if (url.hostname === "fonts.gstatic.com") return "fonts-cache";

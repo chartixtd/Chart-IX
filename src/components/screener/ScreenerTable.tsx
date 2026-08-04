@@ -224,7 +224,7 @@ export const ScreenerTable = memo(function ScreenerTable({
           <Button
             variant={direction === "long" ? "green" : "red"}
             size="sm"
-            className="text-xs h-6 px-2"
+            className="text-xs min-h-[44px] lg:h-6 px-2"
           >
             {direction === "long" ? t("action_long") : t("action_short")}
           </Button>

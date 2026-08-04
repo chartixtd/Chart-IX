@@ -76,23 +76,23 @@ export default function SettingsPage() {
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-12">
+      <div className="mx-auto max-w-2xl px-4 py-6 lg:py-12">
         <p className="text-text-muted">{t("please_login")}</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12">
-      <h1 className="text-3xl font-bold text-text-primary">{t("title")}</h1>
+    <div className="mx-auto max-w-2xl px-4 py-6 lg:py-12">
+      <h1 className="text-2xl font-bold text-text-primary lg:text-3xl">{t("title")}</h1>
 
       {/* Profile */}
-      <Card className="mt-8" padding="lg">
+      <Card className="mt-6 lg:mt-8" padding="lg">
         <h2 className="text-lg font-semibold text-text-primary">{t("profile")}</h2>
         <div className="mt-4 space-y-4">
           <div>
             <label className="text-sm text-text-muted">{t("email")}</label>
-            <p className="text-text-primary">{user.email}</p>
+            <p className="break-all text-text-primary">{user.email}</p>
           </div>
           <div>
             <label className="text-sm text-text-muted">{t("role")}</label>
@@ -115,7 +115,7 @@ export default function SettingsPage() {
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              className="mt-1 w-full max-w-sm rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:border-gold focus:outline-none"
+              className="mt-1 w-full rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:border-gold focus:outline-none lg:max-w-sm"
               placeholder={user.email.split("@")[0]}
             />
           </div>
@@ -124,7 +124,7 @@ export default function SettingsPage() {
               {message}
             </p>
           )}
-          <Button onClick={saveProfile} disabled={saving}>
+          <Button onClick={saveProfile} disabled={saving} className="w-full sm:w-auto">
             {saving ? t("saving") : t("save")}
           </Button>
         </div>
@@ -133,7 +133,7 @@ export default function SettingsPage() {
       {/* Language */}
       <Card className="mt-6" padding="lg">
         <h2 className="text-lg font-semibold text-text-primary">{t("language")}</h2>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           {PUBLIC_LOCALES.map((l) => (
             <Button
               key={l}
@@ -149,12 +149,16 @@ export default function SettingsPage() {
 
       {/* API Keys */}
       <Card className="mt-6" padding="lg">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-text-primary">{t("api_keys")}</h2>
-            <p className="mt-1 text-sm text-text-secondary">{t("api_keys_desc")}</p>
+            <p className="mt-1 break-words text-sm text-text-secondary">{t("api_keys_desc")}</p>
           </div>
-          <Button variant="outline" onClick={() => router.push(`/${locale}/settings/api-keys`)}>
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/${locale}/settings/api-keys`)}
+            className="w-full sm:w-auto"
+          >
             {t("api_keys")}
           </Button>
         </div>

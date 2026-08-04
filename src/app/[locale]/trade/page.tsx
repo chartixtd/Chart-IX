@@ -239,13 +239,13 @@ const IntervalBar = memo(function IntervalBar({
   const isPinned = pinnedInOrder.includes(interval);
 
   return (
-    <div className="relative flex items-center gap-1 px-3 py-1.5">
+    <div className="relative flex items-center gap-1 px-3 py-1.5 overflow-x-auto">
       {pinnedInOrder.map((int) => (
         <button
           key={int}
           onClick={() => onIntervalChange(int)}
           className={cn(
-            "rounded-xs px-2 py-0.5 text-xs font-medium transition-colors",
+            "min-h-[44px] rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
             interval === int ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
           )}
         >
@@ -256,7 +256,7 @@ const IntervalBar = memo(function IntervalBar({
       <button
         onClick={() => setMoreOpen((o) => !o)}
         className={cn(
-          "rounded-xs px-2 py-0.5 text-xs font-medium transition-colors",
+          "min-h-[44px] rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
           !isPinned ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
         )}
       >

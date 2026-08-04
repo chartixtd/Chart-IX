@@ -67,7 +67,7 @@ export function LeverageField({
             disabled={pending}
             onClick={() => apply(l)}
             className={cn(
-              "rounded-xs py-0.5 text-xs font-medium disabled:opacity-50",
+              "min-h-[44px] rounded-xs text-xs font-medium disabled:opacity-50 lg:min-h-0 lg:py-0.5",
               value === l ? "bg-gold/20 text-gold" : "bg-bg-tertiary text-text-muted hover:text-text-secondary"
             )}
           >
@@ -117,7 +117,7 @@ export function LeverageField({
                 }
               }}
               className={cn(
-                "flex-1 rounded-xs py-1 text-xs disabled:opacity-50",
+                "min-h-[44px] flex-1 rounded-xs text-xs disabled:opacity-50 lg:min-h-0 lg:py-1",
                 marginType?.toUpperCase() === m
                   ? "bg-gold/20 text-gold"
                   : "bg-bg-tertiary text-text-muted"

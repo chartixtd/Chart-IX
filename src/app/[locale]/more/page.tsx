@@ -9,6 +9,7 @@ import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
 import { createClient } from "@/lib/supabase/client";
 import { buildMoreEntries } from "@/lib/nav/tabs";
 import { purgePageCache } from "@/stores/pwa";
+import { Button } from "@/components/ui/Button";
 
 export default function MorePage() {
   const locale = useLocale();
@@ -75,6 +76,21 @@ export default function MorePage() {
         >
           {t("sign_out")}
         </button>
+      )}
+
+      {!auth.userId && !auth.loading && (
+        <div className="mt-6 flex items-center gap-3">
+          <Link href={`/${locale}/login`} className="flex-1">
+            <Button variant="ghost" size="md" className="w-full">
+              {t("sign_in")}
+            </Button>
+          </Link>
+          <Link href={`/${locale}/register`} className="flex-1">
+            <Button size="md" className="w-full">
+              {t("sign_up")}
+            </Button>
+          </Link>
+        </div>
       )}
     </div>
   );

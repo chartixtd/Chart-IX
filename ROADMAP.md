@@ -103,6 +103,7 @@
   - `026_push_and_alerts.sql`（Web Push 订阅、价格提醒、通知偏好、cron 心跳）
   - `027_push_subscriptions_update_policy.sql`（补上 push_subscriptions 缺失的 UPDATE 策略，修复重新订阅时 upsert 被 RLS 拒绝）
   - `028_push_cron_jobs.sql`（定时任务搬到 Supabase pg_cron；执行前需替换 SITE_URL 与 CRON_SECRET 占位符）
+  - `029_push_subscriptions_update_policy_tighten.sql`（收紧 027 过宽的 UPDATE 策略为仅本人行；跨账号换绑改由 subscribe 路由用 service-role client 完成）
   不跑的话对应功能会报错，但前端都做了优雅降级（不会白屏崩溃），比如 `/learn` 页面会显示"即将上线"而不是报错。
 - **干净的 logo 透明源文件**（PNG 透明背景或 SVG/AI）——现有 `logo/logo.png` 是烘焙了假棋盘格的低保真预览图（alpha 全不透明，棋盘格是真实灰色像素且间距不规则），像素级抠图两轮都做不干净，暂不能用。只需要图形标（"D-X"那个符号）单独一份透明图即可，导航栏/favicon 用得上。
 - 落地页文案定位一句话、信任信号措辞、社群链接（Telegram）——当前落地页文案是我起草的，可以再改。

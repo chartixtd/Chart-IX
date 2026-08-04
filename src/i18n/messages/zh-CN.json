@@ -852,6 +852,7 @@
     "push_denied": "通知已被浏览器阻止。请在浏览器的站点设置中重新允许通知后再试。",
     "push_ios_install_first": "在 iOS 上需要先把 Chart-IX 添加到主屏幕，才能接收通知。",
     "push_unsupported": "当前浏览器不支持推送通知。",
+    "push_error": "订阅保存失败，请检查网络后重试。",
     "service_status_ok": "提醒服务：正常",
     "service_status_stale": "提醒服务：异常，提醒可能不会触发"
   },

@@ -35,7 +35,13 @@ export function PushOptIn({
       onClose();
       return;
     }
-    setError(result === "denied" ? t("push_denied") : t("push_unsupported"));
+    if (result === "denied") {
+      setError(t("push_denied"));
+    } else if (result === "error") {
+      setError(t("push_error"));
+    } else {
+      setError(t("push_unsupported"));
+    }
   };
 
   return (

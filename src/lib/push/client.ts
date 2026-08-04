@@ -11,8 +11,13 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 
 export async function subscribeToPush(
   locale: string
-): Promise<"ok" | "denied" | "unsupported"> {
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+): Promise<"ok" | "denied" | "unsupported" | "error"> {
+  if (
+    !("serviceWorker" in navigator) ||
+    !("PushManager" in window) ||
+    !("Notification" in window)
+  )
+    return "unsupported";
 
   const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   if (!key) return "unsupported";
@@ -35,11 +40,22 @@ export async function subscribeToPush(
     keys: { p256dh: string; auth: string };
   };
 
-  await fetch("/api/push/subscribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys, locale }),
-  });
+  try {
+    const response = await fetch("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys, locale }),
+    });
+
+    if (!response.ok) {
+      // 服务端没记录订阅——浏览器层面已经订阅了但服务端不知道，
+      // 提醒会静默失效，必须让调用方知道这不是真正的成功
+      return "error";
+    }
+  } catch {
+    // 网络错误同样意味着服务端没有记录到订阅
+    return "error";
+  }
 
   return "ok";
 }
@@ -63,7 +79,12 @@ export async function unsubscribeFromPush(): Promise<void> {
  * 静默重新订阅——不打扰用户，也不需要再要一次权限（权限还在）。
  */
 export async function resubscribeIfNeeded(locale: string): Promise<void> {
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  if (
+    !("serviceWorker" in navigator) ||
+    !("PushManager" in window) ||
+    !("Notification" in window)
+  )
+    return;
   if (Notification.permission !== "granted") return;
 
   const registration = await navigator.serviceWorker.ready;

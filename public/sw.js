@@ -145,3 +145,51 @@ function offlineUrlFor(rawUrl) {
   var locale = LOCALES.indexOf(segments[0]) !== -1 ? segments[0] : "en-US";
   return "/" + locale + "/offline";
 }
+
+self.addEventListener("push", function (event) {
+  var payload = { title: "Chart-IX", body: "", url: "/" };
+  try {
+    if (event.data) payload = Object.assign(payload, event.data.json());
+  } catch (e) {
+    // payload 解析失败也必须弹出通知——见下方 userVisibleOnly 说明
+  }
+
+  // userVisibleOnly:true 是契约：收到推送却不显示，浏览器会直接撤销推送权限。
+  // 所以不做「页面开着就静默」的小聪明——照常弹系统通知，
+  // 同时给已打开的页面发消息去更新铃铛角标。
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(payload.title, {
+        body: payload.body,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        tag: payload.tag,
+        data: { url: payload.url },
+      }),
+      self.clients.matchAll({ type: "window" }).then(function (clientList) {
+        clientList.forEach(function (client) {
+          client.postMessage({ type: "PUSH_RECEIVED", payload: payload });
+        });
+      }),
+    ])
+  );
+});
+
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+  var target = (event.notification.data && event.notification.data.url) || "/";
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clientList) {
+      // 先找已经开着的窗口去 focus + 导航，否则每点一条通知就开一个新窗口
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if ("focus" in client) {
+          client.navigate(target);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(target);
+    })
+  );
+});

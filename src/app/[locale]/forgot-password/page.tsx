@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
 
   if (success) {
     return (
-      <div className="hero-ground grain flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+      <div className="hero-ground grain flex min-h-[calc(100dvh-4rem)] items-center justify-center px-4 py-16">
         <Card className="w-full max-w-md text-center shadow-card-lg" padding="lg">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-gold/30 bg-gold/5">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7 text-gold">
@@ -53,7 +53,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="hero-ground grain flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+    <div className="hero-ground grain flex min-h-[calc(100dvh-4rem)] items-center justify-center px-4 py-16">
       <Card className="w-full max-w-md shadow-card-lg" padding="lg">
         <h1 className="text-center font-display text-2xl tracking-tight text-text-primary">{t("title")}</h1>
         <div className="hairline-gold mx-auto mt-4 w-14" />

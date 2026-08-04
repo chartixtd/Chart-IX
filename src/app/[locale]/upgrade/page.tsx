@@ -62,7 +62,7 @@ export default function UpgradePage() {
   };
 
   return (
-    <div className="hero-ground grain min-h-[calc(100vh-4rem)]">
+    <div className="hero-ground grain min-h-[calc(100dvh-4rem)]">
       <div className="mx-auto max-w-5xl px-4 py-20">
         {isPro ? (
           <div className="mx-auto max-w-lg text-center">

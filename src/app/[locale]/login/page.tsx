@@ -52,7 +52,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="hero-ground grain flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+    <div className="hero-ground grain flex min-h-[calc(100dvh-4rem)] items-center justify-center px-4 py-16">
       <Card className="w-full max-w-md shadow-card-lg" padding="lg">
         <div className="text-center">
           <Image src="/logo.png" alt="Chart-IX" width={240} height={160} priority className="mx-auto h-11 w-auto" />

@@ -822,7 +822,8 @@
     "install_inapp_title": "请在浏览器中打开",
     "install_inapp_body": "当前是应用内置浏览器，无法安装到主屏。请复制链接后在 Safari 或 Chrome 中打开。",
     "install_inapp_copy": "复制链接",
-    "install_inapp_copied": "已复制"
+    "install_inapp_copied": "已复制",
+    "install_inapp_copy_failed": "复制失败，请长按地址栏手动复制链接"
   },
   "seo": {
     "title": "加密货币交易教育与实盘交易平台",

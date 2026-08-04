@@ -822,7 +822,8 @@
     "install_inapp_title": "Open in your browser",
     "install_inapp_body": "You're in an in-app browser, which can't install to the home screen. Copy the link and open it in Safari or Chrome.",
     "install_inapp_copy": "Copy link",
-    "install_inapp_copied": "Copied"
+    "install_inapp_copied": "Copied",
+    "install_inapp_copy_failed": "Couldn't copy. Long-press the address bar to copy the link instead."
   },
   "seo": {
     "title": "Crypto Trading Education & Live Trading Platform",

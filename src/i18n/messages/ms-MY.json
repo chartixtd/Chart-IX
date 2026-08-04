@@ -822,7 +822,8 @@
     "install_inapp_title": "Buka dalam pelayar anda",
     "install_inapp_body": "Anda berada dalam pelayar dalam-aplikasi yang tidak boleh memasang ke skrin utama. Salin pautan dan buka dalam Safari atau Chrome.",
     "install_inapp_copy": "Salin pautan",
-    "install_inapp_copied": "Disalin"
+    "install_inapp_copied": "Disalin",
+    "install_inapp_copy_failed": "Gagal menyalin. Tekan lama bar alamat untuk menyalin pautan secara manual."
   },
   "seo": {
     "title": "Platform Pendidikan Dagangan Kripto & Dagangan Langsung",

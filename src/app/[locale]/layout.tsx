@@ -17,6 +17,12 @@ export async function generateMetadata({
   return {
     title: t("title"),
     description: t("description"),
+    manifest: `/${locale}/manifest.webmanifest`,
+    appleWebApp: {
+      capable: true,
+      title: "Chart-IX",
+      statusBarStyle: "black-translucent",
+    },
     openGraph: { title: fullTitle, description: t("description") },
     twitter: { title: fullTitle, description: t("description") },
   };

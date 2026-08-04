@@ -800,6 +800,30 @@
       "example": "Contoh: syiling A dapat 73 beli dan 71 jual — kelebihan hanya +2, kualiti baik tetapi arah tidak jelas. Syiling B dapat 61 beli dan 39 jual — kelebihan +22, skor lebih rendah tetapi condong jelas ke beli. Papan meletakkan B di atas A."
     }
   },
+  "pwa": {
+    "app_name": "Chart-IX — Pendidikan & Dagangan Kripto",
+    "short_name": "Chart-IX",
+    "app_description": "Pelajari dagangan kripto dari asas, berlatih dengan akaun demo, kemudian berdagang secara langsung melalui akaun BingX anda sendiri. Dana anda kekal di bursa anda.",
+    "shortcut_trade": "Dagangan",
+    "shortcut_screener": "Penapis",
+    "offline_title": "Anda sedang luar talian",
+    "offline_body": "Sambungan terputus. Artikel dan pelajaran yang pernah dibuka masih boleh dibaca, tetapi data pasaran, posisi dan pesanan memerlukan sambungan.",
+    "offline_retry": "Sambung semula",
+    "offline_warning": "Pesanan tidak boleh dibuat semasa luar talian. Jangan bertindak berdasarkan harga cache.",
+    "update_available": "Versi baharu tersedia",
+    "update_action": "Kemas kini sekarang",
+    "install_title": "Tambah Chart-IX ke skrin utama",
+    "install_body": "Berjalan skrin penuh, mula lebih pantas, dan boleh memberi amaran apabila harga sasaran anda dicapai.",
+    "install_action": "Pasang",
+    "install_dismiss": "Nanti dulu",
+    "install_ios_step1": "Ketik butang Kongsi pada bar alat bawah",
+    "install_ios_step2": "Pilih \"Add to Home Screen\"",
+    "install_ios_step3": "Ketik \"Add\" di penjuru kanan atas",
+    "install_inapp_title": "Buka dalam pelayar anda",
+    "install_inapp_body": "Anda berada dalam pelayar dalam-aplikasi yang tidak boleh memasang ke skrin utama. Salin pautan dan buka dalam Safari atau Chrome.",
+    "install_inapp_copy": "Salin pautan",
+    "install_inapp_copied": "Disalin"
+  },
   "seo": {
     "title": "Platform Pendidikan Dagangan Kripto & Dagangan Langsung",
     "description": "Belajar dagangan mata wang kripto dari asas bersama Chart-IX, kemudian berdagang secara langsung dengan menyambung terus ke bursa BingX — laluan tersusun dari pemula kepada peniaga yang yakin."

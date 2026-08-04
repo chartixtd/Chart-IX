@@ -800,6 +800,30 @@
       "example": "Example: coin A scores 73 long and 71 short — an edge of just +2, decent quality but no clear direction. Coin B scores 61 long and 39 short — an edge of +22, a lower score but a clear long lean. The board ranks B above A."
     }
   },
+  "pwa": {
+    "app_name": "Chart-IX — Crypto Trading Education & Live Trading",
+    "short_name": "Chart-IX",
+    "app_description": "Learn crypto trading from the ground up, practise on paper, then trade live through your own BingX account. Your funds never leave your exchange.",
+    "shortcut_trade": "Trade",
+    "shortcut_screener": "Screener",
+    "offline_title": "You're offline",
+    "offline_body": "Your connection dropped. Articles and lessons you've already opened are still readable, but market data, positions and orders need a connection.",
+    "offline_retry": "Reconnect",
+    "offline_warning": "Orders cannot be placed while offline. Do not act on cached prices.",
+    "update_available": "A new version is available",
+    "update_action": "Update now",
+    "install_title": "Add Chart-IX to your home screen",
+    "install_body": "Runs full screen, starts faster, and can alert you when your price target hits.",
+    "install_action": "Install",
+    "install_dismiss": "Not now",
+    "install_ios_step1": "Tap the Share button in the bottom toolbar",
+    "install_ios_step2": "Choose \"Add to Home Screen\"",
+    "install_ios_step3": "Tap \"Add\" in the top right",
+    "install_inapp_title": "Open in your browser",
+    "install_inapp_body": "You're in an in-app browser, which can't install to the home screen. Copy the link and open it in Safari or Chrome.",
+    "install_inapp_copy": "Copy link",
+    "install_inapp_copied": "Copied"
+  },
   "seo": {
     "title": "Crypto Trading Education & Live Trading Platform",
     "description": "Learn cryptocurrency trading from the ground up with Chart-IX, then trade live by connecting directly to the BingX exchange — a structured path from beginner to confident trader."

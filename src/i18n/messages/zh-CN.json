@@ -800,6 +800,30 @@
       "example": "例：A 币做多 73 分、做空 71 分，优势只有 +2 —— 质量不错但方向不明朗；B 币做多 61 分、做空 39 分，优势 +22 —— 分数低一些，但明显偏多。榜单会把 B 排在 A 前面。"
     }
   },
+  "pwa": {
+    "app_name": "Chart-IX — 加密货币交易教育与实盘平台",
+    "short_name": "Chart-IX",
+    "app_description": "从零开始系统学习加密货币交易，在模拟盘练习，再连接自己的 BingX 账户实盘下单。资金始终留在你自己的交易所账户里。",
+    "shortcut_trade": "交易",
+    "shortcut_screener": "选币",
+    "offline_title": "你现在处于离线状态",
+    "offline_body": "网络断开了。已经看过的文章和课程仍然可以阅读，但行情、持仓和下单需要联网。",
+    "offline_retry": "重新连接",
+    "offline_warning": "离线期间无法下单，请勿依据缓存中的价格做交易决策。",
+    "update_available": "有新版本可用",
+    "update_action": "立即更新",
+    "install_title": "把 Chart-IX 装到主屏",
+    "install_body": "全屏运行、启动更快，还能在到价时收到通知。",
+    "install_action": "安装",
+    "install_dismiss": "以后再说",
+    "install_ios_step1": "点击底部工具栏的「分享」按钮",
+    "install_ios_step2": "在菜单中选择「添加到主屏幕」",
+    "install_ios_step3": "点击右上角「添加」完成",
+    "install_inapp_title": "请在浏览器中打开",
+    "install_inapp_body": "当前是应用内置浏览器，无法安装到主屏。请复制链接后在 Safari 或 Chrome 中打开。",
+    "install_inapp_copy": "复制链接",
+    "install_inapp_copied": "已复制"
+  },
   "seo": {
     "title": "加密货币交易教育与实盘交易平台",
     "description": "从零基础到实盘交易，Chart-IX 提供系统化的加密货币交易课程，并可直接连接 BingX 交易所下单，助你稳健开启交易之旅。"

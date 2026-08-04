@@ -9,6 +9,37 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
   return output;
 }
 
+/** 把一个已经拿到的浏览器订阅 POST 给服务端。幂等（onConflict: "endpoint"），
+ * subscribeToPush 和 resubscribeIfNeeded 共用，避免两处各写一遍失败判断逻辑 */
+async function postSubscription(
+  subscription: PushSubscription,
+  locale: string
+): Promise<"ok" | "error"> {
+  const json = subscription.toJSON() as {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+  };
+
+  try {
+    const response = await fetch("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys, locale }),
+    });
+
+    if (!response.ok) {
+      // 服务端没记录订阅——浏览器层面已经订阅了但服务端不知道，
+      // 提醒会静默失效，必须让调用方知道这不是真正的成功
+      return "error";
+    }
+  } catch {
+    // 网络错误同样意味着服务端没有记录到订阅
+    return "error";
+  }
+
+  return "ok";
+}
+
 export async function subscribeToPush(
   locale: string
 ): Promise<"ok" | "denied" | "unsupported" | "error"> {
@@ -35,29 +66,7 @@ export async function subscribeToPush(
       applicationServerKey: urlBase64ToUint8Array(key) as BufferSource,
     }));
 
-  const json = subscription.toJSON() as {
-    endpoint: string;
-    keys: { p256dh: string; auth: string };
-  };
-
-  try {
-    const response = await fetch("/api/push/subscribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys, locale }),
-    });
-
-    if (!response.ok) {
-      // 服务端没记录订阅——浏览器层面已经订阅了但服务端不知道，
-      // 提醒会静默失效，必须让调用方知道这不是真正的成功
-      return "error";
-    }
-  } catch {
-    // 网络错误同样意味着服务端没有记录到订阅
-    return "error";
-  }
-
-  return "ok";
+  return postSubscription(subscription, locale);
 }
 
 export async function unsubscribeFromPush(): Promise<void> {
@@ -77,6 +86,12 @@ export async function unsubscribeFromPush(): Promise<void> {
 /**
  * iOS 清了存储之后登录态和订阅会一起丢。若偏好说开着但本地已无订阅，
  * 静默重新订阅——不打扰用户，也不需要再要一次权限（权限还在）。
+ *
+ * 浏览器已有订阅时也必须照样 POST 给服务端，不能直接 return：如果上一次
+ * subscribeToPush 拿到了浏览器订阅、但服务端那次 POST 失败了（网络抖动/
+ * 服务端当时出错），"existing" 在这里会永远是真值，函数会永远提前退出，
+ * 用户就永久停留在"浏览器订阅了但服务端不知道"的状态。POST 是幂等的
+ * （服务端按 endpoint upsert），重复调用无副作用，所以安全默认是每次都发。
  */
 export async function resubscribeIfNeeded(locale: string): Promise<void> {
   if (
@@ -89,6 +104,9 @@ export async function resubscribeIfNeeded(locale: string): Promise<void> {
 
   const registration = await navigator.serviceWorker.ready;
   const existing = await registration.pushManager.getSubscription();
-  if (existing) return;
+  if (existing) {
+    await postSubscription(existing, locale);
+    return;
+  }
   await subscribeToPush(locale);
 }

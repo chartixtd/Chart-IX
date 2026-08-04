@@ -21,6 +21,7 @@ export default function NotificationsPage() {
   const locale = useLocale();
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [heartbeat, setHeartbeat] = useState<Heartbeat>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     void fetch("/api/user/notification-prefs")
@@ -34,20 +35,37 @@ export default function NotificationsPage() {
   const toggle = useCallback(
     async (key: keyof Prefs) => {
       if (!prefs) return;
+      const prev = prefs;
       const next = { ...prefs, [key]: !prefs[key] };
       setPrefs(next);
+      setError(false);
 
       // 从「全关」变成「有开」时才需要真正建立推送订阅
-      const hadAny = KEYS.some((k) => prefs[k]);
+      const hadAny = KEYS.some((k) => prev[k]);
       const hasAny = KEYS.some((k) => next[k]);
-      if (!hadAny && hasAny) await subscribeToPush(locale);
+
+      if (!hadAny && hasAny) {
+        const result = await subscribeToPush(locale);
+        if (result !== "ok") {
+          // 订阅失败——不能把偏好悄悄设成「已开启」，否则用户以为提醒在跑，
+          // 实际上什么都不会推送。回滚 UI，显式告诉用户。
+          setPrefs(prev);
+          setError(true);
+          return;
+        }
+      }
       if (hadAny && !hasAny) await unsubscribeFromPush();
 
-      await fetch("/api/user/notification-prefs", {
+      const res = await fetch("/api/user/notification-prefs", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(next),
       });
+      if (!res.ok) {
+        // PUT 失败同理：不能让 UI 和数据库的状态悄悄分叉。
+        setPrefs(prev);
+        setError(true);
+      }
     },
     [prefs, locale]
   );
@@ -75,6 +93,12 @@ export default function NotificationsPage() {
       >
         {stale ? tPwa("service_status_stale") : tPwa("service_status_ok")}
       </p>
+
+      {error && (
+        <p className="mt-3 rounded-xs border border-danger/30 bg-danger-bg px-3 py-2 text-xs text-danger">
+          {tPwa("push_error")}
+        </p>
+      )}
 
       {prefs && (
         <ul className="mt-6 divide-y divide-border-default border-y border-border-default">

@@ -844,7 +844,16 @@
     "install_inapp_body": "You're in an in-app browser, which can't install to the home screen. Copy the link and open it in Safari or Chrome.",
     "install_inapp_copy": "Copy link",
     "install_inapp_copied": "Copied",
-    "install_inapp_copy_failed": "Couldn't copy. Long-press the address bar to copy the link instead."
+    "install_inapp_copy_failed": "Couldn't copy. Long-press the address bar to copy the link instead.",
+    "push_title": "Turn on price alerts",
+    "push_body": "Get notified when price hits your target, even when Chart-IX isn't open.",
+    "push_enable": "Enable notifications",
+    "push_later": "Not now",
+    "push_denied": "Notifications are blocked by your browser. Re-allow them in site settings and try again.",
+    "push_ios_install_first": "On iOS, add Chart-IX to your home screen first to receive notifications.",
+    "push_unsupported": "This browser doesn't support push notifications.",
+    "service_status_ok": "Alert service: running",
+    "service_status_stale": "Alert service: degraded — alerts may not fire"
   },
   "seo": {
     "title": "Crypto Trading Education & Live Trading Platform",

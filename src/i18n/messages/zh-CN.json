@@ -844,7 +844,16 @@
     "install_inapp_body": "当前是应用内置浏览器，无法安装到主屏。请复制链接后在 Safari 或 Chrome 中打开。",
     "install_inapp_copy": "复制链接",
     "install_inapp_copied": "已复制",
-    "install_inapp_copy_failed": "复制失败，请长按地址栏手动复制链接"
+    "install_inapp_copy_failed": "复制失败，请长按地址栏手动复制链接",
+    "push_title": "开启到价通知",
+    "push_body": "价格触及你设定的目标时通知你，即使 Chart-IX 没有打开。",
+    "push_enable": "开启通知",
+    "push_later": "以后再说",
+    "push_denied": "通知已被浏览器阻止。请在浏览器的站点设置中重新允许通知后再试。",
+    "push_ios_install_first": "在 iOS 上需要先把 Chart-IX 添加到主屏幕，才能接收通知。",
+    "push_unsupported": "当前浏览器不支持推送通知。",
+    "service_status_ok": "提醒服务：正常",
+    "service_status_stale": "提醒服务：异常，提醒可能不会触发"
   },
   "seo": {
     "title": "加密货币交易教育与实盘交易平台",

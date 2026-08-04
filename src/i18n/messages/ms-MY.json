@@ -844,7 +844,16 @@
     "install_inapp_body": "Anda berada dalam pelayar dalam-aplikasi yang tidak boleh memasang ke skrin utama. Salin pautan dan buka dalam Safari atau Chrome.",
     "install_inapp_copy": "Salin pautan",
     "install_inapp_copied": "Disalin",
-    "install_inapp_copy_failed": "Gagal menyalin. Tekan lama bar alamat untuk menyalin pautan secara manual."
+    "install_inapp_copy_failed": "Gagal menyalin. Tekan lama bar alamat untuk menyalin pautan secara manual.",
+    "push_title": "Hidupkan amaran harga",
+    "push_body": "Dapatkan pemberitahuan apabila harga mencapai sasaran anda, walaupun Chart-IX tidak dibuka.",
+    "push_enable": "Hidupkan pemberitahuan",
+    "push_later": "Nanti dulu",
+    "push_denied": "Pemberitahuan disekat oleh pelayar anda. Benarkan semula dalam tetapan tapak dan cuba lagi.",
+    "push_ios_install_first": "Pada iOS, tambah Chart-IX ke skrin utama dahulu untuk menerima pemberitahuan.",
+    "push_unsupported": "Pelayar ini tidak menyokong pemberitahuan tolak.",
+    "service_status_ok": "Perkhidmatan amaran: berjalan",
+    "service_status_stale": "Perkhidmatan amaran: terjejas — amaran mungkin tidak berbunyi"
   },
   "seo": {
     "title": "Platform Pendidikan Dagangan Kripto & Dagangan Langsung",

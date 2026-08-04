@@ -25,6 +25,22 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServiceRoleClient();
 
+  // VAPID 没配置时 send.ts 的 configure() 会直接 throw。如果放任流程往下走，
+  // 下面的 claim UPDATE 会先把这批提醒标记为已触发，然后发送才失败——
+  // 提醒被永久消费掉但用户什么通知都没收到，且无法重试。必须在认领之前
+  // 就发现这个问题并整批跳过，不认领任何一条。
+  const vapidConfigured =
+    !!process.env.VAPID_PUBLIC_KEY &&
+    !!process.env.VAPID_PRIVATE_KEY &&
+    !!process.env.VAPID_SUBJECT;
+  if (!vapidConfigured) {
+    await beat(supabase, "error");
+    return NextResponse.json(
+      { error: "VAPID not configured", checked: 0, triggered: 0 },
+      { status: 200 }
+    );
+  }
+
   // 提前退出不是优化，是必需：Vercel Hobby 每月只有 4 CPU-小时，
   // 每分钟一次是每月 43,200 次调用。绝大多数分钟里没有任何活跃提醒，
   // 一次部分索引查询就该返回。
@@ -90,38 +106,46 @@ export async function GET(request: NextRequest) {
   const toNotify = triggered.filter((a) => claimed.has(a.id));
 
   for (const alert of toNotify) {
-    const { data: prefs } = await supabase
-      .from("notification_prefs")
-      .select("price_alerts")
-      .eq("user_id", alert.userId)
-      .maybeSingle();
-    // 偏好行不存在时按默认（开启）处理
-    if (prefs && (prefs as { price_alerts: boolean }).price_alerts === false) continue;
+    // 这一批已经在上面被 claim UPDATE 认领（触发即消费，不可重放），
+    // 所以单条提醒的发送失败绝不能中断 for 循环——那会导致排在它后面、
+    // 本该正常发出的提醒被跳过。sendToSubscriptions 内部已经按订阅逐条
+    // try/catch，这里是防它本身意外抛出（比如查询失败）时不牵连其他提醒。
+    try {
+      const { data: prefs } = await supabase
+        .from("notification_prefs")
+        .select("price_alerts")
+        .eq("user_id", alert.userId)
+        .maybeSingle();
+      // 偏好行不存在时按默认（开启）处理
+      if (prefs && (prefs as { price_alerts: boolean }).price_alerts === false) continue;
 
-    const { data: subs } = await supabase
-      .from("push_subscriptions")
-      .select("id, endpoint, p256dh, auth, locale, failed_count")
-      .eq("user_id", alert.userId);
+      const { data: subs } = await supabase
+        .from("push_subscriptions")
+        .select("id, endpoint, p256dh, auth, locale, failed_count")
+        .eq("user_id", alert.userId);
 
-    const rows = (subs ?? []) as SubscriptionRow[];
-    if (rows.length === 0) continue;
+      const rows = (subs ?? []) as SubscriptionRow[];
+      if (rows.length === 0) continue;
 
-    // 同一台设备可能存了不同语言，按行各自生成文案
-    await Promise.all(
-      rows.map((row) => {
-        const message = buildAlertMessage(
-          row.locale,
-          alert.symbol,
-          alert.direction,
-          alert.targetPrice
-        );
-        return sendToSubscriptions([row], {
-          ...message,
-          url: `/${row.locale}/trade?symbol=${encodeURIComponent(alert.symbol)}`,
-          tag: `alert-${alert.id}`,
-        });
-      })
-    );
+      // 同一台设备可能存了不同语言，按行各自生成文案
+      await Promise.all(
+        rows.map((row) => {
+          const message = buildAlertMessage(
+            row.locale,
+            alert.symbol,
+            alert.direction,
+            alert.targetPrice
+          );
+          return sendToSubscriptions([row], {
+            ...message,
+            url: `/${row.locale}/trade?symbol=${encodeURIComponent(alert.symbol)}`,
+            tag: `alert-${alert.id}`,
+          });
+        })
+      );
+    } catch {
+      // 这条提醒的发送失败了，继续处理批次里剩下的提醒
+    }
   }
 
   await beat(supabase, "ok");

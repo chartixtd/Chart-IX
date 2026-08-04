@@ -14,7 +14,17 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const parsed = schema.safeParse(await request.json());
+  // request.json() throws a raw SyntaxError on a malformed or empty body, which would
+  // escape as a generic Next.js 500 instead of a clean 400.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let json: any;
+  try {
+    json = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Malformed JSON body" }, { status: 400 });
+  }
+
+  const parsed = schema.safeParse(json);
   if (!parsed.success) return NextResponse.json({ error: "Invalid endpoint" }, { status: 400 });
 
   // RLS 已经限制只能删自己的行，这里的 user_id 条件是第二道保险

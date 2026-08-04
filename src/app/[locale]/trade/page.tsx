@@ -10,6 +10,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { MarketOverview } from "@/components/trade/MarketOverview";
+import { PushOptIn } from "@/components/pwa/PushOptIn";
 import { OrderBook } from "@/components/trade/OrderBook";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { MobileTradeBar } from "./MobileTradeBar";
@@ -166,6 +167,7 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
   const [open, setOpen] = useState(false);
   const [price, setPrice] = useState("");
   const [direction, setDirection] = useState<"above" | "below">("above");
+  const [pushOptInOpen, setPushOptInOpen] = useState(false);
   const addAlert = usePriceAlertsStore((s) => s.addAlert);
 
   const handleOpen = () => {
@@ -178,6 +180,11 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
     if (!target || target <= 0) return;
     addAlert(symbol, target, direction);
     setOpen(false);
+    // 首次设置提醒时顺手问一句要不要开推送权限——Notification.permission 本身就记录了
+    // "问没问过"，不需要额外的标记；不支持通知的浏览器/webview 直接跳过
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      setPushOptInOpen(true);
+    }
   };
 
   return (
@@ -216,6 +223,7 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
           </div>
         </div>
       </Modal>
+      <PushOptIn open={pushOptInOpen} onClose={() => setPushOptInOpen(false)} onGranted={() => setPushOptInOpen(false)} />
     </>
   );
 });

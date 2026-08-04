@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { RecordList, type RecordColumn } from "@/components/ui/RecordList";
 import { createClient } from "@/lib/supabase/client";
 import { formatPrice } from "@/lib/utils";
 
@@ -119,6 +120,94 @@ export default function OrdersPage() {
     });
   };
 
+  const columns: RecordColumn<Order>[] = useMemo(
+    () => [
+      {
+        key: "symbol",
+        header: t("symbol"),
+        primary: true,
+        render: (order) => <span className="text-text-primary font-medium">{order.symbol}</span>,
+      },
+      {
+        key: "side",
+        header: t("side"),
+        render: (order) => (
+          <Badge variant={order.side === "buy" ? "green" : "red"} size="sm">
+            {order.side === "buy" ? "Buy" : "Sell"}
+          </Badge>
+        ),
+      },
+      {
+        key: "market_type",
+        header: t("market_type") || "Market",
+        hideOnMobile: true,
+        render: (order) => (
+          <Badge variant={order.market_type === "futures" ? "gold" : "blue"} size="sm">
+            {order.market_type === "futures" ? "Futures" : "Spot"}
+          </Badge>
+        ),
+      },
+      {
+        key: "order_type",
+        header: t("type"),
+        render: (order) => ORDER_TYPE_LABEL_MAP[order.order_type] || order.order_type,
+      },
+      {
+        key: "quantity",
+        header: t("quantity"),
+        align: "right",
+        render: (order) => <span className="font-mono">{order.quantity}</span>,
+      },
+      {
+        key: "price",
+        header: t("price"),
+        align: "right",
+        render: (order) => (
+          <span className="font-mono">
+            {order.order_type === "market"
+              ? "-"
+              : order.price !== null
+                ? formatPrice(order.price)
+                : "-"}
+          </span>
+        ),
+      },
+      {
+        key: "status",
+        header: t("status") || "Status",
+        render: (order) => (
+          <Badge variant={STATUS_VARIANT_MAP[order.status]} size="sm">
+            {order.status === "partially_filled"
+              ? "Partial"
+              : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+          </Badge>
+        ),
+      },
+      {
+        key: "total",
+        header: t("total"),
+        align: "right",
+        render: (order) => (
+          <span className="font-mono">
+            {order.total_value !== null ? `$${formatPrice(order.total_value)}` : "-"}
+          </span>
+        ),
+      },
+      {
+        key: "time",
+        header: t("time"),
+        hideOnMobile: true,
+        render: (order) => (
+          <span className="text-text-secondary font-mono text-xs">
+            {formatDate(order.created_at)}
+          </span>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t]
+  );
+
   const exportCSV = useCallback(() => {
     const BOM = "\uFEFF";
     const headers = ["时间", "市场类型", "交易对", "方向", "类型", "数量", "价格", "状态", "总金额", "手续费"];
@@ -154,7 +243,7 @@ export default function OrdersPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-12">
+      <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
         <div className="mb-8">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="mt-2 h-4 w-64" />
@@ -188,7 +277,7 @@ export default function OrdersPage() {
 
   if (notLoggedIn) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-12">
+      <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
         <EmptyState
           title={tSettings("please_login")}
           description={tSettings("api_keys_desc")}
@@ -199,7 +288,7 @@ export default function OrdersPage() {
 
   if (error && !orders.length) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-12">
+      <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
         <div className="text-center py-24">
           <p className="text-danger">{error}</p>
           <Button variant="outline" className="mt-4" onClick={fetchOrders}>
@@ -211,7 +300,7 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-12">
+    <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-text-primary">{t("title")}</h1>
         <p className="mt-1 text-sm text-text-secondary">{t("no_orders")}</p>
@@ -256,97 +345,7 @@ export default function OrdersPage() {
           description={activeTab !== "all" ? t(activeTab) : undefined}
         />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border-default bg-bg-secondary">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border-default bg-bg-tertiary">
-                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-text-secondary">
-                  {t("time")}
-                </th>
-                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-text-secondary">
-                  {t("market_type") || "Market"}
-                </th>
-                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-text-secondary">
-                  {t("symbol")}
-                </th>
-                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-text-secondary">
-                  {t("side")}
-                </th>
-                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-text-secondary">
-                  {t("type")}
-                </th>
-                <th className="whitespace-nowrap px-4 py-3 text-right font-medium text-text-secondary">
-                  {t("quantity")}
-                </th>
-                <th className="whitespace-nowrap px-4 py-3 text-right font-medium text-text-secondary">
-                  {t("price")}
-                </th>
-                <th className="whitespace-nowrap px-4 py-3 text-center font-medium text-text-secondary">
-                  {t("status") || "Status"}
-                </th>
-                <th className="whitespace-nowrap px-4 py-3 text-right font-medium text-text-secondary">
-                  {t("total")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredOrders.map((order) => (
-                <tr
-                  key={order.id}
-                  className="border-b border-border-default last:border-0 hover:bg-bg-tertiary/50 transition-colors"
-                >
-                  <td className="whitespace-nowrap px-4 py-3 text-text-secondary font-mono text-xs">
-                    {formatDate(order.created_at)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <Badge
-                      variant={order.market_type === "futures" ? "gold" : "blue"}
-                      size="sm"
-                    >
-                      {order.market_type === "futures" ? "Futures" : "Spot"}
-                    </Badge>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-text-primary font-medium">
-                    {order.symbol}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <Badge
-                      variant={order.side === "buy" ? "green" : "red"}
-                      size="sm"
-                    >
-                      {order.side === "buy" ? "Buy" : "Sell"}
-                    </Badge>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-text-secondary">
-                    {ORDER_TYPE_LABEL_MAP[order.order_type] || order.order_type}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-text-primary">
-                    {order.quantity}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-text-primary">
-                    {order.order_type === "market"
-                      ? "-"
-                      : order.price !== null
-                        ? formatPrice(order.price)
-                        : "-"}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-center">
-                    <Badge variant={STATUS_VARIANT_MAP[order.status]} size="sm">
-                      {order.status === "partially_filled"
-                        ? "Partial"
-                        : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                    </Badge>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-text-primary">
-                    {order.total_value !== null
-                      ? `$${formatPrice(order.total_value)}`
-                      : "-"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <RecordList rows={filteredOrders} columns={columns} rowKey={(order) => order.id} />
       )}
     </div>
   );

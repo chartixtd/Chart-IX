@@ -242,6 +242,8 @@
       "order_id": "订单号",
       "symbol": "交易对",
       "side": "方向",
+      "market_type": "市场类型",
+      "status": "状态",
       "type": "类型",
       "quantity": "数量",
       "price": "价格",

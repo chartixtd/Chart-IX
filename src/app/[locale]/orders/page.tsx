@@ -139,7 +139,7 @@ export default function OrdersPage() {
       },
       {
         key: "market_type",
-        header: t("market_type") || "Market",
+        header: t("market_type"),
         hideOnMobile: true,
         render: (order) => (
           <Badge variant={order.market_type === "futures" ? "gold" : "blue"} size="sm">
@@ -174,7 +174,7 @@ export default function OrdersPage() {
       },
       {
         key: "status",
-        header: t("status") || "Status",
+        header: t("status"),
         render: (order) => (
           <Badge variant={STATUS_VARIANT_MAP[order.status]} size="sm">
             {order.status === "partially_filled"

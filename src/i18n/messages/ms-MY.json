@@ -242,6 +242,8 @@
       "order_id": "ID Pesanan",
       "symbol": "Simbol",
       "side": "Arah",
+      "market_type": "Pasaran",
+      "status": "Status",
       "type": "Jenis",
       "quantity": "Kuantiti",
       "price": "Harga",

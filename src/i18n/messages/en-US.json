@@ -242,6 +242,8 @@
       "order_id": "Order ID",
       "symbol": "Symbol",
       "side": "Side",
+      "market_type": "Market",
+      "status": "Status",
       "type": "Type",
       "quantity": "Quantity",
       "price": "Price",

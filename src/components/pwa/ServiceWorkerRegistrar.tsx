@@ -14,10 +14,16 @@ export function ServiceWorkerRegistrar() {
     const version = process.env.NEXT_PUBLIC_BUILD_ID ?? "dev";
     let registration: ServiceWorkerRegistration | null = null;
     let reloading = false;
+    // 首次访问时页面还没有 controller；SW 装好后 self.clients.claim() 会让
+    // 这个未受控的页面变成受控页面，同样触发 controllerchange。这不是「新版本
+    // 接管旧版本」，只是「首次安装接管无主页面」，不该刷新——否则每个新访客
+    // 都会在打开页面几秒后被强制刷新一次，正在填的表单会被清空。
+    const hadController = Boolean(navigator.serviceWorker.controller);
 
-    // 新 SW 接管后重新加载，让页面跑在新代码上
+    // 新 SW 接管后重新加载，让页面跑在新代码上（仅当之前已有 controller，
+    // 即这确实是一次版本更新，而非首次安装的 claim()）
     const onControllerChange = () => {
-      if (reloading) return;
+      if (!hadController || reloading) return;
       reloading = true;
       window.location.reload();
     };

@@ -168,17 +168,34 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
   const [price, setPrice] = useState("");
   const [direction, setDirection] = useState<"above" | "below">("above");
   const [pushOptInOpen, setPushOptInOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const addAlert = usePriceAlertsStore((s) => s.addAlert);
+  const auth = useAuth();
 
   const handleOpen = () => {
     setPrice(currentPrice > 0 ? currentPrice.toString() : "");
+    setError(null);
     setOpen(true);
   };
 
-  const handleConfirm = () => {
+  // addAlert 现在是真正 await 的：之前这里没等异步结果就直接关弹窗，
+  // 导致未登录（POST /api/user/alerts 401）或网络失败时弹窗照样关掉、
+  // 甚至弹出推送授权卡片，用户以为提醒设成功了，实际什么都没存
+  const handleConfirm = async () => {
     const target = parseFloat(price);
     if (!target || target <= 0) return;
-    addAlert(symbol, target, direction);
+    setError(null);
+    // 这个弹窗目前对未登录用户没有入口级拦截（见本轮修复报告），
+    // 401 在这里体现为 addAlert 返回 false，走同一条失败分支
+    if (!auth.userId) {
+      setError("请先登录后再设置提醒");
+      return;
+    }
+    const ok = await addAlert(symbol, target, direction);
+    if (!ok) {
+      setError("保存失败，请重试");
+      return;
+    }
     setOpen(false);
     // 首次设置提醒时顺手问一句要不要开推送权限——Notification.permission 本身就记录了
     // "问没问过"，不需要额外的标记；不支持通知的浏览器/webview 直接跳过
@@ -216,10 +233,15 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
             </button>
           </div>
           <Input placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)} />
-          <p className="text-xs text-text-muted">提醒只在你打开网站时以站内通知的形式出现，不会发邮件或推送。</p>
+          {/* 此前这句话说提醒只在网站开着时以站内通知形式出现、不会发推送——
+              这在本层给价格提醒接上服务端 Web Push 之后已经是错的，紧接着下面
+              就是开启推送的卡片，两句话自相矛盾。这里改成准确描述：提醒由服务端
+              巡检触发，开启通知后即使网站没开也能收到推送 */}
+          <p className="text-xs text-text-muted">提醒由服务端巡检触发，开启通知后即使不打开网站也能收到推送。</p>
+          {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex justify-end gap-3">
             <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>取消</Button>
-            <Button variant="primary" size="sm" onClick={handleConfirm}>设置提醒</Button>
+            <Button variant="primary" size="sm" onClick={() => void handleConfirm()}>设置提醒</Button>
           </div>
         </div>
       </Modal>

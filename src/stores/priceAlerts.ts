@@ -13,7 +13,8 @@ interface PriceAlertsState {
   alerts: PriceAlert[];
   loading: boolean;
   fetchAlerts: () => Promise<void>;
-  addAlert: (symbol: string, targetPrice: number, direction: "above" | "below") => Promise<void>;
+  /** 返回是否保存成功——调用方（交易页弹窗）需要据此决定要不要关闭弹窗 */
+  addAlert: (symbol: string, targetPrice: number, direction: "above" | "below") => Promise<boolean>;
   removeAlert: (id: string) => Promise<void>;
   /** 把浏览器里存量的本地提醒一次性推到服务端，成功后清空 localStorage */
   migrateLocalAlerts: () => Promise<void>;
@@ -63,7 +64,9 @@ export const usePriceAlertsStore = create<PriceAlertsState>()((set, get) => ({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol, targetPrice, direction }),
     });
-    if (res.ok) await get().fetchAlerts();
+    if (!res.ok) return false;
+    await get().fetchAlerts();
+    return true;
   },
 
   removeAlert: async (id) => {

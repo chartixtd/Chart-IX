@@ -81,7 +81,7 @@ export function VideosView({
       )}
 
       {filtered.length > 0 ? (
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((video) => (
             <Link
               key={video.id}

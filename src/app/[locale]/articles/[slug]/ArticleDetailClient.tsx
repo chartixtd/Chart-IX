@@ -135,10 +135,11 @@ export function ArticleDetailClient({ article, isGated }: Props) {
       )}
 
       {/* Article content — server-side gated, no DOM hiding tricks */}
-      <div className="prose-custom mt-8">
+      {/* 阅读宽度收窄到 68ch，正文用 15px 行高 1.75，照顾移动端中文/马来文长文阅读 */}
+      <div className="prose-custom mx-auto mt-8 max-w-[68ch] px-4 py-6 lg:py-12">
         <div
           dangerouslySetInnerHTML={{ __html: contentHtml }}
-          className="prose prose-sm max-w-none text-text-primary"
+          className="prose prose-sm max-w-none text-[15px] leading-[1.75] text-text-primary lg:text-base"
         />
 
         {isGated && (

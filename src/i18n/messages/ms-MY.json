@@ -256,7 +256,8 @@
     "mobile_book": "Buku",
     "mobile_positions": "Posisi",
     "mobile_order_sheet": "Buat pesanan",
-    "mobile_symbol_picker": "Pilih pasangan"
+    "mobile_symbol_picker": "Pilih pasangan",
+    "offline_disabled": "Anda luar talian — pesanan tidak boleh dibuat"
   },
   "upgrade": {
     "banner_title": "Naik Taraf ke Chart-IX Pro",

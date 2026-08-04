@@ -7,6 +7,7 @@ import { usePaperAccount, usePlacePaperOrder } from "@/hooks/usePaperTrading";
 import { useSymbolSpec } from "@/hooks/useSymbolSpec";
 import { useSpotBalances, useFuturesAccount } from "@/hooks/useTradingAccount";
 import { useOrderPreflight } from "@/hooks/useOrderPreflight";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { usePwaStore } from "@/stores/pwa";
 import { Button } from "@/components/ui/Button";
 import { OrderConfirmModal } from "@/components/trade/OrderConfirmModal";
@@ -31,6 +32,7 @@ interface OrderFormProps {
 
 export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: OrderFormProps) {
   const t = useTranslations();
+  const online = useOnlineStatus();
   const cfg = MARKET_CONFIG[market];
   const baseAsset = symbol.split("-")[0] ?? symbol;
 
@@ -382,10 +384,16 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
               leverage={effectiveLeverage} showMargin={cfg.hasLeverage}
             />
 
+            {!online && (
+              <p className="mb-2 rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs text-warning">
+                {t("trade.offline_disabled")}
+              </p>
+            )}
+
             <Button
               className="w-full"
               variant={direction === "LONG" ? "green" : "red"}
-              disabled={!canSubmit()}
+              disabled={!canSubmit() || !online}
               onClick={() => setConfirmOpen(true)}
             >
               {t(direction === "LONG" ? cfg.longLabelKey : cfg.shortLabelKey)} {baseAsset}

@@ -256,7 +256,8 @@
     "mobile_book": "盘口",
     "mobile_positions": "持仓",
     "mobile_order_sheet": "下单",
-    "mobile_symbol_picker": "选择交易对"
+    "mobile_symbol_picker": "选择交易对",
+    "offline_disabled": "当前离线，无法下单"
   },
   "upgrade": {
     "banner_title": "升级至 Chart-IX Pro",

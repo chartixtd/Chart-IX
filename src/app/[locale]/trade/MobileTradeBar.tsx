@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { cn } from "@/lib/utils";
 
 export function MobileTradeBar({
@@ -19,6 +20,7 @@ export function MobileTradeBar({
   positionsOpen: boolean;
 }) {
   const t = useTranslations("trade");
+  const online = useOnlineStatus();
 
   return (
     <div className="shrink-0 border-t border-border-default bg-bg-secondary lg:hidden">
@@ -46,13 +48,15 @@ export function MobileTradeBar({
       <div className="flex gap-2 border-t border-border-default p-2">
         <button
           onClick={onBuy}
-          className="min-h-[48px] flex-1 rounded-sm bg-success/12 text-sm font-semibold text-success transition-colors active:bg-success/20"
+          disabled={!online}
+          className="min-h-[48px] flex-1 rounded-sm bg-success/12 text-sm font-semibold text-success transition-colors active:bg-success/20 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {t("mobile_buy")}
         </button>
         <button
           onClick={onSell}
-          className="min-h-[48px] flex-1 rounded-sm bg-danger/12 text-sm font-semibold text-danger transition-colors active:bg-danger/20"
+          disabled={!online}
+          className="min-h-[48px] flex-1 rounded-sm bg-danger/12 text-sm font-semibold text-danger transition-colors active:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {t("mobile_sell")}
         </button>

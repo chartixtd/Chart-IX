@@ -256,7 +256,8 @@
     "mobile_book": "Book",
     "mobile_positions": "Positions",
     "mobile_order_sheet": "Place order",
-    "mobile_symbol_picker": "Select pair"
+    "mobile_symbol_picker": "Select pair",
+    "offline_disabled": "You're offline — orders can't be placed"
   },
   "upgrade": {
     "banner_title": "Upgrade to Chart-IX Pro",

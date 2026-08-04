@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 export interface PriceAlert {
   id: string;
@@ -12,37 +11,95 @@ export interface PriceAlert {
 
 interface PriceAlertsState {
   alerts: PriceAlert[];
-  addAlert: (symbol: string, targetPrice: number, direction: "above" | "below") => void;
-  removeAlert: (id: string) => void;
-  markTriggered: (id: string) => void;
-  clearTriggered: () => void;
+  loading: boolean;
+  fetchAlerts: () => Promise<void>;
+  addAlert: (symbol: string, targetPrice: number, direction: "above" | "below") => Promise<void>;
+  removeAlert: (id: string) => Promise<void>;
+  /** 把浏览器里存量的本地提醒一次性推到服务端，成功后清空 localStorage */
+  migrateLocalAlerts: () => Promise<void>;
 }
 
-export const usePriceAlertsStore = create<PriceAlertsState>()(
-  persist(
-    (set) => ({
-      alerts: [],
-      addAlert: (symbol, targetPrice, direction) =>
-        set((state) => ({
-          alerts: [
-            ...state.alerts,
-            {
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              symbol,
-              targetPrice,
-              direction,
-              createdAt: Date.now(),
-              triggered: false,
-            },
-          ],
-        })),
-      removeAlert: (id) => set((state) => ({ alerts: state.alerts.filter((a) => a.id !== id) })),
-      markTriggered: (id) =>
-        set((state) => ({
-          alerts: state.alerts.map((a) => (a.id === id ? { ...a, triggered: true } : a)),
-        })),
-      clearTriggered: () => set((state) => ({ alerts: state.alerts.filter((a) => !a.triggered) })),
-    }),
-    { name: "chart-ix-price-alerts" }
-  )
-);
+const LEGACY_KEY = "chart-ix-price-alerts";
+
+interface AlertRow {
+  id: string;
+  symbol: string;
+  target_price: number;
+  direction: "above" | "below";
+  triggered_at: string | null;
+  created_at: string;
+}
+
+function toAlert(row: AlertRow): PriceAlert {
+  return {
+    id: row.id,
+    symbol: row.symbol,
+    targetPrice: Number(row.target_price),
+    direction: row.direction,
+    createdAt: new Date(row.created_at).getTime(),
+    triggered: row.triggered_at !== null,
+  };
+}
+
+export const usePriceAlertsStore = create<PriceAlertsState>()((set, get) => ({
+  alerts: [],
+  loading: false,
+
+  fetchAlerts: async () => {
+    set({ loading: true });
+    try {
+      const res = await fetch("/api/user/alerts");
+      if (!res.ok) return;
+      const json = (await res.json()) as { alerts: AlertRow[] };
+      set({ alerts: json.alerts.map(toAlert) });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  addAlert: async (symbol, targetPrice, direction) => {
+    const res = await fetch("/api/user/alerts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol, targetPrice, direction }),
+    });
+    if (res.ok) await get().fetchAlerts();
+  },
+
+  removeAlert: async (id) => {
+    // 乐观更新：删除是低风险操作，等一个往返太慢
+    set((state) => ({ alerts: state.alerts.filter((a) => a.id !== id) }));
+    await fetch(`/api/user/alerts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+
+  migrateLocalAlerts: async () => {
+    if (typeof localStorage === "undefined") return;
+    const raw = localStorage.getItem(LEGACY_KEY);
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw) as { state?: { alerts?: PriceAlert[] } };
+      const legacy = (parsed.state?.alerts ?? []).filter((a) => !a.triggered);
+      if (legacy.length > 0) {
+        const res = await fetch("/api/user/alerts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            migrate: legacy.map((a) => ({
+              symbol: a.symbol,
+              targetPrice: a.targetPrice,
+              direction: a.direction,
+            })),
+          }),
+        });
+        // 失败就保留 localStorage，下次登录再试——不能静默丢掉用户设的提醒
+        if (!res.ok) return;
+      }
+      localStorage.removeItem(LEGACY_KEY);
+      await get().fetchAlerts();
+    } catch {
+      // 解析失败说明数据已损坏，直接清掉避免每次登录都重试
+      localStorage.removeItem(LEGACY_KEY);
+    }
+  },
+}));

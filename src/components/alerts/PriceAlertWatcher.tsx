@@ -1,47 +1,40 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useMarketStore } from "@/stores/market";
+import { useEffect } from "react";
+import { useLocale } from "next-intl";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { usePriceAlertsStore } from "@/stores/priceAlerts";
-import { useToast } from "@/components/ui/Toast";
-import { formatPrice } from "@/lib/utils";
+import { resubscribeIfNeeded } from "@/lib/push/client";
 
 /**
- * Headless watcher — subscribes to the ticker store directly (not via a React
- * selector) so a price tick doesn't re-render this component; it just checks
- * pending alerts and fires a toast + marks them triggered when crossed.
+ * 服务端是价格提醒的唯一权威——触发判定在 /api/cron/price-alerts 里做。
+ * 这里只负责：登录后拉一次列表、迁移存量本地提醒、补订丢失的推送订阅，
+ * 以及在 service worker 收到推送时刷新列表让铃铛角标跟上。
+ *
+ * 此前这个组件自己监听行情做触发判定；两边都判会让逻辑迟早漂移。
  */
 export function PriceAlertWatcher() {
-  const { toast } = useToast();
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
+  const auth = useAuth();
+  const locale = useLocale();
+  const fetchAlerts = usePriceAlertsStore((s) => s.fetchAlerts);
+  const migrateLocalAlerts = usePriceAlertsStore((s) => s.migrateLocalAlerts);
 
   useEffect(() => {
-    const unsubscribe = useMarketStore.subscribe((state) => {
-      const { alerts, markTriggered } = usePriceAlertsStore.getState();
-      const pending = alerts.filter((a) => !a.triggered);
-      if (pending.length === 0) return;
+    if (!auth.userId) return;
+    void migrateLocalAlerts().then(() => fetchAlerts());
+    // iOS 清了存储之后订阅会连同登录态一起丢。权限还在的话静默补订，
+    // 不打扰用户——否则提醒会安静地再也不响。
+    void resubscribeIfNeeded(locale);
+  }, [auth.userId, locale, fetchAlerts, migrateLocalAlerts]);
 
-      for (const alert of pending) {
-        const ticker = state.tickers[alert.symbol];
-        if (!ticker) continue;
-        const price = Number(ticker.lastPrice);
-        if (!Number.isFinite(price)) continue;
-
-        const hit =
-          alert.direction === "above" ? price >= alert.targetPrice : price <= alert.targetPrice;
-
-        if (hit) {
-          markTriggered(alert.id);
-          toastRef.current(
-            `${alert.symbol} ${alert.direction === "above" ? "涨到" : "跌到"} ${formatPrice(price)}，达到你设置的提醒价 ${formatPrice(alert.targetPrice)}`,
-            "info"
-          );
-        }
-      }
-    });
-    return unsubscribe;
-  }, []);
+  useEffect(() => {
+    if (!auth.userId || typeof navigator === "undefined" || !navigator.serviceWorker) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "PUSH_RECEIVED") void fetchAlerts();
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [auth.userId, fetchAlerts]);
 
   return null;
 }

@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useFavoritesStore } from "@/stores/favorites";
-import { usePriceAlertsStore, type PriceAlert } from "@/stores/priceAlerts";
 import {
   useTradePrefsStore, type TradeMarketType, type TradeRightTab, DEFAULT_PINNED_INTERVALS,
 } from "@/stores/tradePrefs";
@@ -16,7 +15,9 @@ import { INDICATOR_BY_ID } from "@/lib/chart/indicator-registry";
 
 interface StoredPreferences {
   favorites?: string[];
-  priceAlerts?: PriceAlert[];
+  // 历史字段，价格提醒已改为服务端权威（price_alerts 表），不再经由此处同步，
+  // 保留 optional 类型仅为兼容仍存量的旧 JSONB 数据，读取时忽略即可。
+  priceAlerts?: unknown;
   trade?: {
     symbol?: string;
     interval?: string;
@@ -41,7 +42,6 @@ function snapshot(): StoredPreferences {
   const chart = useChartStore.getState();
   return {
     favorites: useFavoritesStore.getState().favorites,
-    priceAlerts: usePriceAlertsStore.getState().alerts,
     trade: {
       symbol: trade.symbol,
       interval: trade.interval,
@@ -116,13 +116,6 @@ export function PreferencesSync() {
       );
       useFavoritesStore.setState({ favorites: mergedFavorites });
 
-      // priceAlerts: merge by id (remote first, local fills gaps)
-      const localAlerts = usePriceAlertsStore.getState().alerts;
-      const byId = new Map<string, PriceAlert>();
-      for (const a of remote.priceAlerts ?? []) byId.set(a.id, a);
-      for (const a of localAlerts) if (!byId.has(a.id)) byId.set(a.id, a);
-      usePriceAlertsStore.setState({ alerts: Array.from(byId.values()) });
-
       // trade prefs: DB wins when present (restore last-used setup on new device)
       if (remote.trade) {
         const { symbol, interval, market, rightTab, pinnedIntervals } = remote.trade;
@@ -167,7 +160,6 @@ export function PreferencesSync() {
 
       // Persist any subsequent local changes (debounced).
       unsubscribers.push(useFavoritesStore.subscribe(schedulePersist));
-      unsubscribers.push(usePriceAlertsStore.subscribe(schedulePersist));
       unsubscribers.push(useTradePrefsStore.subscribe(schedulePersist));
       unsubscribers.push(useChartStore.subscribe(schedulePersist));
     })();

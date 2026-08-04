@@ -250,7 +250,13 @@
       "time": "Masa",
       "cancel_order": "Batalkan Pesanan",
       "no_orders": "Tiada sejarah dagangan"
-    }
+    },
+    "mobile_buy": "Beli",
+    "mobile_sell": "Jual",
+    "mobile_book": "Buku",
+    "mobile_positions": "Posisi",
+    "mobile_order_sheet": "Buat pesanan",
+    "mobile_symbol_picker": "Pilih pasangan"
   },
   "upgrade": {
     "banner_title": "Naik Taraf ke Chart-IX Pro",

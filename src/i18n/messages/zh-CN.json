@@ -250,7 +250,13 @@
       "time": "时间",
       "cancel_order": "撤单",
       "no_orders": "暂无交易记录"
-    }
+    },
+    "mobile_buy": "买入",
+    "mobile_sell": "卖出",
+    "mobile_book": "盘口",
+    "mobile_positions": "持仓",
+    "mobile_order_sheet": "下单",
+    "mobile_symbol_picker": "选择交易对"
   },
   "upgrade": {
     "banner_title": "升级至 Chart-IX Pro",

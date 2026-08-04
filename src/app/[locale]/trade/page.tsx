@@ -10,6 +10,9 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { MarketOverview } from "@/components/trade/MarketOverview";
+import { OrderBook } from "@/components/trade/OrderBook";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { MobileTradeBar } from "./MobileTradeBar";
 
 // lightweight-charts is a large canvas-based dependency — split into its own
 // chunk instead of shipping it in the initial /trade bundle.
@@ -136,7 +139,7 @@ const TickerBar = memo(function TickerBar({
         className={cn("flex shrink-0 items-center gap-3", onPickSymbol && "lg:pointer-events-none")}
       >
         <h2 className="font-display text-lg tracking-tight">{symbol}</h2>
-        {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">切换 ▾</span>}
+        {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">{t("mobile_symbol_picker")} ▾</span>}
       </button>
       {ticker && (
         <>
@@ -319,6 +322,7 @@ function ResizeHandle() {
 
 export default function TradePage() {
   const locale = useLocale();
+  const t = useTranslations("trade");
   const auth = useAuth();
   const symbol = useTradePrefsStore((s) => s.symbol);
   const setSymbol = useTradePrefsStore((s) => s.setSymbol);
@@ -329,6 +333,12 @@ export default function TradePage() {
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
   const [initialSide, setInitialSide] = useState<"long" | "short" | undefined>();
   const [priceLinkSignal, setPriceLinkSignal] = useState<{ price: number; nonce: number } | null>(null);
+  const [orderSheetOpen, setOrderSheetOpen] = useState(false);
+  const [positionsSheetOpen, setPositionsSheetOpen] = useState(false);
+  const [bookOverlayOpen, setBookOverlayOpen] = useState(false);
+  // 用 JS 断点做「挂载哪一棵树」的决定，才能真正避免双挂载。
+  // 仅用于外壳选择，SSR 阶段返回 false（先按手机渲染，避免桌面首屏闪大布局）
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   useBingXWebSocket([symbol]);
 
@@ -400,7 +410,10 @@ export default function TradePage() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col">
+    // 手机上 100vh 会被 Safari 的地址栏高度算错，用 dvh；
+    // 底部还要给手机 header 的顶部安全区和 L1 tab bar（含其底部安全区）让位——
+    // desktop 分支的 4rem 不受影响，因为 <main> 在 lg 断点上没有这两块 padding
+    <div className="flex h-[calc(100dvh-3rem-env(safe-area-inset-top)-70px-env(safe-area-inset-bottom))] flex-col lg:h-[calc(100dvh-4rem)]">
       <TickerBar
         symbol={symbol}
         market={market}
@@ -412,12 +425,12 @@ export default function TradePage() {
         authLoading={auth.loading}
       />
 
-      {/* Desktop layout: draggable 4-column layout */}
-      {/* PanelGroup sets an inline `display: flex` style on its root element, which
-          wins the CSS cascade over Tailwind's `hidden` utility class regardless of
-          breakpoint — so the responsive show/hide toggle has to live on a plain
-          wrapper div instead of directly on PanelGroup's own className. */}
-      <div className="hidden flex-1 overflow-hidden lg:flex">
+      {/* Desktop layout: draggable 4-column layout.
+          isDesktop 由 useMediaQuery 的真实 JS 判断门控——不再靠 CSS
+          hidden/lg:flex 让两套布局同时挂载，这正是 Task 3 遗留、本任务要解决的
+          双挂载问题（图表、WebSocket 订阅等带副作用的子树不能跑两份）。 */}
+      {isDesktop && (
+        <div className="flex flex-1 overflow-hidden">
         {/* v2：去掉了独立盘口栏（并入 MarketOverview 的"盘口"切换），改版 id
             避免旧用户浏览器里存的 3 栏→4 栏比例套用到现在的 3 栏布局上 */}
         <PanelGroup direction="horizontal" autoSaveId="chart-ix-trade-layout-v2" className="flex-1">
@@ -460,14 +473,69 @@ export default function TradePage() {
             </div>
           </Panel>
         </PanelGroup>
-      </div>
+        </div>
+      )}
 
-      {/* 手机布局：图表全屏，操作条与 sheet 在 Task 4 接入 */}
-      <div className="flex flex-1 flex-col overflow-hidden lg:hidden">{chartBlock}</div>
+      {!isDesktop && (
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="relative flex-1 overflow-hidden">
+            {chartBlock}
+            {bookOverlayOpen && (
+              // 订单簿做成图表上的叠层，而不是抢一个 tab
+              <div className="absolute inset-y-0 right-0 w-[62%] border-l border-border-default bg-bg-primary/95 backdrop-blur-sm">
+                <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />
+              </div>
+            )}
+          </div>
+
+          <MobileTradeBar
+            onBuy={() => {
+              setInitialSide("long");
+              setOrderSheetOpen(true);
+            }}
+            onSell={() => {
+              setInitialSide("short");
+              setOrderSheetOpen(true);
+            }}
+            onTogglePositions={() => setPositionsSheetOpen((v) => !v)}
+            onToggleBook={() => setBookOverlayOpen((v) => !v)}
+            bookOpen={bookOverlayOpen}
+            positionsOpen={positionsSheetOpen}
+          />
+        </div>
+      )}
+
+      <Modal
+        open={orderSheetOpen}
+        onClose={() => setOrderSheetOpen(false)}
+        title={t("mobile_order_sheet")}
+        variant="sheet"
+      >
+        <div className="-m-6">
+          {tradePanel}
+          {market === "futures" && <FuturesWalletSummary />}
+        </div>
+      </Modal>
+
+      <Modal
+        open={positionsSheetOpen}
+        onClose={() => setPositionsSheetOpen(false)}
+        title={t("mobile_positions")}
+        variant="sheet"
+      >
+        <div className="-m-6 min-h-[40dvh]">{ordersPanel}</div>
+      </Modal>
 
       {/* Mobile symbol picker */}
-      <Modal open={symbolPickerOpen} onClose={() => setSymbolPickerOpen(false)} title="选择交易对" size="sm" className="lg:hidden">
-        <div className="-m-6 h-[70vh]">
+      <Modal
+        open={symbolPickerOpen}
+        onClose={() => setSymbolPickerOpen(false)}
+        title={t("mobile_symbol_picker")}
+        size="sm"
+        variant="sheet"
+        className="lg:hidden"
+      >
+        <div className="-m-6 h-[70dvh]">
           <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} />
         </div>
       </Modal>

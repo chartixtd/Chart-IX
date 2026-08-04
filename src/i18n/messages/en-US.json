@@ -250,7 +250,13 @@
       "time": "Time",
       "cancel_order": "Cancel Order",
       "no_orders": "No order history"
-    }
+    },
+    "mobile_buy": "Buy",
+    "mobile_sell": "Sell",
+    "mobile_book": "Book",
+    "mobile_positions": "Positions",
+    "mobile_order_sheet": "Place order",
+    "mobile_symbol_picker": "Select pair"
   },
   "upgrade": {
     "banner_title": "Upgrade to Chart-IX Pro",

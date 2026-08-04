@@ -137,17 +137,13 @@ export const viewport: Viewport = {
 import type { Metadata, Viewport } from "next";
 ```
 
-- [ ] **Step 4: 在 `src/app/layout.tsx` 的 `<head>` 中加入 iOS 专属 meta**
+- [ ] **Step 4: 不在此处手写 iOS meta 标签**
 
-在现有 `<meta name="view-transition" ... />` 之后加入：
+`apple-mobile-web-app-capable` / `-status-bar-style` / `-title` 三个标签**不在这里加**——Task 6 会通过 locale layout 的 `appleWebApp` metadata 生成它们，两边都写会在 HTML 里输出重复标签。
 
-```tsx
-        {/* iOS 16.4+ 已认 manifest 的 display，但这个 meta 仍是最可靠的路径 */}
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        {/* black-translucent 配合 viewport-fit=cover：内容会顶到状态栏下方，
-            所以 header 必须吃 safe-area-inset-top 的 padding（见 L1） */}
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-```
+放在 locale layout 而非 root layout 还有一个原因：`/admin` 在 `[locale]` 之外，后台不做 PWA 适配，不该带这些标签；而 `apple-mobile-web-app-title` 需要按语言变化，只有 locale layout 拿得到语言。
+
+本步无改动，继续下一步。
 
 - [ ] **Step 5: 加入 iOS 的手势拦截层**
 

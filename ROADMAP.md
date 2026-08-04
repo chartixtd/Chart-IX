@@ -79,7 +79,7 @@
 
 ## 暂缓 / 挂起清单（HOLD）
 
-- **通知渠道（邮件 / Web Push / Telegram bot）** — 决策 #13，**暂不做**。
+- **通知渠道** — 决策 #13 已于 2026-08-04 解冻 Web Push 部分（见 [手机 PWA 设计文档](docs/superpowers/specs/2026-08-04-mobile-pwa-design.md)）。邮件渠道仍然挂起。
   影响：价格提醒暂时只能做"站内提醒"，无法主动推送到邮件/手机；"未完成课程提醒"等主动召回功能一并挂起。等这个解冻后再补齐。
 - **每日市场简报** — 决策 #11，待后续详细讨论（自动生成 vs 人工维护未定）。
 - **交易量 → 自动解锁 Pro** — 决策 #1，暂由后台手动调整，不做自动判定。
@@ -102,6 +102,7 @@
   - `020_trading_limits.sql`（交易风控限额表 + 放宽 orders.order_type + api_keys 增列 masked/primary/权限标记 + 用 `CREATE OR REPLACE FUNCTION` 修正 006 的 `trg_increment_trade_count` 触发器使其跳过 `risk_rejected` 订单（不改触发器本身，只替换其函数体，OID 不变自动生效）；⚠️ 两条 orders 的 ADD CONSTRAINT 会短暂对 orders 表加 ACCESS EXCLUSIVE 锁、两条 CREATE INDEX 会短暂阻塞对应表写入，当前数据量小预计很快，但不是零；文件内含验证：执行后若某用户所有 API Key 都是 `is_valid = false`，该用户不会被自动补上 `is_primary = true`，这是预期行为，不代表迁移出错）
   - `026_push_and_alerts.sql`（Web Push 订阅、价格提醒、通知偏好、cron 心跳）
   - `027_push_subscriptions_update_policy.sql`（补上 push_subscriptions 缺失的 UPDATE 策略，修复重新订阅时 upsert 被 RLS 拒绝）
+  - `028_push_cron_jobs.sql`（定时任务搬到 Supabase pg_cron；执行前需替换 SITE_URL 与 CRON_SECRET 占位符）
   不跑的话对应功能会报错，但前端都做了优雅降级（不会白屏崩溃），比如 `/learn` 页面会显示"即将上线"而不是报错。
 - **干净的 logo 透明源文件**（PNG 透明背景或 SVG/AI）——现有 `logo/logo.png` 是烘焙了假棋盘格的低保真预览图（alpha 全不透明，棋盘格是真实灰色像素且间距不规则），像素级抠图两轮都做不干净，暂不能用。只需要图形标（"D-X"那个符号）单独一份透明图即可，导航栏/favicon 用得上。
 - 落地页文案定位一句话、信任信号措辞、社群链接（Telegram）——当前落地页文案是我起草的，可以再改。

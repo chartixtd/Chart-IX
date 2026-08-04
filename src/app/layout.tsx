@@ -77,6 +77,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
         />
         <meta name="view-transition" content="same-origin" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
       </head>
       <body className="min-h-screen bg-bg-primary text-text-primary antialiased">
         {children}

@@ -123,6 +123,10 @@ const config: Config = {
           "0%, 100%": { transform: "scale(1)" },
           "50%": { transform: "scale(1.03)" },
         },
+        "sheet-in": {
+          from: { transform: "translateY(100%)" },
+          to: { transform: "translateY(0)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.4s ease-out",
@@ -136,6 +140,7 @@ const config: Config = {
         "price-down": "price-down 0.8s ease-out",
         "ring-expand": "ring-expand 0.6s ease-out",
         breathe: "breathe 8s ease-in-out infinite",
+        "sheet-in": "sheet-in 0.26s cubic-bezier(0.16, 1, 0.3, 1)",
       },
     },
   },

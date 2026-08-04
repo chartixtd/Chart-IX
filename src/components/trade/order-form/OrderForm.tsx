@@ -7,6 +7,7 @@ import { usePaperAccount, usePlacePaperOrder } from "@/hooks/usePaperTrading";
 import { useSymbolSpec } from "@/hooks/useSymbolSpec";
 import { useSpotBalances, useFuturesAccount } from "@/hooks/useTradingAccount";
 import { useOrderPreflight } from "@/hooks/useOrderPreflight";
+import { usePwaStore } from "@/stores/pwa";
 import { Button } from "@/components/ui/Button";
 import { OrderConfirmModal } from "@/components/trade/OrderConfirmModal";
 import { AmountField } from "./fields/AmountField";
@@ -215,9 +216,14 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
     if (!json.success) throw new Error(json.error?.message || t("trading.margin_type_failed"));
   };
 
+  const setHasPendingOrder = usePwaStore((s) => s.setHasPendingOrder);
+
   const execute = async () => {
     setSubmitting(true);
     setResult(null);
+    // 提交期间不该弹出「有新版本，刷新一下」——刷新会打断正在进行的下单请求，
+    // 用户搞不清订单到底成没成。finally 里无条件复位，保证异常路径也不会卡死。
+    setHasPendingOrder(true);
     try {
       if (!cfg.isLive) {
         // 模拟盘：不涉及真实资金，走本地账本而不是任何 BingX 下单接口
@@ -263,6 +269,7 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
     } finally {
       setSubmitting(false);
       setConfirmOpen(false);
+      setHasPendingOrder(false);
     }
   };
 

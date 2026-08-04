@@ -309,7 +309,7 @@ export default function VideoDetailPage() {
 
         {video.description && (
           // 阅读宽度收窄到 68ch，正文用 15px 行高 1.75，照顾移动端中文长文阅读
-          <div className="mx-auto max-w-[68ch] px-4 py-6 lg:py-12">
+          <div className="mx-auto max-w-[68ch] py-6 lg:py-12">
             <h2 className="text-lg font-semibold text-text-primary">{t("description")}</h2>
             <p className="mt-2 whitespace-pre-wrap text-[15px] leading-[1.75] text-text-secondary lg:text-base">
               {video.description[locale] ?? video.description["en-US"] ?? ""}

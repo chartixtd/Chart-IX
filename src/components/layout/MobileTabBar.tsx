@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useMemo } from "react";
 import { MOBILE_TABS, resolveActiveTab, type TabKey } from "@/lib/nav/tabs";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 function TabIcon({ tab, className }: { tab: TabKey; className?: string }) {
   const common = {
@@ -61,8 +62,18 @@ export function MobileTabBar() {
   const locale = useLocale();
   const pathname = usePathname();
   const t = useTranslations("nav");
+  const auth = useAuth();
 
   const active = useMemo(() => resolveActiveTab(pathname, locale), [pathname, locale]);
+
+  // Signed-out visitors get no product nav here, mirroring desktop Navbar's
+  // GUEST_NAV_ITEMS decision — the 5 tabs all dead-end in login prompts, which
+  // is exactly the "teasing" the desktop nav was built to avoid. Keep rendering
+  // during the loading window (auth.loading) to avoid a flash/flicker; only
+  // suppress once auth has resolved and confirmed there's no user.
+  if (!auth.loading && !auth.userId) {
+    return null;
+  }
 
   return (
     <nav

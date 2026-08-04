@@ -2,13 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { PriceAlertBell } from "@/components/alerts/PriceAlertBell";
+import { Button } from "@/components/ui/Button";
 
 export function MobileHeader() {
   const locale = useLocale();
   const auth = useAuth();
+  const t = useTranslations("nav");
 
   return (
     // 状态栏样式是 black-translucent，内容会顶到状态栏下方，
@@ -19,7 +21,18 @@ export function MobileHeader() {
           <Image src="/logo.png" alt="Chart-IX" width={240} height={160} priority className="h-7 w-auto" />
         </Link>
         {/* 语言切换挪进 /more 的设置——低频操作不该占手机上最贵的横向空间 */}
-        <PriceAlertBell />
+        {!auth.loading && !auth.userId ? (
+          <div className="flex items-center gap-2">
+            <Link href={`/${locale}/login`}>
+              <Button variant="ghost" size="sm">{t("sign_in")}</Button>
+            </Link>
+            <Link href={`/${locale}/register`}>
+              <Button size="sm">{t("sign_up")}</Button>
+            </Link>
+          </div>
+        ) : (
+          <PriceAlertBell />
+        )}
       </div>
     </header>
   );

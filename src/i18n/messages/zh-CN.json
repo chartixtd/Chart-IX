@@ -949,5 +949,15 @@
     "service_busy": "交易所繁忙，请稍后重试",
     "network": "网络异常，请检查连接后重试",
     "unknown": "交易所返回未知错误"
+  },
+  "learn": {
+    "hub_title": "学习中心",
+    "hub_subtitle": "课程、文章与学习路径，循序渐进地建立交易认知",
+    "hub_videos": "视频课程",
+    "hub_videos_desc": "系统化的教学视频，从基础概念到实盘操作",
+    "hub_articles": "文章",
+    "hub_articles_desc": "深度解读与策略拆解",
+    "hub_paths": "学习路径",
+    "hub_paths_desc": "按顺序排好的成长路线"
   }
 }

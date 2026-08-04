@@ -949,5 +949,15 @@
     "service_busy": "The exchange is busy — please try again later",
     "network": "Network error — please check your connection and try again",
     "unknown": "The exchange returned an unknown error"
+  },
+  "learn": {
+    "hub_title": "Learning centre",
+    "hub_subtitle": "Courses, articles and structured paths that build trading judgement step by step",
+    "hub_videos": "Video courses",
+    "hub_videos_desc": "Structured lessons, from core concepts to live execution",
+    "hub_articles": "Articles",
+    "hub_articles_desc": "Deep dives and strategy breakdowns",
+    "hub_paths": "Learning paths",
+    "hub_paths_desc": "A sequenced route from beginner to confident"
   }
 }

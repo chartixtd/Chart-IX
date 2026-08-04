@@ -949,5 +949,15 @@
     "service_busy": "Bursa sedang sibuk — sila cuba lagi kemudian",
     "network": "Ralat rangkaian — sila semak sambungan anda dan cuba lagi",
     "unknown": "Bursa mengembalikan ralat yang tidak diketahui"
+  },
+  "learn": {
+    "hub_title": "Pusat pembelajaran",
+    "hub_subtitle": "Kursus, artikel dan laluan berstruktur untuk membina pertimbangan dagangan langkah demi langkah",
+    "hub_videos": "Kursus video",
+    "hub_videos_desc": "Pelajaran berstruktur, dari konsep asas hingga pelaksanaan langsung",
+    "hub_articles": "Artikel",
+    "hub_articles_desc": "Analisis mendalam dan pecahan strategi",
+    "hub_paths": "Laluan pembelajaran",
+    "hub_paths_desc": "Laluan tersusun dari pemula hingga yakin"
   }
 }

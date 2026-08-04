@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import type { LearningPath } from "@/types";
+import { LearnHub } from "./LearnHub";
 
 const LEVEL_VARIANT: Record<string, "gold" | "blue" | "orange"> = {
   beginner: "gold",
@@ -34,10 +36,16 @@ export default async function LearnPage({
 
   const list = (paths ?? []) as LearningPath[];
 
+  const tLearn = await getTranslations({ locale, namespace: "learn" });
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-12">
-      <h1 className="text-3xl font-bold text-text-primary">学习路径</h1>
-      <p className="mt-2 text-text-secondary">循序渐进，从零开始系统化学习交易</p>
+    <div className="mx-auto max-w-7xl px-4 py-8 lg:py-12">
+      <LearnHub locale={locale} />
+
+      <h2 id="paths" className="mt-12 scroll-mt-20 font-display text-2xl tracking-tighter text-text-primary">
+        {tLearn("hub_paths")}
+      </h2>
+      <p className="mt-2 text-sm text-text-secondary">{tLearn("hub_paths_desc")}</p>
 
       {list.length === 0 ? (
         <p className="mt-8 text-text-muted">学习路径即将上线，敬请期待。</p>

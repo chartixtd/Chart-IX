@@ -344,6 +344,19 @@ export default function TradePage() {
 
   useBingXWebSocket([symbol]);
 
+  // 视口从手机跨到桌面断点时（窗口缩放、平板旋转、devtools 调整宽度），把手机端的
+  // 三个 sheet 一并关掉——否则桌面布局挂载后，还开着的 sheet 会把 OrderForm/
+  // FuturesInfoPanel/OrdersPanel 内容和桌面树同时挂载，重新引入本任务序列本来
+  // 要消灭的双挂载问题（图表/WebSocket 订阅等带副作用的子树跑两份）。
+  useEffect(() => {
+    if (isDesktop) {
+      setOrderSheetOpen(false);
+      setPositionsSheetOpen(false);
+      setBookOverlayOpen(false);
+      setSymbolPickerOpen(false);
+    }
+  }, [isDesktop]);
+
   // URL 参数预填：从 screener 页面跳转时自动设置 symbol/market/side
   const searchParams = useSearchParams();
   useEffect(() => {

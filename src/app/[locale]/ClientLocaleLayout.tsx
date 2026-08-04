@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { AuthProvider, type AuthState } from "@/components/auth/AuthProvider";
 import { ZoomGuard } from "@/components/pwa/ZoomGuard";
+import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
+import { UpdateBanner } from "@/components/pwa/UpdateBanner";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { QueryProvider } from "@/components/layout/QueryProvider";
@@ -37,6 +39,8 @@ export function ClientLocaleLayout({
         <AuthProvider initialAuth={initialAuth}>
           <ToastProvider>
             <ZoomGuard />
+            <ServiceWorkerRegistrar />
+            <UpdateBanner />
             <div className="flex min-h-screen flex-col">
               <Navbar />
               <main className="flex-1">{children}</main>

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { purgePageCache } from "@/stores/pwa";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { PriceAlertBell } from "@/components/alerts/PriceAlertBell";
@@ -57,6 +58,8 @@ export function Navbar() {
   const handleLogout = useCallback(async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
+    // 缓存里的仪表盘/订单页 HTML 含用户数据，登出后必须清掉
+    await purgePageCache();
     router.push(`/${locale}`);
     router.refresh();
   }, [locale, router]);

@@ -6,10 +6,20 @@ const UA = {
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
   iosChrome:
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/122.0 Mobile/15E148 Safari/604.1",
+  iosFirefox:
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/122.0 Mobile/15E148 Safari/604.1",
+  iosEdge:
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/122.0 Mobile/15E148 Safari/604.1",
+  iosUnknownBrowser:
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari/604.1",
   iosInApp:
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
   androidChrome:
     "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+  androidFirefox:
+    "Mozilla/5.0 (Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/122.0 Mobile Safari/537.36",
+  androidSamsung:
+    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Mobile Safari/537.36 SamsungBrowser/23.0",
   wechat:
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.42",
   line:
@@ -82,5 +92,38 @@ describe("detectPlatform", () => {
     const p = detectPlatform({ ...base, userAgent: UA.desktop });
     expect(p.os).toBe("other");
     expect(p.canPromptInstall).toBe(false);
+  });
+
+  it("未列出的 iOS 浏览器按能装处理（fail-open）", () => {
+    const p = detectPlatform({ ...base, userAgent: UA.iosUnknownBrowser });
+    expect(p.os).toBe("ios");
+    expect(p.inAppBrowser).toBeNull();
+    expect(p.canPromptInstall).toBe(true);
+  });
+
+  it("iOS Firefox 不能安装", () => {
+    const p = detectPlatform({ ...base, userAgent: UA.iosFirefox });
+    expect(p.inAppBrowser).toBeNull();
+    expect(p.canPromptInstall).toBe(false);
+  });
+
+  it("iOS Edge 不能安装", () => {
+    const p = detectPlatform({ ...base, userAgent: UA.iosEdge });
+    expect(p.inAppBrowser).toBeNull();
+    expect(p.canPromptInstall).toBe(false);
+  });
+
+  it("未列出的 Android 浏览器按能装处理（fail-open）", () => {
+    const p = detectPlatform({ ...base, userAgent: UA.androidFirefox });
+    expect(p.os).toBe("android");
+    expect(p.inAppBrowser).toBeNull();
+    expect(p.canPromptInstall).toBe(true);
+  });
+
+  it("Samsung Internet 作为 Android 浏览器能安装", () => {
+    const p = detectPlatform({ ...base, userAgent: UA.androidSamsung });
+    expect(p.os).toBe("android");
+    expect(p.inAppBrowser).toBeNull();
+    expect(p.canPromptInstall).toBe(true);
   });
 });

@@ -208,7 +208,7 @@ export default function ApiKeysPage() {
                     <button
                       onClick={() => patchKey(key.id, "reverify")}
                       disabled={busyId === key.id}
-                      className="-m-2 p-2 text-text-muted hover:text-gold disabled:opacity-50"
+                      className="-m-1.5 p-1.5 text-text-muted hover:text-gold disabled:opacity-50"
                     >
                       {busyId === key.id ? t("validating") : t("reverify")}
                     </button>
@@ -216,7 +216,7 @@ export default function ApiKeysPage() {
                       <button
                         onClick={() => patchKey(key.id, "setPrimary")}
                         disabled={busyId === key.id}
-                        className="-m-2 p-2 text-text-muted hover:text-gold disabled:opacity-50"
+                        className="-m-1.5 p-1.5 text-text-muted hover:text-gold disabled:opacity-50"
                       >
                         {t("set_primary")}
                       </button>

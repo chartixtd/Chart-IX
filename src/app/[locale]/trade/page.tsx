@@ -239,29 +239,31 @@ const IntervalBar = memo(function IntervalBar({
   const isPinned = pinnedInOrder.includes(interval);
 
   return (
-    <div className="relative flex items-center gap-1 px-3 py-1.5 overflow-x-auto">
-      {pinnedInOrder.map((int) => (
+    <div className="relative flex items-center px-3 py-1.5">
+      <div className="flex items-center gap-1 overflow-x-auto">
+        {pinnedInOrder.map((int) => (
+          <button
+            key={int}
+            onClick={() => onIntervalChange(int)}
+            className={cn(
+              "min-h-[44px] rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
+              interval === int ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
+            )}
+          >
+            {int}
+          </button>
+        ))}
+
         <button
-          key={int}
-          onClick={() => onIntervalChange(int)}
+          onClick={() => setMoreOpen((o) => !o)}
           className={cn(
             "min-h-[44px] rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
-            interval === int ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
+            !isPinned ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
           )}
         >
-          {int}
+          {!isPinned ? interval : "更多"} ▾
         </button>
-      ))}
-
-      <button
-        onClick={() => setMoreOpen((o) => !o)}
-        className={cn(
-          "min-h-[44px] rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
-          !isPinned ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
-        )}
-      >
-        {!isPinned ? interval : "更多"} ▾
-      </button>
+      </div>
 
       {moreOpen && (
         <>

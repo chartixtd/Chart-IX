@@ -3,6 +3,8 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { logAdminAction } from "@/lib/supabase/admin-log";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/supabase/admin-auth";
+import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
+import { buildContentMessage } from "@/lib/push/messages";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -234,6 +236,32 @@ export async function PATCH(request: NextRequest) {
         );
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // --- Web Push 广播（fire-and-forget） ---
+    // 仅在「从未发布 → 已发布」这次跳变时广播，
+    // 编辑一篇已发布的文章不该再打扰所有人一次
+    try {
+      const wasPublished = !!oldData?.is_published;
+      const willBePublished = allowedFields.is_published === true;
+      if (!wasPublished && willBePublished) {
+        const title = (allowedFields.title ?? oldData?.title ?? {}) as Record<string, string>;
+        const slug = (allowedFields.slug ?? oldData?.slug) as string;
+        const subscriptions = await getOptedInSubscriptions("new_content");
+        await Promise.all(
+          subscriptions.map((row) => {
+            const localizedTitle = title[row.locale as keyof typeof title] ?? title["en-US"];
+            const message = buildContentMessage(row.locale, "article", localizedTitle);
+            return sendToSubscriptions([row], {
+              ...message,
+              url: `/${row.locale}/articles/${slug}`,
+              tag: `content-${slug}`,
+            });
+          })
+        );
+      }
+    } catch {
+      // 推送广播失败不应影响文章保存已成功这件事
     }
 
     // --- Audit log (fire-and-forget) ---

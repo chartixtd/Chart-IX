@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getScreenerPayload } from "@/lib/screener-server";
 import { pushScreenerToTelegram } from "@/lib/telegram-push";
+import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
+import { buildScreenerMessage } from "@/lib/push/messages";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -25,6 +27,26 @@ export async function GET(request: NextRequest) {
   try {
     const payload = await getScreenerPayload();
     await pushScreenerToTelegram(payload);
+
+    // 同一次调用顺带发 Web Push。只发给主动开启了选币通知的用户——
+    // 一天 6 条不请自来的推送是权限杀手。Push 失败不应影响 Telegram 推送
+    // 已成功这件事，所以单独 try/catch，不让它拖垮整个 cron 响应。
+    try {
+      const subscriptions = await getOptedInSubscriptions("screener");
+      await Promise.all(
+        subscriptions.map((row) => {
+          const message = buildScreenerMessage(row.locale);
+          return sendToSubscriptions([row], {
+            ...message,
+            url: `/${row.locale}/screener`,
+            tag: "screener",
+          });
+        })
+      );
+    } catch {
+      // Web Push 广播失败不应导致整个 cron 任务标记为失败
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     // Non-2xx so the failure is visible in Vercel's cron invocation logs —

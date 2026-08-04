@@ -295,7 +295,8 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setSummaryMode("live")}
               className={cn(
-                "border-b-2 pb-1 transition-colors",
+                // 账户模式切换是高频操作，移动端保证 44px 触控高度，桌面端保持原有紧凑样式
+                "inline-flex min-h-[44px] items-center border-b-2 pb-1 transition-colors lg:min-h-0",
                 summaryMode === "live" ? "border-gold text-text-primary" : "border-transparent text-text-muted hover:text-text-secondary"
               )}
             >
@@ -305,7 +306,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setSummaryMode("paper")}
               className={cn(
-                "border-b-2 pb-1 transition-colors",
+                "inline-flex min-h-[44px] items-center border-b-2 pb-1 transition-colors lg:min-h-0",
                 summaryMode === "paper" ? "border-gold text-text-primary" : "border-transparent text-text-muted hover:text-text-secondary"
               )}
             >
@@ -329,8 +330,9 @@ export default function DashboardPage() {
                   </Link>
                 </div>
               ) : (
-                <div>
-                  <div className="font-display text-5xl tracking-tight text-text-primary tabular-nums md:text-6xl">
+                <div className="min-w-0">
+                  {/* 大额权益（六位数以上）在窄屏上以 5xl 显示会顶到边缘，缩到 4xl 并允许极端情况下断行，避免撑破容器造成横向滚动 */}
+                  <div className="break-words font-display text-4xl tracking-tight text-text-primary tabular-nums sm:text-5xl md:text-6xl">
                     {formatPrice(liveTotalValue)}
                     <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
                   </div>
@@ -390,8 +392,9 @@ export default function DashboardPage() {
               {paperLoading ? (
                 <Skeleton className="h-14 w-64" />
               ) : (
-                <div>
-                  <div className="font-display text-5xl tracking-tight text-text-primary tabular-nums md:text-6xl">
+                <div className="min-w-0">
+                  {/* 同上：大额权益换算后可能是六位数以上，窄屏先降级到 4xl 并允许断行兜底 */}
+                  <div className="break-words font-display text-4xl tracking-tight text-text-primary tabular-nums sm:text-5xl md:text-6xl">
                     {formatPrice(paperTotalValue)}
                     <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
                   </div>
@@ -481,7 +484,8 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-xl tracking-tight text-text-primary">{t("continue_learning_title")}</h2>
-            <Link href={`/${locale}/videos`} className="text-xs text-text-muted hover:text-gold">→</Link>
+            {/* 纯箭头图标链接，视觉上很小；移动端补足到 44px 触控高度，桌面端不变 */}
+            <Link href={`/${locale}/videos`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
           <div className="mt-4 border-t border-border-default">
             {continueWatching === null ? (
@@ -524,7 +528,7 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-xl tracking-tight text-text-primary">{t("favorites_title")}</h2>
-            <Link href={`/${locale}/trade`} className="text-xs text-text-muted hover:text-gold">→</Link>
+            <Link href={`/${locale}/trade`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
           <div className="mt-4 border-t border-border-default">
             {favorites.length === 0 ? (
@@ -550,7 +554,7 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-xl tracking-tight text-text-primary">{t("latest_videos_title")}</h2>
-            <Link href={`/${locale}/videos`} className="text-xs text-text-muted hover:text-gold">→</Link>
+            <Link href={`/${locale}/videos`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
           <div className="mt-4 border-t border-border-default">
             {latestVideos === null ? (
@@ -585,7 +589,7 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-xl tracking-tight text-text-primary">{t("latest_articles_title")}</h2>
-            <Link href={`/${locale}/articles`} className="text-xs text-text-muted hover:text-gold">→</Link>
+            <Link href={`/${locale}/articles`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
           <div className="mt-4 border-t border-border-default">
             {latestArticles === null ? (
@@ -664,15 +668,17 @@ function LedgerRow({ entry, locale, t }: { entry: LedgerEntry; locale: string; t
 
   if (entry.kind === "achievement") {
     return (
+      // 该行是 flex + justify-between 且不换行，成就标题是自由文本，长度不受控；
+      // 给左侧容器 min-w-0 并把标题截断，避免长标题在窄屏把整行撑出水平滚动
       <div className="flex items-center justify-between gap-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-xs tabular-nums text-text-muted">{date}</span>
-          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-gold/50 bg-gold/10 text-[11px] text-gold">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="shrink-0 font-mono text-xs tabular-nums text-text-muted">{date}</span>
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gold/50 bg-gold/10 text-[11px] text-gold">
             ✓
           </span>
-          <span className="text-sm text-text-primary">{t("achievement_unlocked_prefix")} · {entry.title}</span>
+          <span className="truncate text-sm text-text-primary">{t("achievement_unlocked_prefix")} · {entry.title}</span>
         </div>
-        <span className="font-mono text-xs text-text-muted">—</span>
+        <span className="shrink-0 font-mono text-xs text-text-muted">—</span>
       </div>
     );
   }
@@ -682,21 +688,24 @@ function LedgerRow({ entry, locale, t }: { entry: LedgerEntry; locale: string; t
   const marketLabel = o.market_type === "spot" ? t("market_spot") : t("market_futures");
 
   return (
+    // 同上：symbol 是交易对代码，长度不固定（如 1000SHIBUSDT 类），配合日期/买卖徽标/市场标签
+    // 四个定宽元素挤在不换行的一行里，窄屏下是真实的溢出风险
     <div className="flex items-center justify-between gap-4 py-3">
-      <div className="flex items-center gap-3">
-        <span className="font-mono text-xs tabular-nums text-text-muted">{date}</span>
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="shrink-0 font-mono text-xs tabular-nums text-text-muted">{date}</span>
         <span
           className={cn(
-            "rounded-sm border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+            "shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
             isBuy ? "border-success/40 text-success" : "border-danger/40 text-danger"
           )}
         >
           {isBuy ? t("buy") : t("sell")}
         </span>
-        <span className="text-sm text-text-primary">{o.symbol}</span>
-        <span className="text-xs text-text-muted">{marketLabel}</span>
+        <span className="truncate text-sm text-text-primary">
+          {o.symbol} <span className="text-xs text-text-muted">{marketLabel}</span>
+        </span>
       </div>
-      <span className="font-mono text-sm tabular-nums text-text-secondary">
+      <span className="shrink-0 font-mono text-sm tabular-nums text-text-secondary">
         {o.total_value != null ? `${formatPrice(o.total_value)} USDT` : "—"}
       </span>
     </div>

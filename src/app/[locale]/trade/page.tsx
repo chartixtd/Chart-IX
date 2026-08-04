@@ -28,7 +28,6 @@ import { FearGreedIndex } from "@/components/trade/FearGreedIndex";
 import { OrderForm } from "@/components/trade/order-form/OrderForm";
 import { OrdersPanel } from "@/components/trade/OrdersPanel";
 import { PaperOrdersPanel } from "@/components/trade/PaperOrdersPanel";
-import { OrderBook } from "@/components/trade/OrderBook";
 import { FuturesInfoPanel } from "@/components/trade/FuturesInfoPanel";
 import { FuturesWalletSummary } from "@/components/trade/FuturesWalletSummary";
 import { Input } from "@/components/ui/Input";
@@ -327,7 +326,6 @@ export default function TradePage() {
   const setInterval = useTradePrefsStore((s) => s.setInterval);
   const market = useTradePrefsStore((s) => s.market);
   const setMarket = useTradePrefsStore((s) => s.setMarket);
-  const [mobileTab, setMobileTab] = useState<"chart" | "trade" | "book">("chart");
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
   const [initialSide, setInitialSide] = useState<"long" | "short" | undefined>();
   const [priceLinkSignal, setPriceLinkSignal] = useState<{ price: number; nonce: number } | null>(null);
@@ -379,6 +377,28 @@ export default function TradePage() {
     : market === "paper" ? <PaperOrdersPanel symbol={symbol} />
     : <FuturesInfoPanel symbol={symbol} />;
 
+  // 桌面与手机共用同一个图表实例。此前两套布局各挂一个 KlineChart，
+  // 等于同时跑两份 lightweight-charts 画布和两份 kline 订阅。
+  const chartBlock = (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex items-center border-b border-border-default">
+        <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+        <div className="ml-auto pr-2">
+          <FearGreedIndex compact />
+        </div>
+      </div>
+      <div className="flex-1">
+        <KlineChart
+          symbol={symbol}
+          interval={interval}
+          className="h-full"
+          tradeMarkers={tradeMarkers}
+          priceLines={priceLines}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col">
       <TickerBar
@@ -416,17 +436,7 @@ export default function TradePage() {
                 横向面板，宽度跟图表一致，字段能摆开——原来那一栏只留下单表单 */}
             <PanelGroup direction="vertical" autoSaveId="chart-ix-trade-chart-column">
               <Panel defaultSize={65} minSize={30}>
-                <div className="flex h-full flex-col overflow-hidden">
-                  <div className="flex items-center border-b border-border-default">
-                    <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
-                    <div className="ml-auto pr-2">
-                      <FearGreedIndex compact />
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
-                  </div>
-                </div>
+                {chartBlock}
               </Panel>
 
               <PanelResizeHandle className="group relative h-1 shrink-0 bg-border-default transition-colors hover:bg-gold/50 active:bg-gold">
@@ -452,53 +462,8 @@ export default function TradePage() {
         </PanelGroup>
       </div>
 
-      {/* Mobile layout: tab-switched single column */}
-      <div className="flex flex-1 flex-col overflow-hidden lg:hidden">
-        <div className="flex border-b border-border-default">
-          {([
-            { key: "chart", label: "图表" },
-            { key: "trade", label: "下单" },
-            { key: "book", label: "订单簿" },
-          ] as const).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setMobileTab(key)}
-              className={cn(
-                "flex-1 py-2.5 text-sm font-medium transition-colors",
-                mobileTab === key
-                  ? "text-text-primary border-b-2 border-gold bg-bg-tertiary"
-                  : "text-text-muted hover:text-text-secondary"
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1 overflow-auto">
-          {mobileTab === "chart" && (
-            <div className="flex h-full flex-col">
-              <div className="flex items-center border-b border-border-default">
-                <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
-                <div className="ml-auto pr-2">
-                  <FearGreedIndex compact />
-                </div>
-              </div>
-              <div className="flex-1">
-                <KlineChart symbol={symbol} interval={interval} className="h-full" tradeMarkers={tradeMarkers} priceLines={priceLines} />
-              </div>
-            </div>
-          )}
-          {mobileTab === "trade" && (
-            <div className="flex h-full flex-col divide-y divide-border-default">
-              <div className="shrink-0">{tradePanel}</div>
-              {market === "futures" && <div className="shrink-0"><FuturesWalletSummary /></div>}
-              <div className="min-h-[16rem] flex-1">{ordersPanel}</div>
-            </div>
-          )}
-          {mobileTab === "book" && <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />}
-        </div>
-      </div>
+      {/* 手机布局：图表全屏，操作条与 sheet 在 Task 4 接入 */}
+      <div className="flex flex-1 flex-col overflow-hidden lg:hidden">{chartBlock}</div>
 
       {/* Mobile symbol picker */}
       <Modal open={symbolPickerOpen} onClose={() => setSymbolPickerOpen(false)} title="选择交易对" size="sm" className="lg:hidden">

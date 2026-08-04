@@ -42,7 +42,19 @@
     "sign_out": "Log Keluar",
     "account": "Akaun Saya",
     "orders": "Sejarah Dagangan",
-    "language": "Bahasa"
+    "language": "Bahasa",
+    "tab_dashboard": "Utama",
+    "tab_learn": "Belajar",
+    "tab_trade": "Dagangan",
+    "tab_screener": "Penapis",
+    "tab_more": "Lagi",
+    "more_news": "Berita industri",
+    "more_orders": "Sejarah pesanan",
+    "more_alerts": "Amaran harga",
+    "more_settings": "Tetapan",
+    "more_notifications": "Pemberitahuan",
+    "more_upgrade": "Naik taraf ke Pro",
+    "more_admin": "Admin"
   },
   "auth": {
     "login": {

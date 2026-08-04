@@ -42,7 +42,19 @@
     "sign_out": "Sign Out",
     "account": "My Account",
     "orders": "Order History",
-    "language": "Language"
+    "language": "Language",
+    "tab_dashboard": "Home",
+    "tab_learn": "Learn",
+    "tab_trade": "Trade",
+    "tab_screener": "Screener",
+    "tab_more": "More",
+    "more_news": "Industry news",
+    "more_orders": "Order history",
+    "more_alerts": "Price alerts",
+    "more_settings": "Settings",
+    "more_notifications": "Notifications",
+    "more_upgrade": "Upgrade to Pro",
+    "more_admin": "Admin"
   },
   "auth": {
     "login": {

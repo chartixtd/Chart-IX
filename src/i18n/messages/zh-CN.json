@@ -42,7 +42,19 @@
     "sign_out": "退出登录",
     "account": "我的账户",
     "orders": "交易历史",
-    "language": "语言"
+    "language": "语言",
+    "tab_dashboard": "主页",
+    "tab_learn": "学习",
+    "tab_trade": "交易",
+    "tab_screener": "选币",
+    "tab_more": "更多",
+    "more_news": "行业资讯",
+    "more_orders": "交易历史",
+    "more_alerts": "价格提醒",
+    "more_settings": "设置",
+    "more_notifications": "通知设置",
+    "more_upgrade": "升级 Pro",
+    "more_admin": "后台管理"
   },
   "auth": {
     "login": {

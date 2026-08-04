@@ -11,6 +11,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { QueryProvider } from "@/components/layout/QueryProvider";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { ToastProvider } from "@/components/ui/Toast";
 import { PriceAlertWatcher } from "@/components/alerts/PriceAlertWatcher";
 import { PaperTpSlWatcher } from "@/components/alerts/PaperTpSlWatcher";
@@ -47,6 +48,7 @@ export function ClientLocaleLayout({
               {!isTradePage && <Footer />}
             </div>
             <OnboardingModal />
+            <InstallPrompt />
             <PriceAlertWatcher />
             <PaperTpSlWatcher />
             <PreferencesSync />

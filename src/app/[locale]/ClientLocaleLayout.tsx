@@ -8,6 +8,7 @@ import { ZoomGuard } from "@/components/pwa/ZoomGuard";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import { UpdateBanner } from "@/components/pwa/UpdateBanner";
 import { Navbar } from "@/components/layout/Navbar";
+import { MobileShell } from "@/components/layout/MobileShell";
 import { Footer } from "@/components/layout/Footer";
 import { QueryProvider } from "@/components/layout/QueryProvider";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
@@ -42,10 +43,18 @@ export function ClientLocaleLayout({
             <ZoomGuard />
             <ServiceWorkerRegistrar />
             <UpdateBanner />
-            <div className="flex min-h-screen flex-col">
+            <div className="flex min-h-dvh flex-col">
               <Navbar />
-              <main className="flex-1">{children}</main>
-              {!isTradePage && <Footer />}
+              <MobileShell>
+                {/* pb-tabbar 给底部导航条 + 中央凸起 + 系统安全区统一让位 */}
+                <main className="flex-1 pb-tabbar lg:pb-0">{children}</main>
+                {/* 手机上 footer 沉在 tab bar 下面没人看得到，只在桌面渲染 */}
+                {!isTradePage && (
+                  <div className="hidden lg:block">
+                    <Footer />
+                  </div>
+                )}
+              </MobileShell>
             </div>
             <OnboardingModal />
             <InstallPrompt />

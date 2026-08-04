@@ -97,6 +97,11 @@
       font-size: 16px;
     }
   }
+
+  /* 键盘弹出时收起底部导航：那一刻用户在专注输入，全局导航既没用又碍事 */
+  html.keyboard-open nav[aria-label] {
+    display: none;
+  }
 }
 
 @layer utilities {

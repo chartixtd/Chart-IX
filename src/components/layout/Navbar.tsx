@@ -65,7 +65,7 @@ export function Navbar() {
   }, [locale, router]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border-default bg-bg-primary/80 backdrop-blur-md gpu">
+    <header className="sticky top-0 z-40 hidden border-b border-border-default bg-bg-primary/80 backdrop-blur-md gpu lg:block">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         {/* Logo */}
         <Link href={auth.userId ? `/${locale}/dashboard` : `/${locale}`} className="flex items-center gap-2 shrink-0">

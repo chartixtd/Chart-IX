@@ -46,3 +46,29 @@ for (const { file, size, safeZone } of targets) {
   await sharp(buffer).toFile(join(OUT_DIR, file));
   console.log(`✓ ${file} (${size}×${size}, safe zone ${safeZone * 100}%)`);
 }
+
+// iOS 启动图。只覆盖当前主流 iPhone，老机型与 iPad 接受白闪
+// （见 spec 的「已知限制」第 5 条）。
+const SPLASH = [
+  { w: 1170, h: 2532, name: "splash-1170x2532" }, // iPhone 12/13/14
+  { w: 1179, h: 2556, name: "splash-1179x2556" }, // iPhone 14 Pro/15/16
+  { w: 1284, h: 2778, name: "splash-1284x2778" }, // iPhone 12/13/14 Pro Max
+  { w: 1290, h: 2796, name: "splash-1290x2796" }, // iPhone 14 Pro Max/15 Pro Max
+  { w: 1206, h: 2622, name: "splash-1206x2622" }, // iPhone 16 Pro
+  { w: 1320, h: 2868, name: "splash-1320x2868" }, // iPhone 16 Pro Max
+];
+
+const SPLASH_DIR = join(OUT_DIR, "splash");
+await mkdir(SPLASH_DIR, { recursive: true });
+
+for (const { w, h, name } of SPLASH) {
+  const logoSize = Math.round(Math.min(w, h) * 0.32);
+  const logo = await sharp(SOURCE)
+    .resize(logoSize, logoSize, { fit: "contain", background: { ...BG, alpha: 0 } })
+    .toBuffer();
+  await sharp({ create: { width: w, height: h, channels: 4, background: BG } })
+    .composite([{ input: logo, top: Math.round((h - logoSize) / 2), left: Math.round((w - logoSize) / 2) }])
+    .png()
+    .toFile(join(SPLASH_DIR, `${name}.png`));
+  console.log(`✓ splash/${name}.png (${w}×${h})`);
+}

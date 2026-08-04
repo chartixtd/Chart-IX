@@ -78,6 +78,22 @@ export default function RootLayout({
         />
         <meta name="view-transition" content="same-origin" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+        {/* iOS 启动图：只覆盖主流 iPhone 尺寸，其余机型冷启动会短暂白屏 */}
+        {[
+          { w: 1170, h: 2532 },
+          { w: 1179, h: 2556 },
+          { w: 1284, h: 2778 },
+          { w: 1290, h: 2796 },
+          { w: 1206, h: 2622 },
+          { w: 1320, h: 2868 },
+        ].map(({ w, h }) => (
+          <link
+            key={`${w}x${h}`}
+            rel="apple-touch-startup-image"
+            href={`/icons/splash/splash-${w}x${h}.png`}
+            media={`(device-width: ${w / 3}px) and (device-height: ${h / 3}px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)`}
+          />
+        ))}
       </head>
       <body className="min-h-screen bg-bg-primary text-text-primary antialiased">
         {children}

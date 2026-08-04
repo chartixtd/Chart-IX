@@ -67,4 +67,15 @@ describe("shouldCache", () => {
   it("同源的非导航、非静态资源请求不拦截", () => {
     expect(shouldCache(`${ORIGIN}/zh-CN/dashboard`, "cors", ORIGIN)).toBe("passthrough");
   });
+
+  it("API 路径即使貌似静态资源也绝不缓存（顺序保护）", () => {
+    expect(shouldCache(`${ORIGIN}/api/_next/static/chunks/main.js`, "cors", ORIGIN)).toBe("never");
+    expect(shouldCache(`${ORIGIN}/api/icons/favicon.png`, "cors", ORIGIN)).toBe("never");
+  });
+
+  it("跨域请求带 _rsc 参数不会被误判为需要保护（同源守卫）", () => {
+    expect(shouldCache("https://open-api.bingx.com/openApi/swap/v2/quote/ticker?_rsc=1a2b3c", "cors", ORIGIN)).toBe(
+      "passthrough"
+    );
+  });
 });

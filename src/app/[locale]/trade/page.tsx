@@ -526,7 +526,7 @@ export default function TradePage() {
         title={t("mobile_order_sheet")}
         variant="sheet"
       >
-        <div className="-m-6">
+        <div className="-mx-6 -mt-6">
           {tradePanel}
           {market === "futures" && <FuturesWalletSummary />}
         </div>
@@ -538,7 +538,7 @@ export default function TradePage() {
         title={t("mobile_positions")}
         variant="sheet"
       >
-        <div className="-m-6 min-h-[40dvh]">{ordersPanel}</div>
+        <div className="-mx-6 -mt-6 min-h-[40dvh]">{ordersPanel}</div>
       </Modal>
 
       {/* Mobile symbol picker */}
@@ -550,7 +550,7 @@ export default function TradePage() {
         variant="sheet"
         className="lg:hidden"
       >
-        <div className="-m-6 h-[70dvh]">
+        <div className="-mx-6 -mt-6 h-[70dvh]">
           <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} />
         </div>
       </Modal>

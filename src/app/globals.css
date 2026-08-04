@@ -67,6 +67,36 @@
   h3 {
     letter-spacing: -0.02em;
   }
+
+  /* PWA：禁用页面级双指缩放。
+     iOS 只有在安装到主屏的 standalone 模式下才真正生效，浏览器标签页里
+     Safari 会忽略——这是系统行为，不是这里写错了。
+     touch-action 不是继承属性，所以设在 html 上不会波及 K 线图容器。 */
+  html {
+    touch-action: pan-x pan-y;
+    overscroll-behavior-y: none;
+  }
+
+  /* 双击缩放会带来 300ms 点击延迟，交互元素统一去掉 */
+  button,
+  a,
+  [role="button"],
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  /* iOS Safari 会在聚焦字号小于 16px 的输入框时自动放大整页。
+     禁用缩放之后用户没有放大这个逃生口，所以这条是硬性下限而不是优化。
+     写成全局规则而非逐组件改——下单表单有十几个字段，逐个改一定会漏。 */
+  @media (max-width: 1023px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
 }
 
 @layer utilities {

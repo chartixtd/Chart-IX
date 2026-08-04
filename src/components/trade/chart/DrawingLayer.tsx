@@ -631,6 +631,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       <svg
         ref={svgRef}
         data-version={version}
+        data-allow-zoom
         width={W}
         height={H}
         className="absolute left-0 top-0 z-[5]"

@@ -34,6 +34,21 @@ const config: Config = {
         info: "#5B8DEF",
         "info-bg": "rgba(91, 141, 239, 0.1)",
       },
+      spacing: {
+        "safe-t": "env(safe-area-inset-top)",
+        "safe-b": "env(safe-area-inset-bottom)",
+        "safe-l": "env(safe-area-inset-left)",
+        "safe-r": "env(safe-area-inset-right)",
+        // 底部 tab bar 高度(56) + 中央凸起溢出(14) + 系统安全区
+        // 页面内容底部统一用 pb-tabbar，避免逐页手算导致漂移
+        tabbar: "calc(70px + env(safe-area-inset-bottom))",
+      },
+      height: {
+        dvh: "100dvh",
+      },
+      minHeight: {
+        dvh: "100dvh",
+      },
       fontFamily: {
         display: ["var(--font-marcellus)", '"Noto Serif SC"', "Georgia", "serif"],
         sans: ["var(--font-inter)", '"Noto Sans SC"', "system-ui", "sans-serif"],

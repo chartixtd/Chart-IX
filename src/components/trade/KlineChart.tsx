@@ -641,7 +641,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   }, [chartApi]);
 
   return (
-    <div className={cn("relative flex", className)}>
+    <div data-allow-zoom className={cn("relative flex", className)}>
       {hasAdvancedChart && <DrawingToolbar symbol={symbol} />}
 
       <div className="relative min-w-0 flex-1">

@@ -47,22 +47,22 @@ export interface Drawing {
   text?: string;
 }
 
-export const DRAWING_TOOLS: { tool: DrawingTool; label: string; points: number }[] = [
-  { tool: "trendline", label: "趋势线", points: 2 },
-  { tool: "ray", label: "射线", points: 2 },
-  { tool: "hline", label: "水平线", points: 1 },
-  { tool: "vline", label: "垂直线", points: 1 },
-  { tool: "rect", label: "矩形", points: 2 },
-  { tool: "fib", label: "斐波那契回撤", points: 2 },
-  { tool: "text", label: "文字标注", points: 1 },
-  { tool: "channel", label: "平行通道", points: 3 },
-  { tool: "fib-extension", label: "斐波那契扩展", points: 2 },
-  { tool: "fib-fan", label: "斐波那契扇形线", points: 2 },
-  { tool: "circle", label: "圆形", points: 2 },
-  { tool: "triangle", label: "三角形", points: 2 },
-  { tool: "arrow", label: "箭头", points: 2 },
-  { tool: "price-range", label: "价格范围", points: 2 },
-  { tool: "date-range", label: "时间范围", points: 2 },
+export const DRAWING_TOOLS: { tool: DrawingTool; label: string; labelZh: string; points: number }[] = [
+  { tool: "trendline", label: "Trend Line", labelZh: "趋势线", points: 2 },
+  { tool: "ray", label: "Ray", labelZh: "射线", points: 2 },
+  { tool: "hline", label: "Horizontal Line", labelZh: "水平线", points: 1 },
+  { tool: "vline", label: "Vertical Line", labelZh: "垂直线", points: 1 },
+  { tool: "rect", label: "Rectangle", labelZh: "矩形", points: 2 },
+  { tool: "fib", label: "Fib Retracement", labelZh: "斐波那契回撤", points: 2 },
+  { tool: "text", label: "Text", labelZh: "文字标注", points: 1 },
+  { tool: "channel", label: "Parallel Channel", labelZh: "平行通道", points: 3 },
+  { tool: "fib-extension", label: "Fib Extension", labelZh: "斐波那契扩展", points: 2 },
+  { tool: "fib-fan", label: "Fib Fan", labelZh: "斐波那契扇形线", points: 2 },
+  { tool: "circle", label: "Circle", labelZh: "圆形", points: 2 },
+  { tool: "triangle", label: "Triangle", labelZh: "三角形", points: 2 },
+  { tool: "arrow", label: "Arrow", labelZh: "箭头", points: 2 },
+  { tool: "price-range", label: "Price Range", labelZh: "价格范围", points: 2 },
+  { tool: "date-range", label: "Date Range", labelZh: "时间范围", points: 2 },
 ];
 
 export const DRAWING_COLORS = ["#c9a24b", "#60a5fa", "#22c55e", "#ef4444", "#c084fc", "#f5f0e6"];

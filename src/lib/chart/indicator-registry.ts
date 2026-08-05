@@ -21,6 +21,13 @@ import {
 export type IndicatorCategory = "trend" | "volatility" | "momentum" | "volume";
 
 export const CATEGORY_LABELS: Record<IndicatorCategory, string> = {
+  trend: "Trend",
+  volatility: "Volatility",
+  momentum: "Momentum / Oscillators",
+  volume: "Volume",
+};
+
+export const CATEGORY_LABELS_ZH: Record<IndicatorCategory, string> = {
   trend: "趋势",
   volatility: "波动率",
   momentum: "动量 / 震荡",
@@ -58,8 +65,10 @@ export interface PlotDef {
 
 export interface IndicatorDef {
   id: string;
-  /** Full name shown in the picker. */
+  /** Full name shown in the picker (English). */
   name: string;
+  /** Full name shown in the picker for the Chinese locale. */
+  nameZh: string;
   /** Compact name shown in the on-chart legend, e.g. "MA". */
   short: string;
   category: IndicatorCategory;
@@ -107,68 +116,68 @@ const p1 = (key: string, label: string, def: number, min = 1, max = 500): ParamD
 export const INDICATORS: IndicatorDef[] = [
   // ---------------- Trend ----------------
   {
-    id: "ma", name: "MA 简单移动平均", short: "MA", category: "trend", placement: "main",
-    params: [p1("period", "周期", 20)],
+    id: "ma", name: "MA (Simple Moving Average)", nameZh: "MA 简单移动平均", short: "MA", category: "trend", placement: "main",
+    params: [p1("period", "Period", 20)],
     plots: [{ key: "ma", color: C.blue }],
     compute: (i, p) => ({ ma: computeMA(i.close, p.period) }),
   },
   {
-    id: "ema", name: "EMA 指数移动平均", short: "EMA", category: "trend", placement: "main",
-    params: [p1("period", "周期", 21)],
+    id: "ema", name: "EMA (Exponential Moving Average)", nameZh: "EMA 指数移动平均", short: "EMA", category: "trend", placement: "main",
+    params: [p1("period", "Period", 21)],
     plots: [{ key: "ema", color: C.amber }],
     compute: (i, p) => ({ ema: computeEMA(i.close, p.period) }),
   },
   {
-    id: "wma", name: "WMA 加权移动平均", short: "WMA", category: "trend", placement: "main",
-    params: [p1("period", "周期", 20)],
+    id: "wma", name: "WMA (Weighted Moving Average)", nameZh: "WMA 加权移动平均", short: "WMA", category: "trend", placement: "main",
+    params: [p1("period", "Period", 20)],
     plots: [{ key: "wma", color: C.cyan }],
     compute: (i, p) => ({ wma: computeWMA(i.close, p.period) }),
   },
   {
-    id: "hma", name: "赫尔均线 Hull MA", short: "HMA", category: "trend", placement: "main",
-    params: [p1("period", "周期", 9)],
+    id: "hma", name: "Hull Moving Average (HMA)", nameZh: "赫尔均线 Hull MA", short: "HMA", category: "trend", placement: "main",
+    params: [p1("period", "Period", 9)],
     plots: [{ key: "hma", color: C.fuchsia }],
     compute: (i, p) => ({ hma: computeHullMA(i.close, p.period) }),
   },
   {
-    id: "dema", name: "DEMA 双重指数均线", short: "DEMA", category: "trend", placement: "main",
-    params: [p1("period", "周期", 20)],
+    id: "dema", name: "DEMA (Double Exponential Moving Average)", nameZh: "DEMA 双重指数均线", short: "DEMA", category: "trend", placement: "main",
+    params: [p1("period", "Period", 20)],
     plots: [{ key: "dema", color: C.rose }],
     compute: (i, p) => ({ dema: computeDEMA(i.close, p.period) }),
   },
   {
-    id: "tema", name: "TEMA 三重指数均线", short: "TEMA", category: "trend", placement: "main",
-    params: [p1("period", "周期", 20)],
+    id: "tema", name: "TEMA (Triple Exponential Moving Average)", nameZh: "TEMA 三重指数均线", short: "TEMA", category: "trend", placement: "main",
+    params: [p1("period", "Period", 20)],
     plots: [{ key: "tema", color: C.green }],
     compute: (i, p) => ({ tema: computeTEMA(i.close, p.period) }),
   },
   {
-    id: "vwma", name: "VWMA 成交量加权均线", short: "VWMA", category: "trend", placement: "main",
-    params: [p1("period", "周期", 20)],
+    id: "vwma", name: "VWMA (Volume Weighted Moving Average)", nameZh: "VWMA 成交量加权均线", short: "VWMA", category: "trend", placement: "main",
+    params: [p1("period", "Period", 20)],
     plots: [{ key: "vwma", color: C.teal }],
     compute: (i, p) => ({ vwma: computeVWMA(i.close, i.volume, p.period) }),
   },
   {
-    id: "vwap", name: "VWAP 成交量加权均价", short: "VWAP", category: "trend", placement: "main",
+    id: "vwap", name: "VWAP (Volume Weighted Average Price)", nameZh: "VWAP 成交量加权均价", short: "VWAP", category: "trend", placement: "main",
     params: [],
     plots: [{ key: "vwap", color: C.yellow }],
     compute: (i) => ({ vwap: computeVWAP(i.high, i.low, i.close, i.volume) }),
     legendParams: () => "",
   },
   {
-    id: "sar", name: "抛物线 SAR", short: "SAR", category: "trend", placement: "main",
+    id: "sar", name: "Parabolic SAR", nameZh: "抛物线 SAR", short: "SAR", category: "trend", placement: "main",
     params: [
-      { key: "step", label: "步长", default: 0.02, min: 0.001, max: 1, step: 0.01 },
-      { key: "max", label: "最大值", default: 0.2, min: 0.01, max: 1, step: 0.01 },
+      { key: "step", label: "Step", default: 0.02, min: 0.001, max: 1, step: 0.01 },
+      { key: "max", label: "Max", default: 0.2, min: 0.01, max: 1, step: 0.01 },
     ],
     plots: [{ key: "sar", color: C.fuchsia, kind: "dots" }],
     compute: (i, p) => ({ sar: computeParabolicSAR(i.high, i.low, p.step, p.max) }),
   },
   {
-    id: "supertrend", name: "SuperTrend", short: "ST", category: "trend", placement: "main",
+    id: "supertrend", name: "SuperTrend", nameZh: "SuperTrend", short: "ST", category: "trend", placement: "main",
     params: [
-      p1("period", "ATR 周期", 10),
-      { key: "multiplier", label: "倍数", default: 3, min: 0.5, max: 20, step: 0.5 },
+      p1("period", "ATR Period", 10),
+      { key: "multiplier", label: "Multiplier", default: 3, min: 0.5, max: 20, step: 0.5 },
     ],
     plots: [{ key: "st", color: C.up, lineWidth: 2 }],
     compute: (i, p) => ({
@@ -176,13 +185,13 @@ export const INDICATORS: IndicatorDef[] = [
     }),
   },
   {
-    id: "ichimoku", name: "一目均衡表", short: "Ichimoku", category: "trend", placement: "main",
-    params: [p1("tenkan", "转换线", 9), p1("kijun", "基准线", 26), p1("senkouB", "先行带 B", 52)],
+    id: "ichimoku", name: "Ichimoku Cloud", nameZh: "一目均衡表", short: "Ichimoku", category: "trend", placement: "main",
+    params: [p1("tenkan", "Conversion Line", 9), p1("kijun", "Base Line", 26), p1("senkouB", "Leading Span B", 52)],
     plots: [
-      { key: "tenkan", label: "转换线", color: C.rose },
-      { key: "kijun", label: "基准线", color: C.blue },
-      { key: "senkouA", label: "先行带 A", color: "rgba(34,197,94,0.45)" },
-      { key: "senkouB", label: "先行带 B", color: "rgba(239,68,68,0.45)" },
+      { key: "tenkan", label: "Conversion Line", color: C.rose },
+      { key: "kijun", label: "Base Line", color: C.blue },
+      { key: "senkouA", label: "Leading Span A", color: "rgba(34,197,94,0.45)" },
+      { key: "senkouB", label: "Leading Span B", color: "rgba(239,68,68,0.45)" },
     ],
     compute: (i, p) => {
       const r = computeIchimoku(i.high, i.low, p.tenkan, p.kijun, p.senkouB);
@@ -190,16 +199,16 @@ export const INDICATORS: IndicatorDef[] = [
     },
   },
   {
-    id: "alligator", name: "鳄鱼线 Williams Alligator", short: "Alligator", category: "trend", placement: "main",
+    id: "alligator", name: "Williams Alligator", nameZh: "鳄鱼线 Williams Alligator", short: "Alligator", category: "trend", placement: "main",
     params: [
-      p1("jawPeriod", "颚线周期", 13), p1("jawShift", "颚线位移", 8),
-      p1("teethPeriod", "齿线周期", 8), p1("teethShift", "齿线位移", 5),
-      p1("lipsPeriod", "唇线周期", 5), p1("lipsShift", "唇线位移", 3),
+      p1("jawPeriod", "Jaw Period", 13), p1("jawShift", "Jaw Shift", 8),
+      p1("teethPeriod", "Teeth Period", 8), p1("teethShift", "Teeth Shift", 5),
+      p1("lipsPeriod", "Lips Period", 5), p1("lipsShift", "Lips Shift", 3),
     ],
     plots: [
-      { key: "jaw", label: "颚线 Jaw", color: C.blue },
-      { key: "teeth", label: "齿线 Teeth", color: C.rose },
-      { key: "lips", label: "唇线 Lips", color: C.green },
+      { key: "jaw", label: "Jaw", color: C.blue },
+      { key: "teeth", label: "Teeth", color: C.rose },
+      { key: "lips", label: "Lips", color: C.green },
     ],
     compute: (i, p) => {
       const r = computeAlligator(i.high, i.low, p.jawPeriod, p.jawShift, p.teethPeriod, p.teethShift, p.lipsPeriod, p.lipsShift);
@@ -207,15 +216,15 @@ export const INDICATORS: IndicatorDef[] = [
     },
   },
   {
-    id: "adx", name: "ADX 平均趋向指标", short: "ADX", category: "trend", placement: "pane",
-    params: [p1("period", "周期", 14)],
+    id: "adx", name: "ADX (Average Directional Index)", nameZh: "ADX 平均趋向指标", short: "ADX", category: "trend", placement: "pane",
+    params: [p1("period", "Period", 14)],
     plots: [{ key: "adx", color: C.orange }],
     compute: (i, p) => ({ adx: computeADX(i.high, i.low, i.close, p.period) }),
     guides: [20, 25],
   },
   {
-    id: "aroon", name: "Aroon 阿隆指标", short: "Aroon", category: "trend", placement: "pane",
-    params: [p1("period", "周期", 25)],
+    id: "aroon", name: "Aroon", nameZh: "Aroon 阿隆指标", short: "Aroon", category: "trend", placement: "pane",
+    params: [p1("period", "Period", 25)],
     plots: [
       { key: "up", label: "Up", color: C.up },
       { key: "down", label: "Down", color: C.down },
@@ -227,8 +236,8 @@ export const INDICATORS: IndicatorDef[] = [
     guides: [30, 70],
   },
   {
-    id: "vortex", name: "涡旋指标 Vortex Indicator", short: "Vortex", category: "trend", placement: "pane",
-    params: [p1("period", "周期", 14)],
+    id: "vortex", name: "Vortex Indicator", nameZh: "涡旋指标 Vortex Indicator", short: "Vortex", category: "trend", placement: "pane",
+    params: [p1("period", "Period", 14)],
     plots: [
       { key: "viPlus", label: "VI+", color: C.up },
       { key: "viMinus", label: "VI-", color: C.down },
@@ -242,15 +251,15 @@ export const INDICATORS: IndicatorDef[] = [
 
   // ---------------- Volatility ----------------
   {
-    id: "bb", name: "布林带 Bollinger Bands", short: "BB", category: "volatility", placement: "main",
+    id: "bb", name: "Bollinger Bands", nameZh: "布林带 Bollinger Bands", short: "BB", category: "volatility", placement: "main",
     params: [
-      p1("period", "周期", 20),
-      { key: "multiplier", label: "标准差倍数", default: 2, min: 0.1, max: 10, step: 0.1 },
+      p1("period", "Period", 20),
+      { key: "multiplier", label: "StdDev Multiplier", default: 2, min: 0.1, max: 10, step: 0.1 },
     ],
     plots: [
-      { key: "upper", label: "上轨", color: C.bandGold, lineStyle: 2 },
-      { key: "middle", label: "中轨", color: C.bandGold },
-      { key: "lower", label: "下轨", color: C.bandGold, lineStyle: 2 },
+      { key: "upper", label: "Upper Band", color: C.bandGold, lineStyle: 2 },
+      { key: "middle", label: "Middle Band", color: C.bandGold },
+      { key: "lower", label: "Lower Band", color: C.bandGold, lineStyle: 2 },
     ],
     compute: (i, p) => {
       const r = computeBollingerBands(i.close, p.period, p.multiplier);
@@ -258,14 +267,14 @@ export const INDICATORS: IndicatorDef[] = [
     },
   },
   {
-    id: "kc", name: "肯特纳通道 Keltner", short: "KC", category: "volatility", placement: "main",
+    id: "kc", name: "Keltner Channels", nameZh: "肯特纳通道 Keltner", short: "KC", category: "volatility", placement: "main",
     params: [
-      p1("period", "EMA 周期", 20), p1("atrPeriod", "ATR 周期", 10),
-      { key: "multiplier", label: "倍数", default: 2, min: 0.1, max: 10, step: 0.1 },
+      p1("period", "EMA Period", 20), p1("atrPeriod", "ATR Period", 10),
+      { key: "multiplier", label: "Multiplier", default: 2, min: 0.1, max: 10, step: 0.1 },
     ],
     plots: [
-      { key: "upper", label: "上轨", color: C.bandBlue, lineStyle: 2 },
-      { key: "lower", label: "下轨", color: C.bandBlue, lineStyle: 2 },
+      { key: "upper", label: "Upper Band", color: C.bandBlue, lineStyle: 2 },
+      { key: "lower", label: "Lower Band", color: C.bandBlue, lineStyle: 2 },
     ],
     compute: (i, p) => {
       const r = computeKeltnerChannels(i.high, i.low, i.close, p.period, p.atrPeriod, p.multiplier);
@@ -273,11 +282,11 @@ export const INDICATORS: IndicatorDef[] = [
     },
   },
   {
-    id: "donchian", name: "唐奇安通道 Donchian", short: "DC", category: "volatility", placement: "main",
-    params: [p1("period", "周期", 20)],
+    id: "donchian", name: "Donchian Channels", nameZh: "唐奇安通道 Donchian", short: "DC", category: "volatility", placement: "main",
+    params: [p1("period", "Period", 20)],
     plots: [
-      { key: "upper", label: "上轨", color: C.bandLime },
-      { key: "lower", label: "下轨", color: C.bandLime },
+      { key: "upper", label: "Upper Band", color: C.bandLime },
+      { key: "lower", label: "Lower Band", color: C.bandLime },
     ],
     compute: (i, p) => {
       const r = computeDonchianChannels(i.high, i.low, p.period);
@@ -285,7 +294,7 @@ export const INDICATORS: IndicatorDef[] = [
     },
   },
   {
-    id: "pivots", name: "枢轴点 Pivot Points", short: "Pivots", category: "trend", placement: "main",
+    id: "pivots", name: "Pivot Points", nameZh: "枢轴点 Pivot Points", short: "Pivots", category: "trend", placement: "main",
     params: [],
     plots: [
       { key: "pivot", label: "P", color: C.yellow },
@@ -301,14 +310,14 @@ export const INDICATORS: IndicatorDef[] = [
     legendParams: () => "",
   },
   {
-    id: "envelope", name: "Envelope 百分比通道", short: "ENV", category: "volatility", placement: "main",
+    id: "envelope", name: "Envelope (Percentage Channel)", nameZh: "Envelope 百分比通道", short: "ENV", category: "volatility", placement: "main",
     params: [
-      p1("period", "周期", 20),
-      { key: "percent", label: "百分比", default: 2.5, min: 0.1, max: 50, step: 0.1 },
+      p1("period", "Period", 20),
+      { key: "percent", label: "Percent", default: 2.5, min: 0.1, max: 50, step: 0.1 },
     ],
     plots: [
-      { key: "upper", label: "上轨", color: C.bandViolet, lineStyle: 2 },
-      { key: "lower", label: "下轨", color: C.bandViolet, lineStyle: 2 },
+      { key: "upper", label: "Upper Band", color: C.bandViolet, lineStyle: 2 },
+      { key: "lower", label: "Lower Band", color: C.bandViolet, lineStyle: 2 },
     ],
     compute: (i, p) => {
       const r = computeEnvelope(i.close, p.period, p.percent);
@@ -316,36 +325,36 @@ export const INDICATORS: IndicatorDef[] = [
     },
   },
   {
-    id: "atr", name: "ATR 平均真实波幅", short: "ATR", category: "volatility", placement: "pane",
-    params: [p1("period", "周期", 14)],
+    id: "atr", name: "ATR (Average True Range)", nameZh: "ATR 平均真实波幅", short: "ATR", category: "volatility", placement: "pane",
+    params: [p1("period", "Period", 14)],
     plots: [{ key: "atr", color: C.lime }],
     compute: (i, p) => ({ atr: computeATR(i.high, i.low, i.close, p.period) }),
   },
   {
-    id: "stddev", name: "标准差 StdDev", short: "StdDev", category: "volatility", placement: "pane",
-    params: [p1("period", "周期", 20)],
+    id: "stddev", name: "Standard Deviation", nameZh: "标准差 StdDev", short: "StdDev", category: "volatility", placement: "pane",
+    params: [p1("period", "Period", 20)],
     plots: [{ key: "sd", color: C.lime }],
     compute: (i, p) => ({ sd: computeStdDev(i.close, p.period) }),
   },
 
   // ---------------- Momentum ----------------
   {
-    id: "rsi", name: "RSI 相对强弱指标", short: "RSI", category: "momentum", placement: "pane",
-    params: [p1("period", "周期", 14)],
+    id: "rsi", name: "RSI (Relative Strength Index)", nameZh: "RSI 相对强弱指标", short: "RSI", category: "momentum", placement: "pane",
+    params: [p1("period", "Period", 14)],
     plots: [{ key: "rsi", color: C.purple }],
     compute: (i, p) => ({ rsi: computeRSI(i.close, p.period) }),
     guides: [30, 50, 70],
   },
   {
-    id: "macd", name: "MACD 指数平滑异同", short: "MACD", category: "momentum", placement: "pane",
-    params: [p1("fast", "快线", 12), p1("slow", "慢线", 26), p1("signal", "信号", 9)],
+    id: "macd", name: "MACD (Moving Average Convergence Divergence)", nameZh: "MACD 指数平滑异同", short: "MACD", category: "momentum", placement: "pane",
+    params: [p1("fast", "Fast Line", 12), p1("slow", "Slow Line", 26), p1("signal", "Signal", 9)],
     plots: [
       {
-        key: "hist", label: "柱", color: C.up, kind: "histogram",
+        key: "hist", label: "Histogram", color: C.up, kind: "histogram",
         barColor: ({ value }) => (value >= 0 ? "rgba(34,197,94,0.55)" : "rgba(239,68,68,0.55)"),
       },
       { key: "macd", label: "MACD", color: C.blue },
-      { key: "signal", label: "信号", color: C.amber },
+      { key: "signal", label: "Signal", color: C.amber },
     ],
     compute: (i, p) => {
       const r = computeMACD(i.close, p.fast, p.slow, p.signal);
@@ -354,8 +363,8 @@ export const INDICATORS: IndicatorDef[] = [
     guides: [0],
   },
   {
-    id: "stoch", name: "随机指标 Stochastic", short: "Stoch", category: "momentum", placement: "pane",
-    params: [p1("k", "%K 周期", 14), p1("d", "%D 周期", 3)],
+    id: "stoch", name: "Stochastic Oscillator", nameZh: "随机指标 Stochastic", short: "Stoch", category: "momentum", placement: "pane",
+    params: [p1("k", "%K Period", 14), p1("d", "%D Period", 3)],
     plots: [
       { key: "k", label: "%K", color: C.blue },
       { key: "d", label: "%D", color: C.amber },
@@ -367,11 +376,11 @@ export const INDICATORS: IndicatorDef[] = [
     guides: [20, 80],
   },
   {
-    id: "kdj", name: "KDJ 随机指标", short: "KDJ", category: "momentum", placement: "pane",
+    id: "kdj", name: "KDJ", nameZh: "KDJ 随机指标", short: "KDJ", category: "momentum", placement: "pane",
     params: [
-      p1("period", "周期", 9),
-      { key: "kSmooth", label: "K 平滑", default: 3, min: 1, max: 20, step: 1 },
-      { key: "dSmooth", label: "D 平滑", default: 3, min: 1, max: 20, step: 1 },
+      p1("period", "Period", 9),
+      { key: "kSmooth", label: "K Smoothing", default: 3, min: 1, max: 20, step: 1 },
+      { key: "dSmooth", label: "D Smoothing", default: 3, min: 1, max: 20, step: 1 },
     ],
     plots: [
       { key: "k", label: "K", color: C.blue },
@@ -385,12 +394,12 @@ export const INDICATORS: IndicatorDef[] = [
     guides: [20, 80],
   },
   {
-    id: "stochrsi", name: "随机 RSI Stochastic RSI", short: "StochRSI", category: "momentum", placement: "pane",
+    id: "stochrsi", name: "Stochastic RSI", nameZh: "随机 RSI Stochastic RSI", short: "StochRSI", category: "momentum", placement: "pane",
     params: [
-      p1("rsiPeriod", "RSI 周期", 14),
-      p1("stochPeriod", "随机周期", 14),
-      { key: "kSmooth", label: "K 平滑", default: 3, min: 1, max: 20, step: 1 },
-      { key: "dSmooth", label: "D 平滑", default: 3, min: 1, max: 20, step: 1 },
+      p1("rsiPeriod", "RSI Period", 14),
+      p1("stochPeriod", "Stochastic Period", 14),
+      { key: "kSmooth", label: "K Smoothing", default: 3, min: 1, max: 20, step: 1 },
+      { key: "dSmooth", label: "D Smoothing", default: 3, min: 1, max: 20, step: 1 },
     ],
     plots: [
       { key: "k", label: "%K", color: C.blue },
@@ -403,24 +412,24 @@ export const INDICATORS: IndicatorDef[] = [
     guides: [20, 80],
   },
   {
-    id: "cci", name: "CCI 顺势指标", short: "CCI", category: "momentum", placement: "pane",
-    params: [p1("period", "周期", 20)],
+    id: "cci", name: "CCI (Commodity Channel Index)", nameZh: "CCI 顺势指标", short: "CCI", category: "momentum", placement: "pane",
+    params: [p1("period", "Period", 20)],
     plots: [{ key: "cci", color: C.cyan }],
     compute: (i, p) => ({ cci: computeCCI(i.high, i.low, i.close, p.period) }),
     guides: [-100, 0, 100],
   },
   {
-    id: "willr", name: "威廉 %R", short: "%R", category: "momentum", placement: "pane",
-    params: [p1("period", "周期", 14)],
+    id: "willr", name: "Williams %R", nameZh: "威廉 %R", short: "%R", category: "momentum", placement: "pane",
+    params: [p1("period", "Period", 14)],
     plots: [{ key: "r", color: C.pink }],
     compute: (i, p) => ({ r: computeWilliamsR(i.high, i.low, i.close, p.period) }),
     guides: [-80, -20],
   },
   {
-    id: "ao", name: "动量振荡指标 Awesome Oscillator", short: "AO", category: "momentum", placement: "pane",
+    id: "ao", name: "Awesome Oscillator", nameZh: "动量振荡指标 Awesome Oscillator", short: "AO", category: "momentum", placement: "pane",
     params: [
-      p1("fastPeriod", "快周期", 5),
-      p1("slowPeriod", "慢周期", 34),
+      p1("fastPeriod", "Fast Period", 5),
+      p1("slowPeriod", "Slow Period", 34),
     ],
     plots: [
       {
@@ -437,43 +446,43 @@ export const INDICATORS: IndicatorDef[] = [
     guides: [0],
   },
   {
-    id: "momentum", name: "动量指标 Momentum", short: "MOM", category: "momentum", placement: "pane",
-    params: [p1("period", "周期", 10)],
+    id: "momentum", name: "Momentum", nameZh: "动量指标 Momentum", short: "MOM", category: "momentum", placement: "pane",
+    params: [p1("period", "Period", 10)],
     plots: [{ key: "mom", color: C.indigo }],
     compute: (i, p) => ({ mom: computeMomentum(i.close, p.period) }),
     guides: [0],
   },
   {
-    id: "roc", name: "ROC 变动率", short: "ROC", category: "momentum", placement: "pane",
-    params: [p1("period", "周期", 12)],
+    id: "roc", name: "ROC (Rate of Change)", nameZh: "ROC 变动率", short: "ROC", category: "momentum", placement: "pane",
+    params: [p1("period", "Period", 12)],
     plots: [{ key: "roc", color: C.pink }],
     compute: (i, p) => ({ roc: computeROC(i.close, p.period) }),
     guides: [0],
   },
   {
-    id: "trix", name: "TRIX 三重指数平滑", short: "TRIX", category: "momentum", placement: "pane",
-    params: [p1("period", "周期", 15)],
+    id: "trix", name: "TRIX", nameZh: "TRIX 三重指数平滑", short: "TRIX", category: "momentum", placement: "pane",
+    params: [p1("period", "Period", 15)],
     plots: [{ key: "trix", color: C.blue }],
     compute: (i, p) => ({ trix: computeTRIX(i.close, p.period) }),
     guides: [0],
   },
   {
-    id: "cmo", name: "钱德动量摆动指标 CMO", short: "CMO", category: "momentum", placement: "pane",
-    params: [p1("period", "周期", 14)],
+    id: "cmo", name: "Chande Momentum Oscillator (CMO)", nameZh: "钱德动量摆动指标 CMO", short: "CMO", category: "momentum", placement: "pane",
+    params: [p1("period", "Period", 14)],
     plots: [{ key: "cmo", color: C.orange }],
     compute: (i, p) => ({ cmo: computeCMO(i.close, p.period) }),
     guides: [-50, 0, 50],
   },
   {
-    id: "dpo", name: "DPO 区间震荡指标", short: "DPO", category: "momentum", placement: "pane",
-    params: [p1("period", "周期", 20)],
+    id: "dpo", name: "DPO (Detrended Price Oscillator)", nameZh: "DPO 区间震荡指标", short: "DPO", category: "momentum", placement: "pane",
+    params: [p1("period", "Period", 20)],
     plots: [{ key: "dpo", color: C.sky }],
     compute: (i, p) => ({ dpo: computeDPO(i.close, p.period) }),
     guides: [0],
   },
   {
-    id: "uo", name: "终极震荡指标 UO", short: "UO", category: "momentum", placement: "pane",
-    params: [p1("p1", "周期 1", 7), p1("p2", "周期 2", 14), p1("p3", "周期 3", 28)],
+    id: "uo", name: "Ultimate Oscillator", nameZh: "终极震荡指标 UO", short: "UO", category: "momentum", placement: "pane",
+    params: [p1("p1", "Period 1", 7), p1("p2", "Period 2", 14), p1("p3", "Period 3", 28)],
     plots: [{ key: "uo", color: C.purple }],
     compute: (i, p) => ({
       uo: computeUltimateOscillator(i.high, i.low, i.close, p.p1, p.p2, p.p3),
@@ -483,7 +492,7 @@ export const INDICATORS: IndicatorDef[] = [
 
   // ---------------- Volume ----------------
   {
-    id: "volume", name: "成交量 Volume", short: "Vol", category: "volume", placement: "pane",
+    id: "volume", name: "Volume", nameZh: "成交量 Volume", short: "Vol", category: "volume", placement: "pane",
     params: [],
     plots: [
       {
@@ -495,29 +504,29 @@ export const INDICATORS: IndicatorDef[] = [
     legendParams: () => "",
   },
   {
-    id: "obv", name: "OBV 能量潮", short: "OBV", category: "volume", placement: "pane",
+    id: "obv", name: "OBV (On-Balance Volume)", nameZh: "OBV 能量潮", short: "OBV", category: "volume", placement: "pane",
     params: [],
     plots: [{ key: "obv", color: C.sky }],
     compute: (i) => ({ obv: computeOBV(i.close, i.volume) }),
     legendParams: () => "",
   },
   {
-    id: "mfi", name: "MFI 资金流量指标", short: "MFI", category: "volume", placement: "pane",
-    params: [p1("period", "周期", 14)],
+    id: "mfi", name: "MFI (Money Flow Index)", nameZh: "MFI 资金流量指标", short: "MFI", category: "volume", placement: "pane",
+    params: [p1("period", "Period", 14)],
     plots: [{ key: "mfi", color: C.yellow }],
     compute: (i, p) => ({ mfi: computeMFI(i.high, i.low, i.close, i.volume, p.period) }),
     guides: [20, 80],
   },
   {
-    id: "cmf", name: "佳庆资金流量 CMF", short: "CMF", category: "volume", placement: "pane",
-    params: [p1("period", "周期", 20)],
+    id: "cmf", name: "Chaikin Money Flow (CMF)", nameZh: "佳庆资金流量 CMF", short: "CMF", category: "volume", placement: "pane",
+    params: [p1("period", "Period", 20)],
     plots: [{ key: "cmf", color: C.teal }],
     compute: (i, p) => ({ cmf: computeCMF(i.high, i.low, i.close, i.volume, p.period) }),
     guides: [0],
   },
   {
-    id: "chaikinosc", name: "佳庆振荡器 Chaikin Oscillator", short: "ChaikinOsc", category: "volume", placement: "pane",
-    params: [p1("fastPeriod", "快周期", 3), p1("slowPeriod", "慢周期", 10)],
+    id: "chaikinosc", name: "Chaikin Oscillator", nameZh: "佳庆振荡器 Chaikin Oscillator", short: "ChaikinOsc", category: "volume", placement: "pane",
+    params: [p1("fastPeriod", "Fast Period", 3), p1("slowPeriod", "Slow Period", 10)],
     plots: [{ key: "chaikinosc", color: C.indigo }],
     compute: (i, p) => ({ chaikinosc: computeChaikinOscillator(i.high, i.low, i.close, i.volume, p.fastPeriod, p.slowPeriod) }),
     guides: [0],

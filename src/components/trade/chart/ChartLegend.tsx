@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { legendLabel } from "@/lib/chart/indicator-registry";
 import { useChartStore, resolveDef } from "@/stores/chartStore";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,7 @@ import { cn } from "@/lib/utils";
  * indicators from the chart itself rather than reopening a dialog.
  */
 export function ChartLegend({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const t = useTranslations("trade.indicators");
   const applied = useChartStore((s) => s.appliedIndicators);
   const toggleVisible = useChartStore((s) => s.toggleIndicatorVisible);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
@@ -42,21 +44,21 @@ export function ChartLegend({ onOpenSettings }: { onOpenSettings: () => void }) 
             <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
               <button
                 onClick={() => toggleVisible(a.instanceId)}
-                title={a.visible ? "隐藏" : "显示"}
+                title={a.visible ? t("hide") : t("show")}
                 className="text-[9px] leading-none text-text-muted hover:text-text-primary"
               >
                 {a.visible ? "👁" : "🚫"}
               </button>
               <button
                 onClick={onOpenSettings}
-                title="参数设置"
+                title={t("settings")}
                 className="text-[9px] leading-none text-text-muted hover:text-gold"
               >
                 ⚙
               </button>
               <button
                 onClick={() => removeIndicator(a.instanceId)}
-                title="移除"
+                title={t("remove")}
                 className="text-[9px] leading-none text-text-muted hover:text-danger"
               >
                 ✕

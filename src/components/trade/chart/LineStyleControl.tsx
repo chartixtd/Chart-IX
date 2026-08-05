@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 
 export type DrawingLineStyle = "solid" | "dashed" | "dotted";
@@ -12,13 +13,14 @@ interface LineStyleControlProps {
 }
 
 const WIDTHS: (1 | 2 | 3 | 4)[] = [1, 2, 3, 4];
-const STYLES: { value: DrawingLineStyle; label: string; dasharray?: string }[] = [
-  { value: "solid", label: "实线" },
-  { value: "dashed", label: "虚线", dasharray: "4 3" },
-  { value: "dotted", label: "点线", dasharray: "1 2" },
+const STYLE_VALUES: { value: DrawingLineStyle; dasharray?: string }[] = [
+  { value: "solid" },
+  { value: "dashed", dasharray: "4 3" },
+  { value: "dotted", dasharray: "1 2" },
 ];
 
 export function LineStyleControl({ width, style, onWidthChange, onStyleChange }: LineStyleControlProps) {
+  const t = useTranslations("trade.drawing");
   return (
     <div className="flex items-center gap-3">
       <div className="flex items-center gap-1">
@@ -40,12 +42,12 @@ export function LineStyleControl({ width, style, onWidthChange, onStyleChange }:
         ))}
       </div>
       <div className="flex items-center gap-1">
-        {STYLES.map((s) => (
+        {STYLE_VALUES.map((s) => (
           <button
             key={s.value}
             type="button"
             onClick={() => onStyleChange(s.value)}
-            title={s.label}
+            title={t(`line_style_${s.value}`)}
             className={cn(
               "flex h-6 w-8 items-center justify-center rounded-xs border transition-colors",
               style === s.value ? "border-gold bg-gold/10" : "border-border-default hover:border-gold/40"

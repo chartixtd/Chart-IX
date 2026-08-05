@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations, useLocale } from "next-intl";
 import { useChartStore, DRAWING_TOOLS, type DrawingTool } from "@/stores/chartStore";
 import { ColorPicker } from "./ColorPicker";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,9 @@ const ICON: Record<DrawingTool, React.ReactNode> = {
 };
 
 export function DrawingToolbar({ symbol }: { symbol: string }) {
+  const t = useTranslations("trade.drawing");
+  const locale = useLocale();
+  const isZh = locale === "zh-CN" || locale === "zh";
   const [colorPopoverOpen, setColorPopoverOpen] = useState(false);
   const activeTool = useChartStore((s) => s.activeTool);
   const setActiveTool = useChartStore((s) => s.setActiveTool);
@@ -41,7 +45,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
       {/* Cursor / deselect */}
       <button
         onClick={() => setActiveTool(null)}
-        title="选择工具（Esc）"
+        title={t("select_tool")}
         className={cn(
           "flex h-7 w-7 items-center justify-center rounded-xs transition-colors",
           activeTool === null ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
@@ -54,11 +58,11 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
 
       <div className="my-1 h-px w-5 bg-border-default" />
 
-      {DRAWING_TOOLS.map(({ tool, label }) => (
+      {DRAWING_TOOLS.map(({ tool, label, labelZh }) => (
         <button
           key={tool}
           onClick={() => setActiveTool(activeTool === tool ? null : tool)}
-          title={label}
+          title={isZh ? labelZh : label}
           className={cn(
             "flex h-7 w-7 items-center justify-center rounded-xs transition-colors",
             activeTool === tool ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
@@ -76,7 +80,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
       <div className="relative">
         <button
           onClick={() => setColorPopoverOpen((o) => !o)}
-          title="线条颜色"
+          title={t("line_color")}
           className="flex h-7 w-7 items-center justify-center rounded-xs hover:bg-bg-tertiary"
         >
           <span className="h-3.5 w-3.5 rounded-full border border-text-primary/40" style={{ background: drawingColor }} />
@@ -96,7 +100,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
       {/* Pin tool (keep armed after each drawing) */}
       <button
         onClick={() => setKeepToolActive(!keepToolActive)}
-        title={keepToolActive ? "连续绘制：开（画完保持工具）" : "连续绘制：关（画完回到选择）"}
+        title={keepToolActive ? t("keep_tool_on") : t("keep_tool_off")}
         className={cn(
           "flex h-7 w-7 items-center justify-center rounded-xs text-[13px] transition-colors",
           keepToolActive ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
@@ -109,7 +113,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
       <button
         onClick={() => selectedDrawingId && removeDrawing(symbol, selectedDrawingId)}
         disabled={!selectedDrawingId}
-        title="删除选中图形（Delete）"
+        title={t("delete_selected")}
         className={cn(
           "flex h-7 w-7 items-center justify-center rounded-xs transition-colors",
           selectedDrawingId
@@ -126,7 +130,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
       <button
         onClick={() => { if (count > 0) clearDrawings(symbol); }}
         disabled={count === 0}
-        title={`清空本交易对全部图形（${count}）`}
+        title={t("clear_all_count", { count })}
         className={cn(
           "flex h-7 w-7 items-center justify-center rounded-xs text-[10px] font-medium transition-colors",
           count > 0
@@ -134,7 +138,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
             : "cursor-not-allowed text-text-muted/30"
         )}
       >
-        清空
+        {t("clear")}
       </button>
     </div>
   );

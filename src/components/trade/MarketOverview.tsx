@@ -8,6 +8,7 @@ import {
   useDeferredValue,
   memo,
 } from "react";
+import { useTranslations } from "next-intl";
 import { useSpotTickers } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { useMarketStore } from "@/stores/market";
@@ -109,6 +110,7 @@ const LoadingDummy = memo(function LoadingDummy() {
 });
 
 export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookPriceClick }: MarketOverviewProps) {
+  const t = useTranslations("trade");
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "orderbook">("list");
   const { data: tickers, isLoading } = useSpotTickers();
@@ -202,7 +204,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
               viewMode === "list" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
-            列表
+            {t("market_overview.list")}
           </button>
           <button
             onClick={() => setViewMode("orderbook")}
@@ -211,7 +213,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
               viewMode === "orderbook" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
-            盘口
+            {t("market_overview.orderbook")}
           </button>
         </div>
       </div>

@@ -23,7 +23,7 @@ import {
   type LogicalRange,
 } from "lightweight-charts";
 import Link from "next/link";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useKlineHistory } from "@/hooks/useKlineHistory";
 import { useMarketStore } from "@/stores/market";
 import { useChartStore } from "@/stores/chartStore";
@@ -103,6 +103,7 @@ interface InstanceSeries {
 
 export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, priceLines }: KlineChartProps) {
   const locale = useLocale();
+  const t = useTranslations("trade.indicators");
   const chartRef = useRef<HTMLDivElement>(null);
   const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
@@ -653,7 +654,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
 
         {!isLoading && isLoadingMore && (
           <div className="absolute left-1/2 top-2 z-[7] -translate-x-1/2 rounded-xs border border-border-default bg-bg-secondary/90 px-2 py-0.5 text-[11px] text-text-muted backdrop-blur-sm">
-            加载历史K线…
+            {t("loading_history")}
           </div>
         )}
 
@@ -668,7 +669,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
                 : "border-gold/30 bg-bg-secondary/80 text-gold"
             )}
           >
-            指标 {!hasAdvancedChart && !accessLoading && "🔒"}
+            {t("title")} {!hasAdvancedChart && !accessLoading && "🔒"}
           </button>
 
           {upsellOpen && !hasAdvancedChart && (
@@ -676,13 +677,13 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
               <div className="fixed inset-0 z-10" onClick={() => setUpsellOpen(false)} />
               <div className="absolute left-0 top-9 z-20 w-56 space-y-2 rounded-md border border-border-default bg-bg-secondary p-3 text-center text-xs shadow-modal">
                 <p className="text-text-secondary">
-                  30+ 技术指标与画图工具为 Pro 专属功能
+                  {t("pro_upsell")}
                 </p>
                 <Link
                   href={`/${locale}/upgrade`}
                   className="inline-block font-medium text-gold hover:underline"
                 >
-                  升级 Pro 解锁 →
+                  {t("pro_upsell_cta")} →
                 </Link>
               </div>
             </>

@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import { useTranslations } from "next-intl";
 import { useOrderBook } from "@/hooks/useMarketData";
 import { formatPrice } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ interface OrderBookProps {
 }
 
 export const OrderBook = memo(function OrderBook({ symbol, onPriceClick }: OrderBookProps) {
+  const t = useTranslations("trading");
   const { data, isLoading } = useOrderBook(symbol, 8);
 
   if (isLoading) {
@@ -50,7 +52,7 @@ export const OrderBook = memo(function OrderBook({ symbol, onPriceClick }: Order
             type="button"
             onClick={() => onPriceClick(parseFloat(price))}
             className={cn("relative z-10 text-left hover:underline", priceColor)}
-            title="点击填入下单价格"
+            title={t("orderbook_fill_price")}
           >
             {formatPrice(parseFloat(price))}
           </button>

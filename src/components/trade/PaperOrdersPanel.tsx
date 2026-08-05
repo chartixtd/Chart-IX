@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { usePaperAccount, usePaperOrders, useClosePaperPosition } from "@/hooks/usePaperTrading";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatPrice, formatNumber, cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liq
   leverage: number; margin: number; liquidationPrice: number;
   onClose: (symbol: string) => void; closing: boolean; active: boolean;
 }) {
+  const t = useTranslations("trading");
   const { data: ticker } = useSpotTicker(symbol);
   const markPrice = ticker ? Number(ticker.lastPrice) : entryPrice;
   // 未实现盈亏按仓位方向计算
@@ -45,7 +47,7 @@ function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liq
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5">
           <span className={cn("rounded-xs px-1 py-0.5 text-[10px] font-bold", isLong ? "bg-success/15 text-success" : "bg-danger/15 text-danger")}>
-            {isLong ? "多 LONG" : "空 SHORT"}
+            {isLong ? t("long_label") : t("short_label")}
           </span>
           <span className="font-semibold text-text-primary">{symbol}</span>
           <span className="text-gold">{leverage}x</span>
@@ -55,7 +57,7 @@ function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liq
           disabled={closing}
           className="rounded-xs bg-danger/10 px-1.5 py-0.5 text-xs text-danger hover:bg-danger/20 disabled:opacity-50"
         >
-          {closing ? "平仓中" : "平仓"}
+          {closing ? t("closing") : t("close_position")}
         </button>
       </div>
       <div className="mt-1 flex items-center justify-between text-xs">
@@ -65,8 +67,8 @@ function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liq
         </span>
       </div>
       <div className="mt-0.5 flex items-center justify-between text-[11px] text-text-muted/70">
-        <span>强平价 {formatPrice(liquidationPrice)}</span>
-        <span>保证金 {formatPrice(margin)} USDT</span>
+        <span>{t("liq_price_label")} {formatPrice(liquidationPrice)}</span>
+        <span>{t("margin_label")} {formatPrice(margin)} USDT</span>
       </div>
     </div>
   );
@@ -77,6 +79,7 @@ function formatTime(ts: string) {
 }
 
 export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
+  const t = useTranslations("trading");
   const { data, isLoading } = usePaperAccount();
   // No symbol filter: this panel shows every fill across the account, not just
   // whichever symbol the chart happens to be on.
@@ -221,7 +224,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
       <div className="flex-1 overflow-auto">
       {tab === "positions" && (
         positions.length === 0 ? (
-          <p className="px-3 py-4 text-xs text-text-muted text-center">暂无持仓 / No open positions</p>
+          <p className="px-3 py-4 text-xs text-text-muted text-center">{t("no_open_positions")}</p>
         ) : (
           positions.map((p) => (
             <PositionRow
@@ -344,7 +347,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
 
       {/* Wallet — paper account balance, always visible at the bottom */}
       <div className="shrink-0 border-t border-border-default px-3 py-2.5">
-        <div className="text-xs font-medium text-text-secondary">模拟盘钱包 / Available Balance</div>
+        <div className="text-xs font-medium text-text-secondary">{t("paper_wallet")}</div>
         <div className="mt-0.5 text-lg font-bold text-text-primary">
           {data ? formatPrice(data.account.balance_usdt) : "—"} <span className="text-xs font-normal text-text-muted">USDT</span>
         </div>

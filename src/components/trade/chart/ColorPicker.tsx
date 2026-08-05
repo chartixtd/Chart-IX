@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { DRAWING_COLORS } from "@/stores/chartStore";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +14,7 @@ interface ColorPickerProps {
 const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 export function ColorPicker({ value, onChange, presets = DRAWING_COLORS }: ColorPickerProps) {
+  const t = useTranslations("trade.drawing");
   const [text, setText] = useState(value);
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export function ColorPicker({ value, onChange, presets = DRAWING_COLORS }: Color
           value={HEX_RE.test(value) ? value : "#000000"}
           onChange={(e) => commit(e.target.value)}
           className="absolute -left-1 -top-1 h-8 w-8 cursor-pointer border-none bg-transparent p-0"
-          aria-label="选取颜色"
+          aria-label={t("pick_color")}
         />
       </label>
       <input

@@ -262,7 +262,7 @@ export function FuturesPositionRow({
                   disabled={savingTpSl}
                   className="text-[11px] text-danger hover:text-danger/80 disabled:opacity-50"
                 >
-                  取消止盈
+                  {t("trading.cancel_tp")}
                 </button>
               )}
             </div>
@@ -287,7 +287,7 @@ export function FuturesPositionRow({
                   disabled={savingTpSl}
                   className="text-[11px] text-danger hover:text-danger/80 disabled:opacity-50"
                 >
-                  取消止损
+                  {t("trading.cancel_sl")}
                 </button>
               )}
             </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useTranslations } from "next-intl";
 import type { IChartApi, ISeriesApi, Logical, UTCTimestamp } from "lightweight-charts";
 import {
   useChartStore,
@@ -39,6 +40,7 @@ interface Props {
 }
 
 export function DrawingLayer({ symbol, chart, series, times, containerRef }: Props) {
+  const t = useTranslations("trade.drawing");
   const activeTool = useChartStore((s) => s.activeTool);
   const setActiveTool = useChartStore((s) => s.setActiveTool);
   const keepToolActive = useChartStore((s) => s.keepToolActive);
@@ -295,7 +297,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
             onPointerUp={onShapePointerUp}
             onDoubleClick={() => setSettingsDrawingId(d.id)}
           >
-            {d.text || "文字"}
+            {d.text || t("text_placeholder")}
           </text>
           {sel && (
             <rect
@@ -498,8 +500,8 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       const bars = times.filter((t) => t >= Math.min(a.time, b.time) && t <= Math.max(a.time, b.time)).length;
       const midX = (x1 + x2) / 2;
       const label = deltaSeconds >= 86400
-        ? `${(deltaSeconds / 86400).toFixed(1)}天 (${bars}根)`
-        : `${(deltaSeconds / 3600).toFixed(1)}小时 (${bars}根)`;
+        ? t("duration_days", { days: (deltaSeconds / 86400).toFixed(1), bars })
+        : t("duration_hours", { hours: (deltaSeconds / 3600).toFixed(1), bars });
       return (
         <g key={d.id}>
           <line x1={x1} y1={y1} x2={x2} y2={y1} {...hit} />
@@ -703,7 +705,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
               setPendingText(null);
             }
           }}
-          placeholder="输入文字后回车"
+          placeholder={t("text_input_placeholder")}
           className="absolute z-10 w-40 rounded-xs border border-gold bg-bg-secondary px-1.5 py-0.5 text-xs text-text-primary focus:outline-none"
           style={{ left: textX, top: Math.max(0, textY - 22) }}
         />

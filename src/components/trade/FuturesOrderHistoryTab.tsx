@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useFuturesOrderHistory, useFuturesContracts } from "@/hooks/useTradingAccount";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn, formatBySpec } from "@/lib/utils";
@@ -21,6 +22,7 @@ const isConditionalOrder = (type: string) =>
   type.toUpperCase().includes("STOP") || type.toUpperCase().includes("TAKE_PROFIT");
 
 export function FuturesOrderHistoryTab() {
+  const t = useTranslations("trading");
   const { data: orders = [], isLoading } = useFuturesOrderHistory();
   const { data: contracts } = useFuturesContracts();
 
@@ -38,7 +40,7 @@ export function FuturesOrderHistoryTab() {
         const spec = contracts?.get(o.symbol);
         const priceLabel =
           isConditionalOrder(o.type) && o.stopPrice
-            ? `触发 ${formatBySpec(parseFloat(o.stopPrice), spec?.pricePrecision)}`
+            ? `${t("triggered")} ${formatBySpec(parseFloat(o.stopPrice), spec?.pricePrecision)}`
             : o.type === "MARKET"
               ? "MKT"
               : formatBySpec(parseFloat(o.price), spec?.pricePrecision);

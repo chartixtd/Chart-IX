@@ -96,15 +96,15 @@ const TickerBar = memo(function TickerBar({
                 market === "paper" ? "bg-bg-primary text-gold" : "text-text-muted hover:text-text-secondary"
               )}
             >
-              模拟盘
+              {t("paper_trading")}
             </button>
           ) : (
             <Link
               href={`/${locale}/login`}
               className="rounded-xs px-3 py-1 text-xs font-medium text-text-muted hover:text-gold transition-colors"
-              title="登录后可用"
+              title={t("paper_trading_locked")}
             >
-              模拟盘
+              {t("paper_trading")}
               <span className="ml-1 opacity-60">&#x1F512;</span>
             </Link>
           )
@@ -164,6 +164,8 @@ const TickerBar = memo(function TickerBar({
 
 // Set a price alert for the current symbol
 const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { symbol: string; currentPrice: number }) {
+  const t = useTranslations("trade");
+  const tCommon = useTranslations("common");
   const [open, setOpen] = useState(false);
   const [price, setPrice] = useState("");
   const [direction, setDirection] = useState<"above" | "below">("above");
@@ -188,12 +190,12 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
     // 这个弹窗目前对未登录用户没有入口级拦截（见本轮修复报告），
     // 401 在这里体现为 addAlert 返回 false，走同一条失败分支
     if (!auth.userId) {
-      setError("请先登录后再设置提醒");
+      setError(t("alerts.login_required"));
       return;
     }
     const ok = await addAlert(symbol, target, direction);
     if (!ok) {
-      setError("保存失败，请重试");
+      setError(t("alerts.save_failed"));
       return;
     }
     setOpen(false);
@@ -209,27 +211,27 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
       <button
         onClick={handleOpen}
         className="shrink-0 rounded-xs px-1.5 py-1 text-text-muted hover:bg-bg-tertiary hover:text-gold"
-        title="设置价格提醒"
+        title={t("alerts.set_price_alert")}
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
           <path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.7 21a2 2 0 01-3.4 0" />
         </svg>
       </button>
-      <Modal open={open} onClose={() => setOpen(false)} title={`价格提醒 · ${symbol}`} size="sm">
+      <Modal open={open} onClose={() => setOpen(false)} title={t("alerts.modal_title", { symbol })} size="sm">
         <div className="space-y-3">
           <div className="flex rounded-xs bg-bg-tertiary p-0.5 text-xs">
             <button
               onClick={() => setDirection("above")}
               className={cn("flex-1 rounded-xs py-1.5", direction === "above" ? "bg-bg-primary text-success" : "text-text-muted")}
             >
-              涨到以上
+              {t("alerts.above")}
             </button>
             <button
               onClick={() => setDirection("below")}
               className={cn("flex-1 rounded-xs py-1.5", direction === "below" ? "bg-bg-primary text-danger" : "text-text-muted")}
             >
-              跌到以下
+              {t("alerts.below")}
             </button>
           </div>
           <Input placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)} />
@@ -237,11 +239,11 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
               这在本层给价格提醒接上服务端 Web Push 之后已经是错的，紧接着下面
               就是开启推送的卡片，两句话自相矛盾。这里改成准确描述：提醒由服务端
               巡检触发，开启通知后即使网站没开也能收到推送 */}
-          <p className="text-xs text-text-muted">提醒由服务端巡检触发，开启通知后即使不打开网站也能收到推送。</p>
+          <p className="text-xs text-text-muted">{t("alerts.push_hint")}</p>
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex justify-end gap-3">
-            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>取消</Button>
-            <Button variant="primary" size="sm" onClick={() => void handleConfirm()}>设置提醒</Button>
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>{tCommon("cancel")}</Button>
+            <Button variant="primary" size="sm" onClick={() => void handleConfirm()}>{t("alerts.confirm")}</Button>
           </div>
         </div>
       </Modal>
@@ -260,6 +262,7 @@ const IntervalBar = memo(function IntervalBar({
   interval: string;
   onIntervalChange: (i: string) => void;
 }) {
+  const t = useTranslations("trade");
   const [moreOpen, setMoreOpen] = useState(false);
   const pinnedIntervals = useTradePrefsStore((s) => s.pinnedIntervals);
   const togglePinnedInterval = useTradePrefsStore((s) => s.togglePinnedInterval);
@@ -291,7 +294,7 @@ const IntervalBar = memo(function IntervalBar({
             !isPinned ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
           )}
         >
-          {!isPinned ? interval : "更多"} ▾
+          {!isPinned ? interval : t("more_intervals")} ▾
         </button>
       </div>
 
@@ -299,7 +302,7 @@ const IntervalBar = memo(function IntervalBar({
         <>
           <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
           <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-md border border-border-default bg-bg-secondary p-2 shadow-modal">
-            <p className="mb-1 px-1 text-[11px] text-text-muted">点击星标固定到常用栏</p>
+            <p className="mb-1 px-1 text-[11px] text-text-muted">{t("pin_hint")}</p>
             <div className="grid grid-cols-4 gap-1">
               {ALL_INTERVALS.map((int) => {
                 const pinned = pinnedIntervals.includes(int);
@@ -322,7 +325,7 @@ const IntervalBar = memo(function IntervalBar({
                     </button>
                     <button
                       onClick={() => togglePinnedInterval(int)}
-                      title={pinned ? "取消固定" : "固定到常用栏"}
+                      title={pinned ? t("unpin") : t("pin")}
                       className={cn(
                         "shrink-0 px-0.5 transition-colors",
                         pinned ? "text-gold" : "text-text-muted/50 hover:text-text-muted"
@@ -442,7 +445,7 @@ export default function TradePage() {
           <FearGreedIndex compact />
         </div>
       </div>
-      <div className="flex-1">
+      <div className="min-h-0 flex-1">
         <KlineChart
           symbol={symbol}
           interval={interval}
@@ -475,7 +478,7 @@ export default function TradePage() {
           hidden/lg:flex 让两套布局同时挂载，这正是 Task 3 遗留、本任务要解决的
           双挂载问题（图表、WebSocket 订阅等带副作用的子树不能跑两份）。 */}
       {isDesktop && (
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* v2：去掉了独立盘口栏（并入 MarketOverview 的"盘口"切换），改版 id
             避免旧用户浏览器里存的 3 栏→4 栏比例套用到现在的 3 栏布局上 */}
         <PanelGroup direction="horizontal" autoSaveId="chart-ix-trade-layout-v2" className="flex-1">
@@ -522,8 +525,8 @@ export default function TradePage() {
       )}
 
       {!isDesktop && (
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="relative flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             {chartBlock}
             {bookOverlayOpen && (
               // 订单簿做成图表上的叠层，而不是抢一个 tab

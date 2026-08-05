@@ -317,7 +317,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                     <div className="flex items-center gap-3">
                       <span className="text-text-muted">
                         {isConditionalOrder(o.type) && o.stopPrice
-                          ? `触发 ${formatBySpec(parseFloat(o.stopPrice), spec?.pricePrecision)}`
+                          ? `${t("trading.triggered")} ${formatBySpec(parseFloat(o.stopPrice), spec?.pricePrecision)}`
                           : o.type === "LIMIT"
                             ? formatBySpec(parseFloat(o.price), spec?.pricePrecision)
                             : "MKT"}

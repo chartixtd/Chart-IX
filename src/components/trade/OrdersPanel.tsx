@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import {
@@ -35,6 +36,7 @@ function formatTime(ts: number) {
 }
 
 export function OrdersPanel({ symbol }: OrdersPanelProps) {
+  const t = useTranslations("trading");
   const auth = useAuth();
   useUserDataStream({ market: "spot", enabled: !!auth.userId });
 
@@ -160,7 +162,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
   const TABS: { key: Tab; label: string }[] = [
     { key: "orders", label: `Open Orders (${orders.length})` },
     { key: "fills", label: "Fills" },
-    { key: "wallet", label: `现货钱包 (${balances.length})` },
+    { key: "wallet", label: `${t("spot_wallet")} (${balances.length})` },
   ];
 
   return (
@@ -301,11 +303,11 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
                 <span className="font-medium text-text-primary">{b.asset}</span>
                 <div className="flex items-center gap-3">
                   <span className="text-text-muted">
-                    可用 <span className="text-text-primary">{formatPriceLocal(b.free)}</span>
+                    {t("wallet_available")} <span className="text-text-primary">{formatPriceLocal(b.free)}</span>
                   </span>
                   {parseFloat(b.locked) > 0 && (
                     <span className="text-text-muted">
-                      冻结 <span className="text-text-primary">{formatPriceLocal(b.locked)}</span>
+                      {t("wallet_locked")} <span className="text-text-primary">{formatPriceLocal(b.locked)}</span>
                     </span>
                   )}
                 </div>

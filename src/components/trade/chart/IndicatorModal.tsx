@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslations, useLocale } from "next-intl";
 import { Modal } from "@/components/ui/Modal";
 import {
-  INDICATORS, CATEGORY_LABELS, legendLabel, resolvePlotStyle, type IndicatorCategory, type IndicatorDef,
+  INDICATORS, CATEGORY_LABELS, CATEGORY_LABELS_ZH, legendLabel, resolvePlotStyle, type IndicatorCategory, type IndicatorDef,
 } from "@/lib/chart/indicator-registry";
 import { useChartStore, resolveDef } from "@/stores/chartStore";
 import { cn } from "@/lib/utils";
@@ -15,12 +16,17 @@ const CATEGORIES: (IndicatorCategory | "all")[] = ["all", "trend", "momentum", "
 const LINE_STYLE_TO_DRAWING: Record<number, DrawingLineStyle> = { 0: "solid", 1: "dotted", 2: "dashed", 3: "dashed", 4: "dotted" };
 const DRAWING_TO_LINE_STYLE: Record<DrawingLineStyle, 0 | 1 | 2> = { solid: 0, dotted: 1, dashed: 2 };
 
-const CATEGORY_TAB_LABELS: Record<IndicatorCategory | "all", string> = {
-  all: "全部",
-  ...CATEGORY_LABELS,
-};
-
 export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useTranslations("trade.indicators");
+  const tCommon = useTranslations("common");
+  const locale = useLocale();
+  const isZh = locale === "zh-CN" || locale === "zh";
+  const categoryLabels = isZh ? CATEGORY_LABELS_ZH : CATEGORY_LABELS;
+  const CATEGORY_TAB_LABELS: Record<IndicatorCategory | "all", string> = {
+    all: tCommon("all"),
+    ...categoryLabels,
+  };
+  const indicatorName = (def: IndicatorDef) => (isZh ? def.nameZh : def.name);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<IndicatorCategory | "all">("all");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -41,6 +47,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
       if (!q) return true;
       return (
         d.name.toLowerCase().includes(q) ||
+        d.nameZh.toLowerCase().includes(q) ||
         d.short.toLowerCase().includes(q) ||
         d.id.includes(q)
       );
@@ -54,7 +61,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
   }, [applied]);
 
   return (
-    <Modal open={open} onClose={onClose} title="指标" className="max-w-3xl" >
+    <Modal open={open} onClose={onClose} title={t("title")} className="max-w-3xl" >
       <div className="grid gap-5 md:grid-cols-[1fr_1fr]">
         {/* ---- Browse / search ---- */}
         <div className="flex min-h-0 flex-col">
@@ -62,7 +69,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索指标…"
+            placeholder={t("search_placeholder")}
             className="w-full rounded-sm border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-gold focus:outline-none"
           />
 
@@ -85,7 +92,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
 
           <div className="mt-3 max-h-[46vh] min-h-[200px] overflow-y-auto rounded-sm border border-border-default">
             {results.length === 0 ? (
-              <p className="p-4 text-center text-xs text-text-muted">没有匹配的指标</p>
+              <p className="p-4 text-center text-xs text-text-muted">{t("no_results")}</p>
             ) : (
               results.map((def) => {
                 const count = appliedCountByDef.get(def.id) ?? 0;
@@ -96,10 +103,10 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                     className="flex w-full items-center justify-between gap-2 border-b border-border-default px-3 py-2 text-left last:border-b-0 hover:bg-bg-tertiary"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm text-text-primary">{def.name}</span>
+                      <span className="block truncate text-sm text-text-primary">{indicatorName(def)}</span>
                       <span className="block text-[11px] text-text-muted">
-                        {CATEGORY_LABELS[def.category]}
-                        {def.placement === "pane" ? " · 独立副图" : " · 主图叠加"}
+                        {categoryLabels[def.category]}
+                        {def.placement === "pane" ? ` · ${t("placement_pane")}` : ` · ${t("placement_main")}`}
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
@@ -116,7 +123,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
             )}
           </div>
           <p className="mt-2 text-[11px] text-text-muted">
-            同一指标可重复添加，用不同参数并存（例如 MA 20 / MA 50 / MA 200）。
+            {t("duplicate_hint")}
           </p>
         </div>
 
@@ -124,14 +131,14 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
         <div className="flex min-h-0 flex-col">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-text-primary">
-              已应用 <span className="font-mono text-xs text-text-muted">({applied.length})</span>
+              {t("applied")} <span className="font-mono text-xs text-text-muted">({applied.length})</span>
             </p>
             {applied.length > 0 && (
               <button
                 onClick={clearIndicators}
                 className="text-[11px] text-text-muted hover:text-danger"
               >
-                全部移除
+                {t("remove_all")}
               </button>
             )}
           </div>
@@ -139,7 +146,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
           <div className="mt-3 max-h-[52vh] min-h-[200px] overflow-y-auto rounded-sm border border-border-default">
             {applied.length === 0 ? (
               <p className="p-4 text-center text-xs text-text-muted">
-                还没有指标，从左侧列表点击添加
+                {t("empty_hint")}
               </p>
             ) : (
               applied.map((a) => {
@@ -166,7 +173,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
 
                       <button
                         onClick={() => toggleIndicatorVisible(a.instanceId)}
-                        title={a.visible ? "隐藏" : "显示"}
+                        title={a.visible ? t("hide") : t("show")}
                         className="shrink-0 text-xs text-text-muted hover:text-text-primary"
                       >
                         {a.visible ? "👁" : "🚫"}
@@ -174,7 +181,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                       {(def.params.length > 0 || def.plots.length > 0) && (
                         <button
                           onClick={() => setEditingId(isEditing ? null : a.instanceId)}
-                          title="参数设置"
+                          title={t("settings")}
                           className={cn(
                             "shrink-0 text-xs hover:text-text-primary",
                             isEditing ? "text-gold" : "text-text-muted"
@@ -185,7 +192,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                       )}
                       <button
                         onClick={() => removeIndicator(a.instanceId)}
-                        title="移除"
+                        title={t("remove")}
                         className="shrink-0 text-xs text-text-muted hover:text-danger"
                       >
                         ✕
@@ -240,7 +247,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                           onClick={() => resetIndicatorToDefaults(a.instanceId)}
                           className="text-[11px] text-text-muted hover:text-gold"
                         >
-                          恢复默认设置
+                          {t("restore_defaults")}
                         </button>
                       </div>
                     )}

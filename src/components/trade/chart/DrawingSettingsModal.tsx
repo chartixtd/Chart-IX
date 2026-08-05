@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { Modal } from "@/components/ui/Modal";
 import { useChartStore, type Drawing } from "@/stores/chartStore";
 import { ColorPicker } from "./ColorPicker";
@@ -15,6 +16,7 @@ export function DrawingSettingsModal({
   drawing: Drawing;
   onClose: () => void;
 }) {
+  const t = useTranslations("trade.drawing");
   const updateDrawing = useChartStore((s) => s.updateDrawing);
   const removeDrawing = useChartStore((s) => s.removeDrawing);
   const [fontSize, setFontSize] = useState(drawing.fontSize ?? 12);
@@ -28,14 +30,14 @@ export function DrawingSettingsModal({
   const showFontSize = drawing.tool === "text";
 
   return (
-    <Modal open onClose={onClose} title="图形设置" size="sm">
+    <Modal open onClose={onClose} title={t("settings_title")} size="sm">
       <div className="space-y-4">
         <div>
-          <p className="mb-1.5 text-xs text-text-muted">颜色</p>
+          <p className="mb-1.5 text-xs text-text-muted">{t("color")}</p>
           <ColorPicker value={drawing.color} onChange={(color) => updateDrawing(symbol, drawing.id, { color })} />
         </div>
         <div>
-          <p className="mb-1.5 text-xs text-text-muted">线宽 / 线型</p>
+          <p className="mb-1.5 text-xs text-text-muted">{t("width_style")}</p>
           <LineStyleControl
             width={drawing.lineWidth}
             style={drawing.lineStyle}
@@ -45,7 +47,7 @@ export function DrawingSettingsModal({
         </div>
         {showFill && (
           <div>
-            <p className="mb-1.5 text-xs text-text-muted">填充透明度 ({Math.round(drawing.opacity * 100)}%)</p>
+            <p className="mb-1.5 text-xs text-text-muted">{t("fill_opacity", { percent: Math.round(drawing.opacity * 100) })}</p>
             <input
               type="range" min={0} max={1} step={0.05} value={drawing.opacity}
               onChange={(e) => updateDrawing(symbol, drawing.id, { opacity: parseFloat(e.target.value) })}
@@ -55,7 +57,7 @@ export function DrawingSettingsModal({
         )}
         {showFontSize && (
           <div>
-            <p className="mb-1.5 text-xs text-text-muted">文字大小 ({fontSize}px)</p>
+            <p className="mb-1.5 text-xs text-text-muted">{t("font_size", { size: fontSize })}</p>
             <input
               type="range" min={9} max={28} step={1} value={fontSize}
               onChange={(e) => {
@@ -71,7 +73,7 @@ export function DrawingSettingsModal({
           onClick={handleDelete}
           className="w-full rounded border border-danger/30 bg-danger-bg py-2 text-sm font-medium text-danger transition-colors hover:border-danger/60"
         >
-          删除图形
+          {t("delete_shape")}
         </button>
       </div>
     </Modal>

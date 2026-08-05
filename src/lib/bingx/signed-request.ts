@@ -101,11 +101,19 @@ export async function signedRequest<T>(
       const text = await res.text();
       const json = JSONBigParse.parse(text);
 
-      if (json.code !== 0) {
+      // 大多数 BingX REST 接口用 {code, msg, data} 包一层，但少数几个
+      // （比如 listenKey 的创建/续期/删除）是仿 Binance 的老接口，成功时直接
+      // 平铺返回内容（如 {"listenKey": "..."}），完全没有 code 字段。之前
+      // 不管有没有 code 字段一律按 `code !== 0` 判定失败，导致这几个接口的
+      // 正常响应（code 是 undefined）被误判成 "BingX error undefined: Unknown"。
+      // 这里只在响应体真的带 code 字段时才走标准包一层的判定；不带 code 的
+      // 就把整个响应体当成 data 返回。
+      const hasCode = Object.prototype.hasOwnProperty.call(json, "code");
+      if (hasCode && json.code !== 0) {
         throw new Error(`BingX error ${json.code}: ${json.msg || "Unknown"}`);
       }
 
-      return json.data as T;
+      return (hasCode ? json.data : json) as T;
     } catch (e) {
       if (!isNetworkOrTimeout(e) || i === baseUrls.length - 1) throw e;
       // Otherwise try fallback (.pro)

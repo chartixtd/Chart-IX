@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     const { data: posts, error } = await serviceClient
       .from("community_posts")
-      .select("id, author_id, title, content, created_at, updated_at")
+      .select("id, author_id, title, content, cover_image, created_at, updated_at")
       .order("created_at", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1);
 
@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
       author: authorById.get(p.author_id) ?? null,
       title: p.title,
       content: p.content,
+      cover_image: p.cover_image,
       created_at: p.created_at,
       updated_at: p.updated_at,
       comment_count: commentCountByPost.get(p.id) ?? 0,
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const title = typeof body.title === "string" ? body.title.trim() : "";
     const content = typeof body.content === "string" ? body.content.trim() : "";
+    const coverImage = typeof body.cover_image === "string" && body.cover_image.trim() ? body.cover_image.trim() : null;
 
     if (!title || !content) {
       return NextResponse.json({ error: "title and content are required" }, { status: 400 });
@@ -110,11 +112,14 @@ export async function POST(request: NextRequest) {
     if (title.length > MAX_TITLE_LENGTH || content.length > MAX_CONTENT_LENGTH) {
       return NextResponse.json({ error: "title or content too long" }, { status: 400 });
     }
+    if (coverImage && coverImage.length > 2048) {
+      return NextResponse.json({ error: "cover_image too long" }, { status: 400 });
+    }
 
     const { data, error } = await supabase
       .from("community_posts")
-      .insert({ author_id: userId, title, content })
-      .select("id, author_id, title, content, created_at, updated_at")
+      .insert({ author_id: userId, title, content, cover_image: coverImage })
+      .select("id, author_id, title, content, cover_image, created_at, updated_at")
       .single();
 
     if (error) {

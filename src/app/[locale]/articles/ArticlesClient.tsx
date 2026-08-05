@@ -39,7 +39,11 @@ export default function ArticlesClient({
   const tCommunity = useTranslations("community");
   const searchParams = useSearchParams();
   const categoryParam = searchParams.get("category");
-  const [tab, setTab] = useState<"articles" | "community">("articles");
+  // 从帖子详情页点"返回社区"回来时带 ?tab=community，得读出来选中对应 tab，
+  // 不然每次都会掉回默认的 articles 分栏
+  const [tab, setTab] = useState<"articles" | "community">(
+    searchParams.get("tab") === "community" ? "community" : "articles"
+  );
 
   const filtered = useMemo(() => {
     if (!categoryParam) return articles;

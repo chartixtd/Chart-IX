@@ -31,10 +31,24 @@ export function useCommunityPosts() {
   });
 }
 
+export interface PostComposerInput {
+  title: string;
+  content: string;
+  cover_image?: string | null;
+}
+
+export function usePost(postId: string) {
+  return useQuery({
+    queryKey: ["community", "post", postId],
+    queryFn: () => fetchJson<CommunityPost>(`/api/community/posts/${postId}`),
+    staleTime: 15_000,
+  });
+}
+
 export function useCreatePost() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { title: string; content: string }) =>
+    mutationFn: (input: PostComposerInput) =>
       fetchJson<CommunityPost>("/api/community/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -49,16 +63,27 @@ export function useCreatePost() {
 export function useUpdatePost(postId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { title: string; content: string }) =>
+    mutationFn: (input: PostComposerInput) =>
       fetchJson<CommunityPost>(`/api/community/posts/${postId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: POSTS_KEY });
+      queryClient.setQueryData(["community", "post", postId], data);
     },
   });
+}
+
+/** Upload a cover image for a community post; returns the public URL. */
+export async function uploadCommunityImage(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch("/api/community/upload", { method: "POST", body: formData });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Upload failed");
+  return json.url as string;
 }
 
 export function useComments(postId: string, enabled: boolean) {
@@ -82,6 +107,7 @@ export function useCreateComment(postId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["community", "comments", postId] });
       queryClient.invalidateQueries({ queryKey: POSTS_KEY });
+      queryClient.invalidateQueries({ queryKey: ["community", "post", postId] });
     },
   });
 }
@@ -97,6 +123,7 @@ export function useToggleReaction(postId: string) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: POSTS_KEY });
+      queryClient.invalidateQueries({ queryKey: ["community", "post", postId] });
     },
   });
 }
@@ -120,6 +147,7 @@ export function useDeleteCommunityComment(postId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["community", "comments", postId] });
       queryClient.invalidateQueries({ queryKey: POSTS_KEY });
+      queryClient.invalidateQueries({ queryKey: ["community", "post", postId] });
     },
   });
 }

@@ -168,6 +168,7 @@ export interface CommunityPost {
   author: CommunityAuthor | null;
   title: string;
   content: string;
+  cover_image: string | null;
   created_at: string;
   updated_at: string;
   comment_count: number;

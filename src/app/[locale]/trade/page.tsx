@@ -139,7 +139,7 @@ const TickerBar = memo(function TickerBar({
         onClick={onPickSymbol}
         className={cn("flex shrink-0 items-center gap-3", onPickSymbol && "lg:pointer-events-none")}
       >
-        <h2 className="font-display text-lg tracking-tight">{symbol}</h2>
+        <h2 className="font-sans text-lg font-semibold tracking-tight">{symbol}</h2>
         {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">{t("mobile_symbol_picker")} ▾</span>}
       </button>
       {ticker && (

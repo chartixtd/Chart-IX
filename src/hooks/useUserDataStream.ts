@@ -13,7 +13,8 @@ import {
 const SPOT_WS_URL = "wss://open-api-ws.bingx.com/market";
 const SWAP_WS_URL = "wss://open-api-swap.bingx.com/swap-market";
 const KEEPALIVE_INTERVAL_MS = 30 * 60 * 1000; // BingX: 1h 有效期，每 30 分钟续期
-const RECONNECT_DELAY_MS = 3_000;
+const RECONNECT_BASE_DELAY_MS = 3_000;
+const RECONNECT_MAX_DELAY_MS = 60_000;
 
 interface UseUserDataStreamOptions {
   market: "spot" | "futures";
@@ -52,6 +53,7 @@ class UserDataStreamManager {
   private listenKey: string | null = null;
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
   private refCount = 0;
   private generation = 0;
   private queryClient: QueryClient | null = null;
@@ -96,7 +98,14 @@ class UserDataStreamManager {
 
   private scheduleReconnect(gen: number) {
     if (gen !== this.generation) return;
-    this.reconnectTimer = setTimeout(() => this.connect(gen), RECONNECT_DELAY_MS);
+    // 持续失败（比如 BingX 一直 5xx）时用指数退避封顶重试间隔，避免固定 3s
+    // 死循环刷屏控制台、反复冲击一个已经在失败的接口
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY_MS * 2 ** this.reconnectAttempt,
+      RECONNECT_MAX_DELAY_MS
+    );
+    this.reconnectAttempt++;
+    this.reconnectTimer = setTimeout(() => this.connect(gen), delay);
   }
 
   private async connect(gen: number) {
@@ -124,6 +133,15 @@ class UserDataStreamManager {
       return;
     }
     if (!res.ok) {
+      // 只在第一次失败时打一条 warn：具体原因（比如 BingX 侧的错误信息）在
+      // 响应体里，控制台默认只看得到 "502" 这一行，不打出来的话完全没法
+      // 从浏览器端诊断是签名问题、key 失效还是 BingX 那边的问题
+      if (this.reconnectAttempt === 0) {
+        res
+          .json()
+          .then((body) => console.warn(`[user-stream:${this.market}] ${res.status}`, body))
+          .catch(() => console.warn(`[user-stream:${this.market}] ${res.status} (no JSON body)`));
+      }
       this.scheduleReconnect(gen);
       return;
     }
@@ -143,6 +161,9 @@ class UserDataStreamManager {
     }
     const listenKey = json.data.listenKey;
 
+    // 成功拿到 listenKey 说明这一轮失败已经结束，退避计数清零，下次真正断线
+    // 重连时重新从 3s 起步，而不是延续之前失败累积的长间隔
+    this.reconnectAttempt = 0;
     this.listenKey = listenKey;
 
     const baseUrl = this.market === "spot" ? SPOT_WS_URL : SWAP_WS_URL;
@@ -220,6 +241,7 @@ class UserDataStreamManager {
 
   private teardown() {
     this.generation++; // invalidate any in-flight connect() from this point on
+    this.reconnectAttempt = 0;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

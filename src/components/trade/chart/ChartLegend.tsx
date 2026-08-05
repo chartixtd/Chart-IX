@@ -26,40 +26,40 @@ export function ChartLegend({ onOpenSettings }: { onOpenSettings: () => void }) 
         return (
           <div
             key={a.instanceId}
-            className="pointer-events-auto group flex items-center gap-2 rounded-xs bg-bg-primary/55 px-2 py-1 backdrop-blur-sm"
+            className="pointer-events-auto group flex items-center gap-2 rounded-xs bg-bg-primary/55 px-2.5 py-1.5 backdrop-blur-sm"
           >
             <span
-              className="h-2 w-2 shrink-0 rounded-full"
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
               style={{ background: def.plots[0]?.color, opacity: a.visible ? 1 : 0.3 }}
             />
             <span
               className={cn(
-                "font-mono text-xs leading-none",
+                "font-mono text-sm leading-none",
                 a.visible ? "text-text-secondary" : "text-text-muted line-through"
               )}
             >
               {legendLabel(def, a.params)}
             </span>
 
-            <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
               <button
                 onClick={() => toggleVisible(a.instanceId)}
                 title={a.visible ? t("hide") : t("show")}
-                className="text-xs leading-none text-text-muted hover:text-text-primary"
+                className="text-sm leading-none text-text-muted hover:text-text-primary"
               >
                 {a.visible ? "👁" : "🚫"}
               </button>
               <button
                 onClick={onOpenSettings}
                 title={t("settings")}
-                className="text-xs leading-none text-text-muted hover:text-gold"
+                className="text-sm leading-none text-text-muted hover:text-gold"
               >
                 ⚙
               </button>
               <button
                 onClick={() => removeIndicator(a.instanceId)}
                 title={t("remove")}
-                className="text-xs leading-none text-text-muted hover:text-danger"
+                className="text-sm leading-none text-text-muted hover:text-danger"
               >
                 ✕
               </button>

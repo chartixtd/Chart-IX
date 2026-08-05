@@ -41,68 +41,71 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
   const count = useChartStore((s) => s.drawings[symbol]?.length ?? 0);
 
   return (
-    <div className="flex w-9 shrink-0 flex-col items-center gap-0.5 border-r border-border-default bg-bg-secondary/40 py-2">
-      {/* Cursor / deselect */}
+    <div className="flex h-full w-11 shrink-0 flex-col items-center gap-1 border-r border-border-default bg-bg-secondary/40 py-2">
+      {/* Cursor / deselect — stays pinned above the scrollable tool list */}
       <button
         onClick={() => setActiveTool(null)}
         title={t("select_tool")}
         className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-xs transition-colors",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
           activeTool === null ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
         )}
       >
-        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M4 3l11 7-5 1-1.5 5z" />
         </svg>
       </button>
 
-      <div className="my-1 h-px w-5 bg-border-default" />
+      <div className="h-px w-6 shrink-0 bg-border-default" />
 
-      {DRAWING_TOOLS.map(({ tool, label, labelZh }) => (
-        <button
-          key={tool}
-          onClick={() => setActiveTool(activeTool === tool ? null : tool)}
-          title={isZh ? labelZh : label}
-          className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-xs transition-colors",
-            activeTool === tool ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
-          )}
-        >
-          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            {ICON[tool]}
-          </svg>
-        </button>
-      ))}
+      {/* 工具太多，固定高度的边栏装不下时纵向滚动，而不是把按钮挤扁到看不清 */}
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto custom-scrollbar py-0.5">
+        {DRAWING_TOOLS.map(({ tool, label, labelZh }) => (
+          <button
+            key={tool}
+            onClick={() => setActiveTool(activeTool === tool ? null : tool)}
+            title={isZh ? labelZh : label}
+            className={cn(
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
+              activeTool === tool ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
+            )}
+          >
+            <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              {ICON[tool]}
+            </svg>
+          </button>
+        ))}
+      </div>
 
-      <div className="my-1 h-px w-5 bg-border-default" />
+      <div className="h-px w-6 shrink-0 bg-border-default" />
 
       {/* Colour picker (free colour, not just fixed swatches) */}
-      <div className="relative">
+      <div className="relative shrink-0">
         <button
           onClick={() => setColorPopoverOpen((o) => !o)}
           title={t("line_color")}
-          className="flex h-7 w-7 items-center justify-center rounded-xs hover:bg-bg-tertiary"
+          className="flex h-9 w-9 items-center justify-center rounded-xs hover:bg-bg-tertiary"
         >
-          <span className="h-3.5 w-3.5 rounded-full border border-text-primary/40" style={{ background: drawingColor }} />
+          <span className="h-4 w-4 rounded-full border border-text-primary/40" style={{ background: drawingColor }} />
         </button>
         {colorPopoverOpen && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setColorPopoverOpen(false)} />
-            <div className="absolute left-9 top-0 z-20 rounded-sm border border-border-default bg-bg-secondary p-2 shadow-modal">
+            <div className="absolute left-11 top-0 z-20 rounded-sm border border-border-default bg-bg-secondary p-2 shadow-modal">
               <ColorPicker value={drawingColor} onChange={setDrawingColor} />
             </div>
           </>
         )}
       </div>
 
-      <div className="my-1 h-px w-5 bg-border-default" />
+      <div className="h-px w-6 shrink-0 bg-border-default" />
 
       {/* Pin tool (keep armed after each drawing) */}
       <button
         onClick={() => setKeepToolActive(!keepToolActive)}
         title={keepToolActive ? t("keep_tool_on") : t("keep_tool_off")}
         className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-xs text-[13px] transition-colors",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs text-base transition-colors",
           keepToolActive ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
         )}
       >
@@ -115,13 +118,13 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
         disabled={!selectedDrawingId}
         title={t("delete_selected")}
         className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-xs transition-colors",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
           selectedDrawingId
             ? "text-text-muted hover:bg-bg-tertiary hover:text-danger"
             : "cursor-not-allowed text-text-muted/30"
         )}
       >
-        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" />
         </svg>
       </button>
@@ -132,7 +135,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
         disabled={count === 0}
         title={t("clear_all_count", { count })}
         className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-xs text-[10px] font-medium transition-colors",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs text-[11px] font-medium transition-colors",
           count > 0
             ? "text-text-muted hover:bg-bg-tertiary hover:text-danger"
             : "cursor-not-allowed text-text-muted/30"

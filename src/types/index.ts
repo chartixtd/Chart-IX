@@ -150,6 +150,41 @@ export interface ArticleCategory {
   sort_order: number;
 }
 
+// ==================== 社区帖子 ====================
+/** Public profile fields safe to show for another user's content — never email/tier/role. */
+export interface CommunityAuthor {
+  id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+export interface CommunityReactionCounts {
+  [emoji: string]: number;
+}
+
+export interface CommunityPost {
+  id: string;
+  author_id: string;
+  author: CommunityAuthor | null;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  comment_count: number;
+  reaction_counts: CommunityReactionCounts;
+  /** Emoji the current viewer has reacted with on this post, if any. */
+  viewer_reactions: string[];
+}
+
+export interface CommunityComment {
+  id: string;
+  post_id: string;
+  author_id: string;
+  author: CommunityAuthor | null;
+  content: string;
+  created_at: string;
+}
+
 // ==================== 行业资讯（外部新闻源） ====================
 export type NewsLang = "zh" | "en";
 

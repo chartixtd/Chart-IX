@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { CommunityFeed } from "@/components/community/CommunityFeed";
+import { cn } from "@/lib/utils";
 import type { Article, ArticleCategory, Locale } from "@/types";
 
 interface ArticlesClientProps {
@@ -34,8 +36,10 @@ export default function ArticlesClient({
 }: ArticlesClientProps) {
   const locale = useLocale() as Locale;
   const t = useTranslations("article");
+  const tCommunity = useTranslations("community");
   const searchParams = useSearchParams();
   const categoryParam = searchParams.get("category");
+  const [tab, setTab] = useState<"articles" | "community">("articles");
 
   const filtered = useMemo(() => {
     if (!categoryParam) return articles;
@@ -66,8 +70,32 @@ export default function ArticlesClient({
     <div className="mx-auto max-w-7xl px-4 py-12">
       <h1 className="text-3xl font-bold text-text-primary">{t("title")}</h1>
 
+      {/* Articles vs. user-posted Community — kept as separate tabs rather than
+          one merged feed, so curated multi-locale articles don't get buried
+          under single-locale user posts (or vice versa). */}
+      <div className="mt-6 flex gap-1 rounded-sm bg-bg-tertiary p-1 w-fit">
+        {(["articles", "community"] as const).map((key) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={cn(
+              "rounded-xs px-4 py-1.5 text-sm font-medium transition-colors",
+              tab === key ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            {key === "articles" ? t("title") : tCommunity("tab_label")}
+          </button>
+        ))}
+      </div>
+
+      {tab === "community" && (
+        <div className="mt-6">
+          <CommunityFeed />
+        </div>
+      )}
+
       {/* Category filter tabs */}
-      {visibleCategories.length > 0 && (
+      {tab === "articles" && visibleCategories.length > 0 && (
         <div className="mt-6 flex flex-wrap gap-2">
           <Link
             href={`/${locale}/articles`}
@@ -96,7 +124,7 @@ export default function ArticlesClient({
       )}
 
       {/* Articles grid */}
-      {filtered.length > 0 ? (
+      {tab === "articles" && (filtered.length > 0 ? (
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((article) => (
             <Link
@@ -184,7 +212,7 @@ export default function ArticlesClient({
             }
           />
         </div>
-      )}
+      ))}
     </div>
   );
 }

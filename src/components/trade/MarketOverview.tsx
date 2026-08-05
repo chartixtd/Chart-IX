@@ -218,11 +218,11 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
         </div>
       </div>
       {viewMode === "orderbook" ? (
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
           <OrderBook symbol={activeSymbol} onPriceClick={onOrderBookPriceClick} />
         </div>
       ) : (
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-1 px-3 pb-2 text-xs text-text-muted shrink-0">
             <span className="w-4" />
             <span>Symbol</span>
@@ -235,7 +235,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
             <div
               ref={setScrollEl}
               onScroll={handleScroll}
-              className="flex-1 overflow-y-auto custom-scrollbar"
+              className="min-h-0 flex-1 overflow-y-auto custom-scrollbar"
             >
               <div style={{ height: topPadding }} />
               {visibleRows.map((ticker, i) => (

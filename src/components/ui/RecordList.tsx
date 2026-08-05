@@ -53,48 +53,52 @@ export function RecordList<T>({ rows, columns, rowKey, empty, onRowClick }: Reco
         ))}
       </ul>
 
-      {/* 桌面：常规表格 */}
-      <table className="hidden w-full lg:table">
-        <thead>
-          <tr className="border-b border-border-default">
-            {columns.map((col) => (
-              <th
-                key={col.key}
-                className={cn(
-                  "px-3 py-2 text-xs font-normal text-text-muted",
-                  col.align === "right" ? "text-right" : "text-left"
-                )}
-              >
-                {col.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={rowKey(row)}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
-              className={cn(
-                "border-b border-border-default/60",
-                onRowClick && "cursor-pointer hover:bg-bg-tertiary"
-              )}
-            >
+      {/* 桌面：常规表格。列多的时候（比如 screener 的 12 列）表格实际宽度会超出容器，
+          必须包一层横向滚动，否则容器上的 overflow-hidden 会直接把超出部分裁掉，
+          连拖动条都不会出现——这里就是之前从纯 <table> 重构成 RecordList 时漏掉的那层。 */}
+      <div className="hidden lg:block overflow-x-auto custom-scrollbar">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border-default">
               {columns.map((col) => (
-                <td
+                <th
                   key={col.key}
                   className={cn(
-                    "px-3 py-2.5 text-sm text-text-secondary",
+                    "px-3 py-2 text-xs font-normal text-text-muted whitespace-nowrap",
                     col.align === "right" ? "text-right" : "text-left"
                   )}
                 >
-                  {col.render(row)}
-                </td>
+                  {col.header}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={rowKey(row)}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={cn(
+                  "border-b border-border-default/60",
+                  onRowClick && "cursor-pointer hover:bg-bg-tertiary"
+                )}
+              >
+                {columns.map((col) => (
+                  <td
+                    key={col.key}
+                    className={cn(
+                      "px-3 py-2.5 text-sm text-text-secondary",
+                      col.align === "right" ? "text-right" : "text-left"
+                    )}
+                  >
+                    {col.render(row)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }

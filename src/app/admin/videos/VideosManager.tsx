@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useMemo, useEffect } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
@@ -643,13 +644,17 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
             {/* Preview + button row */}
             <div className="flex items-center gap-3">
               {thumbnailUrl && (
-                <img
-                  src={thumbnailUrl}
-                  alt="thumbnail preview"
-                  className="h-16 w-28 rounded object-cover border border-border-default"
-                  referrerPolicy="no-referrer"
-                  crossOrigin="anonymous"
-                />
+                <div className="relative h-16 w-28">
+                  <Image
+                    src={thumbnailUrl}
+                    alt="thumbnail preview"
+                    fill
+                    className="rounded object-cover border border-border-default"
+                    sizes="112px"
+                    referrerPolicy="no-referrer"
+                    crossOrigin="anonymous"
+                  />
+                </div>
               )}
               <Button
                 variant="outline"

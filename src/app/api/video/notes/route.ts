@@ -25,12 +25,14 @@ export async function GET(request: NextRequest) {
       .order("timestamp_seconds", { ascending: true });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[video/notes GET]", error);
+      return NextResponse.json({ error: "Failed to load notes" }, { status: 500 });
     }
 
     return NextResponse.json({ data });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[video/notes GET]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }
 
@@ -63,12 +65,14 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[video/notes POST]", error);
+      return NextResponse.json({ error: "Failed to create note" }, { status: 500 });
     }
 
     return NextResponse.json({ data });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[video/notes POST]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }
 
@@ -108,12 +112,14 @@ export async function PUT(request: NextRequest) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[video/notes PUT]", error);
+      return NextResponse.json({ error: "Failed to update note" }, { status: 500 });
     }
 
     return NextResponse.json({ data });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[video/notes PUT]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }
 
@@ -148,11 +154,13 @@ export async function DELETE(request: NextRequest) {
     const { error } = await supabase.from("video_notes").delete().eq("id", id);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[video/notes DELETE]", error);
+      return NextResponse.json({ error: "Failed to delete note" }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[video/notes DELETE]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
@@ -84,8 +85,7 @@ export function PostComposerModal({
           <label className="mb-1.5 block text-xs font-medium text-text-secondary">{t("cover_image")}</label>
           {coverImage && (
             <div className="relative mb-2 h-32 w-full overflow-hidden rounded-sm border border-border-default">
-              {/* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, matches ArticlesManager's cover image preview */}
-              <img src={coverImage} alt="" className="h-full w-full object-cover" />
+              <Image src={coverImage} alt="" fill className="object-cover" sizes="100vw" />
               <button
                 type="button"
                 onClick={() => setCoverImage("")}

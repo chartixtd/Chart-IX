@@ -69,7 +69,8 @@ export async function POST(request: NextRequest) {
         allowedMimeTypes: ALLOWED_TYPES,
       });
       if (createErr) {
-        return NextResponse.json({ error: `Failed to create storage bucket: ${createErr.message}` }, { status: 500 });
+        console.error("[community/upload] createBucket", createErr);
+        return NextResponse.json({ error: "Failed to prepare storage" }, { status: 500 });
       }
     }
 
@@ -81,13 +82,15 @@ export async function POST(request: NextRequest) {
       .upload(filename, buffer, { contentType: file.type, upsert: false });
 
     if (uploadErr) {
-      return NextResponse.json({ error: `Upload failed: ${uploadErr.message}` }, { status: 500 });
+      console.error("[community/upload] upload", uploadErr);
+      return NextResponse.json({ error: "Upload failed" }, { status: 500 });
     }
 
     const { data: { publicUrl } } = client.storage.from(bucketName).getPublicUrl(filename);
 
     return NextResponse.json({ url: publicUrl });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Unexpected error" }, { status: 500 });
+    console.error("[community/upload]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }

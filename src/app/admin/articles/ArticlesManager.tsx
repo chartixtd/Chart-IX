@@ -1,18 +1,28 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
-import { useEditor, EditorContent, type Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Placeholder from "@tiptap/extension-placeholder";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
+import type { ArticleEditorsHandle } from "./ArticleEditors";
 import type { Article, ArticleCategory, Locale } from "@/types";
+
+// @tiptap/* is a ~130kB dependency that only this modal needs — split into
+// its own chunk instead of shipping it in the initial /admin/articles bundle.
+const ArticleEditors = dynamic(
+  () => import("./ArticleEditors").then((m) => m.ArticleEditors),
+  {
+    ssr: false,
+    loading: () => <div className="h-[240px] w-full animate-pulse rounded-sm bg-bg-tertiary" />,
+  }
+);
 
 interface ArticlesManagerProps {
   articles: Article[];
@@ -26,122 +36,6 @@ const LOCALE_LABELS: Record<Locale, string> = {
   "en-US": "English",
   "ms-MY": "Bahasa Melayu",
 };
-
-/* ────────── Toolbar button ────────── */
-function ToolbarBtn({
-  active,
-  onClick,
-  children,
-  title,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  title: string;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className={`rounded-sm px-1.5 py-1 text-xs font-medium transition-colors ${
-        active
-          ? "bg-gold/20 text-gold"
-          : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-/* ────────── TipTap Editor block ────────── */
-function TiptapEditorBlock({
-  editor,
-}: {
-  editor: Editor | null;
-}) {
-  if (!editor) return null;
-
-  return (
-    <div className="rounded-sm border border-border-default overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-border-default bg-bg-tertiary px-2 py-1.5">
-        <ToolbarBtn active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold">
-          <strong>B</strong>
-        </ToolbarBtn>
-        <ToolbarBtn active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic">
-          <em>I</em>
-        </ToolbarBtn>
-        <span className="mx-1 w-px self-stretch bg-border-default" />
-        <ToolbarBtn
-          active={editor.isActive("heading", { level: 2 })}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          title="Heading 2"
-        >
-          H2
-        </ToolbarBtn>
-        <ToolbarBtn
-          active={editor.isActive("heading", { level: 3 })}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          title="Heading 3"
-        >
-          H3
-        </ToolbarBtn>
-        <span className="mx-1 w-px self-stretch bg-border-default" />
-        <ToolbarBtn
-          active={editor.isActive("bulletList")}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          title="Bullet List"
-        >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="8" y1="6" x2="21" y2="6" />
-            <line x1="8" y1="12" x2="21" y2="12" />
-            <line x1="8" y1="18" x2="21" y2="18" />
-            <circle cx="4" cy="6" r="0.5" fill="currentColor" stroke="none" />
-            <circle cx="4" cy="12" r="0.5" fill="currentColor" stroke="none" />
-            <circle cx="4" cy="18" r="0.5" fill="currentColor" stroke="none" />
-          </svg>
-        </ToolbarBtn>
-        <ToolbarBtn
-          active={editor.isActive("orderedList")}
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          title="Ordered List"
-        >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="10" y1="6" x2="21" y2="6" />
-            <line x1="10" y1="12" x2="21" y2="12" />
-            <line x1="10" y1="18" x2="21" y2="18" />
-            <text x="3" y="9" fontSize="8" fill="currentColor" stroke="none">1</text>
-            <text x="3" y="15" fontSize="8" fill="currentColor" stroke="none">2</text>
-            <text x="3" y="21" fontSize="8" fill="currentColor" stroke="none">3</text>
-          </svg>
-        </ToolbarBtn>
-        <span className="mx-1 w-px self-stretch bg-border-default" />
-        <ToolbarBtn
-          active={editor.isActive("blockquote")}
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          title="Blockquote"
-        >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z" />
-          </svg>
-        </ToolbarBtn>
-        <ToolbarBtn
-          active={false}
-          onClick={() => editor.chain().focus().setHorizontalRule().run()}
-          title="Horizontal Rule"
-        >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="4" y1="12" x2="20" y2="12" />
-          </svg>
-        </ToolbarBtn>
-      </div>
-      {/* Editor content */}
-      <EditorContent editor={editor} />
-    </div>
-  );
-}
 
 /* ────────── Main Manager ────────── */
 export function ArticlesManager({ articles, categories }: ArticlesManagerProps) {
@@ -205,54 +99,10 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
   /* Auto-translate state */
   const [translating, setTranslating] = useState(false);
 
-  /* Three TipTap editors */
-  const editorZh = useEditor({
-    extensions: [
-      StarterKit,
-      Placeholder.configure({ placeholder: "Write something..." }),
-    ],
-    content: contentZhInitial,
-    editorProps: {
-      attributes: {
-        class:
-          "prose prose-invert prose-sm max-w-none min-h-[200px] px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50",
-      },
-    },
-  }, [editorKey]);
-
-  const editorEn = useEditor({
-    extensions: [
-      StarterKit,
-      Placeholder.configure({ placeholder: "Write something..." }),
-    ],
-    content: contentEnInitial,
-    editorProps: {
-      attributes: {
-        class:
-          "prose prose-invert prose-sm max-w-none min-h-[200px] px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50",
-      },
-    },
-  }, [editorKey]);
-
-  const editorMs = useEditor({
-    extensions: [
-      StarterKit,
-      Placeholder.configure({ placeholder: "Write something..." }),
-    ],
-    content: contentMsInitial,
-    editorProps: {
-      attributes: {
-        class:
-          "prose prose-invert prose-sm max-w-none min-h-[200px] px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50",
-      },
-    },
-  }, [editorKey]);
-
-  const editorMap: Record<Locale, Editor | null> = {
-    "zh-CN": editorZh,
-    "en-US": editorEn,
-    "ms-MY": editorMs,
-  };
+  /* The three TipTap editor instances live in the dynamically-imported
+     ArticleEditors component; this ref is how the rest of this component
+     reads/writes their content without importing @tiptap/* itself. */
+  const editorsRef = useRef<ArticleEditorsHandle>(null);
 
   /* ── Helpers ── */
   const getTitle = (article: Article): string => {
@@ -361,8 +211,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
           : sourceLocale === "en-US"
           ? titleEn
           : titleMs;
-      const sourceEditor = editorMap[sourceLocale];
-      const sourceHTML = sourceEditor?.getHTML();
+      const sourceHTML = editorsRef.current?.getHTML(sourceLocale);
 
       if (
         (!sourceTitle || !sourceTitle.trim()) &&
@@ -377,7 +226,6 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
       for (const target of targetLocales) {
         const targetTitle =
           target === "zh-CN" ? titleZh : target === "en-US" ? titleEn : titleMs;
-        const targetEditor = editorMap[target];
 
         // --- Translate title (plain text) ---
         if (sourceTitle?.trim() && !targetTitle?.trim()) {
@@ -402,7 +250,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
         if (!sourceHTML || sourceHTML === "<p></p>") continue;
 
         // Skip if target already has content
-        const targetHTML = targetEditor?.getHTML();
+        const targetHTML = editorsRef.current?.getHTML(target);
         if (targetHTML && targetHTML !== "<p></p>") continue;
 
         // Parse source HTML into a DOM tree
@@ -439,7 +287,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
 
         // Serialize back to HTML and set on target editor
         const translatedHTML = dom.body.innerHTML;
-        targetEditor?.commands.setContent(translatedHTML);
+        editorsRef.current?.setContent(target, translatedHTML);
       }
       toast("Translation complete", "success");
     } catch {
@@ -462,9 +310,9 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
     }
 
     const content: Record<string, string> = {};
-    const zhHtml = editorZh?.getHTML();
-    const enHtml = editorEn?.getHTML();
-    const msHtml = editorMs?.getHTML();
+    const zhHtml = editorsRef.current?.getHTML("zh-CN");
+    const enHtml = editorsRef.current?.getHTML("en-US");
+    const msHtml = editorsRef.current?.getHTML("ms-MY");
     if (zhHtml && zhHtml !== "<p></p>") content["zh-CN"] = zhHtml;
     if (enHtml && enHtml !== "<p></p>") content["en-US"] = enHtml;
     if (msHtml && msHtml !== "<p></p>") content["ms-MY"] = msHtml;
@@ -757,13 +605,14 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
             />
 
             {/* TipTap editors - only show active */}
-            <div key={editorKey}>
-              {LOCALES.map((loc) => (
-                <div key={loc} className={activeTab === loc ? "" : "hidden"}>
-                  <TiptapEditorBlock editor={editorMap[loc]} />
-                </div>
-              ))}
-            </div>
+            <ArticleEditors
+              handleRef={editorsRef}
+              activeTab={activeTab}
+              editorKey={editorKey}
+              contentZhInitial={contentZhInitial}
+              contentEnInitial={contentEnInitial}
+              contentMsInitial={contentMsInitial}
+            />
           </div>
 
           {/* Cover image: file upload with preview + URL fallback */}
@@ -784,11 +633,13 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
               )}
             </div>
             {coverImage && (
-              <div className="mt-2">
-                <img
+              <div className="relative mt-2 h-24 w-40">
+                <Image
                   src={coverImage}
                   alt="Cover preview"
-                  className="h-24 w-auto rounded-sm object-cover border border-border-default"
+                  fill
+                  className="rounded-sm object-cover border border-border-default"
+                  sizes="160px"
                 />
               </div>
             )}

@@ -346,8 +346,8 @@ export function LearningPathsManager({ paths, steps, videos }: LearningPathsMana
                 <div key={vid} className="flex items-center justify-between rounded-xs bg-bg-tertiary px-2 py-1.5 text-xs">
                   <span className="text-text-primary">{i + 1}. {getVideoTitle(videoById.get(vid))}</span>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => moveStep(i, -1)} disabled={i === 0} className="px-1 text-text-muted hover:text-text-primary disabled:opacity-30">↑</button>
-                    <button onClick={() => moveStep(i, 1)} disabled={i === form.videoIds.length - 1} className="px-1 text-text-muted hover:text-text-primary disabled:opacity-30">↓</button>
+                    <button onClick={() => moveStep(i, -1)} disabled={i === 0} className="px-1 text-text-muted hover:text-text-primary disabled:opacity-30" aria-label="上移">↑</button>
+                    <button onClick={() => moveStep(i, 1)} disabled={i === form.videoIds.length - 1} className="px-1 text-text-muted hover:text-text-primary disabled:opacity-30" aria-label="下移">↓</button>
                     <button onClick={() => removeStep(vid)} className="px-1 text-red-400 hover:text-red-300">移除</button>
                   </div>
                 </div>

@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + PAGE_SIZE - 1);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[community/posts GET]", error);
+      return NextResponse.json({ error: "Failed to load posts" }, { status: 500 });
     }
     if (!posts || posts.length === 0) {
       return NextResponse.json({ data: [], hasMore: false });
@@ -39,31 +40,33 @@ export async function GET(request: NextRequest) {
     const postIds = posts.map((p) => p.id);
     const authorIds = [...new Set(posts.map((p) => p.author_id))];
 
-    const [{ data: authors }, { data: reactions }, { data: comments }] = await Promise.all([
+    // 评论数与按表情分组的反应数由 033 迁移的 RPC 在 SQL 侧用 GROUP BY 聚合，
+    // 不再把整页帖子的评论/反应行整表拉回 Node 用 for 循环累加。
+    // viewer 自己的反应仍需要行级数据（具体是哪个表情），但只查这一个用户的，
+    // 行数远小于"这页所有帖子的全部反应"。
+    const [{ data: authors }, { data: stats }, { data: viewerReactions }] = await Promise.all([
       serviceClient.from("users").select("id, display_name, avatar_url").in("id", authorIds),
-      serviceClient.from("community_reactions").select("post_id, user_id, emoji").in("post_id", postIds),
-      serviceClient.from("community_comments").select("post_id").in("post_id", postIds),
+      serviceClient.rpc("get_community_post_stats", { p_post_ids: postIds }),
+      viewerId
+        ? serviceClient.from("community_reactions").select("post_id, emoji").eq("user_id", viewerId).in("post_id", postIds)
+        : Promise.resolve({ data: [] as { post_id: string; emoji: string }[] }),
     ]);
 
     const authorById = new Map<string, CommunityAuthor>((authors ?? []).map((a) => [a.id, a]));
 
-    const commentCountByPost = new Map<string, number>();
-    for (const c of comments ?? []) {
-      commentCountByPost.set(c.post_id, (commentCountByPost.get(c.post_id) ?? 0) + 1);
-    }
+    type PostStatsRow = { post_id: string; comment_count: number; reaction_counts: Record<string, number> };
+    const statsByPost = new Map<string, { comment_count: number; reaction_counts: Record<string, number> }>(
+      ((stats ?? []) as PostStatsRow[]).map((s) => [
+        s.post_id,
+        { comment_count: Number(s.comment_count), reaction_counts: s.reaction_counts ?? {} },
+      ])
+    );
 
-    const reactionCountsByPost = new Map<string, Record<string, number>>();
     const viewerReactionsByPost = new Map<string, string[]>();
-    for (const r of reactions ?? []) {
-      const counts = reactionCountsByPost.get(r.post_id) ?? {};
-      counts[r.emoji] = (counts[r.emoji] ?? 0) + 1;
-      reactionCountsByPost.set(r.post_id, counts);
-
-      if (viewerId && r.user_id === viewerId) {
-        const mine = viewerReactionsByPost.get(r.post_id) ?? [];
-        mine.push(r.emoji);
-        viewerReactionsByPost.set(r.post_id, mine);
-      }
+    for (const r of viewerReactions ?? []) {
+      const mine = viewerReactionsByPost.get(r.post_id) ?? [];
+      mine.push(r.emoji);
+      viewerReactionsByPost.set(r.post_id, mine);
     }
 
     const data: CommunityPost[] = posts.map((p) => ({
@@ -75,14 +78,15 @@ export async function GET(request: NextRequest) {
       cover_image: p.cover_image,
       created_at: p.created_at,
       updated_at: p.updated_at,
-      comment_count: commentCountByPost.get(p.id) ?? 0,
-      reaction_counts: reactionCountsByPost.get(p.id) ?? {},
+      comment_count: statsByPost.get(p.id)?.comment_count ?? 0,
+      reaction_counts: statsByPost.get(p.id)?.reaction_counts ?? {},
       viewer_reactions: viewerReactionsByPost.get(p.id) ?? [],
     }));
 
     return NextResponse.json({ data, hasMore: posts.length === PAGE_SIZE });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[community/posts GET]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }
 
@@ -123,7 +127,8 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[community/posts POST]", error);
+      return NextResponse.json({ error: "Failed to create post" }, { status: 500 });
     }
 
     const post: CommunityPost = {
@@ -136,6 +141,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: post });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[community/posts POST]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }

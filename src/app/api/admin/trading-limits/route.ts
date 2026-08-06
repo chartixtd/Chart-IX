@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/supabase/admin-auth";
-import { createServiceClient } from "@/lib/supabase/service";
+import { createServiceRoleClient } from "@/lib/supabase/middleware";
 
 const SELECT_COLS =
   "id, user_id, max_notional_per_order, max_orders_per_day, max_leverage, allowed_symbols, updated_at";
@@ -27,7 +27,7 @@ export async function GET() {
     const auth = await requireAdmin();
     if ("error" in auth) return auth.error;
 
-    const client = await createServiceClient();
+    const client = createServiceRoleClient();
     const { data, error } = await client
       .from("trading_limits")
       .select(SELECT_COLS)
@@ -83,7 +83,7 @@ export async function PUT(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    const client = await createServiceClient();
+    const client = createServiceRoleClient();
 
     const existingQuery = client.from("trading_limits").select("id");
     const { data: existingRows, error: findError } = normalizedUserId
@@ -127,7 +127,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const client = await createServiceClient();
+    const client = createServiceRoleClient();
     const { data, error } = await client.from("trading_limits").delete().eq("id", id).select("id");
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

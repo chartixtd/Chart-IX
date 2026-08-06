@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import {
   useSpotOpenOrders, useSpotMyTrades, useSpotBalances,
-  type SpotOpenOrder, type SpotTradeRecord,
+  type SpotOpenOrder,
 } from "@/hooks/useTradingAccount";
 import { useUserDataStream } from "@/hooks/useUserDataStream";
 import { useAuth } from "@/components/auth/AuthProvider";

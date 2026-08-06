@@ -6,7 +6,7 @@
  * 内存实现只能拦住打到同一实例的请求，不是完整防护；真正的护栏始终是
  * src/lib/trading/limits.ts 的服务端限额校验（每日单数、单笔金额上限等）。
  */
-import { createServiceClient } from "@/lib/supabase/service";
+import { createServiceRoleClient } from "@/lib/supabase/middleware";
 
 const hits = new Map<string, number[]>();
 
@@ -43,7 +43,7 @@ export async function checkRateLimit(
   now: number = Date.now()
 ): Promise<{ ok: boolean; retryAfterMs: number }> {
   try {
-    const supabase = await createServiceClient();
+    const supabase = createServiceRoleClient();
     const { data, error } = await supabase
       .rpc("rpc_check_rate_limit", {
         p_key: key,

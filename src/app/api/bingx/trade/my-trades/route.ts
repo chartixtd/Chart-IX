@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
 import { getMyTrades } from "@/lib/bingx/trade";
+import { describeBingXError } from "@/lib/trading/errors";
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,6 +30,11 @@ export async function GET(request: NextRequest) {
     const data = await getMyTrades(apiKey, secret, { symbol, limit });
     return NextResponse.json({ success: true, data });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
+    console.error("[bingx/trade/my-trades]", error);
+    const described = describeBingXError(error);
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
   }
 }

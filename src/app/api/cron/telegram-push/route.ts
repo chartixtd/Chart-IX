@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     // Non-2xx so the failure is visible in Vercel's cron invocation logs —
     // Vercel Cron doesn't retry on failure, so there's no retry-storm risk here.
-    return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
+    console.error("[cron/telegram-push]", error);
+    return NextResponse.json({ success: false, error: "Screener push failed" }, { status: 500 });
   }
 }

@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSpotTrades } from "@/lib/bingx/market";
+import {
+  checkMarketRateLimit, rateLimitedResponse,
+  clampLimit, isValidSymbol, invalidSymbolResponse,
+  withMarketCache,
+} from "@/lib/bingx/market-guard";
 
 export async function GET(request: NextRequest) {
+  if (!checkMarketRateLimit(request)) return rateLimitedResponse();
+
   try {
     const { searchParams } = request.nextUrl;
     const symbol = searchParams.get("symbol");
-    const limit = parseInt(searchParams.get("limit") || "20");
+    const limit = clampLimit(searchParams.get("limit"), 20, 200);
 
     if (!symbol) {
       return NextResponse.json(
@@ -13,12 +20,15 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (!isValidSymbol(symbol)) return invalidSymbolResponse();
 
     const data = await getSpotTrades(symbol, limit);
-    return NextResponse.json({ success: true, data });
+    // Client polls every 3s (see useRecentTrades).
+    return withMarketCache({ success: true, data }, 2, 5);
   } catch (error) {
+    console.error("[bingx/market/trades]", error);
     return NextResponse.json(
-      { success: false, error: { code: "BINGX_API_ERROR", message: String(error) } },
+      { success: false, error: { code: "BINGX_API_ERROR", message: "Failed to fetch recent trades" } },
       { status: 502 }
     );
   }

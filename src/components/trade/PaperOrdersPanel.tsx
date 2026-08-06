@@ -288,6 +288,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
                       <button
                         onClick={() => setEditing(null)}
                         className="text-xs text-text-muted hover:text-text-primary"
+                        aria-label="Cancel"
                       >
                         ×
                       </button>

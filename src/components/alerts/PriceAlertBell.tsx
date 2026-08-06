@@ -51,6 +51,7 @@ export function PriceAlertBell() {
                   <button
                     onClick={() => removeAlert(a.id)}
                     className="text-text-muted hover:text-danger"
+                    aria-label="删除提醒"
                   >
                     ✕
                   </button>

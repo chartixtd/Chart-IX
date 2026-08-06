@@ -207,7 +207,7 @@ export function QuizzesManager({ videos, quizzes, questions }: QuizzesManagerPro
       </div>
       {videos.length === 0 && (
         <p className="mt-4 text-center text-text-muted">
-          还没有视频，请先去"视频管理"上传视频，再回来给视频挂小测。
+          还没有视频，请先去&ldquo;视频管理&rdquo;上传视频，再回来给视频挂小测。
         </p>
       )}
 
@@ -251,7 +251,7 @@ export function QuizzesManager({ videos, quizzes, questions }: QuizzesManagerPro
                         className="flex-1"
                       />
                       {q.options.length > 2 && (
-                        <button onClick={() => removeOption(i, oi)} className="text-xs text-red-400 hover:text-red-300">✕</button>
+                        <button onClick={() => removeOption(i, oi)} className="text-xs text-red-400 hover:text-red-300" aria-label="删除选项">✕</button>
                       )}
                     </div>
                   ))}

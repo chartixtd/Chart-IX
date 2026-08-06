@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useLocale, useTranslations } from "next-intl";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -95,10 +96,19 @@ export default function NewsClient({ initialItems, fetchError: initialError, lan
                 {/* Cover image */}
                 <div className="relative aspect-video bg-bg-tertiary">
                   {item.imageUrl ? (
-                    <img
+                    // unoptimized: images come from arbitrary third-party news
+                    // sources, not a fixed set of allowlisted hosts — Next's
+                    // optimizer requires each remote host to be explicitly
+                    // configured in next.config.mjs, which isn't practical for
+                    // an aggregated feed. Still gets Image's built-in layout/
+                    // CLS handling, just skips the optimization proxy.
+                    <Image
                       src={item.imageUrl}
                       alt={item.title}
-                      className="h-full w-full object-cover"
+                      fill
+                      unoptimized
+                      className="object-cover"
+                      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                       loading="lazy"
                     />
                   ) : (

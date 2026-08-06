@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useComments, useCreateComment, useDeleteCommunityComment } from "@/hooks/useCommunity";
 
@@ -34,6 +35,7 @@ export function CommentThread({ postId }: { postId: string }) {
   const deleteComment = useDeleteCommunityComment(postId);
   const [content, setContent] = useState("");
   const [rateLimitMsg, setRateLimitMsg] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const isPro = auth.tier === "pro";
   const isAdmin = auth.role === "admin";
@@ -75,9 +77,7 @@ export function CommentThread({ postId }: { postId: string }) {
             </div>
             {isAdmin && (
               <button
-                onClick={() => {
-                  if (window.confirm(t("confirm_delete"))) deleteComment.mutate(comment.id);
-                }}
+                onClick={() => setConfirmDeleteId(comment.id)}
                 className="shrink-0 text-text-muted hover:text-danger"
               >
                 {t("delete")}
@@ -116,6 +116,20 @@ export function CommentThread({ postId }: { postId: string }) {
       )}
 
       {rateLimitMsg && <p className="text-xs text-danger">{rateLimitMsg}</p>}
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onClose={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          if (confirmDeleteId) {
+            deleteComment.mutate(confirmDeleteId, { onSuccess: () => setConfirmDeleteId(null) });
+          }
+        }}
+        title={t("delete")}
+        message={t("confirm_delete")}
+        confirmText={t("delete")}
+        loading={deleteComment.isPending}
+      />
     </div>
   );
 }

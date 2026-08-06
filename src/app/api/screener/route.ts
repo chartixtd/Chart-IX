@@ -9,8 +9,9 @@ export async function GET() {
     const data = await getScreenerPayload();
     return NextResponse.json({ success: true, data });
   } catch (error) {
+    console.error("[screener]", error);
     return NextResponse.json(
-      { success: false, error: { code: "SCREENER_UNAVAILABLE", message: String(error) } },
+      { success: false, error: { code: "SCREENER_UNAVAILABLE", message: "Screener data unavailable" } },
       { status: 502 }
     );
   }

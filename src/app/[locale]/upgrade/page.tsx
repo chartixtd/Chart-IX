@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useTranslations, useLocale } from "next-intl";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
@@ -19,7 +19,6 @@ interface PricingPlan {
 
 export default function UpgradePage() {
   const t = useTranslations("upgrade");
-  const locale = useLocale();
   const auth = useAuth();
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [telegramUrl, setTelegramUrl] = useState<string | null>(null);

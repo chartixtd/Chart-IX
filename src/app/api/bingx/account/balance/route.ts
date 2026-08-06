@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
 import { getBalance } from "@/lib/bingx/trade";
+import { describeBingXError } from "@/lib/trading/errors";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const supabase = await createClient();
     const { data: authData } = await supabase.auth.getUser();
@@ -28,8 +29,10 @@ export async function GET(request: NextRequest) {
     const data = await getBalance(apiKey, secret);
     return NextResponse.json({ success: true, data });
   } catch (error) {
+    console.error("[bingx/account/balance]", error);
+    const described = describeBingXError(error);
     return NextResponse.json(
-      { success: false, error: { message: String(error) } },
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
       { status: 502 }
     );
   }

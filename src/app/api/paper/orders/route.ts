@@ -33,11 +33,13 @@ export async function GET(request: NextRequest) {
 
     const { data: orders, error } = await query;
     if (error) {
-      return NextResponse.json({ success: false, error: { message: error.message } }, { status: 500 });
+      console.error("[paper/orders]", error);
+      return NextResponse.json({ success: false, error: { message: "Failed to load orders" } }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data: (orders as PaperOrder[]) ?? [] });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 500 });
+    console.error("[paper/orders]", error);
+    return NextResponse.json({ success: false, error: { message: "Unexpected error" } }, { status: 500 });
   }
 }

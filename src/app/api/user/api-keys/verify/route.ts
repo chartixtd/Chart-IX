@@ -30,8 +30,9 @@ export async function POST(request: NextRequest) {
       data: { spotOk, futuresOk, isValid: spotOk || futuresOk },
     });
   } catch (error) {
+    console.error("[user/api-keys/verify]", error);
     return NextResponse.json(
-      { success: false, error: { message: String(error) } },
+      { success: false, error: { message: "Verification failed" } },
       { status: 502 }
     );
   }

@@ -1,6 +1,8 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/middleware";
+import { buildLanguageAlternates } from "@/lib/seo";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import type { LearningPath } from "@/types";
@@ -12,20 +14,37 @@ const LEVEL_VARIANT: Record<string, "gold" | "blue" | "orange"> = {
   advanced: "orange",
 };
 
+// Public catalog data (same is_published-filtered read as sitemap.ts) — no
+// per-user auth check here, so this doesn't need the cookie-bound server
+// client. Using the plain service-role client instead keeps this page free
+// of Next's dynamic-API opt-out, so `revalidate` below actually applies.
+export const revalidate = 300;
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: "learn" });
+  return { title: t("hub_title"), alternates: { languages: buildLanguageAlternates("/learn") } };
+}
+
 export default async function LearnPage({
   params,
 }: {
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const supabase = await createClient();
+  const supabase = createServiceRoleClient();
 
   const [{ data: paths }, { data: steps }] = await Promise.all([
     supabase
       .from("learning_paths")
       .select("*")
       .eq("is_published", true)
-      .order("sort_order", { ascending: true }),
+      .order("sort_order", { ascending: true })
+      .limit(100),
     supabase.from("learning_path_steps").select("path_id"),
   ]);
 

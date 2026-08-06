@@ -24,6 +24,7 @@ export function AdminLocaleProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const loc = getLocaleFromCookie();
     setLocale(loc);
+    document.documentElement.lang = loc;
     // Dynamic import of the locale messages (client-side, no server cookies needed)
     import(`@/i18n/messages/${loc}.json`).then((mod) => {
       setMessages(mod.default);

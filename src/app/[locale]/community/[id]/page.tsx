@@ -1,11 +1,13 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Card } from "@/components/ui/Card";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/lib/utils";
 import { usePost, useToggleReaction, useUpdatePost, useDeleteCommunityPost } from "@/hooks/useCommunity";
@@ -27,6 +29,7 @@ export default function CommunityPostPage() {
   const updatePost = useUpdatePost(postId);
   const deletePost = useDeleteCommunityPost();
   const [editOpen, setEditOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const isAuthor = post ? auth.userId === post.author_id : false;
   const isAdmin = auth.role === "admin";
@@ -55,8 +58,11 @@ export default function CommunityPostPage() {
       {post && (
         <Card className="overflow-hidden" padding="none">
           {post.cover_image && (
-            // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL
-            <img src={post.cover_image} alt="" className="max-h-96 w-full border-b border-border-default object-cover" />
+            // Fixed height (was max-h-96 on the plain <img>) so the fill-based
+            // Image below has a definite box to fill.
+            <div className="relative h-96 w-full border-b border-border-default">
+              <Image src={post.cover_image} alt="" fill className="object-cover" sizes="(min-width: 768px) 768px, 100vw" />
+            </div>
           )}
 
           <div className="p-5">
@@ -76,9 +82,7 @@ export default function CommunityPostPage() {
                 )}
                 {isAdmin && (
                   <button
-                    onClick={() => {
-                      if (window.confirm(t("confirm_delete"))) deletePost.mutate(post.id);
-                    }}
+                    onClick={() => setConfirmDeleteOpen(true)}
                     disabled={deletePost.isPending}
                     className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
                   >
@@ -131,6 +135,20 @@ export default function CommunityPostPage() {
           }}
           submitting={updatePost.isPending}
           error={updatePost.error?.message ?? null}
+        />
+      )}
+
+      {post && (
+        <ConfirmDialog
+          open={confirmDeleteOpen}
+          onClose={() => setConfirmDeleteOpen(false)}
+          onConfirm={() => {
+            deletePost.mutate(post.id, { onSuccess: () => setConfirmDeleteOpen(false) });
+          }}
+          title={t("delete")}
+          message={t("confirm_delete")}
+          confirmText={t("delete")}
+          loading={deletePost.isPending}
         />
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslations } from "next-intl";
-import type { IChartApi, ISeriesApi, Logical, UTCTimestamp } from "lightweight-charts";
+import type { IChartApi, ISeriesApi, Logical } from "lightweight-charts";
 import {
   useChartStore,
   type Drawing,

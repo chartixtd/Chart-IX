@@ -31,8 +31,9 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json({ success: true, data: spec });
   } catch (error) {
+    console.error("[trading/spec]", error);
     return NextResponse.json(
-      { success: false, error: { message: String(error) } },
+      { success: false, error: { message: "Failed to load symbol spec" } },
       { status: 502 }
     );
   }

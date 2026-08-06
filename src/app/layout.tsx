@@ -55,6 +55,15 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // This layout sits above the [locale] segment and has no `params.locale`
+  // of its own. Reading the resolved locale here via headers()/cookies() was
+  // considered, but a dynamic API in the root layout forces every route in
+  // the app into dynamic rendering (undoing the ISR added to the articles/
+  // videos/learn pages, and the static admin/marketing pages) — for a single
+  // non-visual attribute that's the wrong trade. Correct `lang` is set
+  // client-side instead, in ClientLocaleLayout/AdminLocaleProvider, which
+  // also handles it staying correct when the language switcher does a
+  // client-side navigation between locales without a full page reload.
   return (
     <html
       lang="en"
@@ -64,18 +73,38 @@ export default function RootLayout({
       <head>
         {/* CJK fonts (Noto Sans/Serif SC) aren't offered as latin-only subsets by next/font,
             so they stay on Google's CDN to keep full Chinese glyph coverage; Inter/JetBrains
-            Mono/Marcellus are self-hosted above via next/font. */}
+            Mono/Marcellus are self-hosted above via next/font.
+
+            Loaded as non-render-blocking: media="print" makes the browser fetch it at low
+            priority without gating First Paint on a round trip to Google's CDN, then the
+            inline script below flips it to media="all" as soon as it's loaded. This has to
+            be a raw <script> rather than React's onLoad prop — the stylesheet can finish
+            loading before hydration attaches any React event listener, and by then the
+            load event has already fired and would be missed. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          rel="preload"
-          as="style"
-          href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
-        />
-        <link
+          id="noto-sc-stylesheet"
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
+          media="print"
+          // The inline script below can flip this to media="all" in the live DOM
+          // before React hydrates, which would otherwise read as a hydration
+          // mismatch — it's expected, not a bug.
+          suppressHydrationWarning
         />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "document.getElementById('noto-sc-stylesheet').addEventListener('load',function(){this.media='all';});",
+          }}
+        />
+        <noscript>
+          <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
+          />
+        </noscript>
         <meta name="view-transition" content="same-origin" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
         {/* iOS 启动图：只覆盖主流 iPhone 尺寸，其余机型冷启动会短暂白屏 */}

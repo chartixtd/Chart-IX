@@ -74,6 +74,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     // 带上 BingX 错误码与 i18nKey：只回 String(error) 时前端和日志都看不出
     // 到底是签名、权限还是限流，排查只能靠猜（与 POST 分支保持一致）
+    console.error("[bingx/futures/positions GET]", error);
     const described = describeBingXError(error);
     return NextResponse.json(
       { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
@@ -410,6 +411,11 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
+    console.error("[bingx/futures/positions POST]", error);
+    const described = describeBingXError(error);
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
   }
 }

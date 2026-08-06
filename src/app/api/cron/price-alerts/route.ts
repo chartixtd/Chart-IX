@@ -50,8 +50,9 @@ export async function GET(request: NextRequest) {
     .is("triggered_at", null);
 
   if (error) {
+    console.error("[cron/price-alerts]", error);
     await beat(supabase, "error");
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load pending alerts" }, { status: 500 });
   }
 
   const pending: PendingAlert[] = (pendingRows ?? []).map((r) => {

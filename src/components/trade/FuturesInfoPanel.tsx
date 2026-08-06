@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { Spinner } from "@/components/ui/Spinner";
@@ -47,11 +47,15 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
 
   const [tab, setTab] = useState<Tab>("positions");
 
-  function refetchAll() {
+  // useCallback so the row-action handlers below (which depend on this) can
+  // themselves be stable across renders — otherwise every FuturesInfoPanel
+  // re-render (driven by the positions/orders polling) would hand each
+  // FuturesPositionRow a fresh callback identity, defeating that row's memo().
+  const refetchAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["trading", "futures-positions"] });
     queryClient.invalidateQueries({ queryKey: ["trading", "futures-open-orders"] });
     queryClient.invalidateQueries({ queryKey: ["trading", "futures-balance"] });
-  }
+  }, [queryClient]);
 
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -113,7 +117,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     refetchAll();
   };
 
-  const handleClose = async (position: FuturesPosition) => {
+  const handleClose = useCallback(async (position: FuturesPosition) => {
     setLastActionError(null);
     try {
       const json = await postJson("/api/bingx/futures/positions", {
@@ -132,9 +136,9 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     } finally {
       refetchAll();
     }
-  };
+  }, [t, refetchAll]);
 
-  const handleReduceOnlyClose = async (position: FuturesPosition, percent: number) => {
+  const handleReduceOnlyClose = useCallback(async (position: FuturesPosition, percent: number) => {
     setLastActionError(null);
     try {
       const json = await postJson("/api/bingx/futures/positions", {
@@ -154,9 +158,9 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     } finally {
       refetchAll();
     }
-  };
+  }, [t, refetchAll]);
 
-  const handleReverse = async (position: FuturesPosition) => {
+  const handleReverse = useCallback(async (position: FuturesPosition) => {
     setLastActionError(null);
     try {
       const json = await postJson("/api/bingx/futures/positions", {
@@ -178,9 +182,9 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
     } finally {
       refetchAll();
     }
-  };
+  }, [t, refetchAll]);
 
-  const handleSaveTpSl = async (position: FuturesPosition, tp: string, sl: string, cancelTp?: boolean, cancelSl?: boolean) => {
+  const handleSaveTpSl = useCallback(async (position: FuturesPosition, tp: string, sl: string, cancelTp?: boolean, cancelSl?: boolean) => {
     setLastActionError(null);
     try {
       const json = await postJson("/api/bingx/futures/positions", {
@@ -200,7 +204,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
       setLastActionError(message);
       return { ok: false, message };
     }
-  };
+  }, [t, refetchAll]);
 
   if (loading) {
     return <div className="flex items-center justify-center py-8"><Spinner className="h-5 w-5" /></div>;
@@ -309,6 +313,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                       <button
                         onClick={() => setEditing(null)}
                         className="text-text-muted hover:text-text-primary"
+                        aria-label="Cancel"
                       >
                         ×
                       </button>

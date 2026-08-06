@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { routing } from "@/i18n/routing";
 import { getServerAuth } from "@/lib/supabase/get-auth";
+import { buildLanguageAlternates } from "@/lib/seo";
 import { ClientLocaleLayout } from "./ClientLocaleLayout";
 
 export async function generateMetadata({
@@ -23,6 +24,11 @@ export async function generateMetadata({
       title: "Chart-IX",
       statusBarStyle: "black-translucent",
     },
+    // Fallback for every page that doesn't set its own more specific
+    // `alternates` (e.g. articles/[slug] pointing at the same slug in each
+    // locale) — Next merges metadata shallowly per top-level key, so a page
+    // that does set `alternates` fully overrides this rather than merging.
+    alternates: { languages: buildLanguageAlternates("") },
     openGraph: { title: fullTitle, description: t("description") },
     twitter: { title: fullTitle, description: t("description") },
   };

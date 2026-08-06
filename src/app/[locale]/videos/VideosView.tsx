@@ -1,7 +1,9 @@
 "use client";
 
 import { useLocale, useTranslations } from "next-intl";
+import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -17,16 +19,19 @@ export function VideosView({
   videos,
   videosError,
   categories,
-  categoryParam,
 }: {
   videos: Video[];
   videosError: string | null;
   categories: VideoCategory[];
-  categoryParam: string | null;
 }) {
   const locale = useLocale() as Locale;
   const t = useTranslations("video.list");
   const tc = useTranslations("video.card");
+  // Read client-side rather than as a server prop — the video list itself
+  // isn't filtered server-side by category (see `filtered` below), so this
+  // was the only thing forcing the server page to read `searchParams` and
+  // opt out of static rendering.
+  const categoryParam = useSearchParams().get("category");
 
   if (videosError) {
     return (
@@ -91,12 +96,13 @@ export function VideosView({
               <Card hover padding="none" className="overflow-hidden">
                 <div className="relative aspect-video bg-bg-tertiary">
                   {video.thumbnail_url ? (
-                    <img
+                    <Image
                       src={video.thumbnail_url}
                       alt={video.title[locale] ?? ""}
-                      className="h-full w-full object-cover"
+                      fill
+                      className="object-cover"
+                      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                       loading="lazy"
-                      decoding="async"
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-text-muted">

@@ -59,7 +59,10 @@ export async function POST(request: NextRequest) {
     { onConflict: "endpoint" }
   );
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[push/subscribe]", error);
+    return NextResponse.json({ error: "Failed to save subscription" }, { status: 500 });
+  }
 
   // 确保每个订阅者从订阅那一刻起就有一行显式的通知偏好，默认值与
   // 026 迁移的列默认值保持一致（price_alerts/new_content 默认开，screener 默认关）。

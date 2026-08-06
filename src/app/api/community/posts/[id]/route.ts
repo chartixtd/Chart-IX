@@ -27,30 +27,30 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const [{ data: author }, { data: reactions }, { data: comments }] = await Promise.all([
+    // 评论数/表情统计走 033 迁移的 SQL 侧 GROUP BY 聚合（同列表接口）；
+    // viewer 自己的反应只查这一个用户在这一篇帖子下的行，不用整表拉回。
+    const [{ data: author }, { data: stats }, { data: viewerReactions }] = await Promise.all([
       serviceClient.from("users").select("id, display_name, avatar_url").eq("id", post.author_id).single(),
-      serviceClient.from("community_reactions").select("user_id, emoji").eq("post_id", id),
-      serviceClient.from("community_comments").select("id").eq("post_id", id),
+      serviceClient.rpc("get_community_post_stats", { p_post_ids: [id] }),
+      viewerId
+        ? serviceClient.from("community_reactions").select("emoji").eq("post_id", id).eq("user_id", viewerId)
+        : Promise.resolve({ data: [] as { emoji: string }[] }),
     ]);
 
-    const reactionCounts: Record<string, number> = {};
-    const viewerReactions: string[] = [];
-    for (const r of reactions ?? []) {
-      reactionCounts[r.emoji] = (reactionCounts[r.emoji] ?? 0) + 1;
-      if (viewerId && r.user_id === viewerId) viewerReactions.push(r.emoji);
-    }
+    const stat = stats?.[0];
 
     const data: CommunityPost = {
       ...post,
       author: (author as CommunityAuthor) ?? null,
-      comment_count: comments?.length ?? 0,
-      reaction_counts: reactionCounts,
-      viewer_reactions: viewerReactions,
+      comment_count: stat ? Number(stat.comment_count) : 0,
+      reaction_counts: (stat?.reaction_counts as Record<string, number>) ?? {},
+      viewer_reactions: (viewerReactions ?? []).map((r) => r.emoji),
     };
 
     return NextResponse.json({ data });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[community/posts/:id GET]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }
 
@@ -99,11 +99,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[community/posts/:id PATCH]", error);
+      return NextResponse.json({ error: "Failed to update post" }, { status: 500 });
     }
 
     return NextResponse.json({ data });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[community/posts/:id PATCH]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }

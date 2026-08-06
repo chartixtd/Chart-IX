@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSpotKlines, getFuturesKlines } from "@/lib/bingx/market";
+import {
+  checkMarketRateLimit, rateLimitedResponse,
+  clampLimit, isValidSymbol, invalidSymbolResponse,
+  isValidInterval, invalidIntervalResponse,
+  withMarketCache,
+} from "@/lib/bingx/market-guard";
 
 export async function GET(request: NextRequest) {
+  if (!checkMarketRateLimit(request)) return rateLimitedResponse();
+
   try {
     const { searchParams } = request.nextUrl;
     const symbol = searchParams.get("symbol");
     const interval = searchParams.get("interval") || "1h";
-    const limit = parseInt(searchParams.get("limit") || "100");
+    // BingX's own documented cap is 500/request; useKlineHistory pages at 300.
+    const limit = clampLimit(searchParams.get("limit"), 100, 500);
     const market = searchParams.get("market") || "spot";
     const startTimeParam = searchParams.get("startTime");
     const endTimeParam = searchParams.get("endTime");
@@ -19,17 +28,22 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (!isValidSymbol(symbol)) return invalidSymbolResponse();
+    if (!isValidInterval(interval)) return invalidIntervalResponse();
 
+    // Client polls every 10s for the live tail (see useKlines); history pages
+    // are one-shot backfill requests so the short cache window doesn't hurt them.
     if (market === "futures") {
       const data = await getFuturesKlines(symbol, interval, limit, startTime, endTime);
-      return NextResponse.json({ success: true, data });
+      return withMarketCache({ success: true, data }, 5, 15);
     }
 
     const data = await getSpotKlines(symbol, interval, limit, startTime, endTime);
-    return NextResponse.json({ success: true, data });
+    return withMarketCache({ success: true, data }, 5, 15);
   } catch (error) {
+    console.error("[bingx/market/klines]", error);
     return NextResponse.json(
-      { success: false, error: { code: "BINGX_API_ERROR", message: String(error) } },
+      { success: false, error: { code: "BINGX_API_ERROR", message: "Failed to fetch klines" } },
       { status: 502 }
     );
   }

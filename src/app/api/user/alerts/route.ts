@@ -49,7 +49,10 @@ export async function POST(request: NextRequest) {
         direction: a.direction,
       }))
     );
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      console.error("[user/alerts] migrate", error);
+      return NextResponse.json({ error: "Failed to migrate alerts" }, { status: 500 });
+    }
     return NextResponse.json({ migrated: parsed.data.length });
   }
 
@@ -67,7 +70,10 @@ export async function POST(request: NextRequest) {
     .select("id")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[user/alerts] create", error);
+    return NextResponse.json({ error: "Failed to create alert" }, { status: 500 });
+  }
   return NextResponse.json({ id: (data as { id: string }).id });
 }
 

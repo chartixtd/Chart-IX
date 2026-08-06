@@ -2,7 +2,7 @@
 
 import { NextIntlClientProvider } from "next-intl";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { AuthProvider, type AuthState } from "@/components/auth/AuthProvider";
 import { ZoomGuard } from "@/components/pwa/ZoomGuard";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
@@ -34,6 +34,15 @@ export function ClientLocaleLayout({
   // 纯粹是滚动过图表/持仓面板之后的死区，只在非 /trade 页面显示
   const pathname = usePathname();
   const isTradePage = pathname === `/${locale}/trade` || pathname?.startsWith(`/${locale}/trade/`);
+
+  // The root layout (src/app/layout.tsx) can't know the locale — it's above
+  // the [locale] segment and reading it there would force the whole app into
+  // dynamic rendering. Setting it here also keeps it correct when the
+  // language switcher does a client-side navigation between locales, which
+  // doesn't re-run the root layout.
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>

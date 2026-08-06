@@ -91,16 +91,18 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertError) {
+      console.error("[user/api-keys POST]", insertError);
       return NextResponse.json(
-        { success: false, error: { message: insertError.message } },
+        { success: false, error: { message: "Failed to save API key" } },
         { status: 500 }
       );
     }
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
+    console.error("[user/api-keys POST]", error);
     return NextResponse.json(
-      { success: false, error: { message: String(error) } },
+      { success: false, error: { message: "Unexpected error" } },
       { status: 502 }
     );
   }
@@ -127,8 +129,9 @@ export async function DELETE(request: NextRequest) {
       .eq("user_id", authData.user.id);
 
     if (deleteError) {
+      console.error("[user/api-keys DELETE]", deleteError);
       return NextResponse.json(
-        { success: false, error: { message: deleteError.message } },
+        { success: false, error: { message: "Failed to delete API key" } },
         { status: 500 }
       );
     }
@@ -138,8 +141,9 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    console.error("[user/api-keys DELETE]", error);
     return NextResponse.json(
-      { success: false, error: { message: String(error) } },
+      { success: false, error: { message: "Unexpected error" } },
       { status: 502 }
     );
   }
@@ -187,7 +191,8 @@ export async function PATCH(request: NextRequest) {
       const { error } = await supabase
         .from("api_keys").update({ is_primary: true }).eq("id", id).eq("user_id", userId);
       if (error) {
-        return NextResponse.json({ success: false, error: { message: error.message } }, { status: 500 });
+        console.error("[user/api-keys PATCH setPrimary]", error);
+        return NextResponse.json({ success: false, error: { message: "Failed to set primary key" } }, { status: 500 });
       }
       return NextResponse.json({ success: true });
     }
@@ -225,7 +230,8 @@ export async function PATCH(request: NextRequest) {
         .single();
 
       if (error) {
-        return NextResponse.json({ success: false, error: { message: error.message } }, { status: 500 });
+        console.error("[user/api-keys PATCH reverify]", error);
+        return NextResponse.json({ success: false, error: { message: "Failed to update key" } }, { status: 500 });
       }
 
       if (wasPrimaryAndNowInvalid) {
@@ -239,6 +245,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: false, error: { message: "Invalid action" } }, { status: 400 });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
+    console.error("[user/api-keys PATCH]", error);
+    return NextResponse.json({ success: false, error: { message: "Unexpected error" } }, { status: 502 });
   }
 }

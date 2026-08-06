@@ -36,16 +36,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     if (existing) {
       const { error } = await supabase.from("community_reactions").delete().eq("id", existing.id);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) {
+        console.error("[community/reactions] delete", error);
+        return NextResponse.json({ error: "Failed to remove reaction" }, { status: 500 });
+      }
       return NextResponse.json({ data: { emoji, active: false } });
     }
 
     const { error } = await supabase
       .from("community_reactions")
       .insert({ post_id: postId, user_id: userId, emoji });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      console.error("[community/reactions] insert", error);
+      return NextResponse.json({ error: "Failed to add reaction" }, { status: 500 });
+    }
     return NextResponse.json({ data: { emoji, active: true } });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[community/reactions]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }

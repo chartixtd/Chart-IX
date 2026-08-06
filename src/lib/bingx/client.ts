@@ -1,11 +1,5 @@
 import { BINGX_API_BASE } from "@/lib/constants";
 
-interface RequestOptions {
-  method?: "GET" | "POST" | "DELETE";
-  body?: Record<string, unknown>;
-  params?: Record<string, string | number | undefined>;
-}
-
 export class BingXClient {
   private baseUrl: string;
 

@@ -15,8 +15,9 @@ export async function GET(request: Request) {
     const data = await getNewsPayload(lang);
     return NextResponse.json({ success: true, data });
   } catch (error) {
+    console.error("[news]", error);
     return NextResponse.json(
-      { success: false, error: { code: "NEWS_UNAVAILABLE", message: String(error) } },
+      { success: false, error: { code: "NEWS_UNAVAILABLE", message: "Failed to fetch news" } },
       { status: 502 }
     );
   }

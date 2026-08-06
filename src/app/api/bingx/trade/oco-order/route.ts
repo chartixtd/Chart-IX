@@ -151,6 +151,11 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
+    console.error("[bingx/trade/oco-order]", error);
+    const described = describeBingXError(error);
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
   }
 }

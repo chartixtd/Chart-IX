@@ -15,6 +15,7 @@ import {
 } from "@/lib/screener-scoring";
 import type { ScreenerResult } from "@/lib/screener-scoring";
 import { createTtlCache } from "@/lib/ttl-cache";
+import { createServiceRoleClient } from "@/lib/supabase/middleware";
 
 export interface ScreenerPayload {
   long: ScreenerResult[];
@@ -162,10 +163,62 @@ export async function computeScreenerPayload(): Promise<ScreenerPayload> {
   };
 }
 
+/**
+ * DB 侧的跨实例缓存读取。查不到、查到的行已经过期、或 DB 本身打不通，
+ * 一律返回 null 交给调用方重新计算——这一层的失败绝不能变成整个选币接口失败。
+ */
+async function readDbCache(): Promise<ScreenerPayload | null> {
+  try {
+    const client = createServiceRoleClient();
+    const { data } = await client
+      .from("screener_cache")
+      .select("payload, computed_at")
+      .eq("id", 1)
+      .maybeSingle();
+
+    if (!data) return null;
+    const age = Date.now() - new Date(data.computed_at).getTime();
+    if (age < 0 || age >= SCREENER_REFRESH_MS) return null;
+
+    return data.payload as ScreenerPayload;
+  } catch {
+    return null;
+  }
+}
+
+/** 写入失败只记录、不抛出——一次算好的结果不能因为存不进 DB 就白算。 */
+async function writeDbCache(payload: ScreenerPayload): Promise<void> {
+  try {
+    const client = createServiceRoleClient();
+    await client.from("screener_cache").upsert({
+      id: 1,
+      payload,
+      computed_at: new Date(payload.computedAt).toISOString(),
+    });
+  } catch (err) {
+    console.error("[screener-server] failed to persist DB cache", err);
+  }
+}
+
+/**
+ * 先看 DB 里有没有别的实例刚算好的新鲜结果，有就直接用；没有才真正重算。
+ * 这样只有全站所有实例都冷启动的极端情况才会真正跑一次完整流水线，
+ * 其余冷启动实例都能借到别的实例算好的结果。
+ */
+async function computeScreenerPayloadWithDbCache(): Promise<ScreenerPayload> {
+  const cached = await readDbCache();
+  if (cached) return cached;
+
+  const payload = await computeScreenerPayload();
+  await writeDbCache(payload);
+  return payload;
+}
+
 // 全站共用一份结果：TTL 到期前所有请求读同一份，冷缓存时并发请求只触发一次上游计算。
+// compute 本身还有一层上面的 DB 缓存，兜住"这个实例是冷的，但别的实例不是"的情况。
 const screenerCache = createTtlCache<ScreenerPayload>({
   ttlMs: SCREENER_REFRESH_MS,
-  compute: computeScreenerPayload,
+  compute: computeScreenerPayloadWithDbCache,
 });
 
 export function getScreenerPayload(): Promise<ScreenerPayload> {

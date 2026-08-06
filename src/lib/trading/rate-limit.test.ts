@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Force the Supabase RPC path to fail so every test exercises the in-memory
 // fallback deterministically, without needing a real DB connection.
-vi.mock("@/lib/supabase/service", () => ({
-  createServiceClient: async () => {
+vi.mock("@/lib/supabase/middleware", () => ({
+  createServiceRoleClient: () => {
     throw new Error("no DB in unit tests");
   },
 }));

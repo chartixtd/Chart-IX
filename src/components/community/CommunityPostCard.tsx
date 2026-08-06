@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Card } from "@/components/ui/Card";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import { useDeleteCommunityPost, useToggleReaction, useUpdatePost } from "@/hooks/useCommunity";
 import type { CommunityPost } from "@/types";
@@ -38,6 +40,7 @@ export function CommunityPostCard({ post }: { post: CommunityPost }) {
   const locale = useLocale();
   const auth = useAuth();
   const [editOpen, setEditOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const toggleReaction = useToggleReaction(post.id);
   const updatePost = useUpdatePost(post.id);
@@ -52,8 +55,10 @@ export function CommunityPostCard({ post }: { post: CommunityPost }) {
     <Card className="overflow-hidden" padding="none">
       <Link href={detailHref} className="block">
         {post.cover_image && (
-          // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL
-          <img src={post.cover_image} alt="" className="h-40 w-full border-b border-border-default object-cover" />
+          <div className="relative h-40 w-full border-b border-border-default">
+            {/* CommunityFeed renders these as a single-column stacked list, not a grid */}
+            <Image src={post.cover_image} alt="" fill className="object-cover" sizes="100vw" />
+          </div>
         )}
         <div className="p-4 pb-0">
           <h3 className="text-base font-semibold text-text-primary hover:text-gold">{post.title}</h3>
@@ -106,9 +111,7 @@ export function CommunityPostCard({ post }: { post: CommunityPost }) {
           )}
           {isAdmin && (
             <button
-              onClick={() => {
-                if (window.confirm(t("confirm_delete"))) deletePost.mutate(post.id);
-              }}
+              onClick={() => setConfirmDeleteOpen(true)}
               disabled={deletePost.isPending}
               className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
             >
@@ -128,6 +131,18 @@ export function CommunityPostCard({ post }: { post: CommunityPost }) {
         }}
         submitting={updatePost.isPending}
         error={updatePost.error?.message ?? null}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={() => {
+          deletePost.mutate(post.id, { onSuccess: () => setConfirmDeleteOpen(false) });
+        }}
+        title={t("delete")}
+        message={t("confirm_delete")}
+        confirmText={t("delete")}
+        loading={deletePost.isPending}
       />
     </Card>
   );

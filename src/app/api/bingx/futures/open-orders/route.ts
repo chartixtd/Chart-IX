@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
 import { getFuturesOpenOrders, cancelFuturesOrder, cancelAllFuturesOrders } from "@/lib/bingx/futures";
+import { describeBingXError } from "@/lib/trading/errors";
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,7 +27,12 @@ export async function GET(request: NextRequest) {
     const data = await getFuturesOpenOrders(apiKey, secret, symbol);
     return NextResponse.json({ success: true, data });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
+    console.error("[bingx/futures/open-orders]", error);
+    const described = describeBingXError(error);
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
   }
 }
 
@@ -70,6 +76,11 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: false, error: { message: "Invalid action" } }, { status: 400 });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 502 });
+    console.error("[bingx/futures/open-orders]", error);
+    const described = describeBingXError(error);
+    return NextResponse.json(
+      { success: false, error: { message: described.rawMessage, i18nKey: described.i18nKey, code: described.code } },
+      { status: 502 }
+    );
   }
 }

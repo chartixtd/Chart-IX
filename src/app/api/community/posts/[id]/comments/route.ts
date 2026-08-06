@@ -7,22 +7,31 @@ import type { CommunityAuthor, CommunityComment } from "@/types";
 
 const MAX_CONTENT_LENGTH = 2_000;
 const COMMENT_RATE_LIMIT = { windowMs: 20_000, max: 1 };
+// Unbounded before — a heavily-discussed post could return thousands of
+// rows in one response. Cap at the most recent N, restored to chronological
+// (oldest-first) order for display, so the common case (<200 comments)
+// renders identically to before.
+const MAX_COMMENTS = 200;
 
-// GET: 某个帖子下的全部评论，附带作者安全字段（同 posts route 的理由，
-// 用 service-role 绕开 public.users 只放行本人的 RLS）。
+// GET: 某个帖子下最近 MAX_COMMENTS 条评论，附带作者安全字段（同 posts route
+// 的理由，用 service-role 绕开 public.users 只放行本人的 RLS）。
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: postId } = await params;
     const serviceClient = createServiceRoleClient();
 
-    const { data: comments, error } = await serviceClient
+    const { data: recent, error } = await serviceClient
       .from("community_comments")
       .select("id, post_id, author_id, content, created_at")
       .eq("post_id", postId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: false })
+      .limit(MAX_COMMENTS);
+
+    const comments = recent ? [...recent].reverse() : recent;
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[community/comments GET]", error);
+      return NextResponse.json({ error: "Failed to load comments" }, { status: 500 });
     }
     if (!comments || comments.length === 0) {
       return NextResponse.json({ data: [] });
@@ -42,7 +51,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
     return NextResponse.json({ data });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[community/comments GET]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }
 
@@ -86,11 +96,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[community/comments POST]", error);
+      return NextResponse.json({ error: "Failed to post comment" }, { status: 500 });
     }
 
     return NextResponse.json({ data: { ...data, author: null } });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[community/comments POST]", err);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }

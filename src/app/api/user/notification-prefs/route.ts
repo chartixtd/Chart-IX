@@ -52,7 +52,10 @@ export async function PUT(request: NextRequest) {
     { user_id: user.id, ...parsed.data, updated_at: new Date().toISOString() },
     { onConflict: "user_id" }
   );
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[user/notification-prefs]", error);
+    return NextResponse.json({ error: "Failed to save preferences" }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }

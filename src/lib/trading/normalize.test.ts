@@ -94,13 +94,13 @@ describe("normalizeFuturesContract", () => {
   it("leaves maxLeverage undefined when the contract omits the leverage caps", () => {
     // BingX 的 live 公开接口不返回 maxLongLeverage / maxShortLeverage
     // （2026-07-29 实测 944 个合约中 0 次），这是生产环境的真实形状
-    const { maxLongLeverage, maxShortLeverage, ...withoutCaps } = futuresRaw;
+    const { maxLongLeverage: _maxLongLeverage, maxShortLeverage: _maxShortLeverage, ...withoutCaps } = futuresRaw;
     expect(normalizeFuturesContract(withoutCaps, "LONG").maxLeverage).toBeUndefined();
     expect(normalizeFuturesContract(withoutCaps, "SHORT").maxLeverage).toBeUndefined();
   });
 
   it("still normalizes every other field when the leverage caps are absent", () => {
-    const { maxLongLeverage, maxShortLeverage, ...withoutCaps } = futuresRaw;
+    const { maxLongLeverage: _maxLongLeverage, maxShortLeverage: _maxShortLeverage, ...withoutCaps } = futuresRaw;
     const spec = normalizeFuturesContract(withoutCaps, "LONG");
     expect(spec.quantityPrecision).toBe(4);
     expect(spec.pricePrecision).toBe(1);

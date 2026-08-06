@@ -38,12 +38,14 @@ export async function GET() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      return NextResponse.json({ success: false, error: { message: error.message } }, { status: 500 });
+      console.error("[paper/limit-orders GET]", error);
+      return NextResponse.json({ success: false, error: { message: "Failed to load limit orders" } }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data: (orders as PaperLimitOrder[]) ?? [] });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 500 });
+    console.error("[paper/limit-orders GET]", error);
+    return NextResponse.json({ success: false, error: { message: "Unexpected error" } }, { status: 500 });
   }
 }
 
@@ -67,16 +69,21 @@ export async function POST(request: NextRequest) {
       .single<PaperLimitOrder>();
 
     if (error) {
-      const message =
-        error.message.includes("order_not_found") ? "订单不存在 / Order not found"
-        : error.message.includes("not pending") ? "订单已成交或已取消 / Order already filled or canceled"
-        : error.message;
+      let message = "取消失败 / Failed to cancel order";
+      if (error.message.includes("order_not_found")) {
+        message = "订单不存在 / Order not found";
+      } else if (error.message.includes("not pending")) {
+        message = "订单已成交或已取消 / Order already filled or canceled";
+      } else {
+        console.error("[paper/limit-orders POST]", error);
+      }
       return NextResponse.json({ success: false, error: { message } }, { status: 400 });
     }
 
     return NextResponse.json({ success: true, data: order });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 500 });
+    console.error("[paper/limit-orders POST]", error);
+    return NextResponse.json({ success: false, error: { message: "Unexpected error" } }, { status: 500 });
   }
 }
 
@@ -135,11 +142,13 @@ export async function PATCH(request: NextRequest) {
       .eq("id", orderId);
 
     if (updateError) {
-      return NextResponse.json({ success: false, error: { message: updateError.message } }, { status: 500 });
+      console.error("[paper/limit-orders PATCH]", updateError);
+      return NextResponse.json({ success: false, error: { message: "Failed to update order" } }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 500 });
+    console.error("[paper/limit-orders PATCH]", error);
+    return NextResponse.json({ success: false, error: { message: "Unexpected error" } }, { status: 500 });
   }
 }

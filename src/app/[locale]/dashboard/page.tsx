@@ -23,11 +23,11 @@
  */
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "next-intl";
+import Image from "next/image";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useFavoritesStore } from "@/stores/favorites";
 import { useMarketStore } from "@/stores/market";
@@ -35,6 +35,9 @@ import { usePaperAccount } from "@/hooks/usePaperTrading";
 import { useSpotBalances } from "@/hooks/useTradingAccount";
 import { useAchievements } from "@/hooks/useAchievements";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
+import {
+  useContinueWatching, useLatestVideos, useLatestArticles, useDashboardOrders,
+} from "@/hooks/useDashboardData";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -42,14 +45,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ShareCardModal } from "@/components/dashboard/ShareCardModal";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import type { Video, Article, Locale, Order } from "@/types";
-
-interface ContinueWatchingItem {
-  video_id: string;
-  progress_seconds: number;
-  completed: boolean;
-  video: Pick<Video, "id" | "title" | "duration_seconds" | "thumbnail_url"> | null;
-}
+import type { Locale, Order } from "@/types";
 
 type LedgerEntry =
   | { kind: "trade"; id: string; date: string; order: Order }
@@ -61,16 +57,16 @@ export default function DashboardPage() {
   const auth = useAuth();
   const favorites = useFavoritesStore((s) => s.favorites);
 
-  const [continueWatching, setContinueWatching] = useState<ContinueWatchingItem[] | null>(null);
-  const [latestVideos, setLatestVideos] = useState<Video[] | null>(null);
-  const [latestArticles, setLatestArticles] = useState<Article[] | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
-  const [orders, setOrders] = useState<Order[] | null>(null);
   const [summaryMode, setSummaryMode] = useState<"live" | "paper">("live");
 
   const { data: paperData, isLoading: paperLoading } = usePaperAccount(!!auth.userId);
   const { data: spotBalances, isLoading: spotLoading, error: spotError } = useSpotBalances(!!auth.userId);
   const { data: achievements } = useAchievements(auth.userId);
+  const { data: continueWatching, isPending: continueWatchingPending } = useContinueWatching(auth.userId);
+  const { data: latestVideos, isPending: latestVideosPending } = useLatestVideos(!!auth.userId);
+  const { data: latestArticles, isPending: latestArticlesPending } = useLatestArticles(!!auth.userId);
+  const { data: orders, isPending: ordersPending } = useDashboardOrders(auth.userId);
 
   // 现货全部资产按最新价折算 USDT，用于"完整余额"，而不只是可用 USDT 现金
   const { data: spotTickers } = useQuery({
@@ -101,47 +97,6 @@ export default function DashboardPage() {
     retry: false,
   });
   useBingXWebSocket(favorites.slice(0, 10));
-
-  useEffect(() => {
-    if (!auth.userId) return;
-    const supabase = createClient();
-
-    supabase
-      .from("video_progress")
-      .select("video_id, progress_seconds, completed, video:videos(id, title, duration_seconds, thumbnail_url)")
-      .eq("user_id", auth.userId)
-      .eq("completed", false)
-      .order("updated_at", { ascending: false })
-      .limit(3)
-      .then(({ data }) => setContinueWatching((data as unknown as ContinueWatchingItem[]) ?? []));
-
-    supabase
-      .from("videos")
-      .select("*")
-      .eq("is_deleted", false)
-      .order("created_at", { ascending: false })
-      .limit(4)
-      .then(({ data }) => setLatestVideos((data as Video[]) ?? []));
-
-    supabase
-      .from("articles")
-      .select("*")
-      .eq("is_published", true)
-      .order("published_at", { ascending: false })
-      .limit(4)
-      .then(({ data }) => setLatestArticles((data as Article[]) ?? []));
-  }, [auth.userId]);
-
-  useEffect(() => {
-    if (!auth.userId) return;
-    const supabase = createClient();
-    supabase
-      .from("orders")
-      .select("*")
-      .eq("user_id", auth.userId)
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setOrders((data as unknown as Order[]) ?? []));
-  }, [auth.userId]);
 
   // 合约权益 = 可用余额 + Σ(占用保证金 + 未实现盈亏)
   const paperPositionsEquity = (paperData?.positions ?? []).reduce((sum, p) => {
@@ -458,7 +413,7 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {orders === null ? (
+        {ordersPending ? (
           <div className="mt-5 space-y-3">
             <Skeleton className="h-10" />
             <Skeleton className="h-10" />
@@ -488,9 +443,9 @@ export default function DashboardPage() {
             <Link href={`/${locale}/videos`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
           <div className="mt-4 border-t border-border-default">
-            {continueWatching === null ? (
+            {continueWatchingPending ? (
               <Skeleton className="mt-4 h-16" />
-            ) : continueWatching.length === 0 ? (
+            ) : !continueWatching || continueWatching.length === 0 ? (
               <div className="pt-4">
                 <p className="text-xs text-text-muted">{t("continue_learning_empty")}</p>
                 <Link href={`/${locale}/videos`} className="mt-2 inline-block text-xs font-medium text-gold hover:underline">
@@ -557,23 +512,24 @@ export default function DashboardPage() {
             <Link href={`/${locale}/videos`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
           <div className="mt-4 border-t border-border-default">
-            {latestVideos === null ? (
+            {latestVideosPending ? (
               <Skeleton className="mt-4 h-24" />
             ) : (
-              latestVideos.map((video) => (
+              (latestVideos ?? []).map((video) => (
                 <Link
                   key={video.id}
                   href={`/${locale}/videos/${video.id}`}
                   className="flex items-center gap-3 border-b border-border-default py-3 first:pt-4"
                 >
-                  <div className="h-10 w-16 shrink-0 overflow-hidden rounded-sm bg-bg-tertiary">
+                  <div className="relative h-10 w-16 shrink-0 overflow-hidden rounded-sm bg-bg-tertiary">
                     {video.thumbnail_url && (
-                      <img
+                      <Image
                         src={video.thumbnail_url}
                         alt=""
-                        className="h-full w-full object-cover"
+                        fill
+                        className="object-cover"
+                        sizes="64px"
                         loading="lazy"
-                        decoding="async"
                       />
                     )}
                   </div>
@@ -592,10 +548,10 @@ export default function DashboardPage() {
             <Link href={`/${locale}/articles`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
           <div className="mt-4 border-t border-border-default">
-            {latestArticles === null ? (
+            {latestArticlesPending ? (
               <Skeleton className="mt-4 h-24" />
             ) : (
-              latestArticles.map((article) => (
+              (latestArticles ?? []).map((article) => (
                 <Link
                   key={article.id}
                   href={`/${locale}/articles/${article.slug}`}

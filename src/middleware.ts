@@ -61,11 +61,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // API 路由：不处理
-  if (pathname.startsWith("/api")) {
-    return NextResponse.next();
-  }
-
   // 静态资源 + Next.js 元数据路由 (favicon/OG 图, 定义在 src/app/ 根目录, 不带 locale 前缀)
   if (
     pathname.startsWith("/_next") ||
@@ -90,6 +85,16 @@ export async function middleware(request: NextRequest) {
   return intlMiddleware(request);
 }
 
+// /api is excluded via the negative lookahead below (not just the removed
+// pathname.startsWith("/api") branch that used to live above) — the old
+// broad "/((?!_next|_vercel|.*\\..*).*)" pattern still matches /api/* (no
+// dot, doesn't start with _next/_vercel), so without excluding it here too,
+// every /api request would fall through this function all the way to
+// intlMiddleware() and get incorrectly treated as needing locale routing.
+// Excluding it here also means this edge function no longer wakes for
+// nothing on every poll (BingX market data, trading account, etc. all hit
+// /api every few seconds per open tab). Each /api/admin/* route already
+// gates itself via requireAdmin() — see src/lib/supabase/admin-auth.ts.
 export const config = {
-  matcher: ["/((?!_next|_vercel|.*\\..*).*)", "/", "/(api|trpc)(.*)"],
+  matcher: ["/((?!_next|_vercel|api|.*\\..*).*)", "/"],
 };

@@ -15,7 +15,8 @@ export async function GET() {
       .single<PaperAccount>();
 
     if (accError || !account) {
-      return NextResponse.json({ success: false, error: { message: accError?.message || "Failed to load paper account" } }, { status: 500 });
+      if (accError) console.error("[paper/account]", accError);
+      return NextResponse.json({ success: false, error: { message: "Failed to load paper account" } }, { status: 500 });
     }
 
     const { data: positions } = await supabase
@@ -29,6 +30,7 @@ export async function GET() {
       data: { account, positions: (positions as PaperPosition[]) ?? [] },
     });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 500 });
+    console.error("[paper/account]", error);
+    return NextResponse.json({ success: false, error: { message: "Unexpected error" } }, { status: 500 });
   }
 }

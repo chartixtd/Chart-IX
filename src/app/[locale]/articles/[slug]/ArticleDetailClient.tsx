@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import Image from "next/image";
 import Link from "next/link";
-import DOMPurify from "dompurify";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Skeleton } from "@/components/ui/Skeleton";
 import type { Article, Locale } from "@/types";
 
 const supabase = createClient();
@@ -19,7 +17,6 @@ interface Props {
 }
 
 export function ArticleDetailClient({ article, isGated }: Props) {
-  const params = useParams();
   const locale = useLocale() as Locale;
   const t = useTranslations("article");
   const viewIncrementedRef = useRef(false);
@@ -40,15 +37,12 @@ export function ArticleDetailClient({ article, isGated }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rawContentHtml =
+  // Already sanitized server-side (see sanitizeArticleHtml in the [slug]
+  // server component) before it was ever embedded into the rendered page.
+  const contentHtml =
     article.content?.[locale] ??
     article.content?.["en-US"] ??
     "";
-
-  // Content is admin-authored today, but sanitize anyway: it's stored HTML
-  // rendered to every visitor, so a compromised/lower-trust admin account or
-  // future editor role shouldn't be able to turn this into stored XSS.
-  const contentHtml = useMemo(() => DOMPurify.sanitize(rawContentHtml), [rawContentHtml]);
 
   const formatDate = (dateStr: string) => {
     try {
@@ -117,11 +111,15 @@ export function ArticleDetailClient({ article, isGated }: Props) {
 
       {/* Cover image */}
       {article.cover_image ? (
-        <div className="mt-6 overflow-hidden rounded-lg">
-          <img
+        // aspect-[21/9] gives the fill-based Image a definite box (was
+        // width-only sizing with natural aspect ratio on the plain <img>).
+        <div className="relative mt-6 aspect-[21/9] overflow-hidden rounded-lg">
+          <Image
             src={article.cover_image}
             alt={article.title[locale] ?? ""}
-            className="w-full object-cover"
+            fill
+            className="object-cover"
+            sizes="(min-width: 1024px) 768px, 100vw"
             loading="lazy"
           />
         </div>

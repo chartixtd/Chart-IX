@@ -90,9 +90,12 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (error) {
-        const message =
-          error.message.includes("insufficient_balance") ? "保证金不足 / Insufficient margin"
-          : error.message;
+        let message = "下单失败 / Failed to place order";
+        if (error.message.includes("insufficient_balance")) {
+          message = "保证金不足 / Insufficient margin";
+        } else {
+          console.error("[paper/order] place_paper_limit_order", error);
+        }
         return NextResponse.json({ success: false, error: { message } }, { status: 400 });
       }
 
@@ -114,9 +117,10 @@ export async function POST(request: NextRequest) {
     try {
       price = await fetchBingXPrice(symbol);
     } catch (priceErr) {
+      console.error("[paper/order] fetchBingXPrice", priceErr);
       return NextResponse.json({
         success: false,
-        error: { message: `无法获取实时价格: ${String(priceErr)}` },
+        error: { message: "无法获取实时价格 / Failed to fetch live price" },
       }, { status: 502 });
     }
 
@@ -133,14 +137,18 @@ export async function POST(request: NextRequest) {
       .single<PaperOrder>();
 
     if (error) {
-      const message =
-        error.message.includes("insufficient_balance") ? "保证金不足 / Insufficient margin"
-        : error.message;
+      let message = "下单失败 / Failed to place order";
+      if (error.message.includes("insufficient_balance")) {
+        message = "保证金不足 / Insufficient margin";
+      } else {
+        console.error("[paper/order] place_paper_order", error);
+      }
       return NextResponse.json({ success: false, error: { message } }, { status: 400 });
     }
 
     return NextResponse.json({ success: true, data: order });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 500 });
+    console.error("[paper/order]", error);
+    return NextResponse.json({ success: false, error: { message: "Unexpected error" } }, { status: 500 });
   }
 }

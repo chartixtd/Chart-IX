@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
+import { getUserTier } from "@/lib/supabase/get-user-tier";
 
 /** Extract the storage file path from a Supabase public URL */
 function getStoragePath(url: string): string | null {
@@ -89,15 +90,7 @@ export async function GET(
   const { data: authData } = await supabase.auth.getUser();
   const userId = authData.user?.id;
 
-  let isPro = false;
-  if (userId) {
-    const { data: profile } = await serviceClient
-      .from("users")
-      .select("tier")
-      .eq("id", userId)
-      .single();
-    isPro = profile?.tier === "pro";
-  }
+  const isPro = userId ? (await getUserTier(userId)) === "pro" : false;
 
   const isFreePreview = !isPro && video.tier_required === "pro";
 

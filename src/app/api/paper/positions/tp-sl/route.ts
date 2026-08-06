@@ -47,15 +47,20 @@ export async function POST(request: NextRequest) {
       .single<PaperPosition>();
 
     if (error) {
-      const message =
-        error.message.includes("position_not_found") ? "该交易对无持仓 / No open position"
-        : error.message.includes("account_not_found") ? "模拟盘账户不存在"
-        : error.message;
+      let message = "设置止盈止损失败 / Failed to set take-profit/stop-loss";
+      if (error.message.includes("position_not_found")) {
+        message = "该交易对无持仓 / No open position";
+      } else if (error.message.includes("account_not_found")) {
+        message = "模拟盘账户不存在";
+      } else {
+        console.error("[paper/positions/tp-sl]", error);
+      }
       return NextResponse.json({ success: false, error: { message } }, { status: 400 });
     }
 
     return NextResponse.json({ success: true, data: position });
   } catch (error) {
-    return NextResponse.json({ success: false, error: { message: String(error) } }, { status: 500 });
+    console.error("[paper/positions/tp-sl]", error);
+    return NextResponse.json({ success: false, error: { message: "Unexpected error" } }, { status: 500 });
   }
 }

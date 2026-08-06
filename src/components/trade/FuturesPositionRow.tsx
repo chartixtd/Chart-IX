@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { cn, formatBySpec } from "@/lib/utils";
 import { Modal } from "@/components/ui/Modal";
@@ -27,7 +27,7 @@ interface FuturesPositionRowProps {
 
 const CLOSE_PERCENTS = [25, 50, 75, 100];
 
-export function FuturesPositionRow({
+export const FuturesPositionRow = memo(function FuturesPositionRow({
   position: pos, highlighted, currentTp, currentSl, onClose, onReduceOnlyClose, onReverse, onSaveTpSl,
 }: FuturesPositionRowProps) {
   const t = useTranslations();
@@ -334,4 +334,4 @@ export function FuturesPositionRow({
       )}
     </div>
   );
-}
+});

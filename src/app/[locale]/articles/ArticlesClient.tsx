@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
@@ -140,12 +141,13 @@ export default function ArticlesClient({
                 {/* Cover image */}
                 <div className="relative aspect-video bg-bg-tertiary">
                   {article.cover_image ? (
-                    <img
+                    <Image
                       src={article.cover_image}
                       alt={article.title[locale] ?? ""}
-                      className="h-full w-full object-cover"
+                      fill
+                      className="object-cover"
+                      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                       loading="lazy"
-                      decoding="async"
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-text-muted">

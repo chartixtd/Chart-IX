@@ -7,11 +7,11 @@ import { useLocale, useTranslations } from "next-intl";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { cn } from "@/lib/utils";
-import { useDeleteCommunityPost, useToggleReaction, useUpdatePost } from "@/hooks/useCommunity";
+import { useDeleteCommunityPost, useUpdatePost } from "@/hooks/useCommunity";
 import type { CommunityPost } from "@/types";
 import { PostComposerModal } from "./PostComposerModal";
 
+/** Display order for the reaction summary — matches the toggle order on the detail page. */
 const REACTION_EMOJI = ["👍", "❤️", "🚀", "🔥", "😂"];
 
 export function formatRelativeTime(iso: string, localeStr: string, t: ReturnType<typeof useTranslations>) {
@@ -31,9 +31,16 @@ export function formatRelativeTime(iso: string, localeStr: string, t: ReturnType
 }
 
 /**
- * Feed card: thumbnail + title + a couple lines of preview, click through to
- * the full post like an admin article does — comments live on that detail
- * page, not inline here, so there's exactly one place to read/write them.
+ * Feed card, shaped to match the article card in ArticlesClient.tsx so both
+ * tabs of the Articles page read as one catalogue: aspect-video cover, gold
+ * attribution line where an article shows its category, clamped title, excerpt,
+ * then a muted meta row.
+ *
+ * Reactions render read-only here. The interactive toggles live on the detail
+ * page (src/app/[locale]/community/[id]/page.tsx): an article card carries no
+ * controls, and once the whole card is a link, an <a> can't legally contain the
+ * toggle buttons anyway. Author/admin actions stay, below the link and behind a
+ * hairline, so they never nest inside the anchor either.
  */
 export function CommunityPostCard({ post }: { post: CommunityPost }) {
   const t = useTranslations("community");
@@ -42,69 +49,81 @@ export function CommunityPostCard({ post }: { post: CommunityPost }) {
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
-  const toggleReaction = useToggleReaction(post.id);
   const updatePost = useUpdatePost(post.id);
   const deletePost = useDeleteCommunityPost();
 
   const isAuthor = auth.userId === post.author_id;
   const isAdmin = auth.role === "admin";
-  const isPro = auth.tier === "pro";
   const detailHref = `/${locale}/community/${post.id}`;
 
+  const reactions = REACTION_EMOJI
+    .map((emoji) => [emoji, post.reaction_counts[emoji] ?? 0] as const)
+    .filter(([, count]) => count > 0);
+
   return (
-    <Card className="overflow-hidden" padding="none">
-      <Link href={detailHref} className="block">
-        {post.cover_image && (
-          <div className="relative h-40 w-full border-b border-border-default">
-            {/* CommunityFeed renders these as a single-column stacked list, not a grid */}
-            <Image src={post.cover_image} alt="" fill className="object-cover" sizes="100vw" />
-          </div>
-        )}
-        <div className="p-4 pb-0">
-          <h3 className="text-base font-semibold text-text-primary hover:text-gold">{post.title}</h3>
-          <p className="mt-0.5 text-xs text-text-muted">
-            {post.author?.display_name ?? t("anonymous")} · {formatRelativeTime(post.created_at, locale, t)}
-            {post.updated_at !== post.created_at && ` · ${t("edited")}`}
+    <Card hover padding="none" className="overflow-hidden">
+      <Link href={detailHref} className="group block">
+        {/* Cover — fixed aspect ratio matching the article card, so a wide logo
+            crops cleanly instead of stretching to fill a full-width band. */}
+        <div className="relative aspect-video bg-bg-tertiary">
+          {post.cover_image ? (
+            <Image
+              src={post.cover_image}
+              alt=""
+              fill
+              className="object-cover"
+              sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+              loading="lazy"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-text-muted">
+              <svg className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                />
+              </svg>
+            </div>
+          )}
+        </div>
+
+        <div className="p-4">
+          {/* Author sits where an article card shows its category */}
+          <p className="truncate text-xs font-medium text-gold">
+            {post.author?.display_name ?? t("anonymous")}
           </p>
-          <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-sm text-text-secondary">{post.content}</p>
+
+          <h3 className="mt-1 line-clamp-2 font-medium text-text-primary transition-colors group-hover:text-gold">
+            {post.title}
+          </h3>
+
+          <p className="mt-2 line-clamp-2 text-sm text-text-secondary">{post.content}</p>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
+            <span>{formatRelativeTime(post.created_at, locale, t)}</span>
+            {post.updated_at !== post.created_at && <span>{t("edited")}</span>}
+            <span>{t("comments_count", { count: post.comment_count })}</span>
+            {reactions.length > 0 && (
+              <span className="flex items-center gap-1.5">
+                {reactions.map(([emoji, count]) => (
+                  <span key={emoji}>
+                    {emoji} {count}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
         </div>
       </Link>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 p-4 pt-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {REACTION_EMOJI.map((emoji) => {
-            const count = post.reaction_counts[emoji] ?? 0;
-            const active = post.viewer_reactions.includes(emoji);
-            return (
-              <button
-                key={emoji}
-                onClick={() => isPro && toggleReaction.mutate(emoji)}
-                disabled={!isPro || toggleReaction.isPending}
-                title={isPro ? undefined : t("pro_required")}
-                className={cn(
-                  "flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors",
-                  active
-                    ? "border-gold/50 bg-gold/15 text-gold"
-                    : "border-border-default text-text-muted hover:border-gold/30 hover:text-text-secondary",
-                  !isPro && "cursor-not-allowed opacity-60"
-                )}
-              >
-                <span>{emoji}</span>
-                {count > 0 && <span className="tabular-nums">{count}</span>}
-              </button>
-            );
-          })}
-
-          <Link href={detailHref} className="ml-1 text-xs text-text-muted hover:text-text-primary">
-            {t("comments_count", { count: post.comment_count })}
-          </Link>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-3">
+      {(isAuthor || isAdmin) && (
+        <div className="flex items-center justify-end gap-3 border-t border-border-default px-4 py-2">
           {isAuthor && (
             <button
               onClick={() => setEditOpen(true)}
-              className="text-xs text-text-muted hover:text-gold"
+              className="text-xs text-text-muted transition-colors hover:text-gold"
             >
               {t("edit")}
             </button>
@@ -113,13 +132,13 @@ export function CommunityPostCard({ post }: { post: CommunityPost }) {
             <button
               onClick={() => setConfirmDeleteOpen(true)}
               disabled={deletePost.isPending}
-              className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
+              className="text-xs text-text-muted transition-colors hover:text-danger disabled:opacity-50"
             >
               {t("delete")}
             </button>
           )}
         </div>
-      </div>
+      )}
 
       <PostComposerModal
         open={editOpen}

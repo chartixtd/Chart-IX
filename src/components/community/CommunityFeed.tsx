@@ -27,7 +27,9 @@ export function CommunityFeed() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between gap-3">
+      {/* mb-8 matches the gap the Articles tab leaves between its filter row
+          and the first card, so switching tabs doesn't shift the grid. */}
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-text-secondary">{t("subtitle")}</p>
         {isPro ? (
           <Button variant="primary" size="sm" onClick={() => setComposerOpen(true)}>
@@ -43,9 +45,16 @@ export function CommunityFeed() {
       </div>
 
       {isPending && (
-        <div className="space-y-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-full" />
+            <div key={i} className="overflow-hidden rounded-md border border-border-default bg-bg-secondary">
+              <Skeleton className="aspect-video w-full rounded-none" />
+              <div className="space-y-2 p-4">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-4 w-full" />
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -61,7 +70,9 @@ export function CommunityFeed() {
       )}
 
       {!isPending && posts && posts.length > 0 && (
-        <div className="space-y-3">
+        // Same grid as the Articles tab (ArticlesClient.tsx) so switching tabs
+        // doesn't change the page's shape, only its contents.
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {posts.map((post) => (
             <CommunityPostCard key={post.id} post={post} />
           ))}

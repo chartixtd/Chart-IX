@@ -1,30 +1,44 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/supabase/admin-auth";
-import { getTelegramPushSettings, sendTelegramMessage } from "@/lib/telegram-push";
+import { sendTelegramTest } from "@/lib/telegram-push";
 
-// POST - Send a one-off test message using the currently saved bot token/chat id,
-// so an admin can verify the bot is wired up correctly without waiting for the next cron run.
-export async function POST() {
+/**
+ * POST - Send a one-off test message so an admin can verify the wiring without
+ * waiting for the next cron tick. Pass `{ targetId }` to test a single
+ * destination, or omit it to test every enabled one.
+ *
+ * Returns per-target results rather than throwing on the first failure — when
+ * three chats are configured and one is broken, the admin needs to see which.
+ */
+export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdmin();
     if ("error" in auth) return auth.error;
 
-    const settings = await getTelegramPushSettings();
-    if (!settings.botToken || !settings.chatId) {
-      return NextResponse.json(
-        { error: "Bot token and chat ID must both be saved first" },
-        { status: 400 }
-      );
+    let targetId: string | undefined;
+    try {
+      const body = await request.json();
+      if (typeof body?.targetId === "string" && body.targetId) targetId = body.targetId;
+    } catch {
+      // No body is fine — means "test everything enabled".
     }
 
-    await sendTelegramMessage(
-      settings.botToken,
-      settings.chatId,
-      "✅ Chart-IX 测试消息 — 这条消息说明 Bot 配置正确。"
-    );
+    const results = await sendTelegramTest(targetId);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: results.some((r) => r.ok),
+      data: results.map((r) => ({
+        label: r.label,
+        ok: r.ok,
+        attempts: r.attempts,
+        error: r.error,
+      })),
+    });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    if (err instanceof Error && err.message === "no_targets") {
+      return NextResponse.json({ error: "no_targets" }, { status: 400 });
+    }
+    console.error("[admin/telegram-push/test]", err);
+    return NextResponse.json({ error: "Test send failed" }, { status: 500 });
   }
 }

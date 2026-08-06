@@ -1,17 +1,21 @@
 import { encrypt, decrypt } from "@/lib/crypto";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { getScreenerPayload, type ScreenerPayload } from "@/lib/screener-server";
+import { sendTelegramMessage, type TelegramSendResult } from "@/lib/telegram-send";
 import type { ScreenerResult, Direction } from "@/lib/screener-scoring";
 
 export type TelegramMessageLang = "en" | "zh";
+export type PushTrigger = "cron" | "manual" | "test";
 
 export interface TelegramPushSettings {
   enabled: boolean;
   /** Decrypted; null when never configured */
   botToken: string | null;
+  /** Legacy single-destination column. Superseded by telegram_push_targets; kept for rollback only. */
   chatId: string | null;
   /** Language the pushed message text itself is written in — independent of the admin UI's language */
   messageLang: TelegramMessageLang;
+  pushIntervalMinutes: number;
   showPrice: boolean;
   showChange24h: boolean;
   showAmplitude: boolean;
@@ -22,7 +26,27 @@ export interface TelegramPushSettings {
   showScore: boolean;
   showEdge: boolean;
   lastPushedAt: string | null;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
   updatedAt: string;
+}
+
+export interface TelegramTarget {
+  id: string;
+  label: string;
+  chatId: string;
+  /** Decrypted per-target override; null means "use the global bot token". */
+  botToken: string | null;
+  botTokenConfigured: boolean;
+  /** null means "inherit settings.messageLang" */
+  messageLang: TelegramMessageLang | null;
+  enabled: boolean;
+  lastOkAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  sortOrder: number;
 }
 
 interface TelegramPushRow {
@@ -30,6 +54,7 @@ interface TelegramPushRow {
   bot_token_encrypted: string | null;
   chat_id: string | null;
   message_lang: TelegramMessageLang;
+  push_interval_minutes: number;
   show_price: boolean;
   show_change_24h: boolean;
   show_amplitude: boolean;
@@ -40,7 +65,24 @@ interface TelegramPushRow {
   show_score: boolean;
   show_edge: boolean;
   last_pushed_at: string | null;
+  last_attempt_at: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
   updated_at: string;
+}
+
+interface TelegramTargetRow {
+  id: string;
+  label: string;
+  chat_id: string;
+  bot_token_encrypted: string | null;
+  message_lang: TelegramMessageLang | null;
+  enabled: boolean;
+  last_ok_at: string | null;
+  last_error_at: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
+  sort_order: number;
 }
 
 function rowToSettings(row: TelegramPushRow): TelegramPushSettings {
@@ -49,6 +91,7 @@ function rowToSettings(row: TelegramPushRow): TelegramPushSettings {
     botToken: row.bot_token_encrypted ? decrypt(row.bot_token_encrypted) : null,
     chatId: row.chat_id,
     messageLang: row.message_lang,
+    pushIntervalMinutes: row.push_interval_minutes,
     showPrice: row.show_price,
     showChange24h: row.show_change_24h,
     showAmplitude: row.show_amplitude,
@@ -59,7 +102,27 @@ function rowToSettings(row: TelegramPushRow): TelegramPushSettings {
     showScore: row.show_score,
     showEdge: row.show_edge,
     lastPushedAt: row.last_pushed_at,
+    lastAttemptAt: row.last_attempt_at,
+    lastError: row.last_error,
+    consecutiveFailures: row.consecutive_failures,
     updatedAt: row.updated_at,
+  };
+}
+
+function rowToTarget(row: TelegramTargetRow): TelegramTarget {
+  return {
+    id: row.id,
+    label: row.label,
+    chatId: row.chat_id,
+    botToken: row.bot_token_encrypted ? decrypt(row.bot_token_encrypted) : null,
+    botTokenConfigured: Boolean(row.bot_token_encrypted),
+    messageLang: row.message_lang,
+    enabled: row.enabled,
+    lastOkAt: row.last_ok_at,
+    lastErrorAt: row.last_error_at,
+    lastError: row.last_error,
+    consecutiveFailures: row.consecutive_failures,
+    sortOrder: row.sort_order,
   };
 }
 
@@ -78,12 +141,24 @@ export async function getTelegramPushSettings(): Promise<TelegramPushSettings> {
   return rowToSettings(data as TelegramPushRow);
 }
 
+export async function listTelegramTargets(): Promise<TelegramTarget[]> {
+  const client = createServiceRoleClient();
+  const { data, error } = await client
+    .from("telegram_push_targets")
+    .select("*")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as TelegramTargetRow[]).map(rowToTarget);
+}
+
 export interface TelegramPushUpdate {
   enabled?: boolean;
   /** Pass to rotate the stored token; omit to leave it untouched. */
   botToken?: string;
-  chatId?: string;
   messageLang?: TelegramMessageLang;
+  pushIntervalMinutes?: number;
   showPrice?: boolean;
   showChange24h?: boolean;
   showAmplitude?: boolean;
@@ -94,6 +169,9 @@ export interface TelegramPushUpdate {
   showScore?: boolean;
   showEdge?: boolean;
 }
+
+export const MIN_PUSH_INTERVAL_MINUTES = 15;
+export const MAX_PUSH_INTERVAL_MINUTES = 10080; // one week
 
 export async function updateTelegramPushSettings(
   update: TelegramPushUpdate
@@ -106,8 +184,16 @@ export async function updateTelegramPushSettings(
   if (update.botToken !== undefined) {
     patch.bot_token_encrypted = update.botToken.trim() ? encrypt(update.botToken.trim()) : null;
   }
-  if (update.chatId !== undefined) patch.chat_id = update.chatId.trim() || null;
   if (update.messageLang !== undefined) patch.message_lang = update.messageLang;
+  if (update.pushIntervalMinutes !== undefined) {
+    const n = Math.round(update.pushIntervalMinutes);
+    if (!Number.isFinite(n) || n < MIN_PUSH_INTERVAL_MINUTES || n > MAX_PUSH_INTERVAL_MINUTES) {
+      throw new Error(
+        `pushIntervalMinutes must be between ${MIN_PUSH_INTERVAL_MINUTES} and ${MAX_PUSH_INTERVAL_MINUTES}`
+      );
+    }
+    patch.push_interval_minutes = n;
+  }
   if (update.showPrice !== undefined) patch.show_price = update.showPrice;
   if (update.showChange24h !== undefined) patch.show_change_24h = update.showChange24h;
   if (update.showAmplitude !== undefined) patch.show_amplitude = update.showAmplitude;
@@ -129,15 +215,83 @@ export async function updateTelegramPushSettings(
   return rowToSettings(data as TelegramPushRow);
 }
 
-async function markPushed(): Promise<string> {
-  const client = createServiceRoleClient();
-  const pushedAt = new Date().toISOString();
-  await client
-    .from("telegram_push_settings")
-    .update({ last_pushed_at: pushedAt })
-    .eq("id", 1);
-  return pushedAt;
+// ---------------------------------------------------------------------------
+// Target CRUD
+// ---------------------------------------------------------------------------
+
+export interface TelegramTargetInput {
+  label: string;
+  chatId: string;
+  /** Empty string clears the per-target override (falls back to the global token). */
+  botToken?: string;
+  messageLang?: TelegramMessageLang | null;
+  enabled?: boolean;
+  sortOrder?: number;
 }
+
+export async function createTelegramTarget(input: TelegramTargetInput): Promise<TelegramTarget> {
+  const client = createServiceRoleClient();
+  const { data, error } = await client
+    .from("telegram_push_targets")
+    .insert({
+      label: input.label.trim(),
+      chat_id: input.chatId.trim(),
+      bot_token_encrypted: input.botToken?.trim() ? encrypt(input.botToken.trim()) : null,
+      message_lang: input.messageLang ?? null,
+      enabled: input.enabled ?? true,
+      sort_order: input.sortOrder ?? 0,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    // 23505 = the unique index on chat_id; a duplicate would double-send.
+    if (error.code === "23505") throw new Error("duplicate_chat_id");
+    throw new Error(error.message);
+  }
+  return rowToTarget(data as TelegramTargetRow);
+}
+
+export async function updateTelegramTarget(
+  id: string,
+  input: Partial<TelegramTargetInput>
+): Promise<TelegramTarget> {
+  const client = createServiceRoleClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+  if (input.label !== undefined) patch.label = input.label.trim();
+  if (input.chatId !== undefined) patch.chat_id = input.chatId.trim();
+  if (input.botToken !== undefined) {
+    patch.bot_token_encrypted = input.botToken.trim() ? encrypt(input.botToken.trim()) : null;
+  }
+  if (input.messageLang !== undefined) patch.message_lang = input.messageLang;
+  if (input.enabled !== undefined) patch.enabled = input.enabled;
+  if (input.sortOrder !== undefined) patch.sort_order = input.sortOrder;
+
+  const { data, error } = await client
+    .from("telegram_push_targets")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    if (error.code === "23505") throw new Error("duplicate_chat_id");
+    throw new Error(error.message);
+  }
+  if (!data) throw new Error("target_not_found");
+  return rowToTarget(data as TelegramTargetRow);
+}
+
+export async function deleteTelegramTarget(id: string): Promise<void> {
+  const client = createServiceRoleClient();
+  const { error } = await client.from("telegram_push_targets").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// ---------------------------------------------------------------------------
+// Message formatting
+// ---------------------------------------------------------------------------
 
 function fmtPrice(n: number): string {
   return n.toLocaleString("en-US", { maximumFractionDigits: n < 1 ? 6 : 2 });
@@ -201,8 +355,8 @@ const MESSAGE_STRINGS: Record<
   },
 };
 
-function formatRow(r: ScreenerResult, settings: TelegramPushSettings): string {
-  const s = MESSAGE_STRINGS[settings.messageLang];
+function formatRow(r: ScreenerResult, settings: TelegramPushSettings, lang: TelegramMessageLang): string {
+  const s = MESSAGE_STRINGS[lang];
   const symbol = escapeHtml(r.symbol.replace("-USDT", ""));
   const extras: string[] = [];
   if (settings.showPrice) extras.push(`${s.price} ${fmtPrice(r.lastPrice)}`);
@@ -224,75 +378,281 @@ function formatRow(r: ScreenerResult, settings: TelegramPushSettings): string {
   return extras.length > 0 ? `<b>${symbol}</b> — ${extras.join(" · ")}` : `<b>${symbol}</b>`;
 }
 
-function formatGroup(direction: Direction, rows: ScreenerResult[], settings: TelegramPushSettings): string {
-  const s = MESSAGE_STRINGS[settings.messageLang];
+function formatGroup(
+  direction: Direction,
+  rows: ScreenerResult[],
+  settings: TelegramPushSettings,
+  lang: TelegramMessageLang
+): string {
+  const s = MESSAGE_STRINGS[lang];
   const emoji = direction === "long" ? "🟢" : "🔴";
   const label = direction === "long" ? s.long : s.short;
   if (rows.length === 0) return `${emoji} <b>${label}</b>\n${s.noCandidates}`;
-  const lines = rows.map((r, i) => `${i + 1}. ${formatRow(r, settings)}`);
+  const lines = rows.map((r, i) => `${i + 1}. ${formatRow(r, settings, lang)}`);
   return `${emoji} <b>${label}</b>\n${lines.join("\n")}`;
 }
 
 export function formatScreenerMessage(
   payload: ScreenerPayload,
-  settings: TelegramPushSettings
+  settings: TelegramPushSettings,
+  lang: TelegramMessageLang = settings.messageLang
 ): string {
-  const s = MESSAGE_STRINGS[settings.messageLang];
+  const s = MESSAGE_STRINGS[lang];
   const timestamp = new Date(payload.computedAt).toISOString().replace("T", " ").slice(0, 16);
   return [
     `📊 <b>${s.title}</b> · ${timestamp} UTC`,
     "",
-    formatGroup("long", payload.long, settings),
+    formatGroup("long", payload.long, settings, lang),
     "",
-    formatGroup("short", payload.short, settings),
+    formatGroup("short", payload.short, settings, lang),
   ].join("\n");
 }
 
-export async function sendTelegramMessage(
-  botToken: string,
-  chatId: string,
-  text: string
+// ---------------------------------------------------------------------------
+// Delivery
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether enough time has passed since the last *successful* push.
+ *
+ * Gating in application code rather than in the cron expression is what makes
+ * a missed run self-healing: the schedule ticks far more often than the
+ * interval, so if one tick dies (timeout, cold start, Telegram outage) the
+ * next tick still sees "overdue" and pushes. It also lets an admin change the
+ * interval from the UI without editing pg_cron.
+ */
+export function isPushDue(
+  lastPushedAt: string | null,
+  intervalMinutes: number,
+  now: number = Date.now()
+): boolean {
+  if (!lastPushedAt) return true;
+  const last = new Date(lastPushedAt).getTime();
+  if (!Number.isFinite(last)) return true;
+  // A clock skew that puts the last push in the future shouldn't wedge pushes
+  // shut forever; treat it as due.
+  if (last > now) return true;
+  return now - last >= intervalMinutes * 60_000;
+}
+
+export interface TargetDeliveryResult {
+  targetId: string;
+  label: string;
+  chatId: string;
+  ok: boolean;
+  attempts: number;
+  durationMs: number;
+  error?: string;
+}
+
+export interface PushOutcome {
+  /** True when at least one target accepted the message. */
+  delivered: boolean;
+  skippedReason?: "disabled" | "not_due" | "no_targets" | "no_token";
+  results: TargetDeliveryResult[];
+  lastPushedAt: string | null;
+}
+
+async function recordDelivery(
+  result: TargetDeliveryResult,
+  trigger: PushTrigger
 ): Promise<void> {
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
+  const client = createServiceRoleClient();
+  const nowIso = new Date().toISOString();
+
+  // Health on the target itself, so the admin list can flag a chat that has
+  // been failing without digging through logs.
+  if (result.ok) {
+    await client
+      .from("telegram_push_targets")
+      .update({ last_ok_at: nowIso, consecutive_failures: 0, last_error: null })
+      .eq("id", result.targetId);
+  } else {
+    // Incrementing in SQL rather than read-modify-write here: two overlapping
+    // runs would otherwise both read the same count and write the same +1.
+    await client.rpc("increment_telegram_target_failure", {
+      p_target_id: result.targetId,
+      p_error: (result.error ?? "unknown").slice(0, 1000),
+    });
+  }
+
+  await client.from("telegram_push_log").insert({
+    target_id: result.targetId,
+    target_label: result.label,
+    chat_id: result.chatId,
+    status: result.ok ? "ok" : "failed",
+    error: result.ok ? null : (result.error ?? "unknown").slice(0, 1000),
+    attempts: result.attempts,
+    duration_ms: result.durationMs,
+    trigger,
   });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Telegram API responded ${res.status}: ${body}`);
-  }
-  const json = await res.json();
-  if (!json.ok) throw new Error(`Telegram API error: ${json.description ?? "unknown"}`);
-}
-
-async function sendScreenerPush(
-  settings: TelegramPushSettings,
-  payload: ScreenerPayload
-): Promise<string> {
-  if (!settings.botToken || !settings.chatId) {
-    throw new Error("Bot token and chat ID must both be saved first");
-  }
-  const text = formatScreenerMessage(payload, settings);
-  await sendTelegramMessage(settings.botToken, settings.chatId, text);
-  return markPushed();
-}
-
-/** Called by the 4-hour cron — silently no-ops when the feature is switched off. */
-export async function pushScreenerToTelegram(payload: ScreenerPayload): Promise<void> {
-  const settings = await getTelegramPushSettings();
-  if (!settings.enabled || !settings.botToken || !settings.chatId) return;
-  await sendScreenerPush(settings, payload);
 }
 
 /**
- * Admin-triggered "push now" — bypasses the `enabled` flag (an explicit click means
- * explicit intent) but still requires bot token + chat ID to be configured.
+ * Fan out one message to every enabled target.
+ *
+ * Targets are delivered independently and failures are recorded, never thrown —
+ * one chat the bot was kicked from must not stop the rest, which is exactly how
+ * the previous single-destination implementation lost whole pushes.
  */
-export async function pushScreenerNow(): Promise<{ lastPushedAt: string }> {
-  const settings = await getTelegramPushSettings();
-  const payload = await getScreenerPayload();
-  const lastPushedAt = await sendScreenerPush(settings, payload);
-  return { lastPushedAt };
+export async function deliverToTargets(
+  settings: TelegramPushSettings,
+  targets: TelegramTarget[],
+  buildText: (lang: TelegramMessageLang) => string,
+  trigger: PushTrigger
+): Promise<TargetDeliveryResult[]> {
+  const active = targets.filter((t) => t.enabled);
+
+  // Message text only depends on language, so build at most one per language
+  // rather than re-formatting the whole screener payload per target.
+  const textByLang = new Map<TelegramMessageLang, string>();
+  const textFor = (lang: TelegramMessageLang) => {
+    let cached = textByLang.get(lang);
+    if (cached === undefined) {
+      cached = buildText(lang);
+      textByLang.set(lang, cached);
+    }
+    return cached;
+  };
+
+  const results = await Promise.all(
+    active.map(async (target): Promise<TargetDeliveryResult> => {
+      const token = target.botToken ?? settings.botToken;
+      if (!token) {
+        return {
+          targetId: target.id,
+          label: target.label,
+          chatId: target.chatId,
+          ok: false,
+          attempts: 0,
+          durationMs: 0,
+          error: "No bot token configured for this target",
+        };
+      }
+      const lang = target.messageLang ?? settings.messageLang;
+      const sent: TelegramSendResult = await sendTelegramMessage(token, target.chatId, textFor(lang));
+      return {
+        targetId: target.id,
+        label: target.label,
+        chatId: target.chatId,
+        ok: sent.ok,
+        attempts: sent.attempts,
+        durationMs: sent.durationMs,
+        error: sent.error,
+      };
+    })
+  );
+
+  // Recording is best-effort: losing a log row must not turn a delivered push
+  // into a reported failure.
+  await Promise.all(
+    results.map((r) =>
+      recordDelivery(r, trigger).catch((err) =>
+        console.error("[telegram-push] failed to record delivery", err)
+      )
+    )
+  );
+
+  return results;
 }
+
+async function markAttempt(delivered: boolean, error: string | null): Promise<string | null> {
+  const client = createServiceRoleClient();
+  const nowIso = new Date().toISOString();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const patch: Record<string, any> = { last_attempt_at: nowIso };
+  if (delivered) {
+    patch.last_pushed_at = nowIso;
+    patch.last_error = null;
+    patch.consecutive_failures = 0;
+  } else {
+    patch.last_error = error;
+  }
+  await client.from("telegram_push_settings").update(patch).eq("id", 1);
+
+  if (!delivered) {
+    // Same read-modify-write concern as per-target failures.
+    await client.rpc("increment_telegram_settings_failure", { p_error: error ?? "unknown" });
+  }
+  return delivered ? nowIso : null;
+}
+
+/**
+ * Called by the cron. Honours the enabled flag and the configured interval,
+ * and reports why it did nothing so the caller can log something useful.
+ */
+export async function pushScreenerToTelegram(
+  payload: ScreenerPayload,
+  opts: { force?: boolean; trigger?: PushTrigger } = {}
+): Promise<PushOutcome> {
+  const trigger = opts.trigger ?? "cron";
+  const settings = await getTelegramPushSettings();
+
+  if (!opts.force && !settings.enabled) {
+    return { delivered: false, skippedReason: "disabled", results: [], lastPushedAt: settings.lastPushedAt };
+  }
+  if (!opts.force && !isPushDue(settings.lastPushedAt, settings.pushIntervalMinutes)) {
+    return { delivered: false, skippedReason: "not_due", results: [], lastPushedAt: settings.lastPushedAt };
+  }
+
+  const targets = (await listTelegramTargets()).filter((t) => t.enabled);
+  if (targets.length === 0) {
+    return { delivered: false, skippedReason: "no_targets", results: [], lastPushedAt: settings.lastPushedAt };
+  }
+  if (!settings.botToken && targets.every((t) => !t.botToken)) {
+    return { delivered: false, skippedReason: "no_token", results: [], lastPushedAt: settings.lastPushedAt };
+  }
+
+  const results = await deliverToTargets(
+    settings,
+    targets,
+    (lang) => formatScreenerMessage(payload, settings, lang),
+    trigger
+  );
+
+  const delivered = results.some((r) => r.ok);
+  const failedSummary = results
+    .filter((r) => !r.ok)
+    .map((r) => `${r.label}: ${r.error ?? "unknown"}`)
+    .join("; ");
+
+  const lastPushedAt = await markAttempt(delivered, failedSummary ? failedSummary.slice(0, 1000) : null);
+
+  return {
+    delivered,
+    results,
+    lastPushedAt: lastPushedAt ?? settings.lastPushedAt,
+  };
+}
+
+/**
+ * Admin-triggered "push now" — bypasses both the `enabled` flag and the
+ * interval, since an explicit click is explicit intent.
+ */
+export async function pushScreenerNow(): Promise<PushOutcome> {
+  const payload = await getScreenerPayload();
+  return pushScreenerToTelegram(payload, { force: true, trigger: "manual" });
+}
+
+/** Send a one-off test message to a single target (or all, when no id is given). */
+export async function sendTelegramTest(targetId?: string): Promise<TargetDeliveryResult[]> {
+  const settings = await getTelegramPushSettings();
+  const all = await listTelegramTargets();
+  const targets = targetId ? all.filter((t) => t.id === targetId) : all.filter((t) => t.enabled);
+
+  if (targets.length === 0) throw new Error("no_targets");
+
+  return deliverToTargets(
+    settings,
+    // A test fires at the chosen target even if it is currently switched off —
+    // that's usually exactly the one being debugged.
+    targets.map((t) => ({ ...t, enabled: true })),
+    (lang) =>
+      lang === "zh"
+        ? "✅ Chart-IX 测试消息 — 这条消息说明 Bot 配置正确。"
+        : "✅ Chart-IX test message — your bot is wired up correctly.",
+    "test"
+  );
+}
+
+export { sendTelegramMessage } from "@/lib/telegram-send";

@@ -22,7 +22,8 @@ export async function GET() {
     const settings = await getTelegramPushSettings();
     return NextResponse.json({ data: toPublicShape(settings) });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[admin/telegram-push GET]", err);
+    return NextResponse.json({ error: "Failed to load settings" }, { status: 500 });
   }
 }
 
@@ -52,6 +53,13 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: toPublicShape(settings) });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    // The interval validator throws a message the admin needs to see verbatim;
+    // everything else is an internal detail.
+    const message =
+      err instanceof Error && err.message.startsWith("pushIntervalMinutes")
+        ? err.message
+        : "Failed to save settings";
+    if (message === "Failed to save settings") console.error("[admin/telegram-push PATCH]", err);
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

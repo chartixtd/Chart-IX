@@ -102,7 +102,12 @@ export default function CommunityPostPage() {
                   <button
                     key={emoji}
                     onClick={() => isPro && toggleReaction.mutate(emoji)}
-                    disabled={!isPro || toggleReaction.isPending}
+                    // Deliberately not disabled while the mutation is in flight:
+                    // useToggleReaction writes the new state to the cache on click,
+                    // so the button already reflects the result. Disabling here
+                    // would freeze a control that has visibly already responded.
+                    disabled={!isPro}
+                    aria-pressed={active}
                     title={isPro ? undefined : t("pro_required")}
                     className={cn(
                       "flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm transition-colors",

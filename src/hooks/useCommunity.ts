@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { applyReactionToggle } from "@/lib/community/reactions";
 import type { CommunityComment, CommunityPost } from "@/types";
 
 /** Community API routes return {data}/{error}, not {success,data} like the trading routes. */
@@ -112,8 +113,20 @@ export function useCreateComment(postId: string) {
   });
 }
 
+/**
+ * Optimistic: the count and the active ring update on click, not after the
+ * network settles. Previously the UI only moved once the POST resolved *and*
+ * the invalidated list/detail queries had refetched — two round trips, which
+ * is the lag users saw.
+ *
+ * onSettled still invalidates, so the server remains the final authority and
+ * any drift (including from rapid double-toggles racing each other) is
+ * reconciled on the next fetch.
+ */
 export function useToggleReaction(postId: string) {
   const queryClient = useQueryClient();
+  const detailKey = ["community", "post", postId];
+
   return useMutation({
     mutationFn: (emoji: string) =>
       fetchJson<{ emoji: string; active: boolean }>(`/api/community/posts/${postId}/reactions`, {
@@ -121,9 +134,36 @@ export function useToggleReaction(postId: string) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ emoji }),
       }),
-    onSuccess: () => {
+    onMutate: async (emoji) => {
+      // In-flight refetches would otherwise land after the optimistic write and
+      // stomp it back to the pre-click value.
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: detailKey }),
+        queryClient.cancelQueries({ queryKey: POSTS_KEY }),
+      ]);
+
+      const prevDetail = queryClient.getQueryData<CommunityPost>(detailKey);
+      const prevList = queryClient.getQueryData<CommunityPost[]>(POSTS_KEY);
+
+      if (prevDetail) {
+        queryClient.setQueryData<CommunityPost>(detailKey, applyReactionToggle(prevDetail, emoji));
+      }
+      if (prevList) {
+        queryClient.setQueryData<CommunityPost[]>(
+          POSTS_KEY,
+          prevList.map((p) => (p.id === postId ? applyReactionToggle(p, emoji) : p))
+        );
+      }
+
+      return { prevDetail, prevList };
+    },
+    onError: (_err, _emoji, ctx) => {
+      if (ctx?.prevDetail) queryClient.setQueryData(detailKey, ctx.prevDetail);
+      if (ctx?.prevList) queryClient.setQueryData(POSTS_KEY, ctx.prevList);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: POSTS_KEY });
-      queryClient.invalidateQueries({ queryKey: ["community", "post", postId] });
+      queryClient.invalidateQueries({ queryKey: detailKey });
     },
   });
 }

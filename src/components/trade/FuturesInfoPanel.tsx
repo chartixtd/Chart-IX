@@ -300,7 +300,7 @@ export function FuturesInfoPanel({ symbol }: FuturesInfoPanelProps) {
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") handleAmend(o); }}
-                        className="w-24 bg-bg-input border border-border-default rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none focus:border-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="w-24 bg-bg-tertiary border border-border-default rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none focus:border-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         autoFocus
                       />
                       <button

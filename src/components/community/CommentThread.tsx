@@ -87,6 +87,9 @@ export function CommentThread({ postId }: { postId: string }) {
         ))}
 
       {isPro ? (
+        // placeholder:text-text-secondary rather than text-muted — muted is only
+        // 3.13:1 on this surface, under the 4.5:1 floor for placeholder text.
+        // Same reasoning as FIELD_BASE in PostComposerModal.tsx.
         <div className="flex items-center gap-2 pt-1">
           <input
             value={content}
@@ -96,7 +99,7 @@ export function CommentThread({ postId }: { postId: string }) {
             }}
             placeholder={t("comment_placeholder")}
             maxLength={2_000}
-            className="flex-1 rounded-sm border border-border-default bg-bg-input px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-gold focus:outline-none"
+            className="flex-1 rounded-sm border border-border-default bg-bg-tertiary px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-secondary focus:border-gold focus:outline-none"
           />
           <Button
             variant="secondary"

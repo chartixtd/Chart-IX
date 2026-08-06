@@ -792,6 +792,7 @@
     "edit_post": "Edit Post",
     "title_placeholder": "Title",
     "content_placeholder": "Share something with the community…",
+    "body_label": "Body",
     "cover_image": "Cover image (optional)",
     "add_image": "Add image",
     "replace_image": "Replace image",

@@ -273,7 +273,7 @@ export const FuturesPositionRow = memo(function FuturesPositionRow({
               placeholder={mark.toFixed(4)}
               className={cn(
                 "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted/60",
-                tpValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-input text-text-primary"
+                tpValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-tertiary text-text-primary"
               )}
             />
           </div>
@@ -298,7 +298,7 @@ export const FuturesPositionRow = memo(function FuturesPositionRow({
               placeholder={mark.toFixed(4)}
               className={cn(
                 "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted/60",
-                slValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-input text-text-primary"
+                slValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-tertiary text-text-primary"
               )}
             />
           </div>

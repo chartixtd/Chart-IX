@@ -4,7 +4,7 @@ import { decrypt } from "@/lib/crypto";
 import { placeFuturesOrder, testFuturesOrder } from "@/lib/bingx/futures";
 import { preflightOrder } from "@/lib/trading/preflight";
 import { canTradeLive } from "@/lib/access";
-import { getUserTier } from "@/lib/access-server";
+import { getUserTier } from "@/lib/supabase/get-user-tier";
 import { resolveOrderDirection, getDualSideMode, invalidateDualSideMode } from "@/lib/trading/account-mode";
 import { recordOrder } from "@/lib/trading/persist";
 import { checkRateLimit } from "@/lib/trading/rate-limit";
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   }
   const userId = authData.user.id;
 
-  if (!canTradeLive(await getUserTier(supabase, userId))) {
+  if (!canTradeLive(await getUserTier(userId))) {
     return reject("PRO_REQUIRED", "Live trading requires a Pro subscription", 403);
   }
 

@@ -4,7 +4,7 @@ import { decrypt } from "@/lib/crypto";
 import { placeOrder } from "@/lib/bingx/trade";
 import { preflightOrder } from "@/lib/trading/preflight";
 import { canTradeLive } from "@/lib/access";
-import { getUserTier } from "@/lib/access-server";
+import { getUserTier } from "@/lib/supabase/get-user-tier";
 import { recordOrder } from "@/lib/trading/persist";
 import { checkRateLimit } from "@/lib/trading/rate-limit";
 import { describeBingXError } from "@/lib/trading/errors";
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
   // 免费用户只能用模拟账户。此前这条路由完全没有等级校验——只有合约下单挡了，
   // 现货实盘对任何登录用户都是敞开的。
-  if (!canTradeLive(await getUserTier(supabase, userId))) {
+  if (!canTradeLive(await getUserTier(userId))) {
     return reject("PRO_REQUIRED", "Live trading requires a Pro subscription", 403);
   }
 

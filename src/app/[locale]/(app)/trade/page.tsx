@@ -13,6 +13,8 @@ import { MarketOverview } from "@/components/trade/MarketOverview";
 import { PushOptIn } from "@/components/pwa/PushOptIn";
 import { OrderBook } from "@/components/trade/OrderBook";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useHydrated } from "@/hooks/useHydrated";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { MobileTradeBar } from "./MobileTradeBar";
 
 // lightweight-charts is a large canvas-based dependency — split into its own
@@ -372,8 +374,10 @@ export default function TradePage() {
   const [positionsSheetOpen, setPositionsSheetOpen] = useState(false);
   const [bookOverlayOpen, setBookOverlayOpen] = useState(false);
   // 用 JS 断点做「挂载哪一棵树」的决定，才能真正避免双挂载。
-  // 仅用于外壳选择，SSR 阶段返回 false（先按手机渲染，避免桌面首屏闪大布局）
+  // 仅用于外壳选择，SSR 阶段返回 false；客户端水合帧起就是真实断点值——
+  // 配合下面的 hydrated 门控，避免手机骨架先挂再翻桌面布局的那一闪。
   const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const hydrated = useHydrated();
 
   useBingXWebSocket([symbol]);
 
@@ -417,6 +421,20 @@ export default function TradePage() {
   const handleOrderBookPriceClick = useCallback((price: number) => {
     setPriceLinkSignal({ price, nonce: Date.now() });
   }, []);
+
+  // 水合门控：所有 hook 调用完毕之后、isDesktop 分叉出结构不同的两棵树之前
+  // 拦一下。SSR 和水合帧都渲染这个中性骨架（与 (app)/trade/loading.tsx 同形），
+  // 客户端水合帧结束后 isDesktop 已经是真实值，直接一次性挂载正确的那棵
+  // 树——不会先挂手机布局再在下一帧换成桌面布局，KlineChart 也只初始化一次。
+  if (!hydrated) {
+    return (
+      <div className="flex h-[calc(100dvh-4rem)] flex-col gap-2 p-2">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="min-h-0 flex-1" />
+        <Skeleton className="h-40 w-full lg:h-56" />
+      </div>
+    );
+  }
 
   // key={market}: 切换市场必须整体重挂载 OrderForm，否则同一实例会带着上一个市场的
   // state（尤其是杠杆）跨市场存活——模拟盘本地设置的杠杆数字会原样漏进合约表单。

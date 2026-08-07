@@ -58,6 +58,17 @@ function snapshot(): StoredPreferences {
   };
 }
 
+// Survives PreferencesSync remounts on route-group crossings (e.g.
+// dashboard -> articles unmounts AppChrome and everything under it, then
+// remounts it on the way back). Without this, every such crossing would
+// re-run the initial SELECT + merge + unconditional UPSERT round trip for a
+// user who was already hydrated earlier in this tab. Keyed by userId and
+// cleared on sign-out so a genuine re-login (same tab, same or different
+// user) still re-hydrates from the DB. Same SSR discipline as AuthProvider's
+// lastKnownAuth: never read/write this on the server — it's a process-level
+// singleton shared across requests.
+let hydratedUserId: string | null = null;
+
 /**
  * Headless preferences synchroniser.
  *
@@ -76,6 +87,7 @@ export function PreferencesSync() {
   useEffect(() => {
     if (!userId) {
       hydratedRef.current = false;
+      hydratedUserId = null;
       return;
     }
 
@@ -98,71 +110,82 @@ export function PreferencesSync() {
       debounceTimer = setTimeout(persist, 800);
     };
 
-    (async () => {
-      const { data } = await supabase
-        .from("user_preferences")
-        .select("preferences")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      const remote = (data?.preferences ?? {}) as StoredPreferences;
-
-      // favorites: union local + remote (order-stable, deduped)
-      const localFavorites = useFavoritesStore.getState().favorites;
-      const mergedFavorites = Array.from(
-        new Set([...(remote.favorites ?? []), ...localFavorites])
-      );
-      useFavoritesStore.setState({ favorites: mergedFavorites });
-
-      // trade prefs: DB wins when present (restore last-used setup on new device)
-      if (remote.trade) {
-        const { symbol, interval, market, rightTab, pinnedIntervals } = remote.trade;
-        useTradePrefsStore.setState({
-          ...(symbol ? { symbol } : {}),
-          ...(interval ? { interval } : {}),
-          ...(market ? { market } : {}),
-          ...(rightTab ? { rightTab } : {}),
-          ...(pinnedIntervals?.length ? { pinnedIntervals } : { pinnedIntervals: DEFAULT_PINNED_INTERVALS }),
-        });
-      }
-
-      // chart state: prefer the saved instance list; otherwise carry a v1 save forward
-      const chart = useChartStore.getState();
-      if (remote.chart?.appliedIndicators) {
-        useChartStore.setState({
-          // Drop instances whose registry entry no longer exists.
-          appliedIndicators: remote.chart.appliedIndicators.filter((a) => INDICATOR_BY_ID.has(a.defId)),
-          migratedV1: true,
-          ...(remote.chart.drawings ? { drawings: remote.chart.drawings } : {}),
-          ...(remote.chart.drawingColor ? { drawingColor: remote.chart.drawingColor } : {}),
-          ...(typeof remote.chart.keepToolActive === "boolean"
-            ? { keepToolActive: remote.chart.keepToolActive }
-            : {}),
-        });
-      } else if (remote.trade?.chartIndicators && !chart.migratedV1) {
-        useChartStore.setState({
-          appliedIndicators: migrateLegacyIndicators(
-            remote.trade.chartIndicators as Parameters<typeof migrateLegacyIndicators>[0],
-            remote.trade.indicatorParams
-          ),
-          migratedV1: true,
-        });
-      } else if (remote.chart?.drawings) {
-        useChartStore.setState({ drawings: remote.chart.drawings });
-      }
-
+    if (hydratedUserId === userId) {
+      // Route-group remount with the same signed-in user this tab already
+      // hydrated — skip the fetch/merge/unconditional-write and just resume
+      // live persistence of further local edits below.
       hydratedRef.current = true;
+    } else {
+      (async () => {
+        const { data } = await supabase
+          .from("user_preferences")
+          .select("preferences")
+          .eq("user_id", userId)
+          .maybeSingle();
 
-      // Write the merged snapshot back so the DB reflects the union.
-      persist();
+        if (cancelled) return;
 
-      // Persist any subsequent local changes (debounced).
-      unsubscribers.push(useFavoritesStore.subscribe(schedulePersist));
-      unsubscribers.push(useTradePrefsStore.subscribe(schedulePersist));
-      unsubscribers.push(useChartStore.subscribe(schedulePersist));
-    })();
+        const remote = (data?.preferences ?? {}) as StoredPreferences;
+
+        // favorites: union local + remote (order-stable, deduped)
+        const localFavorites = useFavoritesStore.getState().favorites;
+        const mergedFavorites = Array.from(
+          new Set([...(remote.favorites ?? []), ...localFavorites])
+        );
+        useFavoritesStore.setState({ favorites: mergedFavorites });
+
+        // trade prefs: DB wins when present (restore last-used setup on new device)
+        if (remote.trade) {
+          const { symbol, interval, market, rightTab, pinnedIntervals } = remote.trade;
+          useTradePrefsStore.setState({
+            ...(symbol ? { symbol } : {}),
+            ...(interval ? { interval } : {}),
+            ...(market ? { market } : {}),
+            ...(rightTab ? { rightTab } : {}),
+            ...(pinnedIntervals?.length ? { pinnedIntervals } : { pinnedIntervals: DEFAULT_PINNED_INTERVALS }),
+          });
+        }
+
+        // chart state: prefer the saved instance list; otherwise carry a v1 save forward
+        const chart = useChartStore.getState();
+        if (remote.chart?.appliedIndicators) {
+          useChartStore.setState({
+            // Drop instances whose registry entry no longer exists.
+            appliedIndicators: remote.chart.appliedIndicators.filter((a) => INDICATOR_BY_ID.has(a.defId)),
+            migratedV1: true,
+            ...(remote.chart.drawings ? { drawings: remote.chart.drawings } : {}),
+            ...(remote.chart.drawingColor ? { drawingColor: remote.chart.drawingColor } : {}),
+            ...(typeof remote.chart.keepToolActive === "boolean"
+              ? { keepToolActive: remote.chart.keepToolActive }
+              : {}),
+          });
+        } else if (remote.trade?.chartIndicators && !chart.migratedV1) {
+          useChartStore.setState({
+            appliedIndicators: migrateLegacyIndicators(
+              remote.trade.chartIndicators as Parameters<typeof migrateLegacyIndicators>[0],
+              remote.trade.indicatorParams
+            ),
+            migratedV1: true,
+          });
+        } else if (remote.chart?.drawings) {
+          useChartStore.setState({ drawings: remote.chart.drawings });
+        }
+
+        hydratedRef.current = true;
+        hydratedUserId = userId;
+
+        // Write the merged snapshot back so the DB reflects the union.
+        persist();
+      })();
+    }
+
+    // Persist any subsequent local changes (debounced). Registered
+    // unconditionally (not just on the fresh-hydration branch above) so live
+    // edits keep saving after a route-group remount too; schedulePersist is
+    // a no-op until hydratedRef.current is set either way.
+    unsubscribers.push(useFavoritesStore.subscribe(schedulePersist));
+    unsubscribers.push(useTradePrefsStore.subscribe(schedulePersist));
+    unsubscribers.push(useChartStore.subscribe(schedulePersist));
 
     return () => {
       cancelled = true;

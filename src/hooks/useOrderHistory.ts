@@ -23,5 +23,8 @@ export function useOrderHistory(userId: string | null) {
     enabled: !!userId,
     staleTime: 15_000,
     gcTime: 30 * 60_000,
+    // Key is split by userId — never show one user's order history as a
+    // placeholder for another (account switch / cross-tab session sync).
+    placeholderData: undefined,
   });
 }

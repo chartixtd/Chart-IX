@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -36,13 +36,30 @@ export default function SettingsPage() {
     },
     enabled: !!auth.userId,
     staleTime: 5 * 60_000,
+    // Key is split by userId — never show one user's profile as a
+    // placeholder for another (account switch / cross-tab session sync).
+    placeholderData: undefined,
   });
 
+  // Tracks whether displayName has been hydrated from the server at least
+  // once for the *current* user. `displayName === ""` is not a reliable
+  // "untouched" signal — a user who clears the field to save an empty name,
+  // then triggers a re-render (e.g. clicking a language button, which calls
+  // setQueryData and produces a new data object reference) would have their
+  // just-cleared input silently overwritten back to the old value. A ref
+  // avoids re-hydrating after the first sync, and is reset on user switch so
+  // the new user's profile gets hydrated once.
+  const profileHydratedRef = useRef(false);
+
   useEffect(() => {
-    if (profileQuery.data && displayName === "") {
+    profileHydratedRef.current = false;
+  }, [auth.userId]);
+
+  useEffect(() => {
+    if (profileQuery.data && !profileHydratedRef.current) {
+      profileHydratedRef.current = true;
       setDisplayName(profileQuery.data.display_name ?? "");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileQuery.data]);
 
   const saveProfile = async () => {

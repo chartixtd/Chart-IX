@@ -30,7 +30,7 @@ import { useChartStore } from "@/stores/chartStore";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { canUseAdvancedChart } from "@/lib/access";
 import { INDICATOR_BY_ID, resolvePlotStyle, type IndicatorInput } from "@/lib/chart/indicator-registry";
-import { classifyBarsUpdate } from "@/lib/chart/incremental";
+import { classifyBarsUpdate, classifyTail } from "@/lib/chart/incremental";
 import { IndicatorModal } from "./chart/IndicatorModal";
 import { ChartLegend } from "./chart/ChartLegend";
 import { DrawingToolbar } from "./chart/DrawingToolbar";
@@ -116,6 +116,10 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   // "latest-page poll refresh" — only the former needs the visible range shifted.
   const prevEarliestTimeRef = useRef<UTCTimestamp | null>(null);
   const prevBarCountRef = useRef(0);
+  // The last poll's tail bar time — classifies tick vs. close independently of
+  // count, since sliding-window pagination can keep count/earliest constant
+  // across a real close (see classifyTail's doc comment).
+  const prevLastTimeRef = useRef<number | null>(null);
   // Structural identity from the last full-path render — if either changes, the
   // incremental path must not be trusted and we fall back to full setData.
   const lastAppliedRef = useRef<typeof applied | null>(null);
@@ -274,6 +278,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       lastCandleRef.current = null;
       lastAppliedRef.current = null;
       lastAdvancedRef.current = null;
+      prevLastTimeRef.current = null;
     };
   }, []);
 
@@ -283,6 +288,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     lastCandleRef.current = null;
     prevEarliestTimeRef.current = null;
     prevBarCountRef.current = 0;
+    prevLastTimeRef.current = null;
   }, [symbol, interval]);
 
   // ---- Build indicator series + panes from the applied list ----
@@ -414,60 +420,109 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
 
     if (kind === "tick" || kind === "append") {
       const lastIdx = times.length - 1;
-      // 收线时前一根的最终值也要落盘（轮询返回的收盘价可能与 rAF 实时价有微差）
-      const idxs = kind === "append" ? [lastIdx - 1, lastIdx] : [lastIdx];
-      for (const i of idxs) {
-        if (i < 0) continue;
-        candleSeries.update({
-          time: times[i],
-          open: input.open[i],
-          high: input.high[i],
-          low: input.low[i],
-          close: input.close[i],
-        });
-      }
+      // classifyBarsUpdate's count diff isn't trustworthy on its own — sliding-
+      // window pagination can keep count/earliest constant across a real close
+      // (see classifyTail's doc comment) — so re-derive tick vs. close from the
+      // actual tail timestamp instead of trusting `kind`.
+      const tailKind = classifyTail(prevLastTimeRef.current, times[lastIdx] as unknown as number);
 
-      for (const a of applied) {
-        const def = INDICATOR_BY_ID.get(a.defId);
-        const entries = seriesMapRef.current.get(a.instanceId);
-        if (!def || !entries) continue;
-        let out: Record<string, (number | null)[]>;
-        try { out = def.compute(input, a.params); } catch { continue; }
-        for (const e of entries) {
-          const plot = def.plots.find((p) => p.key === e.plotKey);
-          const values = out[e.plotKey];
-          if (!plot || !values) continue;
-          const resolvedStyle = resolvePlotStyle(def, a.styleOverrides, e.plotKey);
+      if (tailKind !== "regressed") {
+        // 收线时前一根的最终值也要落盘（轮询返回的收盘价可能与 rAF 实时价有微差）
+        const idxs = tailKind === "advanced" ? [lastIdx - 1, lastIdx] : [lastIdx];
+        let ok = true;
+
+        try {
           for (const i of idxs) {
-            const v = values[i];
-            // series.update() 不能"删点"：尾值为 null（如指标窗口未满）就跳过，
-            // 该点本来也不存在于序列里，行为与全量路径一致。
-            if (v === null || v === undefined || Number.isNaN(v)) continue;
-            if (plot.kind === "histogram") {
-              e.series.update({
+            if (i < 0) continue;
+            // i < lastIdx writes an already-plotted historical point (the just-
+            // closed candle's final values) — lightweight-charts' regular
+            // update() throws if its time is behind the series' current last
+            // time, which the live-ticker rAF loop can have already advanced
+            // past (it opens a fresh bucket on wall-clock alone, ahead of what
+            // the poll response has caught up to). historicalUpdate=true is the
+            // legal way to replace an existing historical point.
+            candleSeries.update(
+              {
                 time: times[i],
-                value: v,
-                color: plot.barColor ? plot.barColor({ i, value: v, input }) : resolvedStyle.color,
-              });
-            } else {
-              e.series.update({ time: times[i], value: v });
+                open: input.open[i],
+                high: input.high[i],
+                low: input.low[i],
+                close: input.close[i],
+              },
+              i < lastIdx
+            );
+          }
+        } catch {
+          ok = false;
+        }
+
+        if (ok) {
+          try {
+            for (const a of applied) {
+              const def = INDICATOR_BY_ID.get(a.defId);
+              const entries = seriesMapRef.current.get(a.instanceId);
+              if (!def || !entries) continue;
+              let out: Record<string, (number | null)[]>;
+              try { out = def.compute(input, a.params); } catch { continue; }
+              for (const e of entries) {
+                const plot = def.plots.find((p) => p.key === e.plotKey);
+                const values = out[e.plotKey];
+                if (!plot || !values) continue;
+                const resolvedStyle = resolvePlotStyle(def, a.styleOverrides, e.plotKey);
+                for (const i of idxs) {
+                  const v = values[i];
+                  // series.update() 不能"删点":尾值为 null 就跳过。这依赖 registry
+                  // 里所有指标的 null 输出是单调的(窗口预热型:只有前段可能是
+                  // null,一旦有值就不会再变回 null)——不存在非 null→null 回退,
+                  // 所以跳过等价于该点本来也不存在于序列里,和全量路径一致。
+                  if (v === null || v === undefined || Number.isNaN(v)) continue;
+                  if (plot.kind === "histogram") {
+                    e.series.update(
+                      {
+                        time: times[i],
+                        value: v,
+                        color: plot.barColor ? plot.barColor({ i, value: v, input }) : resolvedStyle.color,
+                      },
+                      i < lastIdx
+                    );
+                  } else {
+                    e.series.update({ time: times[i], value: v }, i < lastIdx);
+                  }
+                }
+              }
             }
+          } catch {
+            ok = false;
           }
         }
-      }
 
-      // 与全量路径同样维护尾蜡烛 ref 与 meta
-      lastCandleRef.current = {
-        time: times[lastIdx],
-        open: input.open[lastIdx],
-        high: input.high[lastIdx],
-        low: input.low[lastIdx],
-        close: input.close[lastIdx],
-        volume: input.volume[lastIdx],
-      };
-      prevEarliestTimeRef.current = times[0] ?? null;
-      prevBarCountRef.current = times.length;
-      return;
+        if (!ok) {
+          // A stale-time throw escaped mid-write. The chart may now hold a
+          // partial update, but the full path below (setData) overwrites the
+          // whole series, so falling through recovers within this same render
+          // instead of leaving broken state up to the next 10s poll. Invalidate
+          // bookkeeping so a corrupted state is never recorded as "applied".
+          prevBarCountRef.current = 0;
+          prevEarliestTimeRef.current = null;
+          prevLastTimeRef.current = null;
+        } else {
+          // 与全量路径同样维护尾蜡烛 ref 与 meta
+          lastCandleRef.current = {
+            time: times[lastIdx],
+            open: input.open[lastIdx],
+            high: input.high[lastIdx],
+            low: input.low[lastIdx],
+            close: input.close[lastIdx],
+            volume: input.volume[lastIdx],
+          };
+          prevEarliestTimeRef.current = times[0] ?? null;
+          prevBarCountRef.current = times.length;
+          prevLastTimeRef.current = times[lastIdx] ?? null;
+          return;
+        }
+      }
+      // tailKind === "regressed", or the write above failed: fall through to
+      // the full path below instead of trusting/returning from a bad increment.
     }
 
     // Detect whether this update is "an older page got prepended" (as opposed
@@ -503,6 +558,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     }
     prevEarliestTimeRef.current = times[0] ?? null;
     prevBarCountRef.current = times.length;
+    prevLastTimeRef.current = times.length ? times[times.length - 1] : null;
 
     for (const a of applied) {
       const def = INDICATOR_BY_ID.get(a.defId);

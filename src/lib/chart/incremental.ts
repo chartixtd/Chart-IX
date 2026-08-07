@@ -25,3 +25,21 @@ export function classifyBarsUpdate(prev: PrevBarsMeta, times: number[]): BarsUpd
 export function overlaySignature(items: ReadonlyArray<Record<string, unknown>>): string {
   return JSON.stringify(items);
 }
+
+export type TailKind = "same" | "advanced" | "regressed";
+
+/**
+ * Compare the new tail bar's time against the last poll's tail time.
+ *
+ * `classifyBarsUpdate`'s count-based "tick"/"append" split breaks under
+ * sliding-window pagination: BingX's latest-page query is a fixed-size window,
+ * so once older pages are loaded (pinning `earliest`), a closed candle shifts
+ * the window without changing the merged/deduped array's length — count-based
+ * classification alone would misread a real close as a same-bar tick and let
+ * the previous candle's authoritative OHLC never land. Comparing the actual
+ * tail timestamp instead is robust to that.
+ */
+export function classifyTail(prevLastTime: number | null, lastTime: number): TailKind {
+  if (prevLastTime === null || lastTime === prevLastTime) return "same";
+  return lastTime > prevLastTime ? "advanced" : "regressed";
+}

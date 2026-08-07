@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyBarsUpdate, overlaySignature } from "./incremental";
+import { classifyBarsUpdate, classifyTail, overlaySignature } from "./incremental";
 
 describe("classifyBarsUpdate", () => {
   const prev = { earliest: 100, count: 3 };
@@ -27,6 +27,30 @@ describe("classifyBarsUpdate", () => {
   it("empty times is full", () => {
     expect(classifyBarsUpdate(prev, [])).toBe("full");
   });
+  // Sliding-window pagination: the latest-300 window can shift forward by one
+  // (a bar closed) while the merged/deduped array's earliest bar also shifts
+  // forward, keeping count constant — must not be mistaken for a same-window tick.
+  it("earliest advanced by one step with count unchanged is full", () => {
+    expect(classifyBarsUpdate(prev, [200, 300, 400])).toBe("full");
+  });
+  it("prev.count 0 with non-null earliest (inconsistent bookkeeping) is full", () => {
+    expect(classifyBarsUpdate({ earliest: 100, count: 0 }, [100, 200, 300])).toBe("full");
+  });
+});
+
+describe("classifyTail", () => {
+  it("null prevLastTime is same", () => {
+    expect(classifyTail(null, 100)).toBe("same");
+  });
+  it("equal last time is same", () => {
+    expect(classifyTail(100, 100)).toBe("same");
+  });
+  it("advanced last time is advanced", () => {
+    expect(classifyTail(100, 200)).toBe("advanced");
+  });
+  it("regressed last time is regressed", () => {
+    expect(classifyTail(200, 100)).toBe("regressed");
+  });
 });
 
 describe("overlaySignature", () => {
@@ -43,5 +67,10 @@ describe("overlaySignature", () => {
   });
   it("empty array has its own signature", () => {
     expect(overlaySignature([])).toBe("[]");
+  });
+  it("changes when items are reordered", () => {
+    const a = { price: 1, color: "#f00", dashed: true, title: "TP" };
+    const b = { price: 2, color: "#0f0", dashed: false, title: "SL" };
+    expect(overlaySignature([a, b])).not.toBe(overlaySignature([b, a]));
   });
 });

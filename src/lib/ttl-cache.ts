@@ -16,6 +16,7 @@ export function createTtlCache<T>({ ttlMs, compute, now = Date.now }: TtlCacheOp
         (data) => { cached = { at: now(), data }; inflight = null; return data; },
         (err) => {
           inflight = null;
+          console.error("[ttl-cache] compute failed" + (cached ? " — serving stale" : ""), err);
           // 有旧结果就先顶着用（stale-while-error），别让一次上游抖动把整页打空
           if (cached) return cached.data;
           throw err;

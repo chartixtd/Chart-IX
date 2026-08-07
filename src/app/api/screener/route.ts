@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const data = await getScreenerPayload();
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json(
+      { success: true, data },
+      { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } }
+    );
   } catch (error) {
     console.error("[screener]", error);
     return NextResponse.json(

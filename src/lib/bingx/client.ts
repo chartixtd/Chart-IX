@@ -28,6 +28,7 @@ export class BingXClient {
         "X-SOURCE-KEY": "BX-AI-SKILL",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
     });
 
     if (!response.ok) {

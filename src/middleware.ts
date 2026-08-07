@@ -7,6 +7,22 @@ import { routing } from "./i18n/routing";
 
 const intlMiddleware = createMiddleware(routing);
 
+// 60s per-user cache of the admin-gate lookup. Trade-off (documented in the
+// perf spec §4): revoking admin / disabling an account can take up to 60s to
+// bite in an already-warm edge instance. getUser() itself stays uncached.
+const roleCache = new Map<string, { role: string | null; disabled: boolean; at: number }>();
+const ROLE_TTL_MS = 60_000;
+
+async function getAdminProfile(userId: string) {
+  const hit = roleCache.get(userId);
+  if (hit && Date.now() - hit.at < ROLE_TTL_MS) return hit;
+  const { data } = await createServiceRoleClient()
+    .from("users").select("role, is_disabled").eq("id", userId).single();
+  const entry = { role: data?.role ?? null, disabled: Boolean(data?.is_disabled), at: Date.now() };
+  roleCache.set(userId, entry);
+  return entry;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -17,19 +33,12 @@ export async function middleware(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    // 用 service_role 查 users 表 (绕过 RLS)
-    const serviceClient = createServiceRoleClient();
-
     if (pathname === "/admin/login") {
       // 已登录的 admin 重定向到后台首页
       if (user) {
-        const { data: profile } = await serviceClient
-          .from("users")
-          .select("role")
-          .eq("id", user.id)
-          .single();
+        const profile = await getAdminProfile(user.id);
 
-        if (profile?.role === "admin") {
+        if (profile.role === "admin") {
           return NextResponse.redirect(new URL("/admin", request.url));
         }
       }
@@ -42,18 +51,14 @@ export async function middleware(request: NextRequest) {
     }
 
     // 非 admin → 重定向到首页
-    const { data: profile } = await serviceClient
-      .from("users")
-      .select("role, is_disabled")
-      .eq("id", user.id)
-      .single();
+    const profile = await getAdminProfile(user.id);
 
-    if (!profile || profile.role !== "admin") {
+    if (profile.role !== "admin") {
       const cookieLocale = request.cookies.get("NEXT_LOCALE")?.value || routing.defaultLocale;
       return NextResponse.redirect(new URL(`/${cookieLocale}`, request.url));
     }
 
-    if (profile.is_disabled) {
+    if (profile.disabled) {
       await supabase.auth.signOut();
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }

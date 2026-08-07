@@ -3,6 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import type { SymbolSpec, TradingMarket } from "@/types/trading";
 
+/**
+ * 规格数据（精度/步长/最小名义值）参与下单校验，不得使用旧 symbol 的值。
+ * 因此显式指定 placeholderData: undefined 来覆盖全局 keepPreviousData。
+ */
+
 async function fetchSpec(
   symbol: string,
   market: TradingMarket,
@@ -32,5 +37,6 @@ export function useSymbolSpec(
     gcTime: 60 * 60 * 1000,
     enabled: !!symbol,
     retry: 1,
+    placeholderData: undefined,
   });
 }

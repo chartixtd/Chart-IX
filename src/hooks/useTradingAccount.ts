@@ -3,6 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import type { FuturesOrder, FuturesFillRecord } from "@/lib/bingx/futures";
 
+/**
+ * 交易关键数据（余额/杠杆/持仓/挂单）严禁在 queryKey 切换时展示旧值。
+ * OrderForm 的 confirmedLeverage 门控依赖"新 keyData 未到达时为 undefined"这一语义——
+ * 当 direction 进入 queryKey 时，方向切换会触发新查询，此刻旧方向的数据必须为 undefined，
+ * 不得用 keepPreviousData 作为 placeholder，否则旧杠杆会被误标为新方向"已确认"。
+ * 同理 useSymbolSpec 的规格数据参与下单校验，不得用旧 symbol 的精度/步长/最小名义值。
+ * 因此这个文件的所有 useQuery 显式指定 placeholderData: undefined 来覆盖全局 keepPreviousData。
+ */
+
 export type { FuturesOrder, FuturesFillRecord };
 
 interface SpotBalance {
@@ -98,6 +107,7 @@ export function useSpotBalances(enabled = true) {
     staleTime: 5_000,
     enabled,
     retry: false,
+    placeholderData: undefined,
   });
 }
 
@@ -138,6 +148,7 @@ export function useFuturesAccount(symbol: string, direction: "LONG" | "SHORT" = 
     staleTime: 5_000,
     enabled: enabled && !!symbol,
     retry: false,
+    placeholderData: undefined,
   });
 }
 
@@ -153,6 +164,7 @@ export function useFuturesPositions(enabled = true) {
     staleTime: 10_000,
     enabled,
     retry: false,
+    placeholderData: undefined,
   });
 }
 
@@ -168,6 +180,7 @@ export function useFuturesOpenOrders(enabled = true) {
     staleTime: 10_000,
     enabled,
     retry: false,
+    placeholderData: undefined,
   });
 }
 
@@ -193,6 +206,7 @@ export function useFuturesContracts(enabled = true) {
     staleTime: 30 * 60_000,
     enabled,
     retry: false,
+    placeholderData: undefined,
   });
 }
 
@@ -205,6 +219,7 @@ export function useFuturesBalance(enabled = true) {
     staleTime: 10_000,
     enabled,
     retry: false,
+    placeholderData: undefined,
   });
 }
 
@@ -220,6 +235,7 @@ export function useSpotOpenOrders(enabled = true) {
     staleTime: 10_000,
     enabled,
     retry: false,
+    placeholderData: undefined,
   });
 }
 
@@ -235,6 +251,7 @@ export function useSpotMyTrades(limit = 30, enabled = true) {
     staleTime: 10_000,
     enabled,
     retry: false,
+    placeholderData: undefined,
   });
 }
 
@@ -249,6 +266,7 @@ export function useFuturesOrderHistory(enabled = true) {
     staleTime: 30_000,
     enabled,
     retry: false,
+    placeholderData: undefined,
   });
 }
 
@@ -263,5 +281,6 @@ export function useFuturesFillHistory(enabled = true) {
     staleTime: 30_000,
     enabled,
     retry: false,
+    placeholderData: undefined,
   });
 }

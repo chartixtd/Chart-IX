@@ -8,6 +8,14 @@ import { useToast } from "@/components/ui/Toast";
 import type { ChartTradeMarker, ChartPriceLine } from "@/components/trade/KlineChart";
 import type { TradeMarketType } from "@/stores/tradePrefs";
 
+/**
+ * 图表叠加数据（["overlay","futures",symbol] 和 ["overlay","spot",symbol]）
+ * 严禁在 symbol 切换时展示旧数据。symbol 切换瞬间，旧 symbol 的挂单/止盈止损
+ * 价格线会被错误地画到新 symbol 图上（builders 对挂单没有按 symbol 过滤），
+ * 且价格线可拖动——拖动会用新 symbol + 旧订单 id 调改单接口，后果严重。
+ * 因此这两个 useQuery 显式指定 placeholderData: undefined 来覆盖全局 keepPreviousData。
+ */
+
 // 价格线配色
 const ENTRY_COLOR = "#3b82f6"; // 进场价 蓝
 const LIQ_COLOR = "#f59e0b"; // 强平价 橙
@@ -70,6 +78,7 @@ export function useChartOverlay(symbol: string, market: TradeMarketType): Overla
     enabled: market === "futures" && !!symbol,
     refetchInterval: 5_000,
     staleTime: 4_000,
+    placeholderData: undefined,
   });
 
   // ---- 实盘现货 ----
@@ -90,6 +99,7 @@ export function useChartOverlay(symbol: string, market: TradeMarketType): Overla
     enabled: market === "spot" && !!symbol,
     refetchInterval: 10_000,
     staleTime: 8_000,
+    placeholderData: undefined,
   });
 
   return useMemo<Overlay>(() => {

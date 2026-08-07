@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { LANGUAGE_LABELS, PUBLIC_LOCALES } from "@/lib/constants";
 
 export default function SettingsPage() {
@@ -15,66 +17,96 @@ export default function SettingsPage() {
   const router = useRouter();
   const supabase = createClient();
   const auth = useAuth();
+  const queryClient = useQueryClient();
 
-  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
-  const [profile, setProfile] = useState<{
-    display_name: string | null;
-    language: string;
-    tier: string;
-    role: string;
-  } | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    (async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return;
-      setUser({ id: authUser.id, email: authUser.email ?? "" });
-
-      const { data: p } = await supabase
+  const profileQuery = useQuery({
+    queryKey: ["settings", "profile", auth.userId],
+    queryFn: async () => {
+      const { data, error } = await supabase
         .from("users")
         .select("display_name, language, tier, role")
-        .eq("id", authUser.id)
+        .eq("id", auth.userId as string)
         .single();
+      if (error) throw new Error(error.message);
+      return data as { display_name: string | null; language: string; tier: string; role: string };
+    },
+    enabled: !!auth.userId,
+    staleTime: 5 * 60_000,
+    // Key is split by userId — never show one user's profile as a
+    // placeholder for another (account switch / cross-tab session sync).
+    placeholderData: undefined,
+  });
 
-      if (p) {
-        setProfile(p);
-        setDisplayName(p.display_name ?? "");
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Tracks whether displayName has been hydrated from the server at least
+  // once for the *current* user. `displayName === ""` is not a reliable
+  // "untouched" signal — a user who clears the field to save an empty name,
+  // then triggers a re-render (e.g. clicking a language button, which calls
+  // setQueryData and produces a new data object reference) would have their
+  // just-cleared input silently overwritten back to the old value. A ref
+  // avoids re-hydrating after the first sync, and is reset on user switch so
+  // the new user's profile gets hydrated once.
+  const profileHydratedRef = useRef(false);
+
+  useEffect(() => {
+    profileHydratedRef.current = false;
+  }, [auth.userId]);
+
+  useEffect(() => {
+    if (profileQuery.data && !profileHydratedRef.current) {
+      profileHydratedRef.current = true;
+      setDisplayName(profileQuery.data.display_name ?? "");
+    }
+  }, [profileQuery.data]);
 
   const saveProfile = async () => {
-    if (!user) return;
+    if (!auth.userId) return;
     setSaving(true);
     setMessage("");
 
     const { error } = await supabase
       .from("users")
       .update({ display_name: displayName || null })
-      .eq("id", user.id);
+      .eq("id", auth.userId);
 
     if (error) {
       setMessage(error.message);
     } else {
       setMessage(t("saved"));
-      setProfile((prev) => (prev ? { ...prev, display_name: displayName } : prev));
+      queryClient.setQueryData(
+        ["settings", "profile", auth.userId],
+        (prev: { display_name: string | null; language: string; tier: string; role: string } | undefined) =>
+          prev ? { ...prev, display_name: displayName || null } : prev
+      );
       auth.refresh();
     }
     setSaving(false);
   };
 
   const saveLanguage = async (lang: string) => {
-    if (!user) return;
-    await supabase.from("users").update({ language: lang }).eq("id", user.id);
-    setProfile((prev) => (prev ? { ...prev, language: lang } : prev));
+    if (!auth.userId) return;
+    await supabase.from("users").update({ language: lang }).eq("id", auth.userId);
+    queryClient.setQueryData(
+      ["settings", "profile", auth.userId],
+      (prev: { display_name: string | null; language: string; tier: string; role: string } | undefined) =>
+        prev ? { ...prev, language: lang } : prev
+    );
     router.refresh();
   };
 
-  if (!user) {
+  if (auth.loading) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-6 lg:py-12">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="mt-8 h-64 w-full" />
+        <Skeleton className="mt-6 h-32 w-full" />
+      </div>
+    );
+  }
+  if (!auth.userId) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-6 lg:py-12">
         <p className="text-text-muted">{t("please_login")}</p>
@@ -92,17 +124,17 @@ export default function SettingsPage() {
         <div className="mt-4 space-y-4">
           <div>
             <label className="text-sm text-text-muted">{t("email")}</label>
-            <p className="break-all text-text-primary">{user.email}</p>
+            <p className="break-all text-text-primary">{auth.email ?? ""}</p>
           </div>
           <div>
             <label className="text-sm text-text-muted">{t("role")}</label>
-            <p className="text-text-primary capitalize">{profile?.role ?? "-"}</p>
+            <p className="text-text-primary capitalize">{profileQuery.data?.role ?? "-"}</p>
           </div>
           <div>
             <label className="text-sm text-text-muted">{t("tier")}</label>
             <p className="text-text-primary">
-              <span className={profile?.tier === "pro" ? "text-gold" : ""}>
-                {profile?.tier ?? "-"}
+              <span className={profileQuery.data?.tier === "pro" ? "text-gold" : ""}>
+                {profileQuery.data?.tier ?? "-"}
               </span>
             </p>
           </div>
@@ -116,7 +148,7 @@ export default function SettingsPage() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               className="mt-1 w-full rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:border-gold focus:outline-none lg:max-w-sm"
-              placeholder={user.email.split("@")[0]}
+              placeholder={(auth.email ?? "").split("@")[0]}
             />
           </div>
           {message && (
@@ -137,7 +169,7 @@ export default function SettingsPage() {
           {PUBLIC_LOCALES.map((l) => (
             <Button
               key={l}
-              variant={profile?.language === l ? "primary" : "outline"}
+              variant={profileQuery.data?.language === l ? "primary" : "outline"}
               size="sm"
               onClick={() => saveLanguage(l)}
             >

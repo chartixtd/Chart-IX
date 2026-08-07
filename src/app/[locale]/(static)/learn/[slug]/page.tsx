@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useLocale } from "next-intl";
 import Link from "next/link";
@@ -28,63 +29,65 @@ export default function LearningPathDetailPage() {
   const locale = useLocale() as Locale;
   const auth = useAuth();
 
-  const [path, setPath] = useState<LearningPath | null | undefined>(undefined);
-  const [steps, setSteps] = useState<StepWithVideo[]>([]);
-  const [completedVideoIds, setCompletedVideoIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
+  // path + steps 一次嵌套查询拿全（公开数据，立即发起，不等 auth）
+  const pathQuery = useQuery({
+    queryKey: ["learn", "path", slug],
+    queryFn: async () => {
       const supabase = createClient();
-
-      const { data: pathData } = await supabase
+      const { data, error } = await supabase
         .from("learning_paths")
-        .select("*")
+        .select("*, steps:learning_path_steps(*, video:videos(id, title, duration_seconds, tier_required))")
         .eq("slug", slug)
         .eq("is_published", true)
-        .single();
+        .order("sort_order", { referencedTable: "learning_path_steps", ascending: true })
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) return null;
+      const { steps, ...path } = data as unknown as LearningPath & { steps: StepWithVideo[] };
+      return { path: path as LearningPath, steps: steps ?? [] };
+    },
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+  });
 
-      if (!pathData) {
-        if (!cancelled) { setPath(null); setLoading(false); }
-        return;
-      }
+  const steps = pathQuery.data?.steps ?? [];
+  const videoIds = steps.map((s) => s.video_id);
 
-      const { data: stepData } = await supabase
-        .from("learning_path_steps")
-        .select("*, video:videos(id, title, duration_seconds, tier_required)")
-        .eq("path_id", pathData.id)
-        .order("sort_order", { ascending: true });
+  // 用户进度：auth.userId 就绪即发，与 pathQuery 并行（不串行等 path——
+  // videoIds 到达前 enabled 为 false，到达后自动触发，仍比原来的三段串行少一跳）
+  const progressQuery = useQuery({
+    queryKey: ["learn", "progress", auth.userId, slug, videoIds.length],
+    queryFn: async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("video_progress")
+        .select("video_id")
+        .eq("user_id", auth.userId as string)
+        .eq("completed", true)
+        .in("video_id", videoIds);
+      return new Set((data ?? []).map((p: { video_id: string }) => p.video_id));
+    },
+    enabled: !!auth.userId && videoIds.length > 0,
+    staleTime: 30_000,
+    // Key includes auth.userId — never show one user's progress as a
+    // placeholder while another user's data is still in flight.
+    placeholderData: undefined,
+  });
+  const completedVideoIds = progressQuery.data ?? new Set<string>();
 
-      let completed = new Set<string>();
-      if (auth.userId && stepData?.length) {
-        const videoIds = stepData.map((s: StepWithVideo) => s.video_id);
-        const { data: progress } = await supabase
-          .from("video_progress")
-          .select("video_id")
-          .eq("user_id", auth.userId)
-          .eq("completed", true)
-          .in("video_id", videoIds);
-        completed = new Set((progress ?? []).map((p: { video_id: string }) => p.video_id));
-
-        if (stepData.length > 0 && completed.size === stepData.length) {
-          supabase.rpc("grant_achievement", { p_key: "first_path_completed" }).then(() => {});
-        }
-      }
-
-      if (!cancelled) {
-        setPath(pathData as LearningPath);
-        setSteps((stepData ?? []) as StepWithVideo[]);
-        setCompletedVideoIds(completed);
-        setLoading(false);
-      }
+  useEffect(() => {
+    if (
+      auth.userId &&
+      steps.length > 0 &&
+      completedVideoIds.size === steps.length
+    ) {
+      // Idempotent server-side (no-ops if already earned) — safe to re-fire.
+      createClient().rpc("grant_achievement", { p_key: "first_path_completed" }).then(() => {});
     }
-    if (!auth.loading) load();
-    return () => { cancelled = true; };
-  }, [slug, auth.userId, auth.loading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.userId, steps.length, completedVideoIds.size]);
 
-  if (loading || path === undefined) {
+  if (pathQuery.isPending) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12">
         <Skeleton className="h-8 w-64" />
@@ -95,7 +98,7 @@ export default function LearningPathDetailPage() {
     );
   }
 
-  if (path === null) {
+  if (!pathQuery.data) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12">
         <EmptyState icon={<span className="text-4xl">🧭</span>} title="未找到该学习路径" />
@@ -103,6 +106,7 @@ export default function LearningPathDetailPage() {
     );
   }
 
+  const path = pathQuery.data.path;
   const title = path.title[locale] ?? path.title["en-US"];
   const desc = path.description?.[locale] ?? path.description?.["en-US"];
   const completedCount = steps.filter((s) => completedVideoIds.has(s.video_id)).length;

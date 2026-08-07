@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
@@ -22,11 +23,9 @@ export default function VideoDetailPage() {
   const t = useTranslations("video.detail");
   const tc = useTranslations("video.card");
 
-  const [video, setVideo] = useState<Video | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [previewEnded, setPreviewEnded] = useState(false);
   const auth = useAuth();
+  const queryClient = useQueryClient();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,40 +54,37 @@ export default function VideoDetailPage() {
     return () => window.removeEventListener("keydown", handler, { capture: true });
   }, []);
 
-  // Fetch video data
+  const videoQuery = useQuery({
+    queryKey: ["video", videoId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("videos")
+        .select("*, category:video_categories(id, name, slug)")
+        .eq("id", videoId)
+        .eq("is_deleted", false)
+        .single();
+      if (error) throw new Error(error.message);
+      return data as Video;
+    },
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+  });
+  const video = videoQuery.data ?? null;
+  const loading = videoQuery.isPending;
+  const error = videoQuery.error ? (videoQuery.error as Error).message : null;
+
+  // Reset the once-per-video view-count guard when navigating to a new video.
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const videoRes = await supabase
-          .from("videos")
-          .select("*, category:video_categories(id, name, slug)")
-          .eq("id", videoId)
-          .eq("is_deleted", false)
-          .single();
-
-        if (videoRes.error) {
-          setError(videoRes.error.message);
-          setLoading(false);
-          return;
-        }
-
-        setVideo(videoRes.data as Video);
-      } catch (err) {
-        setError(String(err));
-      }
-
-      setLoading(false);
-    }
-
-    fetchData();
+    viewIncrementedRef.current = false;
   }, [videoId]);
 
   // Increment view count once
   useEffect(() => {
-    if (!video || viewIncrementedRef.current) return;
+    // videoQuery.isPlaceholderData guards against the moment videoId has
+    // already switched (e.g. a "next lesson" link) but `video` is still the
+    // previous video's kept-around data under global keepPreviousData — we
+    // must not stamp the new video's row with the old video's view count.
+    if (!video || videoQuery.isPlaceholderData || viewIncrementedRef.current) return;
     viewIncrementedRef.current = true;
 
     supabase
@@ -97,10 +93,12 @@ export default function VideoDetailPage() {
       .eq("id", videoId)
       .then(({ error }) => {
         if (!error) {
-          setVideo((prev) => (prev ? { ...prev, view_count: prev.view_count + 1 } : prev));
+          queryClient.setQueryData<Video>(["video", videoId], (prev) =>
+            prev ? { ...prev, view_count: (prev.view_count ?? 0) + 1 } : prev
+          );
         }
       });
-  }, [video, videoId]);
+  }, [video, videoId, queryClient, videoQuery.isPlaceholderData]);
 
   // Progress tracking: every 10s
   useEffect(() => {

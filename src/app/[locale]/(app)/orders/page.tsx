@@ -1,40 +1,16 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RecordList, type RecordColumn } from "@/components/ui/RecordList";
-import { createClient } from "@/lib/supabase/client";
 import { formatPrice } from "@/lib/utils";
-
-interface Order {
-  id: string;
-  user_id: string;
-  api_key_id: string | null;
-  market_type: "spot" | "futures";
-  symbol: string;
-  side: "buy" | "sell";
-  order_type: "market" | "limit" | "stop_loss" | "take_profit" | "stop_market";
-  quantity: number;
-  price: number | null;
-  stop_price: number | null;
-  leverage: number;
-  status: "pending" | "filled" | "partially_filled" | "canceled" | "rejected" | "expired";
-  bingx_order_id: string | null;
-  executed_qty: number | null;
-  executed_price: number | null;
-  total_value: number | null;
-  fee: number | null;
-  fee_asset: string | null;
-  error_message: string | null;
-  risk_rejected: boolean;
-  risk_reason: string | null;
-  created_at: string;
-  updated_at: string;
-}
+import { useAuth } from "@/components/auth/AuthProvider";
+import { useOrderHistory } from "@/hooks/useOrderHistory";
+import type { Order } from "@/types";
 
 type FilterTab = "all" | "pending" | "filled" | "canceled" | "rejected";
 
@@ -62,43 +38,12 @@ export default function OrdersPage() {
   const tCommon = useTranslations("common");
   const tSettings = useTranslations("settings");
 
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [notLoggedIn, setNotLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
 
-  const supabase = createClient();
+  const auth = useAuth();
+  const query = useOrderHistory(auth.userId);
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setNotLoggedIn(false);
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError || !userData.user) {
-      setNotLoggedIn(true);
-      setLoading(false);
-      return;
-    }
-
-    const { data, error: fetchError } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("user_id", userData.user.id)
-      .order("created_at", { ascending: false });
-
-    if (fetchError) {
-      setError(fetchError.message);
-    } else {
-      setOrders(data || []);
-    }
-    setLoading(false);
-  }, [supabase]);
-
-  useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
+  const orders = query.data ?? [];
 
   const filteredOrders = useMemo(() => {
     if (activeTab === "all") return orders;
@@ -241,7 +186,7 @@ export default function OrdersPage() {
     URL.revokeObjectURL(url);
   }, [filteredOrders]);
 
-  if (loading) {
+  if (auth.loading || (auth.userId && query.isPending)) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
         <div className="mb-8">
@@ -275,7 +220,7 @@ export default function OrdersPage() {
     );
   }
 
-  if (notLoggedIn) {
+  if (!auth.loading && !auth.userId) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
         <EmptyState
@@ -286,12 +231,12 @@ export default function OrdersPage() {
     );
   }
 
-  if (error && !orders.length) {
+  if (query.error && !query.data?.length) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
         <div className="text-center py-24">
-          <p className="text-danger">{error}</p>
-          <Button variant="outline" className="mt-4" onClick={fetchOrders}>
+          <p className="text-danger">{(query.error as Error).message}</p>
+          <Button variant="outline" className="mt-4" onClick={() => query.refetch()}>
             {tCommon("error")}
           </Button>
         </div>
@@ -306,9 +251,9 @@ export default function OrdersPage() {
         <p className="mt-1 text-sm text-text-secondary">{t("no_orders")}</p>
       </div>
 
-      {error && (
+      {query.error && !!query.data?.length && (
         <div className="mb-4 rounded-sm border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
-          {error}
+          {(query.error as Error).message}
         </div>
       )}
 

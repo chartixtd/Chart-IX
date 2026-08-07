@@ -4,6 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import type { Achievement } from "@/types";
 
+/**
+ * userId 键控的成就数据严禁在 tab 换号时展示旧用户的已获成就给新用户。
+ * 因此显式指定 placeholderData: undefined 来覆盖全局 keepPreviousData。
+ */
+
 export interface AchievementWithStatus extends Achievement {
   earned: boolean;
   earnedAt: string | null;
@@ -30,5 +35,6 @@ export function useAchievements(userId: string | null) {
     },
     enabled: !!userId,
     staleTime: 30_000,
+    placeholderData: undefined,
   });
 }

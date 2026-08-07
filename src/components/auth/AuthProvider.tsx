@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export interface AuthState {
@@ -46,7 +46,18 @@ export function AuthProvider({
   // Module variable assignment is not setState — safe to run during render.
   // Guarded to the browser only: this function body also runs during SSR,
   // where writing to a module-level variable would leak across requests.
-  if (typeof window !== "undefined" && initialAuth) lastKnownAuth = initialAuth;
+  // Also guarded to only fire when `initialAuth` is a *new* server snapshot
+  // (ref identity changed), not merely because this component re-rendered
+  // (e.g. from its own internal setAuth call). Without this guard, a
+  // SIGNED_OUT setState would correctly clear lastKnownAuth, but the
+  // resulting re-render would immediately run this line again with the
+  // stale `initialAuth` prop and write the old (signed-in) state right
+  // back — reviving a logged-out user's identity on the next remount.
+  const seededAuthRef = useRef<AuthState | undefined>(undefined);
+  if (typeof window !== "undefined" && initialAuth && seededAuthRef.current !== initialAuth) {
+    seededAuthRef.current = initialAuth;
+    lastKnownAuth = initialAuth;
+  }
 
   // Server-prefetched auth is authoritative for first paint — no loading flash,
   // no client-side request waterfall, and tier/role are always accurate.

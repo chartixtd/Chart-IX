@@ -9,7 +9,7 @@ import VideosLoading from "./loading";
 import type { Video, VideoCategory } from "@/types";
 
 // Public catalog data, no per-user auth check — see the matching comment in
-// src/app/[locale]/learn/page.tsx for why this uses the service-role client
+// src/app/[locale]/(static)/learn/page.tsx for why this uses the service-role client
 // instead of the cookie-bound one.
 export const revalidate = 300;
 

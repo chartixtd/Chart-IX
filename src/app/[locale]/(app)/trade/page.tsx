@@ -57,7 +57,9 @@ const FuturesInfoPanel = dynamic(
 );
 const FuturesWalletSummary = dynamic(
   () => import("@/components/trade/FuturesWalletSummary").then((m) => m.FuturesWalletSummary),
-  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
+  // 两处使用位置（桌面右栏、移动端下单 sheet）的父容器都是 auto 高度——h-full 解析为 0，
+  // 骨架不可见，chunk 加载完瞬间内容"弹出"引发 CLS。改成固定高度，约等于真实渲染高度。
+  { ssr: false, loading: () => <Skeleton className="h-12 w-full" /> }
 );
 import { FearGreedIndex } from "@/components/trade/FearGreedIndex";
 import { Input } from "@/components/ui/Input";

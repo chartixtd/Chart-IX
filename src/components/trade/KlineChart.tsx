@@ -30,6 +30,7 @@ import { useChartStore } from "@/stores/chartStore";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { canUseAdvancedChart } from "@/lib/access";
 import { INDICATOR_BY_ID, resolvePlotStyle, type IndicatorInput } from "@/lib/chart/indicator-registry";
+import { classifyBarsUpdate } from "@/lib/chart/incremental";
 import { IndicatorModal } from "./chart/IndicatorModal";
 import { ChartLegend } from "./chart/ChartLegend";
 import { DrawingToolbar } from "./chart/DrawingToolbar";
@@ -115,6 +116,10 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   // "latest-page poll refresh" — only the former needs the visible range shifted.
   const prevEarliestTimeRef = useRef<UTCTimestamp | null>(null);
   const prevBarCountRef = useRef(0);
+  // Structural identity from the last full-path render — if either changes, the
+  // incremental path must not be trusted and we fall back to full setData.
+  const lastAppliedRef = useRef<typeof applied | null>(null);
+  const lastAdvancedRef = useRef<boolean | null>(null);
 
   // Held in state (not just refs) so the drawing layer re-renders once they exist.
   const [chartApi, setChartApi] = useState<IChartApi | null>(null);
@@ -267,6 +272,8 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       setCandleSeries(null);
       isFirstDataRef.current = true;
       lastCandleRef.current = null;
+      lastAppliedRef.current = null;
+      lastAdvancedRef.current = null;
     };
   }, []);
 
@@ -397,6 +404,72 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     if (!chartApi || !candleSeries || !bars) return;
     const { times, input } = bars;
 
+    const kind =
+      applied !== lastAppliedRef.current || hasAdvancedChart !== lastAdvancedRef.current
+        ? "full"
+        : classifyBarsUpdate(
+            { earliest: prevEarliestTimeRef.current, count: prevBarCountRef.current },
+            times as unknown as number[]
+          );
+
+    if (kind === "tick" || kind === "append") {
+      const lastIdx = times.length - 1;
+      // 收线时前一根的最终值也要落盘（轮询返回的收盘价可能与 rAF 实时价有微差）
+      const idxs = kind === "append" ? [lastIdx - 1, lastIdx] : [lastIdx];
+      for (const i of idxs) {
+        if (i < 0) continue;
+        candleSeries.update({
+          time: times[i],
+          open: input.open[i],
+          high: input.high[i],
+          low: input.low[i],
+          close: input.close[i],
+        });
+      }
+
+      for (const a of applied) {
+        const def = INDICATOR_BY_ID.get(a.defId);
+        const entries = seriesMapRef.current.get(a.instanceId);
+        if (!def || !entries) continue;
+        let out: Record<string, (number | null)[]>;
+        try { out = def.compute(input, a.params); } catch { continue; }
+        for (const e of entries) {
+          const plot = def.plots.find((p) => p.key === e.plotKey);
+          const values = out[e.plotKey];
+          if (!plot || !values) continue;
+          const resolvedStyle = resolvePlotStyle(def, a.styleOverrides, e.plotKey);
+          for (const i of idxs) {
+            const v = values[i];
+            // series.update() 不能"删点"：尾值为 null（如指标窗口未满）就跳过，
+            // 该点本来也不存在于序列里，行为与全量路径一致。
+            if (v === null || v === undefined || Number.isNaN(v)) continue;
+            if (plot.kind === "histogram") {
+              e.series.update({
+                time: times[i],
+                value: v,
+                color: plot.barColor ? plot.barColor({ i, value: v, input }) : resolvedStyle.color,
+              });
+            } else {
+              e.series.update({ time: times[i], value: v });
+            }
+          }
+        }
+      }
+
+      // 与全量路径同样维护尾蜡烛 ref 与 meta
+      lastCandleRef.current = {
+        time: times[lastIdx],
+        open: input.open[lastIdx],
+        high: input.high[lastIdx],
+        low: input.low[lastIdx],
+        close: input.close[lastIdx],
+        volume: input.volume[lastIdx],
+      };
+      prevEarliestTimeRef.current = times[0] ?? null;
+      prevBarCountRef.current = times.length;
+      return;
+    }
+
     // Detect whether this update is "an older page got prepended" (as opposed
     // to a fresh symbol load or a latest-page poll refresh): the new array's
     // first candle is earlier than the previously recorded earliest one. If so,
@@ -500,6 +573,8 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       chartApi.timeScale().fitContent();
       isFirstDataRef.current = false;
     }
+    lastAppliedRef.current = applied;
+    lastAdvancedRef.current = hasAdvancedChart;
     // `applied` covers both param edits and visibility toggles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartApi, candleSeries, bars, applied, structureKey, hasAdvancedChart]);

@@ -30,7 +30,7 @@ import { useChartStore } from "@/stores/chartStore";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { canUseAdvancedChart } from "@/lib/access";
 import { INDICATOR_BY_ID, resolvePlotStyle, type IndicatorInput } from "@/lib/chart/indicator-registry";
-import { classifyBarsUpdate, classifyTail } from "@/lib/chart/incremental";
+import { classifyBarsUpdate, classifyTail, overlaySignature } from "@/lib/chart/incremental";
 import { IndicatorModal } from "./chart/IndicatorModal";
 import { ChartLegend } from "./chart/ChartLegend";
 import { DrawingToolbar } from "./chart/DrawingToolbar";
@@ -109,6 +109,8 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   const chartRef = useRef<HTMLDivElement>(null);
   const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const priceLinesSigRef = useRef<string | null>(null);
+  const markersSigRef = useRef<string | null>(null);
   const seriesMapRef = useRef<Map<string, InstanceSeries[]>>(new Map());
   const isFirstDataRef = useRef(true);
   // Bookkeeping for pagination stitching: lets the "candles data updated" effect
@@ -272,6 +274,8 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       seriesMapRef.current.clear();
       markersPluginRef.current = null;
       priceLinesRef.current = [];
+      priceLinesSigRef.current = null;
+      markersSigRef.current = null;
       setChartApi(null);
       setCandleSeries(null);
       isFirstDataRef.current = true;
@@ -729,6 +733,9 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       })
       .sort((a, b) => (a.time as number) - (b.time as number));
 
+    const sig = overlaySignature(markers as unknown as Record<string, unknown>[]);
+    if (sig === markersSigRef.current) return;
+    markersSigRef.current = sig;
     markersPluginRef.current.setMarkers(markers);
   }, [tradeMarkers, interval, candleSeries]);
 
@@ -736,16 +743,23 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   useEffect(() => {
     if (!candleSeries) return;
 
+    // Editable (止盈/止损) lines render on their own draggable SVG layer instead.
+    const renderable = (priceLines ?? []).filter(
+      (pl) => !pl.editable && isFinite(pl.price) && pl.price > 0
+    );
+    const sig = overlaySignature(
+      renderable.map((pl) => ({ p: pl.price, c: pl.color, d: pl.dashed, t: pl.title }))
+    );
+    if (sig === priceLinesSigRef.current) return;
+    priceLinesSigRef.current = sig;
+
     // 清掉旧的价格线
     for (const line of priceLinesRef.current) {
       try { candleSeries.removePriceLine(line); } catch { /* ignore */ }
     }
     priceLinesRef.current = [];
 
-    // Editable (止盈/止损) lines render on their own draggable SVG layer instead.
-    for (const pl of priceLines ?? []) {
-      if (pl.editable) continue;
-      if (!isFinite(pl.price) || pl.price <= 0) continue;
+    for (const pl of renderable) {
       try {
         const line = candleSeries.createPriceLine({
           price: pl.price,

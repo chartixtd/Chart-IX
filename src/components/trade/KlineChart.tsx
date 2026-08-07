@@ -158,6 +158,11 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   hasMoreRef.current = hasMore;
   isLoadingMoreRef.current = isLoadingMore;
   loadMoreRef.current = loadMore;
+  // Mirrors isPlaceholder for the rAF ticker loop below, which can't take it as
+  // an effect dependency without tearing down/rebuilding the rAF loop on every
+  // placeholder flip — same pattern as the refs above.
+  const isPlaceholderRef = useRef(isPlaceholder);
+  isPlaceholderRef.current = isPlaceholder;
   // Live price from WebSocket ticker (drives the current candle in real time)
   const livePrice = useMarketStore((s) => {
     const t = s.tickers[symbol];
@@ -655,6 +660,8 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     function tick() {
       if (disposed) return;
       rafRef.current = requestAnimationFrame(tick);
+
+      if (isPlaceholderRef.current) return; // 切 symbol 的过渡帧不往旧 series 上画新 symbol 的价
 
       const price = pendingPriceRef.current;
       if (price === undefined || isNaN(price)) return;

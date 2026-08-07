@@ -18,14 +18,53 @@ const TOUR_ITEMS = [
   { icon: "🏠", title: "我的主页", desc: "随时回来查看学习进度、模拟盘战绩和最新内容" },
 ];
 
+interface OnboardingSessionState {
+  userId: string;
+  step: number;
+  level: Level | null;
+}
+
+// Survives OnboardingModal remounts on route-group crossings — the "浏览学习
+// 路径" link below navigates from (app) to (static), which unmounts AppChrome
+// (and this modal with it). Without this, the remounted modal would forget
+// which step/level the user had picked and the onboarding_completed-is-still-
+// false re-check would bounce them back to the step-0 welcome screen. Keyed
+// by userId so a genuine account switch in the same tab still starts fresh.
+// Same SSR discipline as AuthProvider's lastKnownAuth: never read/write this
+// on the server — it's a process-level singleton shared across requests.
+let sessionState: OnboardingSessionState | null = null;
+
 export function OnboardingModal() {
   const auth = useAuth();
   const locale = useLocale();
 
   const [shouldShow, setShouldShow] = useState(false);
-  const [step, setStep] = useState(0);
-  const [level, setLevel] = useState<Level | null>(null);
+  const [step, setStepState] = useState(() =>
+    typeof window !== "undefined" && sessionState?.userId === auth.userId ? sessionState.step : 0
+  );
+  const [level, setLevelState] = useState<Level | null>(() =>
+    typeof window !== "undefined" && sessionState?.userId === auth.userId ? sessionState.level : null
+  );
   const [saving, setSaving] = useState(false);
+
+  // Reads the current module-level snapshot rather than closed-over render
+  // state, so two persist() calls in the same click handler (e.g. setLevel(l)
+  // immediately followed by setStep(1)) compose instead of the second call
+  // clobbering the first with a stale value.
+  const persistSession = (patch: Partial<Pick<OnboardingSessionState, "step" | "level">>) => {
+    if (typeof window === "undefined" || !auth.userId) return;
+    const prev =
+      sessionState?.userId === auth.userId ? sessionState : { userId: auth.userId, step: 0, level: null };
+    sessionState = { ...prev, ...patch };
+  };
+  const setStep = (next: number) => {
+    setStepState(next);
+    persistSession({ step: next });
+  };
+  const setLevel = (next: Level) => {
+    setLevelState(next);
+    persistSession({ level: next });
+  };
 
   useEffect(() => {
     if (!auth.userId) return;
@@ -54,6 +93,10 @@ export function OnboardingModal() {
       .eq("id", auth.userId);
     setSaving(false);
     setShouldShow(false);
+    // Onboarding is done — nothing left to restore across a future remount.
+    if (typeof window !== "undefined" && sessionState?.userId === auth.userId) {
+      sessionState = null;
+    }
   };
 
   if (!shouldShow) return null;

@@ -61,7 +61,7 @@ export default function RootLayout({
   // the app into dynamic rendering (undoing the ISR added to the articles/
   // videos/learn pages, and the static admin/marketing pages) — for a single
   // non-visual attribute that's the wrong trade. Correct `lang` is set
-  // client-side instead, in ClientLocaleLayout/AdminLocaleProvider, which
+  // client-side instead, in LocaleProviders/AdminLocaleProvider, which
   // also handles it staying correct when the language switcher does a
   // client-side navigation between locales without a full page reload.
   return (

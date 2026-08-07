@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "./server";
 import { createServiceRoleClient } from "./middleware";
 
@@ -22,27 +23,26 @@ const EMPTY_AUTH: ServerAuthState = {
 /**
  * Fetch the current user's auth state on the server.
  *
- * `tier`/`role` are kept in sync onto `auth.users.app_metadata` by a DB
- * trigger (see supabase/migrations/009_sync_tier_role_to_jwt_claims.sql),
- * so `getUser()` alone already carries accurate, real-time tier/role and we
- * can skip the second DB round trip. If that migration hasn't been applied
- * yet, `app_metadata` simply won't have these fields and we transparently
- * fall back to the service_role table read — same behavior as before,
- * just without the speedup.
+ * tier/role/display_name are all kept in sync onto auth.users.app_metadata
+ * by a DB trigger (migrations 009 + 039), so getUser() alone carries the
+ * complete, real-time auth state in a single round trip. If those
+ * migrations haven't been applied, app_metadata simply lacks the fields
+ * and we transparently fall back to the service_role table read.
+ *
+ * Wrapped in React cache(): layout + page calling this in the same request
+ * only pay for one execution.
  */
-export async function getServerAuth(): Promise<ServerAuthState> {
+export const getServerAuth = cache(async (): Promise<ServerAuthState> => {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) return EMPTY_AUTH;
 
-    const claimTier = user.app_metadata?.tier as "free" | "pro" | undefined;
-    const claimRole = user.app_metadata?.role as "user" | "admin" | undefined;
-
-    let tier = claimTier;
-    let role = claimRole;
-    let displayName: string | null = null;
+    let tier = user.app_metadata?.tier as "free" | "pro" | undefined;
+    let role = user.app_metadata?.role as "user" | "admin" | undefined;
+    let displayName =
+      (user.app_metadata?.display_name as string | null | undefined) ?? null;
 
     if (tier === undefined || role === undefined) {
       const serviceClient = createServiceRoleClient();
@@ -54,15 +54,6 @@ export async function getServerAuth(): Promise<ServerAuthState> {
 
       tier = (profile?.tier as "free" | "pro") ?? "free";
       role = (profile?.role as "user" | "admin") ?? "user";
-      displayName = profile?.display_name ?? null;
-    } else {
-      // tier/role came from JWT claims, but display_name is never synced there —
-      // it still needs its own (cheap, RLS-scoped-to-self) lookup.
-      const { data: profile } = await supabase
-        .from("users")
-        .select("display_name")
-        .eq("id", user.id)
-        .single();
       displayName = profile?.display_name ?? null;
     }
 
@@ -77,4 +68,4 @@ export async function getServerAuth(): Promise<ServerAuthState> {
   } catch {
     return EMPTY_AUTH;
   }
-}
+});

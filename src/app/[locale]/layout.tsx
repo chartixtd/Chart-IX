@@ -2,10 +2,9 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { routing } from "@/i18n/routing";
-import { getServerAuth } from "@/lib/supabase/get-auth";
 import { buildLanguageAlternates } from "@/lib/seo";
 import { getSiteSettings } from "@/lib/site-settings";
-import { ClientLocaleLayout } from "./ClientLocaleLayout";
+import { LocaleProviders } from "./LocaleProviders";
 
 export async function generateMetadata({
   params,
@@ -57,14 +56,7 @@ export default async function LocaleLayout({
     notFound();
   }
 
-  // Load messages + prefetch auth + site settings in parallel on the server.
-  // getSiteSettings is request-cached, so generateMetadata's call above and
-  // this one share a single query.
-  const [allMessages, initialAuth, siteSettings] = await Promise.all([
-    import(`@/i18n/messages/${locale}.json`).then((m) => m.default),
-    getServerAuth(),
-    getSiteSettings(locale),
-  ]);
+  const allMessages = (await import(`@/i18n/messages/${locale}.json`)).default;
 
   // The `admin` namespace is a third of the whole message bundle and is only
   // read under /admin, which sits outside this layout and loads its own copy
@@ -73,13 +65,8 @@ export default async function LocaleLayout({
   const { admin: _admin, ...messages } = allMessages;
 
   return (
-    <ClientLocaleLayout
-      locale={locale}
-      messages={messages}
-      initialAuth={initialAuth}
-      siteSettings={siteSettings}
-    >
+    <LocaleProviders locale={locale} messages={messages}>
       {children}
-    </ClientLocaleLayout>
+    </LocaleProviders>
   );
 }

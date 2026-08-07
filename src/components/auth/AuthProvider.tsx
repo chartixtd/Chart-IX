@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export interface AuthState {
@@ -27,6 +27,15 @@ const AuthContext = createContext<AuthContextValue>({
   refresh: async () => {},
 });
 
+// Survives AuthProvider remounts (route-group crossings re-mount the group
+// layout). Hard loads start with null — matching the server-rendered HTML,
+// so hydration is never affected; only client-side remounts read it.
+// Server-side rendering MUST NEVER read or write this — it's a process-level
+// module singleton shared across requests, so on the server it would leak
+// one user's identity into another user's response (and could get baked into
+// an ISR-cached HTML page).
+let lastKnownAuth: AuthState | null = null;
+
 export function AuthProvider({
   children,
   initialAuth,
@@ -34,18 +43,41 @@ export function AuthProvider({
   children: React.ReactNode;
   initialAuth?: AuthState;
 }) {
+  // Module variable assignment is not setState — safe to run during render.
+  // Guarded to the browser only: this function body also runs during SSR,
+  // where writing to a module-level variable would leak across requests.
+  // Also guarded to only fire when `initialAuth` is a *new* server snapshot
+  // (ref identity changed), not merely because this component re-rendered
+  // (e.g. from its own internal setAuth call). Without this guard, a
+  // SIGNED_OUT setState would correctly clear lastKnownAuth, but the
+  // resulting re-render would immediately run this line again with the
+  // stale `initialAuth` prop and write the old (signed-in) state right
+  // back — reviving a logged-out user's identity on the next remount.
+  const seededAuthRef = useRef<AuthState | undefined>(undefined);
+  if (typeof window !== "undefined" && initialAuth && seededAuthRef.current !== initialAuth) {
+    seededAuthRef.current = initialAuth;
+    lastKnownAuth = initialAuth;
+  }
+
   // Server-prefetched auth is authoritative for first paint — no loading flash,
   // no client-side request waterfall, and tier/role are always accurate.
-  const [auth, setAuth] = useState<AuthState>(
-    initialAuth ?? {
-      userId: null,
-      email: null,
-      displayName: null,
-      tier: null,
-      role: null,
-      loading: true,
-    }
+  const [auth, setAuthState] = useState<AuthState>(
+    () =>
+      initialAuth ??
+      (typeof window !== "undefined" ? lastKnownAuth : null) ?? {
+        userId: null,
+        email: null,
+        displayName: null,
+        tier: null,
+        role: null,
+        loading: true,
+      }
   );
+
+  const setAuth = useCallback((next: AuthState) => {
+    lastKnownAuth = next;
+    setAuthState(next);
+  }, []);
 
   const fetchAuth = useCallback(async () => {
     const supabase = createClient();
@@ -63,7 +95,8 @@ export function AuthProvider({
     // reading own row) if that migration hasn't been applied yet.
     let tier = user.app_metadata?.tier as "free" | "pro" | undefined;
     let role = user.app_metadata?.role as "user" | "admin" | undefined;
-    let displayName: string | null = null;
+    let displayName =
+      (user.app_metadata?.display_name as string | null | undefined) ?? null;
 
     if (tier === undefined || role === undefined) {
       const { data: profile } = await supabase
@@ -74,14 +107,6 @@ export function AuthProvider({
 
       tier = (profile?.tier as "free" | "pro") ?? "free";
       role = (profile?.role as "user" | "admin") ?? "user";
-      displayName = profile?.display_name ?? null;
-    } else {
-      // display_name is never synced onto JWT claims, so it always needs its own lookup.
-      const { data: profile } = await supabase
-        .from("users")
-        .select("display_name")
-        .eq("id", user.id)
-        .single();
       displayName = profile?.display_name ?? null;
     }
 
@@ -99,7 +124,7 @@ export function AuthProvider({
     // Fetch auth on mount if server didn't provide a valid user identity.
     // `initialAuth` is always an object (even when user is null), so check
     // `userId` rather than truthiness of the prop itself.
-    const hasServerAuth = Boolean(initialAuth?.userId);
+    const hasServerAuth = Boolean((initialAuth ?? lastKnownAuth)?.userId);
     if (!hasServerAuth) {
       fetchAuth();
     }

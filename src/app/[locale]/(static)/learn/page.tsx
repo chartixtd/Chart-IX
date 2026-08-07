@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { buildLanguageAlternates } from "@/lib/seo";
+import { routing } from "@/i18n/routing";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import type { LearningPath } from "@/types";
@@ -19,6 +20,10 @@ const LEVEL_VARIANT: Record<string, "gold" | "blue" | "orange"> = {
 // client. Using the plain service-role client instead keeps this page free
 // of Next's dynamic-API opt-out, so `revalidate` below actually applies.
 export const revalidate = 300;
+
+export function generateStaticParams() {
+  return routing.locales.map((locale) => ({ locale }));
+}
 
 export async function generateMetadata({
   params,

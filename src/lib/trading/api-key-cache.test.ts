@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getDecryptedApiKeys, invalidateApiKeys, __setDepsForTest } from "./api-key-cache";
+import { getDecryptedApiKeys, invalidateApiKeys, __setDepsForTest, __cacheSizeForTest } from "./api-key-cache";
 
 describe("api-key-cache", () => {
   beforeEach(() => {
@@ -93,5 +93,21 @@ describe("api-key-cache", () => {
     expect(a2).toEqual(a1);
     expect(b2).toEqual(b1);
     expect(fetcher).toHaveBeenCalledTimes(2); // one per user, not re-fetched for the other's call
+  });
+
+  it("sweeps expired entries of OTHER users when writing a fresh entry — plaintext credentials don't linger", async () => {
+    let clock = 0;
+    const fetcher = vi.fn(async (userId: string) => ({ apiKey: `key-${userId}`, secret: `secret-${userId}` }));
+    __setDepsForTest({ fetcher, now: () => clock });
+
+    await getDecryptedApiKeys("user-a");
+    expect(__cacheSizeForTest()).toBe(1);
+
+    clock += 60_000; // user-a's entry is now expired but still sitting in the Map
+    await getDecryptedApiKeys("user-b"); // fresh write for a different user triggers the sweep
+
+    // user-a's stale entry must have been swept away, not just shadowed by the TTL check —
+    // only user-b's brand-new entry should remain
+    expect(__cacheSizeForTest()).toBe(1);
   });
 });

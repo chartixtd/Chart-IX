@@ -189,8 +189,12 @@ export async function PATCH(request: NextRequest) {
         );
       }
 
-      // 唯一索引限制每用户至多一个 primary，必须先清后设
+      // 唯一索引限制每用户至多一个 primary，必须先清后设。清空这一步已经改变了
+      // 「哪把 key 会被 getDecryptedApiKeys 选中」的结果（此时暂时无主密钥，
+      // 排序退回 created_at），所以清空一提交就要失效缓存——不能等到下面的
+      // 置位成功才做，否则置位失败时 500 返回，缓存却停留在清空前的旧主密钥上。
       await supabase.from("api_keys").update({ is_primary: false }).eq("user_id", userId);
+      invalidateApiKeys(userId);
       const { error } = await supabase
         .from("api_keys").update({ is_primary: true }).eq("id", id).eq("user_id", userId);
       if (error) {

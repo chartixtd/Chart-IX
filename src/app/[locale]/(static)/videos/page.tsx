@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { buildLanguageAlternates } from "@/lib/seo";
+import { routing } from "@/i18n/routing";
 import { VideosView } from "./VideosView";
 import VideosLoading from "./loading";
 import type { Video, VideoCategory } from "@/types";
@@ -11,6 +12,10 @@ import type { Video, VideoCategory } from "@/types";
 // src/app/[locale]/learn/page.tsx for why this uses the service-role client
 // instead of the cookie-bound one.
 export const revalidate = 300;
+
+export function generateStaticParams() {
+  return routing.locales.map((locale) => ({ locale }));
+}
 
 export async function generateMetadata({
   params,

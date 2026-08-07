@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { buildLanguageAlternates } from "@/lib/seo";
+import { routing } from "@/i18n/routing";
 import ArticlesClient from "./ArticlesClient";
 import ArticlesLoading from "./loading";
 import type { Article, ArticleCategory } from "@/types";
@@ -12,6 +13,10 @@ import type { Article, ArticleCategory } from "@/types";
 // instead of the cookie-bound one. (The Pro-gated Community tab rendered
 // inside ArticlesClient reads auth client-side via AuthProvider, not here.)
 export const revalidate = 300;
+
+export function generateStaticParams() {
+  return routing.locales.map((locale) => ({ locale }));
+}
 
 export async function generateMetadata({
   params,

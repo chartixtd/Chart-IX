@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePaperAccount, usePaperOrders, useClosePaperPosition } from "@/hooks/usePaperTrading";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatPrice, formatNumber, cn } from "@/lib/utils";
@@ -85,10 +86,9 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
   // whichever symbol the chart happens to be on.
   const { data: orders, isLoading: ordersLoading } = usePaperOrders();
   const closePaperPosition = useClosePaperPosition();
+  const queryClient = useQueryClient();
 
   const [tab, setTab] = useState<Tab>("positions");
-  const [limitOrders, setLimitOrders] = useState<PaperLimitOrderRow[]>([]);
-  const [limitLoading, setLimitLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -106,55 +106,20 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
     setClosing(null);
   };
 
-  const fetchLimitOrders = useCallback(async () => {
-    try {
+  const limitOrdersQuery = useQuery({
+    queryKey: ["paper", "limit-orders"],
+    queryFn: async () => {
       const res = await fetch("/api/paper/limit-orders");
       const json = await res.json();
-      if (json.success) {
-        setLimitOrders((json.data as PaperLimitOrderRow[]) ?? []);
-      }
-    } catch {
-      // silently ignore
-    } finally {
-      setLimitLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchLimitOrders();
-
-    // 这个轮询没走 react-query，所以不像别处那样会在标签页失焦时自动停下来。
-    // 手动跟着 visibility 开关：后台标签页里挂着的交易页不该每 5 秒打一次服务器，
-    // 切回来时立刻补一次，用户看到的仍是最新的挂单。
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const start = () => {
-      if (interval === null) interval = setInterval(fetchLimitOrders, 5_000);
-    };
-    const stop = () => {
-      if (interval !== null) {
-        clearInterval(interval);
-        interval = null;
-      }
-    };
-
-    const handleVisibility = () => {
-      if (document.hidden) {
-        stop();
-      } else {
-        fetchLimitOrders();
-        start();
-      }
-    };
-
-    if (!document.hidden) start();
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    return () => {
-      stop();
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [fetchLimitOrders]);
+      if (!json.success) throw new Error(json.error?.message ?? "failed");
+      return (json.data as PaperLimitOrderRow[]) ?? [];
+    },
+    refetchInterval: 5_000,
+    // 交易数据：不展示旧 key 数据（静态 key 下是防御性 no-op，与 useTradingAccount 纪律一致）
+    placeholderData: undefined,
+  });
+  const limitOrders = limitOrdersQuery.data ?? [];
+  const limitLoading = limitOrdersQuery.isPending;
 
   const handleCancelLimit = async (orderId: string) => {
     setCancelling(orderId);
@@ -166,7 +131,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
       });
     } catch { /* ignore */ }
     setCancelling(null);
-    fetchLimitOrders();
+    queryClient.invalidateQueries({ queryKey: ["paper", "limit-orders"] });
   };
 
   const startEdit = (order: PaperLimitOrderRow) => {
@@ -187,7 +152,7 @@ export function PaperOrdersPanel({ symbol }: PaperOrdersPanelProps) {
     } catch { /* ignore */ }
     setAmending(false);
     setEditing(null);
-    fetchLimitOrders();
+    queryClient.invalidateQueries({ queryKey: ["paper", "limit-orders"] });
   };
 
   if (isLoading) {

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useTranslations } from "next-intl";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSpotTicker, useFuturesTicker } from "@/hooks/useMarketData";
 import { usePaperAccount, usePlacePaperOrder } from "@/hooks/usePaperTrading";
 import { useSymbolSpec } from "@/hooks/useSymbolSpec";
@@ -219,6 +220,7 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
   };
 
   const setHasPendingOrder = usePwaStore((s) => s.setHasPendingOrder);
+  const queryClient = useQueryClient();
 
   const execute = async () => {
     setSubmitting(true);
@@ -265,6 +267,12 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
         if (!json.success) throw new Error(translateError(json, t));
         setResult({ ok: true, message: t("trading.order_placed", { id: json.data?.orderIdStr ?? "" }) });
       }
+      // 三条下单路径（模拟盘/现货/合约）共用这一个成功后落点（异常会在上面各自 throw，
+      // 走不到这里）：统一在这里 invalidate，而不是在每个分支里重复一遍。
+      // /orders 页与 dashboard 账本区读的是同一张 orders 表，下单后两处应在
+      // 同一个刷新窗口内趋于一致，不该出现"一处更新一处没更新"的矛盾状态。
+      queryClient.invalidateQueries({ queryKey: ["orders", "history"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", "orders"] });
       setAmount(""); setPrice(""); setStopPrice(""); setTpPrice(""); setSlPrice("");
     } catch (e) {
       setResult({ ok: false, message: e instanceof Error ? e.message : t("bingx_error.network") });

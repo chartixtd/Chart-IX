@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -20,31 +20,36 @@ interface PricingPlan {
 export default function UpgradePage() {
   const t = useTranslations("upgrade");
   const auth = useAuth();
-  const [plans, setPlans] = useState<PricingPlan[]>([]);
-  const [telegramUrl, setTelegramUrl] = useState<string | null>(null);
 
   const isPro = auth.tier === "pro";
 
-  useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from("pricing_config")
-      .select("*")
-      .eq("is_active", true)
-      .order("price", { ascending: true })
-      .then(({ data }) => {
-        if (data) setPlans(data);
-      });
-
-    supabase
-      .from("admin_settings")
-      .select("value")
-      .eq("key", "telegram_group")
-      .maybeSingle()
-      .then(({ data }) => {
-        if (typeof data?.value === "string") setTelegramUrl(data.value);
-      });
-  }, []);
+  const { data } = useQuery({
+    queryKey: ["upgrade", "pricing"],
+    queryFn: async () => {
+      const supabase = createClient();
+      const [plansRes, tgRes] = await Promise.all([
+        supabase
+          .from("pricing_config")
+          .select("*")
+          .eq("is_active", true)
+          .order("price", { ascending: true }),
+        supabase
+          .from("admin_settings")
+          .select("value")
+          .eq("key", "telegram_group")
+          .maybeSingle(),
+      ]);
+      return {
+        plans: (plansRes.data as PricingPlan[]) ?? [],
+        telegramUrl:
+          typeof tgRes.data?.value === "string" ? tgRes.data.value : null,
+      };
+    },
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+  });
+  const plans = data?.plans ?? [];
+  const telegramUrl = data?.telegramUrl ?? null;
 
   const planLabel = (plan: string) => {
     const map: Record<string, string> = { monthly: t("monthly"), yearly: t("yearly") };

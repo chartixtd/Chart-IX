@@ -16,10 +16,13 @@ const ROLE_TTL_MS = 60_000;
 async function getAdminProfile(userId: string) {
   const hit = roleCache.get(userId);
   if (hit && Date.now() - hit.at < ROLE_TTL_MS) return hit;
-  const { data } = await createServiceRoleClient()
+  const { data, error } = await createServiceRoleClient()
     .from("users").select("role, is_disabled").eq("id", userId).single();
   const entry = { role: data?.role ?? null, disabled: Boolean(data?.is_disabled), at: Date.now() };
-  roleCache.set(userId, entry);
+  // 瞬时查询失败不缓存——错误固化成"非 admin"60s 会把合法管理员锁在门外；
+  // 注意 .single() 查无行也走 error（PGRST116），此时 data 为 null、entry 为非 admin，
+  // 不缓存它的代价只是下次重查一遍，正确性优先。
+  if (!error) roleCache.set(userId, entry);
   return entry;
 }
 

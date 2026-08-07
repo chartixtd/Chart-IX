@@ -27,7 +27,8 @@ import { useLocale, useTranslations } from "next-intl";
 import { useKlineHistory } from "@/hooks/useKlineHistory";
 import { useMarketStore } from "@/stores/market";
 import { useChartStore } from "@/stores/chartStore";
-import { useFeatureAccess } from "@/hooks/useFeatureFlags";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { canUseAdvancedChart } from "@/lib/access";
 import { INDICATOR_BY_ID, resolvePlotStyle, type IndicatorInput } from "@/lib/chart/indicator-registry";
 import { IndicatorModal } from "./chart/IndicatorModal";
 import { ChartLegend } from "./chart/ChartLegend";
@@ -152,7 +153,12 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     return t ? Number(t.lastPrice) : undefined;
   });
 
-  const { hasAccess: hasAdvancedChart, loading: accessLoading } = useFeatureAccess("advanced_chart");
+  // 等级直接决定，不再经 feature_flags 绕一圈（那张表只有这一个 key 真被读过）。
+  // auth.loading 期间 tier 还是 null，canUseAdvancedChart 会返回 false，所以沿用
+  // accessLoading 抑制加载态下的 🔒 闪烁。
+  const auth = useAuth();
+  const accessLoading = auth.loading;
+  const hasAdvancedChart = canUseAdvancedChart(auth.tier);
 
   const applied = useChartStore((s) => s.appliedIndicators);
   // Latest-value ref: lets the structure effect read the current instance list

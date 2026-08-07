@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
 import { placeOrder } from "@/lib/bingx/trade";
 import { preflightOrder } from "@/lib/trading/preflight";
+import { canTradeLive } from "@/lib/access";
+import { getUserTier } from "@/lib/access-server";
 import { recordOrder } from "@/lib/trading/persist";
 import { checkRateLimit } from "@/lib/trading/rate-limit";
 import { describeBingXError } from "@/lib/trading/errors";
@@ -36,6 +38,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: { message: "Unauthorized" } }, { status: 401 });
   }
   const userId = authData.user.id;
+
+  // 免费用户只能用模拟账户。此前这条路由完全没有等级校验——只有合约下单挡了，
+  // 现货实盘对任何登录用户都是敞开的。
+  if (!canTradeLive(await getUserTier(supabase, userId))) {
+    return reject("PRO_REQUIRED", "Live trading requires a Pro subscription", 403);
+  }
 
   const rl = await checkRateLimit(`spot-order:${userId}`, RATE_LIMITS.SPOT_TRADE);
   if (!rl.ok) {
@@ -87,8 +95,7 @@ export async function POST(request: NextRequest) {
   try {
     // 限价类的 refPrice 仍是换算基准；市价类的 refPrice 现在只用于展示，
     // preflightOrder 内部风控估值一律用服务端市价，不再信任这里传的值。
-    pre = await preflightOrder(supabase, {
-      userId,
+    pre = await preflightOrder({
       market: "spot",
       symbol,
       direction: side === "BUY" ? "LONG" : "SHORT",

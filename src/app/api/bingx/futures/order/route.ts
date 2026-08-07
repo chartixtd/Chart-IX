@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
 import { placeFuturesOrder, testFuturesOrder } from "@/lib/bingx/futures";
 import { preflightOrder } from "@/lib/trading/preflight";
+import { canTradeLive } from "@/lib/access";
+import { getUserTier } from "@/lib/access-server";
 import { resolveOrderDirection, getDualSideMode, invalidateDualSideMode } from "@/lib/trading/account-mode";
 import { recordOrder } from "@/lib/trading/persist";
 import { checkRateLimit } from "@/lib/trading/rate-limit";
@@ -41,9 +43,8 @@ export async function POST(request: NextRequest) {
   }
   const userId = authData.user.id;
 
-  const { data: profile } = await supabase.from("users").select("tier").eq("id", userId).single();
-  if (!profile || profile.tier !== "pro") {
-    return reject("PRO_REQUIRED", "Futures trading requires Pro subscription", 403);
+  if (!canTradeLive(await getUserTier(supabase, userId))) {
+    return reject("PRO_REQUIRED", "Live trading requires a Pro subscription", 403);
   }
 
   const rl = await checkRateLimit(`futures-order:${userId}`, RATE_LIMITS.FUTURES_TRADE);
@@ -118,8 +119,8 @@ export async function POST(request: NextRequest) {
   try {
     // 限价类的 refPrice 仍是换算基准；市价类的 refPrice 现在只用于展示，
     // preflightOrder 内部风控估值一律用服务端市价，不再信任这里传的值。
-    pre = await preflightOrder(supabase, {
-      userId, market: "futures", symbol, direction,
+    pre = await preflightOrder({
+      market: "futures", symbol, direction,
       notionalUsdt: notional, referencePrice: refPrice, leverage: lev,
       isLimitOrder: LIMIT_TYPES.has(type),
     });

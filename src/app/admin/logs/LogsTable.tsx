@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { cn } from "@/lib/utils";
 
 interface LogEntry {
   id: string;
@@ -17,7 +18,16 @@ interface LogEntry {
   users: { email: string } | null;
 }
 
-const ITEMS_PER_PAGE = 20;
+interface Filters {
+  action: string;
+  q: string;
+  from: string;
+  to: string;
+}
+
+const INPUT_CLASS =
+  "rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary " +
+  "placeholder:text-text-muted focus:border-gold focus:outline-none focus:ring-1 focus:ring-gold/60";
 
 function formatJson(value: Record<string, unknown> | null): string {
   if (!value) return "-";
@@ -28,38 +38,52 @@ function formatJson(value: Record<string, unknown> | null): string {
   }
 }
 
-export function LogsTable({ logs }: { logs: LogEntry[] }) {
+export function LogsTable({
+  logs,
+  allActions,
+  total,
+  page,
+  pageSize,
+  filters,
+}: {
+  logs: LogEntry[];
+  allActions: string[];
+  total: number;
+  page: number;
+  pageSize: number;
+  filters: Filters;
+}) {
   const t = useTranslations("admin");
   const router = useRouter();
-  const [searchText, setSearchText] = useState("");
-  const [actionFilter, setActionFilter] = useState("");
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [searchText, setSearchText] = useState(filters.q);
 
-  const uniqueActions = [...new Set(logs.map((l) => l.action))].sort();
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const filtered = logs.filter((l) => {
-    const matchesSearch =
-      !searchText ||
-      l.action.toLowerCase().includes(searchText.toLowerCase()) ||
-      l.target_type.toLowerCase().includes(searchText.toLowerCase());
-    const matchesAction = !actionFilter || l.action === actionFilter;
-    return matchesSearch && matchesAction;
-  });
+  /** 筛选状态存在 URL 里：刷新、后退、分享链接都能复现同一个视图。 */
+  const setParams = (patch: Record<string, string | number | null>) => {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null || v === "") next.delete(k);
+      else next.set(k, String(v));
+    }
+    // 改筛选条件必须回到第一页，否则会停在一个新结果集里不存在的页码上
+    if (!("page" in patch)) next.delete("page");
+    startTransition(() => router.push(`?${next.toString()}`));
+  };
 
-  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
-  const paginated = filtered.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
+  const resetAll = () => {
+    setSearchText("");
+    startTransition(() => router.push("?"));
+  };
 
-  const hasChanges = (log: LogEntry) =>
-    log.old_value !== null || log.new_value !== null;
+  const hasFilters = Boolean(filters.action || filters.q || filters.from || filters.to);
 
   function formatTime(dateStr: string): string {
     const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
+    const diffMs = Date.now() - date.getTime();
     const diffMin = Math.floor(diffMs / 60000);
     const diffHr = Math.floor(diffMs / 3600000);
     const diffDay = Math.floor(diffMs / 86400000);
@@ -71,42 +95,79 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
     return date.toLocaleDateString();
   }
 
+  const hasChanges = (log: LogEntry) => log.old_value !== null || log.new_value !== null;
+
   return (
     <div>
-      {/* Search / Filter */}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <input
-          type="text"
-          placeholder={t("logs_list.search_placeholder")}
-          value={searchText}
-          onChange={(e) => {
-            setSearchText(e.target.value);
-            setCurrentPage(1);
+      {/* 筛选栏 */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setParams({ q: searchText });
           }}
-          className="w-full max-w-sm rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-gold focus:outline-none"
-        />
+          className="flex items-center gap-2"
+        >
+          <input
+            type="search"
+            placeholder={t("logs_list.search_placeholder")}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className={cn(INPUT_CLASS, "w-56")}
+          />
+          <button
+            type="submit"
+            className="rounded border border-border-default px-3 py-2 text-sm text-text-secondary transition-colors hover:border-gold/60 hover:text-gold"
+          >
+            {t("logs_list.search")}
+          </button>
+        </form>
+
         <select
-          value={actionFilter}
-          onChange={(e) => {
-            setActionFilter(e.target.value);
-            setCurrentPage(1);
-          }}
-          className="rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary"
+          value={filters.action}
+          onChange={(e) => setParams({ action: e.target.value })}
+          className={INPUT_CLASS}
         >
           <option value="">{t("logs_list.all_actions")}</option>
-          {uniqueActions.map((a) => (
+          {allActions.map((a) => (
             <option key={a} value={a}>
               {a}
             </option>
           ))}
         </select>
+
+        <input
+          type="date"
+          value={filters.from}
+          onChange={(e) => setParams({ from: e.target.value })}
+          aria-label={t("logs_list.date_from")}
+          className={cn(INPUT_CLASS, "font-mono")}
+        />
+        <span className="text-xs text-text-muted">—</span>
+        <input
+          type="date"
+          value={filters.to}
+          onChange={(e) => setParams({ to: e.target.value })}
+          aria-label={t("logs_list.date_to")}
+          className={cn(INPUT_CLASS, "font-mono")}
+        />
+
+        {hasFilters && (
+          <button
+            onClick={resetAll}
+            className="rounded border border-border-default px-3 py-2 text-sm text-text-muted transition-colors hover:border-danger/60 hover:text-danger"
+          >
+            {t("logs_list.reset")}
+          </button>
+        )}
+
         <button
-          onClick={() => router.refresh()}
-          className="rounded-sm border border-border-default bg-bg-tertiary p-2 text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+          onClick={() => startTransition(() => router.refresh())}
           title={t("logs_list.refresh")}
+          className="rounded-sm border border-border-default bg-bg-tertiary p-2 text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           <svg
-            className="h-4 w-4"
+            className={cn("h-4 w-4", isPending && "animate-spin")}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -117,109 +178,104 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
             <path d="M21 12a9 9 0 11-2.2-6M21 3v6h-6" />
           </svg>
         </button>
+
+        <span className="ml-auto text-xs text-text-muted tabular-nums">
+          {t("logs_list.total_count", { n: total })}
+        </span>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-border-default">
+      {/* 表格 */}
+      <div className={cn("overflow-x-auto rounded-lg border border-border-default", isPending && "opacity-60")}>
         <table className="w-full text-sm">
           <thead className="bg-bg-tertiary text-left">
             <tr>
-              <th className="px-4 py-3 text-text-muted">{t("logs_list.time")}</th>
-              <th className="px-4 py-3 text-text-muted">{t("logs_list.admin")}</th>
-              <th className="px-4 py-3 text-text-muted">{t("logs_list.action")}</th>
-              <th className="px-4 py-3 text-text-muted">{t("logs_list.target_type")}</th>
-              <th className="px-4 py-3 text-text-muted">{t("logs_list.target_id")}</th>
-              <th className="px-4 py-3 text-text-muted">{t("logs_list.details")}</th>
+              <th className="px-4 py-3 font-medium text-text-muted">{t("logs_list.time")}</th>
+              <th className="px-4 py-3 font-medium text-text-muted">{t("logs_list.admin")}</th>
+              <th className="px-4 py-3 font-medium text-text-muted">{t("logs_list.action")}</th>
+              <th className="px-4 py-3 font-medium text-text-muted">{t("logs_list.target_type")}</th>
+              <th className="px-4 py-3 font-medium text-text-muted">{t("logs_list.target_id")}</th>
+              <th className="px-4 py-3 font-medium text-text-muted">{t("logs_list.details")}</th>
             </tr>
           </thead>
           <tbody>
-            {paginated.map((log) => (
-              <>
-                <tr
-                  key={log.id}
-                  className="border-t border-border-default hover:bg-bg-tertiary/50"
+            {logs.map((log) => [
+              <tr key={log.id} className="border-t border-border-default hover:bg-bg-tertiary/50">
+                <td
+                  className="whitespace-nowrap px-4 py-3 font-mono text-xs text-text-secondary"
+                  title={new Date(log.created_at).toLocaleString()}
                 >
-                  <td className="whitespace-nowrap px-4 py-3 text-text-secondary font-mono text-xs">
-                    {formatTime(log.created_at)}
-                  </td>
-                  <td className="px-4 py-3 text-text-primary">
-                    {log.users?.email ?? "-"}
-                  </td>
-                  <td className="px-4 py-3 text-text-primary">{log.action}</td>
-                  <td className="px-4 py-3 text-text-secondary">{log.target_type}</td>
-                  <td className="px-4 py-3 text-text-muted font-mono text-xs max-w-[160px] truncate">
-                    {log.target_id}
-                  </td>
-                  <td className="px-4 py-3">
-                    {hasChanges(log) ? (
-                      <button
-                        onClick={() =>
-                          setExpandedId(expandedId === log.id ? null : log.id)
-                        }
-                        className="text-gold text-xs hover:underline"
-                      >
-                        {expandedId === log.id ? t("logs_list.hide") : t("logs_list.view")}
-                      </button>
-                    ) : (
-                      <span className="text-text-muted text-xs">-</span>
-                    )}
+                  {formatTime(log.created_at)}
+                </td>
+                <td className="px-4 py-3 text-text-primary">{log.users?.email ?? "-"}</td>
+                <td className="px-4 py-3 text-text-primary">{log.action}</td>
+                <td className="px-4 py-3 text-text-secondary">{log.target_type}</td>
+                <td className="max-w-[160px] truncate px-4 py-3 font-mono text-xs text-text-muted">
+                  {log.target_id}
+                </td>
+                <td className="px-4 py-3">
+                  {hasChanges(log) ? (
+                    <button
+                      onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
+                      className="text-xs text-gold hover:underline"
+                    >
+                      {expandedId === log.id ? t("logs_list.hide") : t("logs_list.view")}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-text-muted">-</span>
+                  )}
+                </td>
+              </tr>,
+              expandedId === log.id && hasChanges(log) ? (
+                <tr key={`${log.id}-detail`} className="border-t border-border-default bg-bg-tertiary/30">
+                  <td colSpan={6} className="px-4 py-3">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <p className="mb-1 text-xs font-medium uppercase text-text-muted">
+                          {t("logs_list.old_value")}
+                        </p>
+                        <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded border border-border-default bg-bg-primary p-2 font-mono text-xs text-text-secondary">
+                          {formatJson(log.old_value)}
+                        </pre>
+                      </div>
+                      <div>
+                        <p className="mb-1 text-xs font-medium uppercase text-text-muted">
+                          {t("logs_list.new_value")}
+                        </p>
+                        <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded border border-border-default bg-bg-primary p-2 font-mono text-xs text-success">
+                          {formatJson(log.new_value)}
+                        </pre>
+                      </div>
+                    </div>
                   </td>
                 </tr>
-                {expandedId === log.id && hasChanges(log) && (
-                  <tr key={`${log.id}-detail`} className="border-t border-border-default bg-bg-tertiary/30">
-                    <td colSpan={6} className="px-4 py-3">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-xs font-medium text-text-muted mb-1 uppercase">
-                            {t("logs_list.old_value")}
-                          </p>
-                          <pre className="text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto rounded bg-bg-primary p-2 border border-border-default">
-                            {formatJson(log.old_value)}
-                          </pre>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-text-muted mb-1 uppercase">
-                            {t("logs_list.new_value")}
-                          </p>
-                          <pre className="text-xs text-success font-mono whitespace-pre-wrap max-h-48 overflow-y-auto rounded bg-bg-primary p-2 border border-border-default">
-                            {formatJson(log.new_value)}
-                          </pre>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </>
-            ))}
+              ) : null,
+            ])}
           </tbody>
         </table>
       </div>
 
-      {/* Pagination */}
+      {logs.length === 0 && <p className="mt-4 text-center text-text-muted">{t("logs_list.no_logs")}</p>}
+
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-center gap-4 text-sm">
           <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            className="rounded border border-border-default px-3 py-1 text-text-primary hover:bg-bg-tertiary disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={() => setParams({ page: page - 1 })}
+            disabled={page <= 1 || isPending}
+            className="rounded border border-border-default px-3 py-1 text-text-primary transition-colors hover:bg-bg-tertiary disabled:cursor-not-allowed disabled:opacity-40"
           >
             {t("logs_list.prev")}
           </button>
-          <span className="text-text-muted">
-            {t("logs_list.page", { page: currentPage, total: totalPages })}
+          <span className="text-text-muted tabular-nums">
+            {t("logs_list.page", { page, total: totalPages })}
           </span>
           <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            className="rounded border border-border-default px-3 py-1 text-text-primary hover:bg-bg-tertiary disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={() => setParams({ page: page + 1 })}
+            disabled={page >= totalPages || isPending}
+            className="rounded border border-border-default px-3 py-1 text-text-primary transition-colors hover:bg-bg-tertiary disabled:cursor-not-allowed disabled:opacity-40"
           >
             {t("logs_list.next")}
           </button>
         </div>
-      )}
-
-      {filtered.length === 0 && (
-        <p className="mt-4 text-center text-text-muted">{t("logs_list.no_logs")}</p>
       )}
     </div>
   );

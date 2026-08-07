@@ -22,6 +22,13 @@ export function AdminHeader() {
   }, []);
 
   const handleLogout = async () => {
+    // 先记审计再登出——signOut 之后会话已失效，requireAdmin 就认不出是谁了。
+    await fetch("/api/admin/session-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "logout" }),
+    }).catch(() => {});
+
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push(`/${locale}`);

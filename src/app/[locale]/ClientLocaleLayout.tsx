@@ -17,18 +17,21 @@ import { ToastProvider } from "@/components/ui/Toast";
 import { PriceAlertWatcher } from "@/components/alerts/PriceAlertWatcher";
 import { PaperTpSlWatcher } from "@/components/alerts/PaperTpSlWatcher";
 import { PreferencesSync } from "@/components/preferences/PreferencesSync";
+import type { SiteSettings } from "@/lib/site-settings";
 
 export function ClientLocaleLayout({
   children,
   locale,
   messages,
   initialAuth,
+  siteSettings,
 }: {
   children: ReactNode;
   locale: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   messages: any;
   initialAuth?: AuthState;
+  siteSettings: SiteSettings;
 }) {
   // 交易终端是工具页，不是营销页——底部这条"品牌+介绍+社群链接"的 footer 在这里
   // 纯粹是滚动过图表/持仓面板之后的死区，只在非 /trade 页面显示
@@ -60,7 +63,7 @@ export function ClientLocaleLayout({
                 {/* 手机上 footer 沉在 tab bar 下面没人看得到，只在桌面渲染 */}
                 {!isTradePage && (
                   <div className="hidden lg:block">
-                    <Footer />
+                    <Footer settings={siteSettings} />
                   </div>
                 )}
               </MobileShell>

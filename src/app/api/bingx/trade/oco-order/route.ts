@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
 import { cancelOcoOrder, queryOcoOrderList, placeOcoOrder } from "@/lib/bingx/trade";
 import { preflightOrder } from "@/lib/trading/preflight";
+import { canTradeLive } from "@/lib/access";
+import { getUserTier } from "@/lib/access-server";
 import { recordOrder } from "@/lib/trading/persist";
 import { checkRateLimit } from "@/lib/trading/rate-limit";
 import { describeBingXError } from "@/lib/trading/errors";
@@ -22,6 +24,12 @@ export async function POST(request: NextRequest) {
     const { data: authData } = await supabase.auth.getUser();
     if (!authData.user) return NextResponse.json({ success: false, error: { message: "Unauthorized" } }, { status: 401 });
     const userId = authData.user.id;
+
+    // OCO 走的是真实资金，和现货/合约下单同一条线：免费用户只能用模拟账户。
+    // 校验放在 action 分支之前——cancel/query 同样是对实盘账户的操作。
+    if (!canTradeLive(await getUserTier(supabase, userId))) {
+      return reject("PRO_REQUIRED", "Live trading requires a Pro subscription", 403);
+    }
 
     const body = await request.json();
     const { action } = body;
@@ -87,8 +95,7 @@ export async function POST(request: NextRequest) {
 
     let pre;
     try {
-      pre = await preflightOrder(supabase, {
-        userId,
+      pre = await preflightOrder({
         market: "spot",
         symbol,
         direction: side === "BUY" ? "LONG" : "SHORT",

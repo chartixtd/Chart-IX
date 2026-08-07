@@ -45,33 +45,7 @@ export type SizeValidation =
   | { ok: true }
   | { ok: false; reason: SizeValidationReason; limit?: number };
 
-/** 风控限额配置。任一字段为 null 表示该项不限制 */
-export interface TradingLimits {
-  maxNotionalPerOrder: number | null;
-  maxOrdersPerDay: number | null;
-  maxLeverage: number | null;
-  allowedSymbols: string[] | null;
-}
-
-export interface LimitCheckInput {
-  symbol: string;
-  notional: number;
-  leverage: number;
-  ordersToday: number;
-}
-
-export type LimitRejectReason =
-  | "NOTIONAL_TOO_LARGE"
-  | "DAILY_LIMIT_REACHED"
-  | "LEVERAGE_TOO_HIGH"
-  | "SYMBOL_NOT_ALLOWED";
-
-export type LimitCheck =
-  | { ok: true }
-  | { ok: false; reason: LimitRejectReason; limit: number | string };
-
 export interface PreflightInput {
-  userId: string;
   market: TradingMarket;
   symbol: string;
   /** 用户选的方向；现货 BUY/SELL 直接映射，合约 LONG/SHORT 在路由层转换 */
@@ -88,8 +62,7 @@ export interface PreflightInput {
 export type PreflightRejectCode =
   | "UNKNOWN_SYMBOL"
   | "NO_MARKET_PRICE"
-  | SizeValidationReason
-  | LimitRejectReason;
+  | SizeValidationReason;
 
 export type PreflightResult =
   | {
@@ -99,9 +72,9 @@ export type PreflightResult =
       qty: string;
       sizing: OrderSizing;
       requiredMarginUsdt: number;
-      /** 服务端自行获取的市价，用于风控估值；绝不来自客户端 */
+      /** 服务端自行获取的市价；绝不来自客户端 */
       marketPrice: number;
-      /** 按服务端市价计算的真实敞口（USDT），风控校验用的就是这个数 */
+      /** 按服务端市价计算的真实敞口（USDT），与客户端报价无关 */
       riskNotionalUsdt: number;
     }
   | { ok: false; code: PreflightRejectCode; limit?: number | string };

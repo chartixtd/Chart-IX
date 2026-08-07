@@ -25,34 +25,6 @@ export interface RecordOrderInput {
   riskReason?: string | null;
 }
 
-/** 今日已下单数（含被风控拒绝的），用于每日次数限额 */
-export async function countOrdersToday(
-  supabase: SupabaseClient,
-  userId: string
-): Promise<number> {
-  try {
-    const today = new Date().toISOString().slice(0, 10);
-    const { data, error } = await supabase
-      .from("user_daily_trade_count")
-      .select("count")
-      .eq("user_id", userId)
-      .eq("trade_date", today)
-      .maybeSingle();
-
-    if (error) {
-      // 读不到计数时按 0 处理：宁可放行也不要因为读表失败而锁死用户下单。
-      // 名义额与杠杆限额仍然生效，风险有界。
-      Sentry.captureException(error, { tags: { scope: "countOrdersToday" } });
-      return 0;
-    }
-    return data?.count ?? 0;
-  } catch (e) {
-    // 同样按 0 处理：客户端本身抛出（网络错误等）不应锁死用户下单。
-    Sentry.captureException(e, { tags: { scope: "countOrdersToday" } });
-    return 0;
-  }
-}
-
 /**
  * 记录一笔下单尝试。
  *
@@ -86,10 +58,6 @@ export async function recordOrder(
       Sentry.captureException(error, { tags: { scope: "recordOrder" } });
       return;
     }
-    // 每日计数由 orders 表上的 trg_increment_trade_count 触发器（006_trading_rls.sql，
-    // 020_trading_limits.sql 中改为跳过 risk_rejected 行）在插入时原子维护，
-    // 这里不能重复计数：应用层读-改-写在并发下单时是有竞态的，而触发器的
-    // INSERT ... ON CONFLICT ... DO UPDATE 是原子的，不应被绕过或重复实现。
   } catch (e) {
     Sentry.captureException(e, { tags: { scope: "recordOrder" } });
   }

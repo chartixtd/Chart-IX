@@ -53,6 +53,13 @@ export default function AdminLoginPage() {
       return;
     }
 
+    // 审计留痕。失败不阻断登录——记不上日志不该把人挡在门外。
+    await fetch("/api/admin/session-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "login" }),
+    }).catch(() => {});
+
     router.push("/admin");
     router.refresh();
   };

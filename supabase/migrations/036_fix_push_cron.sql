@@ -13,7 +13,16 @@
 -- （src/lib/cron-auth.ts），是否真的发送仍由 isPushDue 按后台配置的
 -- 间隔门控。所以下面的 SQL 不含任何密钥占位符，可直接整段执行。
 --
--- 前置：Dashboard → Database → Extensions 启用 pg_cron 与 pg_net。
+-- ── 0. 扩展 ──────────────────────────────────────────────
+-- 不先启用的话，下面引用 cron.job 会直接报
+--   ERROR: 42P01: relation "cron.job" does not exist
+-- 因为 cron schema 是 pg_cron 装上时才创建的。
+-- 建议单独先跑这两句确认成功，再跑后面的部分；报权限错就改用
+-- 控制台 Database → Extensions 里的开关。
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+CREATE EXTENSION IF NOT EXISTS pg_net;
+
+-- 确认：SELECT extname FROM pg_extension WHERE extname IN ('pg_cron','pg_net');
 
 -- ── 1. 心跳表（026 里定义过，但线上从未建出来） ───────────
 -- cron 路由每次运行都会 upsert 这张表；表不存在时写入静默失败，

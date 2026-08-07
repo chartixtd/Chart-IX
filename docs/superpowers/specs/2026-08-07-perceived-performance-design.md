@@ -32,6 +32,10 @@
 7. 手写 useEffect 取数页面：/orders（无 limit、无缓存、串行）、/settings（加载中闪"请先登录"）、/upgrade（价格区无占位）、/learn/[slug]（4 段串行瀑布）、/videos/[id]。
 8. `useDashboardOrders` 无 `.limit()`；screener 缓存过期后由用户请求承担 400~800 次上游重算；公开行情代理 fetch 无超时；桌面端交易页首帧渲染手机布局后整树重挂；全局 5 个 headless 组件在所有页面发额外查询。
 
+## 实施顺序
+
+按第 1→4 节顺序分四个阶段实施，每个阶段独立可验证、可单独发布；第 5 节的测试与验证在对应阶段内同步完成，不留到最后。
+
 ## 第 1 节：服务端 TTFB——砍掉认证瀑布
 
 1. **`getServerAuth()` 用 React `cache()` 包裹**：同一请求内 layout+page 只执行一次，与 `site-settings.ts:85` 做法对齐。
@@ -47,7 +51,7 @@
 2. **React Query 全局 `placeholderData: keepPreviousData`**；内容类查询（dashboard 卡片、社区、视频、成就等）`staleTime` 提至 5 分钟、`gcTime` 30 分钟。**交易关键数据（持仓/余额/挂单/订单）保持现有短 staleTime**。
 3. **useEffect → useQuery 迁移**：/orders（加 `.limit(200)`）、/settings（区分 loading 与未登录，修"请先登录"闪现）、/upgrade（价格卡骨架占位）、/videos/[id]、/learn/[slug]。
 4. **/learn/[slug] 压平瀑布**：path+steps 一条 join 查询；progress 并行；公开内容不等认证态就绪即发起。4 段串行 → 约 1.5 往返。
-5. **`useDashboardOrders` 加 `.limit()`**，与同文件其他查询对齐。
+5. **`useDashboardOrders` 加 `.limit(50)`**（dashboard 账本区只渲染有限条，50 条足够覆盖其客户端 filter 展示需求），与同文件其他查询对齐。
 
 已知取舍：staleTime 5 分钟意味着他人新内容最多延迟 5 分钟自动出现（主动刷新/切页仍即时）。
 

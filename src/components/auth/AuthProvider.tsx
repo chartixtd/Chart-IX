@@ -27,6 +27,11 @@ const AuthContext = createContext<AuthContextValue>({
   refresh: async () => {},
 });
 
+// Survives AuthProvider remounts (route-group crossings re-mount the group
+// layout). Hard loads start with null — matching the server-rendered HTML,
+// so hydration is never affected; only client-side remounts read it.
+let lastKnownAuth: AuthState | null = null;
+
 export function AuthProvider({
   children,
   initialAuth,
@@ -34,18 +39,28 @@ export function AuthProvider({
   children: React.ReactNode;
   initialAuth?: AuthState;
 }) {
+  // Module variable assignment is not setState — safe to run during render.
+  if (initialAuth) lastKnownAuth = initialAuth;
+
   // Server-prefetched auth is authoritative for first paint — no loading flash,
   // no client-side request waterfall, and tier/role are always accurate.
-  const [auth, setAuth] = useState<AuthState>(
-    initialAuth ?? {
-      userId: null,
-      email: null,
-      displayName: null,
-      tier: null,
-      role: null,
-      loading: true,
-    }
+  const [auth, setAuthState] = useState<AuthState>(
+    () =>
+      initialAuth ??
+      lastKnownAuth ?? {
+        userId: null,
+        email: null,
+        displayName: null,
+        tier: null,
+        role: null,
+        loading: true,
+      }
   );
+
+  const setAuth = useCallback((next: AuthState) => {
+    lastKnownAuth = next;
+    setAuthState(next);
+  }, []);
 
   const fetchAuth = useCallback(async () => {
     const supabase = createClient();
@@ -63,7 +78,8 @@ export function AuthProvider({
     // reading own row) if that migration hasn't been applied yet.
     let tier = user.app_metadata?.tier as "free" | "pro" | undefined;
     let role = user.app_metadata?.role as "user" | "admin" | undefined;
-    let displayName: string | null = null;
+    let displayName =
+      (user.app_metadata?.display_name as string | null | undefined) ?? null;
 
     if (tier === undefined || role === undefined) {
       const { data: profile } = await supabase
@@ -74,14 +90,6 @@ export function AuthProvider({
 
       tier = (profile?.tier as "free" | "pro") ?? "free";
       role = (profile?.role as "user" | "admin") ?? "user";
-      displayName = profile?.display_name ?? null;
-    } else {
-      // display_name is never synced onto JWT claims, so it always needs its own lookup.
-      const { data: profile } = await supabase
-        .from("users")
-        .select("display_name")
-        .eq("id", user.id)
-        .single();
       displayName = profile?.display_name ?? null;
     }
 
@@ -99,7 +107,7 @@ export function AuthProvider({
     // Fetch auth on mount if server didn't provide a valid user identity.
     // `initialAuth` is always an object (even when user is null), so check
     // `userId` rather than truthiness of the prop itself.
-    const hasServerAuth = Boolean(initialAuth?.userId);
+    const hasServerAuth = Boolean((initialAuth ?? lastKnownAuth)?.userId);
     if (!hasServerAuth) {
       fetchAuth();
     }

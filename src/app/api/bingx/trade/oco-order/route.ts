@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { decrypt } from "@/lib/crypto";
+import { getDecryptedApiKeys } from "@/lib/trading/api-key-cache";
 import { cancelOcoOrder, queryOcoOrderList, placeOcoOrder } from "@/lib/bingx/trade";
 import { preflightOrder } from "@/lib/trading/preflight";
 import { canTradeLive } from "@/lib/access";
@@ -38,8 +38,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: "Invalid action" } }, { status: 400 });
     }
 
+    // id 单独查——用于下面 recordOrder 的审计字段 apiKeyId；解密后的凭证走缓存
     const { data: apiKeys, error: keyError } = await supabase
-      .from("api_keys").select("id, api_key_encrypted, secret_encrypted")
+      .from("api_keys").select("id")
       .eq("user_id", userId).eq("is_valid", true)
       .order("is_primary", { ascending: false }).order("created_at", { ascending: true })
       .limit(1);
@@ -48,8 +49,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 });
     }
 
-    const apiKey = decrypt(apiKeys[0].api_key_encrypted);
-    const secret = decrypt(apiKeys[0].secret_encrypted);
+    const keys = await getDecryptedApiKeys(userId);
+    if (!keys) {
+      return NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 });
+    }
+    const { apiKey, secret } = keys;
 
     // Cancel OCO order
     if (action === "cancel") {

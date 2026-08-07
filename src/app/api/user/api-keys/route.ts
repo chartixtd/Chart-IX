@@ -5,6 +5,7 @@ import { encrypt, decrypt } from "@/lib/crypto";
 import { verifyApiKey } from "@/lib/bingx/trade";
 import { verifyFuturesApiKey } from "@/lib/bingx/futures";
 import { maskApiKey } from "@/lib/utils";
+import { invalidateApiKeys } from "@/lib/trading/api-key-cache";
 
 /**
  * 若该用户当前没有任何 is_primary=true 的 key，补选最早创建的有效密钥顶上。
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    invalidateApiKeys(authData.user.id);
     return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error("[user/api-keys POST]", error);
@@ -139,6 +141,7 @@ export async function DELETE(request: NextRequest) {
     // 删掉的可能正是主密钥；补选最早创建的有效密钥顶上，避免下单时无 key 可选
     await promoteNextValidPrimaryIfNoneSet(supabase, authData.user.id);
 
+    invalidateApiKeys(authData.user.id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[user/api-keys DELETE]", error);
@@ -194,6 +197,7 @@ export async function PATCH(request: NextRequest) {
         console.error("[user/api-keys PATCH setPrimary]", error);
         return NextResponse.json({ success: false, error: { message: "Failed to set primary key" } }, { status: 500 });
       }
+      invalidateApiKeys(userId);
       return NextResponse.json({ success: true });
     }
 
@@ -240,6 +244,7 @@ export async function PATCH(request: NextRequest) {
         // 若调用方需要拿到新主密钥的状态，需重新拉取列表 —— 这里保持响应即时返回本次操作结果。
       }
 
+      invalidateApiKeys(userId);
       return NextResponse.json({ success: true, data });
     }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { decrypt } from "@/lib/crypto";
+import { getDecryptedApiKeys } from "@/lib/trading/api-key-cache";
 import { createListenKey, extendListenKey, deleteListenKey } from "@/lib/bingx/user-stream";
 import { describeBingXError } from "@/lib/trading/errors";
 
@@ -14,17 +14,12 @@ async function resolveApiKey(supabase: Awaited<ReturnType<typeof createClient>>)
     return { ok: false, error: NextResponse.json({ success: false, error: { message: "Unauthorized" } }, { status: 401 }) };
   }
 
-  const { data: apiKeys, error: keyError } = await supabase
-    .from("api_keys").select("api_key_encrypted, secret_encrypted")
-    .eq("user_id", authData.user.id).eq("is_valid", true)
-    .order("is_primary", { ascending: false }).order("created_at", { ascending: true })
-    .limit(1);
-
-  if (keyError || !apiKeys?.length) {
+  const keys = await getDecryptedApiKeys(authData.user.id);
+  if (!keys) {
     return { ok: false, error: NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 }) };
   }
 
-  return { ok: true, apiKey: decrypt(apiKeys[0].api_key_encrypted), secret: decrypt(apiKeys[0].secret_encrypted) };
+  return { ok: true, apiKey: keys.apiKey, secret: keys.secret };
 }
 
 export async function POST() {

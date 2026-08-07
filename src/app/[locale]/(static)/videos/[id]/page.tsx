@@ -80,7 +80,11 @@ export default function VideoDetailPage() {
 
   // Increment view count once
   useEffect(() => {
-    if (!video || viewIncrementedRef.current) return;
+    // videoQuery.isPlaceholderData guards against the moment videoId has
+    // already switched (e.g. a "next lesson" link) but `video` is still the
+    // previous video's kept-around data under global keepPreviousData — we
+    // must not stamp the new video's row with the old video's view count.
+    if (!video || videoQuery.isPlaceholderData || viewIncrementedRef.current) return;
     viewIncrementedRef.current = true;
 
     supabase
@@ -94,7 +98,7 @@ export default function VideoDetailPage() {
           );
         }
       });
-  }, [video, videoId, queryClient]);
+  }, [video, videoId, queryClient, videoQuery.isPlaceholderData]);
 
   // Progress tracking: every 10s
   useEffect(() => {

@@ -412,6 +412,10 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   // ---- Candles + all indicator data ----
   useEffect(() => {
     if (!chartApi || !candleSeries || !bars) return;
+    // Placeholder 帧完全不碰图表：旧 symbol 的蜡烛本来就还挂在 series 上，
+    // 半透明遮罩已表达"过期"语义。跳过记账写入，保住 reset effect 留下的
+    // null/0 状态，真实数据到达帧才能正确判 "full" 并触发 fitContent。
+    if (isPlaceholder) return;
     const { times, input } = bars;
 
     const kind =
@@ -629,12 +633,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       volume: input.volume[lastIdx],
     };
 
-    // Placeholder data (old symbol's candles, kept around by keepPreviousData
-    // while the new symbol's query is in flight) must not drive the initial
-    // fitContent — otherwise the view locks onto the stale symbol's range and
-    // never re-fits once the real data lands, since isFirstDataRef has already
-    // flipped to false by then.
-    if (isFirstDataRef.current && !isPlaceholder) {
+    if (isFirstDataRef.current) {
       chartApi.timeScale().fitContent();
       isFirstDataRef.current = false;
     }

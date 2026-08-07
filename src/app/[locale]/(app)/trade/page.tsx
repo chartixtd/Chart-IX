@@ -9,9 +9,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
-import { MarketOverview } from "@/components/trade/MarketOverview";
 import { PushOptIn } from "@/components/pwa/PushOptIn";
-import { OrderBook } from "@/components/trade/OrderBook";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useHydrated } from "@/hooks/useHydrated";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -30,12 +28,38 @@ const KlineChart = dynamic(
     ),
   }
 );
+// Trade panels below aren't needed for the first paint (they render behind the
+// hydration skeleton / after layout choice) and pull in their own weight —
+// splitting them into separate chunks keeps them out of the initial /trade bundle.
+const MarketOverview = dynamic(
+  () => import("@/components/trade/MarketOverview").then((m) => m.MarketOverview),
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
+);
+const OrderBook = dynamic(
+  () => import("@/components/trade/OrderBook").then((m) => m.OrderBook),
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
+);
+const OrderForm = dynamic(
+  () => import("@/components/trade/order-form/OrderForm").then((m) => m.OrderForm),
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
+);
+const OrdersPanel = dynamic(
+  () => import("@/components/trade/OrdersPanel").then((m) => m.OrdersPanel),
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
+);
+const PaperOrdersPanel = dynamic(
+  () => import("@/components/trade/PaperOrdersPanel").then((m) => m.PaperOrdersPanel),
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
+);
+const FuturesInfoPanel = dynamic(
+  () => import("@/components/trade/FuturesInfoPanel").then((m) => m.FuturesInfoPanel),
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
+);
+const FuturesWalletSummary = dynamic(
+  () => import("@/components/trade/FuturesWalletSummary").then((m) => m.FuturesWalletSummary),
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
+);
 import { FearGreedIndex } from "@/components/trade/FearGreedIndex";
-import { OrderForm } from "@/components/trade/order-form/OrderForm";
-import { OrdersPanel } from "@/components/trade/OrdersPanel";
-import { PaperOrdersPanel } from "@/components/trade/PaperOrdersPanel";
-import { FuturesInfoPanel } from "@/components/trade/FuturesInfoPanel";
-import { FuturesWalletSummary } from "@/components/trade/FuturesWalletSummary";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useSpotTicker } from "@/hooks/useMarketData";

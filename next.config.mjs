@@ -12,6 +12,9 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
   },
+  experimental: {
+    optimizePackageImports: ["next-intl", "@tanstack/react-query", "react-resizable-panels", "zustand"],
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**.supabase.co" },

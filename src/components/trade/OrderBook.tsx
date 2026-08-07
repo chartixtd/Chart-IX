@@ -14,7 +14,7 @@ interface OrderBookProps {
 
 export const OrderBook = memo(function OrderBook({ symbol, onPriceClick }: OrderBookProps) {
   const t = useTranslations("trading");
-  const { data, isLoading } = useOrderBook(symbol, 8);
+  const { data, isLoading, isPlaceholderData } = useOrderBook(symbol, 8);
 
   if (isLoading) {
     return (
@@ -66,7 +66,7 @@ export const OrderBook = memo(function OrderBook({ symbol, onPriceClick }: Order
   };
 
   return (
-    <div className="text-xs">
+    <div className={cn("text-xs", isPlaceholderData && "opacity-60 transition-opacity")}>
       {/* Header */}
       <div className="grid grid-cols-3 gap-1 px-2 py-1.5 text-text-muted border-b border-border-default">
         <span>Price</span>

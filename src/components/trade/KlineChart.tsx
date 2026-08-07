@@ -148,7 +148,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   const rafRef = useRef<number | null>(null);
   const pendingPriceRef = useRef<number | undefined>(undefined);
 
-  const { candles: klines, isLoading, isLoadingMore, hasMore, loadMore } = useKlineHistory(symbol, interval);
+  const { candles: klines, isLoading, isLoadingMore, hasMore, loadMore, isPlaceholder } = useKlineHistory(symbol, interval);
   // Latest-value refs: let the scroll-triggered pagination subscription avoid
   // resubscribing on every render (loadMore's identity changes as olderCandles
   // grows) — same pattern as appliedRef below.
@@ -629,7 +629,12 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
       volume: input.volume[lastIdx],
     };
 
-    if (isFirstDataRef.current) {
+    // Placeholder data (old symbol's candles, kept around by keepPreviousData
+    // while the new symbol's query is in flight) must not drive the initial
+    // fitContent — otherwise the view locks onto the stale symbol's range and
+    // never re-fits once the real data lands, since isFirstDataRef has already
+    // flipped to false by then.
+    if (isFirstDataRef.current && !isPlaceholder) {
       chartApi.timeScale().fitContent();
       isFirstDataRef.current = false;
     }
@@ -637,7 +642,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
     lastAdvancedRef.current = hasAdvancedChart;
     // `applied` covers both param edits and visibility toggles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartApi, candleSeries, bars, applied, structureKey, hasAdvancedChart]);
+  }, [chartApi, candleSeries, bars, applied, structureKey, hasAdvancedChart, isPlaceholder]);
 
   // ---- Drive the current candle with live ticker price (rAF-throttled) ----
   useEffect(() => {
@@ -801,6 +806,10 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/60">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-gold/30 border-t-gold" />
           </div>
+        )}
+
+        {!isLoading && isPlaceholder && (
+          <div className="pointer-events-none absolute inset-0 z-[6] bg-bg-primary/40" />
         )}
 
         {!isLoading && isLoadingMore && (

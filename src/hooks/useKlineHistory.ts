@@ -14,6 +14,8 @@ interface UseKlineHistoryResult {
   isLoadingMore: boolean;
   hasMore: boolean;
   loadMore: () => void;
+  /** true 时 candles 是切换 symbol/interval 前的旧数据（keepPreviousData） */
+  isPlaceholder: boolean;
 }
 
 async function fetchKlinesPage(
@@ -133,5 +135,12 @@ export function useKlineHistory(symbol: string, interval: string, market = "spot
     [olderCandles, latestQuery.data]
   );
 
-  return { candles, isLoading: latestQuery.isLoading, isLoadingMore, hasMore, loadMore };
+  return {
+    candles,
+    isLoading: latestQuery.isLoading,
+    isLoadingMore,
+    hasMore,
+    loadMore,
+    isPlaceholder: latestQuery.isPlaceholderData,
+  };
 }

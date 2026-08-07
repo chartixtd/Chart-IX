@@ -623,6 +623,7 @@
       "message_lang_zh": "中文",
       "interval_note": "调度器高频触发，只有距上次推送超过下面设定的间隔才会真正发送。漏掉的一轮会由下一轮自动补上。",
       "next_push": "下次自动推送",
+    "next_push_due": "已到期 · 下一次调度触发时发送",
       "push_disabled_note": "推送已关闭，不会有定时推送",
       "last_pushed": "上次推送",
       "save": "保存",

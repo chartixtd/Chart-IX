@@ -623,6 +623,7 @@
       "message_lang_zh": "Chinese (中文)",
       "interval_note": "The scheduler ticks frequently; a push goes out once the interval below has elapsed. A missed tick is picked up by the next one.",
       "next_push": "Next scheduled push",
+    "next_push_due": "Due — sends on the next scheduler tick",
       "push_disabled_note": "Push is disabled — no scheduled push will run",
       "last_pushed": "Last pushed",
       "save": "Save",

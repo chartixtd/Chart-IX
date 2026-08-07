@@ -561,6 +561,7 @@
       "message_lang_zh": "Cina (中文)",
       "interval_note": "Penjadual berdetik kerap; hantaran keluar apabila selang di bawah telah berlalu. Detik yang terlepas akan diambil oleh yang berikutnya.",
       "next_push": "Push berjadual seterusnya",
+    "next_push_due": "Tiba masa — dihantar pada jadual seterusnya",
       "push_disabled_note": "Push dimatikan — tiada push berjadual akan berjalan",
       "last_pushed": "Push terakhir",
       "save": "Simpan",

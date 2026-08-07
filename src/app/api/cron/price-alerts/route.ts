@@ -4,6 +4,7 @@ import { evaluateAlerts, type PendingAlert } from "@/lib/push/evaluate";
 import { buildAlertMessage } from "@/lib/push/messages";
 import { sendToSubscriptions, type SubscriptionRow } from "@/lib/push/send";
 import { getSpotTickers } from "@/lib/bingx/market";
+import { authorizeCronTick } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,16 +12,15 @@ export const maxDuration = 60;
 
 const JOB_NAME = "price-alerts";
 
-/** 沿用 telegram-push 的鉴权模式 */
-function isAuthorized(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // 本地未配置时放行，与其他开发流程一致
-  return request.headers.get("authorization") === `Bearer ${secret}`;
-}
-
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // 沿用 telegram-push 的鉴权模式：CRON_SECRET 免限流，匿名 tick 限流放行
+  // （见 cron-auth.ts）。
+  const auth = await authorizeCronTick(request.headers.get("authorization"), JOB_NAME);
+  if (!auth.ok) {
+    return NextResponse.json(
+      { error: "Too many ticks", retryAfterMs: auth.retryAfterMs },
+      { status: auth.status }
+    );
   }
 
   const supabase = createServiceRoleClient();

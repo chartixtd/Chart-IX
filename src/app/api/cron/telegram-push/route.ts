@@ -8,6 +8,7 @@ import {
 import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
 import { buildScreenerMessage } from "@/lib/push/messages";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
+import { authorizeCronTick } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -23,18 +24,15 @@ const JOB_NAME = "telegram-push";
  */
 const SCREENER_BUDGET_MS = 30_000;
 
-/**
- * Supabase pg_cron hits this (see supabase/migrations/028_push_cron_jobs.sql).
- * It ticks far more often than the push interval; whether a push actually goes
- * out is decided here by isPushDue against the admin-configured interval, so a
- * tick lost to a timeout is recovered by the next one instead of costing a
- * whole interval.
+/*
+ * Ticked by external schedulers (GitHub Actions every 10 min, Vercel Cron daily
+ * backstop, optionally Supabase pg_cron — see supabase/migrations/036). Ticks
+ * far more often than the push interval; whether a push actually goes out is
+ * decided by isPushDue against the admin-configured interval, so a tick lost to
+ * a timeout is recovered by the next one instead of costing a whole interval.
+ * Auth: CRON_SECRET bypasses throttling; anonymous ticks are rate-limited —
+ * see cron-auth.ts for why anonymous ticks are safe here.
  */
-function isAuthorized(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // not configured locally — allow, matches other unauthenticated dev flows
-  return request.headers.get("authorization") === `Bearer ${secret}`;
-}
 
 /** Heartbeat so "nothing is arriving" is distinguishable from "the job stopped running". */
 async function beat(status: "ok" | "error" | "skipped") {
@@ -60,8 +58,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await authorizeCronTick(request.headers.get("authorization"), JOB_NAME);
+  if (!auth.ok) {
+    return NextResponse.json(
+      { error: "Too many ticks", retryAfterMs: auth.retryAfterMs },
+      { status: auth.status }
+    );
   }
 
   try {

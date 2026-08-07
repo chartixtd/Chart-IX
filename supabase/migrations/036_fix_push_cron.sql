@@ -1,22 +1,24 @@
 -- ============================================================
--- Chart-IX 数据库迁移 #036: 修复推送定时任务（可选，但建议执行）
+-- Chart-IX 数据库迁移 #036: 补上从未存在的推送调度器
 -- ============================================================
--- 现状核查（2026-08-07）：线上库里 telegram_push_log 只有 manual 触发记录，
--- cron_heartbeats 表不存在——说明 026 的心跳表和 028 的 pg_cron 注册
--- 从未在线上执行过。「Telegram 一直不会自动推送」的根因就在这里：
--- 根本没有调度器在打 /api/cron/telegram-push。
+-- 线上核查（2026-08-07）：
+--   telegram_push_log 里只有 manual/test 记录，没有一条 cron；
+--   cron_heartbeats 表不存在（026 从未执行）；
+--   cron.job 里没有任何任务（028 是带 <SITE_URL> 占位符的模板，从未执行）。
 --
--- 应用层现在已经由 GitHub Actions 每 10 分钟匿名 tick 一次兜底
--- （.github/workflows/cron-tick.yml + src/lib/cron-auth.ts 的限流放行），
--- 所以这份 SQL 不执行推送也能工作。执行它有两个额外好处：
---   1. pg_cron 每分钟扫价格提醒（GitHub Actions 只能做到 ~10 分钟一次）；
---   2. cron_heartbeats 表落地后，心跳写入不再静默失败。
+-- 结论：Telegram「自动推送」从未运行过。推送链路本身是好的——手动
+-- 「立即推送」一直能成——缺的只是有人按时来敲 /api/cron/telegram-push。
 --
--- 使用方法：Supabase 控制台 → SQL Editor，把 <CRON_SECRET> 替换为
--- Vercel 环境变量 CRON_SECRET 的值（Vercel 控制台可见）后整段执行。
--- 前置：Database → Extensions 里启用 pg_cron 与 pg_net。
+-- 应用层已不再要求 cron 带密钥：匿名 tick 走共享限流桶放行
+-- （src/lib/cron-auth.ts），是否真的发送仍由 isPushDue 按后台配置的
+-- 间隔门控。所以下面的 SQL 不含任何密钥占位符，可直接整段执行。
+--
+-- 前置：Dashboard → Database → Extensions 启用 pg_cron 与 pg_net。
 
--- ── 1. 心跳表（026 里定义过，但线上从未执行） ─────────────
+-- ── 1. 心跳表（026 里定义过，但线上从未建出来） ───────────
+-- cron 路由每次运行都会 upsert 这张表；表不存在时写入静默失败，
+-- 于是「任务没在跑」和「任务跑了但没到间隔」在后台看起来一模一样。
+-- src/app/api/user/notification-prefs/route.ts 也读它给用户看。
 CREATE TABLE IF NOT EXISTS public.cron_heartbeats (
   job_name    TEXT PRIMARY KEY,
   last_run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -31,42 +33,34 @@ CREATE POLICY "heartbeats readable by authenticated"
   TO authenticated
   USING (true);
 
--- ── 2. 重新注册 pg_cron 任务 ─────────────────────────────
--- 与 028 的差异：
---   a. URL 已替换为真实站点，不再是占位符；
---   b. telegram tick 从每 4 小时改为每 10 分钟——实际推送间隔由应用层
---      isPushDue 按后台配置门控，高频 tick 只是让漏掉的一轮能尽快补上；
---   c. http_get 显式给 55s 超时（pg_net 默认 5s，冷缓存时筛选器一轮
---      要几十秒，5s 会把请求掐断并在 job_run_details 里记为失败）。
+-- ── 2. 注册 Telegram 推送的定时 tick ─────────────────────
+-- 与 028 的差异：URL 是真实站点（不再是占位符）；间隔从 4 小时改为
+-- 10 分钟——真正的推送间隔由应用层 isPushDue 按后台配置门控，高频
+-- tick 只是让漏掉的一轮能在 10 分钟内补上，而不是等满一个完整间隔；
+-- 显式 55s 超时——pg_net 默认 5s，冷缓存时筛选器一轮要几十秒，
+-- 5s 会把请求掐断并在 job_run_details 里记成失败。
+--
+-- 注意：price-alerts 任务刻意不注册。它依赖的 price_alerts /
+-- push_subscriptions 表来自 026，线上同样不存在，现在挂上去只会每分钟
+-- 报一次错、白烧 Vercel 配额。先跑下面第 3 段建表，再回来注册它。
 
 SELECT cron.unschedule(jobname)
 FROM cron.job
-WHERE jobname IN ('price-alerts-sweep', 'telegram-screener-push');
-
-SELECT cron.schedule(
-  'price-alerts-sweep',
-  '* * * * *',
-  $$
-  SELECT net.http_get(
-    url     := 'https://chart-ix.vercel.app/api/cron/price-alerts',
-    headers := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb,
-    timeout_milliseconds := 55000
-  );
-  $$
-);
+WHERE jobname IN ('telegram-screener-push', 'price-alerts-sweep');
 
 SELECT cron.schedule(
   'telegram-screener-push',
   '*/10 * * * *',
   $$
   SELECT net.http_get(
-    url     := 'https://chart-ix.vercel.app/api/cron/telegram-push',
-    headers := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb,
+    url := 'https://chart-ix.vercel.app/api/cron/telegram-push',
     timeout_milliseconds := 55000
   );
   $$
 );
 
 -- 验证：
---   SELECT jobname, schedule FROM cron.job;
---   SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 20;
+--   SELECT jobname, schedule, active FROM cron.job;
+--   SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 10;
+--   SELECT * FROM public.telegram_push_log ORDER BY created_at DESC LIMIT 10;
+--   SELECT * FROM public.cron_heartbeats;

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AuthProvider, type AuthState } from "@/components/auth/AuthProvider";
 import { ZoomGuard } from "@/components/pwa/ZoomGuard";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
@@ -16,6 +16,24 @@ import { PriceAlertWatcher } from "@/components/alerts/PriceAlertWatcher";
 import { PaperTpSlWatcher } from "@/components/alerts/PaperTpSlWatcher";
 import { PreferencesSync } from "@/components/preferences/PreferencesSync";
 import type { SiteSettings } from "@/lib/site-settings";
+
+// Defers mounting non-critical, first-screen-irrelevant chrome until the
+// browser is idle (or after a 2s fallback for Safari, which lacks
+// requestIdleCallback) — keeps them off the critical path without deleting
+// them outright.
+function WhenIdle({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const w = window as typeof window & { requestIdleCallback?: (cb: () => void) => number };
+    if (typeof w.requestIdleCallback === "function") {
+      const id = w.requestIdleCallback(() => setReady(true));
+      return () => (window as typeof window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(id);
+    }
+    const t = setTimeout(() => setReady(true), 2_000); // Safari 无 rIC
+    return () => clearTimeout(t);
+  }, []);
+  return ready ? <>{children}</> : null;
+}
 
 export function AppChrome({
   children,
@@ -53,10 +71,12 @@ export function AppChrome({
           </MobileShell>
         </div>
         <OnboardingModal />
-        <InstallPrompt />
-        <PriceAlertWatcher />
         <PaperTpSlWatcher />
-        <PreferencesSync />
+        <WhenIdle>
+          <InstallPrompt />
+          <PriceAlertWatcher />
+          <PreferencesSync />
+        </WhenIdle>
       </ToastProvider>
     </AuthProvider>
   );

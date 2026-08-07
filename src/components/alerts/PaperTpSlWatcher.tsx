@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useMarketStore } from "@/stores/market";
 import { usePaperAccount, useClosePaperPosition } from "@/hooks/usePaperTrading";
@@ -21,7 +22,10 @@ import { checkTpSlHit } from "@/lib/trading/tp-sl";
  */
 export function PaperTpSlWatcher() {
   const userId = useAuth().userId;
-  const { data } = usePaperAccount(!!userId);
+  const pathname = usePathname();
+  // 触发本就依赖交易页才有的行情 tick（见文件头注释）——非交易页轮询纯属浪费
+  const onTradePage = !!pathname && /\/trade(\/|$)/.test(pathname);
+  const { data } = usePaperAccount(!!userId && onTradePage);
   const closePosition = useClosePaperPosition();
   const { toast } = useToast();
 
@@ -36,7 +40,7 @@ export function PaperTpSlWatcher() {
   const closingRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !onTradePage) return;
 
     const unsubscribe = useMarketStore.subscribe((state) => {
       const positions = dataRef.current?.positions ?? [];
@@ -70,7 +74,7 @@ export function PaperTpSlWatcher() {
     });
 
     return unsubscribe;
-  }, [userId]);
+  }, [userId, onTradePage]);
 
   return null;
 }

@@ -66,8 +66,30 @@ export function OnboardingModal() {
     persistSession({ level: next });
   };
 
+  // Persists across browser sessions (unlike sessionState above, which only
+  // survives remounts within one tab session) — once an account has finished
+  // onboarding, hitting this on the next login means we never query the DB
+  // for it again. Private-browsing / storage-disabled contexts can throw on
+  // read or write, so both are wrapped.
+  const onboardingDoneKey = (userId: string) => `chartix:onboarding-done:${userId}`;
+  const readOnboardingDone = (userId: string) => {
+    try {
+      return localStorage.getItem(onboardingDoneKey(userId)) === "1";
+    } catch {
+      return false;
+    }
+  };
+  const writeOnboardingDone = (userId: string) => {
+    try {
+      localStorage.setItem(onboardingDoneKey(userId), "1");
+    } catch {
+      // ignore (e.g. private-browsing storage denial)
+    }
+  };
+
   useEffect(() => {
     if (!auth.userId) return;
+    if (readOnboardingDone(auth.userId)) return;
     let cancelled = false;
     const supabase = createClient();
     supabase
@@ -76,8 +98,11 @@ export function OnboardingModal() {
       .eq("id", auth.userId)
       .single()
       .then(({ data }) => {
-        if (!cancelled && data && data.onboarding_completed === false) {
+        if (cancelled || !data) return;
+        if (data.onboarding_completed === false) {
           setShouldShow(true);
+        } else if (data.onboarding_completed === true) {
+          writeOnboardingDone(auth.userId!);
         }
       });
     return () => { cancelled = true; };
@@ -93,6 +118,7 @@ export function OnboardingModal() {
       .eq("id", auth.userId);
     setSaving(false);
     setShouldShow(false);
+    writeOnboardingDone(auth.userId);
     // Onboarding is done — nothing left to restore across a future remount.
     if (typeof window !== "undefined" && sessionState?.userId === auth.userId) {
       sessionState = null;

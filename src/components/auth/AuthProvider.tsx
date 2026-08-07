@@ -30,6 +30,10 @@ const AuthContext = createContext<AuthContextValue>({
 // Survives AuthProvider remounts (route-group crossings re-mount the group
 // layout). Hard loads start with null — matching the server-rendered HTML,
 // so hydration is never affected; only client-side remounts read it.
+// Server-side rendering MUST NEVER read or write this — it's a process-level
+// module singleton shared across requests, so on the server it would leak
+// one user's identity into another user's response (and could get baked into
+// an ISR-cached HTML page).
 let lastKnownAuth: AuthState | null = null;
 
 export function AuthProvider({
@@ -40,14 +44,16 @@ export function AuthProvider({
   initialAuth?: AuthState;
 }) {
   // Module variable assignment is not setState — safe to run during render.
-  if (initialAuth) lastKnownAuth = initialAuth;
+  // Guarded to the browser only: this function body also runs during SSR,
+  // where writing to a module-level variable would leak across requests.
+  if (typeof window !== "undefined" && initialAuth) lastKnownAuth = initialAuth;
 
   // Server-prefetched auth is authoritative for first paint — no loading flash,
   // no client-side request waterfall, and tier/role are always accurate.
   const [auth, setAuthState] = useState<AuthState>(
     () =>
       initialAuth ??
-      lastKnownAuth ?? {
+      (typeof window !== "undefined" ? lastKnownAuth : null) ?? {
         userId: null,
         email: null,
         displayName: null,

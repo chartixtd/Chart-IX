@@ -46,6 +46,12 @@ export async function translateBriefingJson(
 
   // 并发发出：字段数约 15-20，一天一次的突发量，比串行省下十几个往返；
   // 而 L3 触发时生成阶段可能已经吃掉大半墙钟预算（见 run.ts 的 deadline）。
+  //
+  // 已知取舍：从单个 serverless IP 朝免费的 translate.googleapis.com gtx 端点
+  // 突发约 20 个请求，比原先后台翻译器那种 1-2 个串行请求更容易吃到 429。
+  // 暂不处理——任一字段失败就整体返回 null，调用方安全地落到 L4 兜底稿，
+  // 代价只是当天那一语朴素一点。若日志里真的开始出现 429，再改成小并发分批
+  // （而不是退回串行：串行会把整条流水线的墙钟预算耗光）。
   const translated = await Promise.all(fields.map((t) => translate(t, from, to)));
   if (translated.some((t) => t === null || t.trim().length === 0)) return null;
   const out = translated as string[];

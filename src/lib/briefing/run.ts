@@ -18,6 +18,16 @@ const JOB_NAME = "daily-briefing";
 const LOCALES: BriefingLocale[] = ["zh-CN", "en-US"];
 
 /**
+ * 原生生成的语言。另一语一律由它翻译而来。
+ *
+ * 选中文不是偏好，是实测：同一批素材，中文一次生成约 11 秒，英文要 24 秒以上
+ * 且经常返回空——同等信息量下英文的 token 数远多于中文，而承载路由只有 60 秒
+ * 硬上限。以中文为主语言，生成阶段就有充裕余量。
+ */
+const PRIMARY_LOCALE: BriefingLocale = "zh-CN";
+const SECONDARY_LOCALE: BriefingLocale = "en-US";
+
+/**
  * 整条流水线的墙钟预算。
  *
  * 两个路由都是 maxDuration=60，而本项目跑在 Vercel Hobby——60 秒是套餐上限、
@@ -44,6 +54,15 @@ export const PIPELINE_BUDGET_MS = 48_000;
  * 重试——那才是重试真正能救回来的场景；而超时之后直接落到 L4。
  */
 export const MIN_CALL_BUDGET_MS = 20_000;
+
+/**
+ * 翻译阶段的预算门槛，比模型调用低得多。
+ *
+ * translateBriefingJson 是十几个并发的短请求（每个字段一条），几秒就能跑完，
+ * 和一次动辄二十秒的模型生成完全不是一个量级。用 MIN_CALL_BUDGET_MS 去卡它，
+ * 会在生成偏慢的日子白白放弃一次本来来得及的翻译，把英文版无谓地降级成兜底稿。
+ */
+const MIN_TRANSLATE_BUDGET_MS = 8_000;
 
 /**
  * 发布时间窗（UTC+8 小时，闭区间）。
@@ -314,52 +333,50 @@ async function runPipeline(
   if (degraded) {
     note(diag, `24h 内仅 ${sources.length} 条新闻，低于 ${MIN_SOURCE_ITEMS}，直接走兜底稿`);
   } else {
-    // 用 allSettled 而非 all：L3 这一级存在的意义就是「一语成功就别丢掉它」。
-    // 若某天 generateOne 内部抛了（现在不会，但它调的东西以后可能变），Promise.all
-    // 会让整轮直接判失败，把已经生成好的另一语一起扔掉——恰好绕过 L3。
-    const [zhSettled, enSettled] = await Promise.allSettled([
-      generateOne("zh-CN", sources, facts, dateStr, deadlineMs, diag),
-      generateOne("en-US", sources, facts, dateStr, deadlineMs, diag),
-    ]);
-    // rejection 原因不能静默丢弃：本文件其他失败模式都会 alert()，
-    // 运维排查「en-US 为什么走了翻译」时必须看得到真正抛出的错误。
-    for (const [i, settled] of [zhSettled, enSettled].entries()) {
-      if (settled.status === "rejected") {
-        note(diag, `${LOCALES[i]} 生成过程抛出异常: ${String(settled.reason)}`);
-      }
+    // **只原生生成主语言，另一语一律走翻译。**
+    //
+    // 曾经是中英各生成一次（并发）。线上实测推翻了它：中文一次生成约 11 秒，
+    // 英文同样的内容要 24 秒以上还经常返回空——同等信息量下英文的 token 数
+    // 远多于中文，而承载路由只有 60 秒硬上限（Vercel Hobby，不可调）。于是
+    // 英文那一路几乎每天超时，整篇退化成零 AI 兜底稿。
+    //
+    // 译文质量的损失，远小于「每天有一半概率完全没有 AI 内容」的损失；而且
+    // 翻译走的是字段级重渲染（见下），小标题、括号样式、免责声明都会正确
+    // 本地化，价格与数字原样不动。副作用是中英内容必然一致，不会再出现两语
+    // 各说各话。
+    // 包一层 catch 而不是直接 await：generateOne 现在不会抛（callDeepSeek 是
+    // total 的，门槛与解析也都不抛），但它调的东西以后可能变。一次意外的抛出
+    // 应当降级成兜底稿——那正是兜底稿存在的意义——而不是让整轮变成 failed、
+    // 今天一篇都没有。旧的两语并发版本靠 allSettled 得到这个性质，改成单次
+    // 生成后必须显式补回来。
+    let primary: BriefingJson | null = null;
+    try {
+      primary = await generateOne(PRIMARY_LOCALE, sources, facts, dateStr, deadlineMs, diag);
+    } catch (err) {
+      note(diag, `${PRIMARY_LOCALE} 生成过程抛出异常: ${String(err)}`);
     }
-    const zh = zhSettled.status === "fulfilled" ? zhSettled.value : null;
-    const en = enSettled.status === "fulfilled" ? enSettled.value : null;
 
-    if (zh && en) {
-      title["zh-CN"] = zh.title;
-      title["en-US"] = en.title;
-      content["zh-CN"] = renderBriefingHtml(zh, facts, "zh-CN");
-      content["en-US"] = renderBriefingHtml(en, facts, "en-US");
-    } else if (zh || en) {
-      // L3：两语中恰有一语成功，另一语走翻译通道。
-      // en-US 缺失会让英文与马来文读者看到空白正文，绝不能留空——但「留空」的
-      // 反面不是「随便填点什么」：把中文正文塞进 content["en-US"] 比留空更糟，
-      // 因为正文回退链 content[locale] ?? content["en-US"] 会让英文与马来文
-      // 读者都看到中文文章，而告警还写着「已用翻译通道兜住」。
-      const okLocale: BriefingLocale = zh ? "zh-CN" : "en-US";
-      const badLocale: BriefingLocale = zh ? "en-US" : "zh-CN";
-      const good = (zh ?? en)!;
-      const from = okLocale === "zh-CN" ? "zh" : "en";
+    if (!primary) {
+      degraded = true;
+      note(diag, `${PRIMARY_LOCALE} 未能生成，改发零 AI 兜底稿`);
+    } else {
+      const badLocale = SECONDARY_LOCALE;
+      const from = PRIMARY_LOCALE === "zh-CN" ? "zh" : "en";
       const to = badLocale === "zh-CN" ? "zh" : "en";
 
-      // 已经过了质量门槛的那一语先落定，**不放在翻译成功分支里**：翻译失败时
-      // 也不能把它一起丢掉。下面的 L4 只填还空着的语言，于是「AI 中文 + 兜底
-      // 英文」取代了原先的「兜底中文 + 兜底英文」——前者严格更好，而兜底稿的
-      // 标题与正文本来就按 locale 分别生成，混搭是安全的。
-      title[okLocale] = good.title;
-      content[okLocale] = renderBriefingHtml(good, facts, okLocale);
+      // 主语言先落定，**不放在翻译成功分支里**：翻译失败时也不能把它一起丢掉。
+      // 下面的 L4 只填还空着的语言，于是「AI 中文 + 兜底英文」取代了原先的
+      // 「兜底中文 + 兜底英文」——前者严格更好，而兜底稿的标题与正文本来就
+      // 按 locale 分别生成，混搭是安全的。
+      title[PRIMARY_LOCALE] = primary.title;
+      content[PRIMARY_LOCALE] = renderBriefingHtml(primary, facts, PRIMARY_LOCALE);
 
-      // 翻译同样受墙钟预算约束：生成阶段可能已经吃掉大半预算，此时宁可直接发
-      // 兜底稿，也不要在翻译途中被平台掐断而什么都没写。
+      // 翻译同样受墙钟预算约束，但门槛比模型调用低得多：它是十几个并发的短
+      // 请求，几秒就能跑完，用 MIN_CALL_BUDGET_MS(20s) 卡它会在生成偏慢的
+      // 日子白白放弃一次本来来得及的翻译。
       let translated =
-        deadlineMs - Date.now() >= MIN_CALL_BUDGET_MS
-          ? await translateBriefingJson(good, from, to, badLocale)
+        deadlineMs - Date.now() >= MIN_TRANSLATE_BUDGET_MS
+          ? await translateBriefingJson(primary, from, to, badLocale)
           : null;
 
       // 机器翻译产物必须重跑**同一把尺子**。translateBriefingJson 内部只查了
@@ -377,7 +394,7 @@ async function runPipeline(
         });
         if (!gate.ok) {
           note(
-      diag,
+            diag,
             `${badLocale} 翻译结果未过质量门槛: ` +
               gate.failures.map((f) => `${f.rule}/${f.detail}`).join("; ")
           );
@@ -387,17 +404,14 @@ async function runPipeline(
 
       if (translated) {
         // 用翻译后的**字段**重新渲染，而不是翻译渲染好的 HTML：小标题、括号
-        // 样式、免责声明都会正确本地化，价格与链接原样不动。
+        // 样式、免责声明都会正确本地化，价格与数字原样不动。
         title[badLocale] = translated.title;
         content[badLocale] = renderBriefingHtml(translated, facts, badLocale);
-        note(diag, `${badLocale} 生成失败，已用翻译通道兜住`);
+        trace(diag, `${badLocale} 已由 ${PRIMARY_LOCALE} 翻译生成`);
       } else {
         degraded = true;
-        note(diag, `${badLocale} 生成失败且翻译通道也失败，${badLocale} 改发零 AI 兜底稿`);
+        note(diag, `${badLocale} 翻译失败，${badLocale} 改发零 AI 兜底稿`);
       }
-    } else {
-      degraded = true;
-      note(diag, "中英两语均未通过质量门槛，改发零 AI 兜底稿");
     }
   }
 

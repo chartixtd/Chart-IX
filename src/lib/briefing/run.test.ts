@@ -198,37 +198,6 @@ const ZH_JSON: BriefingJson = {
   },
 };
 
-const EN_JSON: BriefingJson = {
-  title: "Daily Briefing | Bitcoin steady, gold tokens extend gains",
-  summary:
-    "Risk assets and gold tokens both firmed over the past day, with macro expectations still unsettled.",
-  headlines: [
-    {
-      topic: "Crypto",
-      points: [
-        "Bitcoin held its range through Asian hours",
-        "Ether tracked the broader market higher",
-      ],
-    },
-    {
-      topic: "Gold and commodities",
-      points: ["Gold tokens pushed to fresh highs on steady haven demand"],
-    },
-    { topic: "Macro", points: ["Traders wait on this week's inflation print"] },
-  ],
-  analysis: {
-    overview:
-      "Bitcoin spent the session in consolidation near $64,959.52 before easing, while gold tokens quietly outperformed. That combination usually shows up when macro expectations have not converged, and it argues for patience rather than conviction in either direction over the next few sessions.",
-    crypto:
-      "It remains unclear whether the bid persists, though ETH changed hands at $1,914.99 with a 0.59% gain over the past day. Volume did not confirm the move, so the range stays intact until buyers turn up in size and carry price through the prior high.",
-    gold: "Gold tokens are solidly bid, with XAUT at $4,325.51 after a 1.37% advance that outpaced the major crypto assets. Whether that holds depends on real rates, which have drifted lower for three straight sessions and remain the cleanest read on haven demand.",
-    watchlist: [
-      "Fed speakers on the calendar this week",
-      "Whether gold tokens can hold their recent highs",
-    ],
-  },
-};
-
 /** UTC 01:00 = UTC+8 09:00，落在发布时间窗内 */
 const NOW = Date.parse("2026-08-08T01:00:00Z");
 /** UTC 16:00 = UTC+8 次日 00:00，日期已翻篇但当地还是半夜 */
@@ -286,7 +255,8 @@ beforeEach(() => {
   callDeepSeek.mockReset();
   fetchBriefingSources.mockReset().mockResolvedValue(SOURCES);
   fetchMarketFacts.mockReset().mockResolvedValue(FACTS);
-  translateText.mockReset();
+  // 新设计下英文一律由中文翻译而来，所以「正常」默认就得有个能用的翻译器
+  translateText.mockReset().mockImplementation(async (text: string) => fakeEnglish(text));
   alertBriefing.mockReset().mockImplementation(async () => {});
   sendToSubscriptions.mockClear();
   getOptedInSubscriptions.mockReset().mockResolvedValue([]);
@@ -301,14 +271,29 @@ afterEach(() => {
 });
 
 describe("runDailyBriefing — 正常路径", () => {
-  it("两语都通过时发布双语正文", async () => {
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+  it("中文生成成功、英文由翻译产出，双语正文都落库", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     const r = await runDailyBriefing(NOW);
     expect(r.status).toBe("published");
     expect(db.inserted).toHaveLength(1);
     expect(db.inserted[0].content["zh-CN"]).toContain("行情快照");
     expect(db.inserted[0].content["en-US"]).toContain("Market Snapshot");
     expect(db.beats).toContain("ok");
+  });
+
+  // 这是改成「单次生成 + 翻译」的全部理由：英文原生生成要 24 秒以上还常返回空，
+  // 而承载路由只有 60 秒硬上限。只打一次模型，预算才有余量。
+  it("只对主语言调用一次模型，不再为英文单独生成", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+    await runDailyBriefing(NOW);
+    expect(callDeepSeek).toHaveBeenCalledTimes(1);
+    expect(isEnglishPrompt(callDeepSeek.mock.calls[0][0])).toBe(false);
+  });
+
+  it("英文正文不含 CJK——翻译真的发生了，不是把中文塞进 en-US", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+    await runDailyBriefing(NOW);
+    expect(CJK_RE.test(db.inserted[0].content["en-US"])).toBe(false);
   });
 
   it("今天已经出过稿时早退，不调用模型", async () => {
@@ -331,24 +316,24 @@ describe("runDailyBriefing — 降级诊断", () => {
   });
 
   it("正常发布时只留成功记录，不含任何失败原因", async () => {
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     const r = await runDailyBriefing(NOW);
     expect(r.status).toBe("published");
     const log = (r.reasons ?? []).join("\n");
     expect(log).toContain("zh-CN 第 1 次生成成功");
-    expect(log).toContain("en-US 第 1 次生成成功");
+    expect(log).toContain("en-US 已由 zh-CN 翻译生成");
     expect(log).not.toContain("失败");
     expect(log).not.toContain("未过质量门槛");
   });
 
   it("成功记录带耗时，供调超时值使用", async () => {
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     const r = await runDailyBriefing(NOW);
     expect((r.reasons ?? []).join("\n")).toMatch(/耗时 \d+ms/);
   });
 
   it("成功记录不触发告警——一次正常发布不该发 Telegram", async () => {
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     await runDailyBriefing(NOW);
     expect(alertBriefing).not.toHaveBeenCalled();
   });
@@ -361,7 +346,7 @@ describe("runDailyBriefing — 降级诊断", () => {
   });
 
   it("诊断落库失败不影响已经发布成功的文章", async () => {
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     const r = await runDailyBriefing(NOW);
     expect(r.status).toBe("published");
     expect(db.inserted).toHaveLength(1);
@@ -371,7 +356,7 @@ describe("runDailyBriefing — 降级诊断", () => {
 describe("runDailyBriefing — 强制重跑", () => {
   it("force 会先删掉今天那篇再重新生成", async () => {
     db.existingArticle = { id: "a1" };
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     const r = await runDailyBriefing(NOW, { force: true });
     expect(db.deletedSlugs).toEqual(["daily-briefing-2026-08-08"]);
     expect(r.status).toBe("published");
@@ -433,8 +418,8 @@ describe("runDailyBriefing — L3 翻译通道", () => {
     }
   });
 
-  it("翻译通道失败时落到兜底稿，绝不把中文正文当成 en-US 发布", async () => {
-    callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? FAIL : ok(ZH_JSON)));
+  it("翻译失败时落到兜底稿，绝不把中文正文当成 en-US 发布", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     translateText.mockResolvedValue(null);
 
     const r = await runDailyBriefing(NOW);
@@ -442,9 +427,11 @@ describe("runDailyBriefing — L3 翻译通道", () => {
     expect(r.status).toBe("fallback");
     expect(CJK_RE.test(db.inserted[0].content["en-US"])).toBe(false);
     const messages = alertBriefing.mock.calls.map((c) => String(c[0]));
-    expect(messages.some((m) => m.includes("翻译通道也失败"))).toBe(true);
-    // 绝不能再出现「已用翻译通道兜住」这种谎报成功的告警
-    expect(messages.some((m) => m.includes("已用翻译通道兜住"))).toBe(false);
+    expect(messages.some((m) => m.includes("翻译失败"))).toBe(true);
+    // 绝不能出现谎报成功的告警
+    expect(messages.some((m) => m.includes("兜住"))).toBe(false);
+    // 中文 AI 稿必须保住——翻译失败不该连累已经过了门槛的那一语
+    expect(db.inserted[0].content["zh-CN"]).toContain("市场解读");
   });
 
   it("翻译器原样吐回中文时同样落到兜底稿", async () => {
@@ -475,19 +462,18 @@ describe("runDailyBriefing — L3 翻译通道", () => {
     expect(a.content["en-US"]).not.toContain("Market Read");
   });
 
-  it("反向也成立：中文失败且翻译失败时，英文 AI 稿保留，中文用兜底稿", async () => {
-    callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? ok(EN_JSON) : FAIL));
-    translateText.mockResolvedValue(null);
+  it("主语言生成失败时两语都用兜底稿——没有可翻译的原文", async () => {
+    callDeepSeek.mockResolvedValue(FAIL);
 
     const r = await runDailyBriefing(NOW);
 
     expect(r.status).toBe("fallback");
     const a = db.inserted[0];
-    expect(a.title["en-US"]).toBe(EN_JSON.title);
-    expect(a.content["en-US"]).toContain("Market Read");
     expect(a.title["zh-CN"]).toContain("24 小时要闻速览");
-    expect(a.content["zh-CN"]).toContain("24 小时要闻");
+    expect(a.title["en-US"]).toContain("24-Hour News Roundup");
     expect(a.content["zh-CN"]).not.toContain("市场解读");
+    // 主语言都没出来就不该再去调翻译
+    expect(translateText).not.toHaveBeenCalled();
   });
 
   // ── C：翻译产物要重跑 checkBriefing，而不只是查语种占比 ──
@@ -533,14 +519,17 @@ describe("runDailyBriefing — L3 翻译通道", () => {
     expect(messages.some((m) => m.includes("翻译结果未过质量门槛"))).toBe(false);
   });
 
-  it("generateOne 抛出时 rejection 原因会被告警，而不是静默丢弃", async () => {
-    callDeepSeek.mockImplementation(async (opts) => {
-      if (isEnglishPrompt(opts)) throw new Error("kaboom");
-      return ok(ZH_JSON);
+  // 旧的两语并发版本靠 allSettled 得到「生成抛出 -> 降级而非整轮失败」这个性质。
+  // 改成单次生成后必须显式补回来，否则一次意外抛出就是今天一篇都没有。
+  it("生成过程抛出异常时降级成兜底稿，并把原因告警出来", async () => {
+    callDeepSeek.mockImplementation(async () => {
+      throw new Error("kaboom");
     });
-    translateText.mockImplementation(realisticTranslator());
 
-    await runDailyBriefing(NOW);
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("fallback");
+    expect(db.inserted).toHaveLength(1);
     const messages = alertBriefing.mock.calls.map((c) => String(c[0]));
     expect(messages.some((m) => m.includes("抛出异常") && m.includes("kaboom"))).toBe(true);
   });
@@ -633,11 +622,11 @@ describe("runDailyBriefing — 墙钟预算", () => {
     expect(r.status).toBe("fallback");
     expect(db.inserted).toHaveLength(1);
     expect(db.beats).toContain("ok");
-    // 预算 48s，单次超时 34s，重试门槛 20s：两语并发跑完第一次（34s）后只剩
-    // 14s，低于门槛，不再发起注定超时的第二次，直接落到 L4。
+    // 预算 48s，单次超时 34s，重试门槛 20s：只生成主语言，第一次跑满 34s 后
+    // 只剩 14s，低于门槛，不再发起注定超时的第二次，直接落到 L4。
     // 这正是实测教训——用 14 秒去做一件要 30 秒的事，只会把剩余预算也烧掉。
     expect(elapsed).toBeLessThan(48_000);
-    expect(callDeepSeek.mock.calls.length).toBe(2);
+    expect(callDeepSeek.mock.calls.length).toBe(1);
     const messages = alertBriefing.mock.calls.map((c) => String(c[0]));
     expect(messages.some((m) => m.includes("剩余预算"))).toBe(true);
   });
@@ -680,7 +669,7 @@ describe("runDailyBriefing — 墙钟预算", () => {
 // ── I4：发布时间窗 ──
 describe("runDailyBriefing — 发布时间窗", () => {
   it("UTC+8 半夜的 tick 直接 skipped，不出稿", async () => {
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     const r = await runDailyBriefing(MIDNIGHT_UTC8);
     expect(r.status).toBe("skipped");
     expect(callDeepSeek).not.toHaveBeenCalled();
@@ -692,7 +681,7 @@ describe("runDailyBriefing — 发布时间窗", () => {
   // 共用一个状态值时，窗口外的 tick 会把发文后的 ok 覆盖掉，cron_heartbeats
   // 从此回答不了「今天的早报发出去了吗」——监控看到的永远是同一个绿灯。
   it("窗口外写 idle，今天已有稿写 skipped——两者不共用状态值", async () => {
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
 
     await runDailyBriefing(MIDNIGHT_UTC8);
     expect(db.beats).toEqual(["idle"]);
@@ -711,7 +700,7 @@ describe("runDailyBriefing — 发布时间窗", () => {
   });
 
   it("后台手动触发（ignoreSchedule）可以绕过时间窗", async () => {
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     const r = await runDailyBriefing(MIDNIGHT_UTC8, { ignoreSchedule: true });
     expect(r.status).toBe("published");
     expect(db.inserted).toHaveLength(1);
@@ -749,7 +738,7 @@ describe("runDailyBriefing — 永不抛出", () => {
 
 describe("runDailyBriefing — 推送分组", () => {
   it("订阅行的 locale 为 null 时回落到 en-US，链接不会变成 /undefined/", async () => {
-    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     db.pushEnabled = true;
     getOptedInSubscriptions.mockResolvedValue([
       { id: "s1", endpoint: "e", p256dh: "p", auth: "a", locale: null, failed_count: 0 },

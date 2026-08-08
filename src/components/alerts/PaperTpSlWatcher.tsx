@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useMarketStore } from "@/stores/market";
 import { usePaperAccount, useClosePaperPosition } from "@/hooks/usePaperTrading";
@@ -22,10 +21,11 @@ import { checkTpSlHit } from "@/lib/trading/tp-sl";
  */
 export function PaperTpSlWatcher() {
   const userId = useAuth().userId;
-  const pathname = usePathname();
-  // 触发本就依赖交易页才有的行情 tick（见文件头注释）——非交易页轮询纯属浪费
-  const onTradePage = !!pathname && /\/trade(\/|$)/.test(pathname);
-  const { data } = usePaperAccount(!!userId && onTradePage);
+  // 有任何实时行情流入就保持监控（交易页/dashboard 收藏夹/首页热门币都在推 ticker，
+  // 模拟盘止损在这些页面历来是生效的——见文件头注释）；只在真正无行情的页面
+  // （设置/文章等）停掉账户轮询，省请求不改行为。
+  const hasTicks = useMarketStore((s) => Object.keys(s.tickers).length > 0);
+  const { data } = usePaperAccount(!!userId && hasTicks);
   const closePosition = useClosePaperPosition();
   const { toast } = useToast();
 
@@ -40,7 +40,7 @@ export function PaperTpSlWatcher() {
   const closingRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!userId || !onTradePage) return;
+    if (!userId || !hasTicks) return;
 
     const unsubscribe = useMarketStore.subscribe((state) => {
       const positions = dataRef.current?.positions ?? [];
@@ -74,7 +74,7 @@ export function PaperTpSlWatcher() {
     });
 
     return unsubscribe;
-  }, [userId, onTradePage]);
+  }, [userId, hasTicks]);
 
   return null;
 }

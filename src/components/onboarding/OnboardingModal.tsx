@@ -34,6 +34,28 @@ interface OnboardingSessionState {
 // on the server — it's a process-level singleton shared across requests.
 let sessionState: OnboardingSessionState | null = null;
 
+// Persists across browser sessions (unlike sessionState above, which only
+// survives remounts within one tab session) — once an account has finished
+// onboarding, hitting this on the next login means we never query the DB
+// for it again. Private-browsing / storage-disabled contexts can throw on
+// read or write, so both are wrapped. Module scope (not closed over any
+// component state) so the query effect below doesn't need them as deps.
+const onboardingDoneKey = (userId: string) => `chartix:onboarding-done:${userId}`;
+const readOnboardingDone = (userId: string) => {
+  try {
+    return localStorage.getItem(onboardingDoneKey(userId)) === "1";
+  } catch {
+    return false;
+  }
+};
+const writeOnboardingDone = (userId: string) => {
+  try {
+    localStorage.setItem(onboardingDoneKey(userId), "1");
+  } catch {
+    // ignore (e.g. private-browsing storage denial)
+  }
+};
+
 export function OnboardingModal() {
   const auth = useAuth();
   const locale = useLocale();
@@ -64,27 +86,6 @@ export function OnboardingModal() {
   const setLevel = (next: Level) => {
     setLevelState(next);
     persistSession({ level: next });
-  };
-
-  // Persists across browser sessions (unlike sessionState above, which only
-  // survives remounts within one tab session) — once an account has finished
-  // onboarding, hitting this on the next login means we never query the DB
-  // for it again. Private-browsing / storage-disabled contexts can throw on
-  // read or write, so both are wrapped.
-  const onboardingDoneKey = (userId: string) => `chartix:onboarding-done:${userId}`;
-  const readOnboardingDone = (userId: string) => {
-    try {
-      return localStorage.getItem(onboardingDoneKey(userId)) === "1";
-    } catch {
-      return false;
-    }
-  };
-  const writeOnboardingDone = (userId: string) => {
-    try {
-      localStorage.setItem(onboardingDoneKey(userId), "1");
-    } catch {
-      // ignore (e.g. private-browsing storage denial)
-    }
   };
 
   useEffect(() => {

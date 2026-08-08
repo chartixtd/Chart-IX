@@ -315,9 +315,12 @@ async function runPipeline(
       // 仍是 /ms-MY/ 链接，只是正文回退成英文。
       const byLocale = new Map<string, typeof subs>();
       for (const sub of subs) {
-        const group = byLocale.get(sub.locale);
+        // SubscriptionRow.locale 是未经运行时校验的类型断言，DB 里的 null
+        // 会一路变成 /null/articles/... 这种打不开的链接
+        const subLocale = sub.locale ?? "en-US";
+        const group = byLocale.get(subLocale);
         if (group) group.push(sub);
-        else byLocale.set(sub.locale, [sub]);
+        else byLocale.set(subLocale, [sub]);
       }
 
       for (const [subLocale, group] of byLocale) {

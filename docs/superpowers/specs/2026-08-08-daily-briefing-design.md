@@ -8,7 +8,7 @@
 站点已有完整的文章系统（`articles` 表、后台编辑器、多语言详情页、分类），但内容全部依赖人工撰写，更新频率受限于人力。同时站点已具备三类可自动获取的原料：
 
 1. **新闻**——`src/lib/news-server.ts` 已在抓 RSS（CoinDesk / Cointelegraph / 吴说区块链），但只覆盖加密货币，且仅用于资讯页的原样罗列。
-2. **行情**——`src/lib/bingx/market.ts` 的 `getFuturesTickers()` 一次请求即可拿到全部合约行情，其中包含 2026-08-08 刚接入的代币化黄金 `NCCOGOLD2USD-USDT`。
+2. **行情**——`src/lib/bingx/market.ts` 的 `getSpotTickers()` 一次请求即可拿到全部现货行情及其**真 24 小时**涨跌，含黄金代币 `XAUT-USDT` / `PAXG-USDT`。（合约 ticker 只有约 3 分钟窗口，不可用于本功能——详见下文「行情口径」。）
 3. **调度**——`.github/workflows/cron-tick.yml` + `src/lib/cron-auth.ts` + `cron_heartbeats` 已是一套跑通的外部定时体系。
 
 本设计把这三者接上 DeepSeek，每天早上自动产出一篇《早报》文章并发布，无需人工介入。
@@ -97,6 +97,30 @@ Investing.com 的 `pubDate` 是非 RFC822 格式（`Aug 07, 2026 20:16 GMT`）�
 3. **`articles.author_id` 是 `NOT NULL` 且外键指向 `auth.users`**，必须提供一个真实存在的账号 UUID。
 4. **`sanitizeArticleHtml` 白名单不含 `<a>` 与 `<table>`，且 `allowedAttributes: {}`**（`src/lib/sanitize-html.ts`）。该白名单是刻意对齐 TipTap StarterKit 的输出能力。未经扩展，早报中的来源链接与行情表格会在详情页被整段剥除。
 5. **`getScreenerPayload()` 不可用于本功能**：`telegram-push/route.ts` 已记录它冷缓存时需「几十秒、数百个 BingX 请求」，会吃光 60s 预算。
+
+### 行情口径（2026-08-08 实测修正，覆盖本文档早期表述）
+
+**合约 ticker 的 `priceChangePercent` 不是 24 小时涨跌，不得用于早报。** 它只是约 3 分钟窗口（`screener-server.ts:134` 已记载）。同一时刻实测对照：
+
+| 标的 | 合约 ticker | 现货 ticker |
+|---|---|---|
+| BTC-USDT | **0.00%** | **0.92%** |
+| ETH-USDT | 0.00% | 0.59% |
+
+若照早期表述用 `getFuturesTickers()` 算「24h 涨跌」，早报会每天把 3 分钟波动当成 24 小时行情写进正文并加以解读——一个每天都在说谎、却完全不报错的功能。
+
+**正确来源是现货 24h ticker** `GET /openApi/spot/v1/ticker/24hr`（即 `getSpotTickers()`），与 `buildChange24hMap`（`screener-scoring.ts:115`）既有做法一致。实测 `openTime → closeTime` 相差正好 86,400,000 ms，确为真 24 小时窗口。
+
+**黄金取 `XAUT-USDT`，不取 `NCCOGOLD2USD-USDT`。** 实测 2026-08-08（周六）：
+
+- `NCCOGOLD2USD-USDT` 在现货盘**不存在**（它是合约独有的代币化标的），拿不到真 24h 涨跌。
+- `XAUT-USDT`（Tether Gold）与 `PAXG-USDT`（Paxos Gold）现货均在，24h 分别 +1.37% / +1.43%，互为交叉校验。
+- 两者是 24/7 交易的黄金代币，**不受周末与假日休市影响**——这同时解决了「代币化商品休市时无数据」的问题（`instruments.ts` 记载休市品种在 ticker/K线/深度接口一律返回 109415，早报每天都跑，必然撞上周末）。
+- 行文中须表述为「黄金（XAUT）」一类可核查的说法，不得表述为伦敦金或 COMEX 黄金期货报价。
+
+**早报标的集**（全部实测存在于现货盘）：`BTC-USDT`、`ETH-USDT`、`SOL-USDT`、`BNB-USDT`、`XRP-USDT`、`DOGE-USDT`、`XAUT-USDT`、`PAXG-USDT`。
+
+**响应字段形态**：现货接口的 `priceChangePercent` 是**带百分号的字符串**（如 `"0.92%"`），而 `openPrice` / `lastPrice` 等返回的是**数字**而非 `BingXTicker` 类型声明的 `string`。一律用 `parseFloat(String(v))` 归一，勿直接做数值运算。
 6. **`admin_settings` 是通用键值表**（`key TEXT UNIQUE` + `value JSONB`，见 `004_create_admin.sql`），新增配置项无需建表。
 7. **`feature_flags` 表已在 038 迁移中删除**，新迁移不得写入该表（007 曾写过）。
 8. 现有 `cron-auth.ts` 采用两级放行：带 `CRON_SECRET` 免限流，匿名 tick 走全站共享限流桶。**仓库是公开的**，这正是当初不把 secret 交给 workflow 的原因。
@@ -125,7 +149,7 @@ GET /api/cron/daily-briefing        maxDuration = 60，authorizeCronTick 鉴权
         │
         ├─② 取素材（并行）
         │     ├─ 8 个 RSS 源 → Promise.allSettled → 过滤 24h 窗口
-        │     └─ getFuturesTickers() 一次请求 → 抽取标的行情事实集
+        │     └─ getSpotTickers() 一次请求 → 抽取 8 个标的的真 24h 行情事实集
         │
         ├─③ 生成（并行，各带硬超时）
         │     ├─ DeepSeek(zh-CN) → JSON
@@ -153,7 +177,7 @@ GET /api/cron/daily-briefing        maxDuration = 60，authorizeCronTick 鉴权
 | `types.ts` | `BriefingJson`、`MarketFact`、`SourceItem` 等类型 |
 | `date.ts` | UTC+8 日界计算、slug 生成、24h 窗口边界 |
 | `sources.ts` | 早报专用 RSS 源清单 + 24h 过滤 + 条数下限判定 |
-| `market-facts.ts` | `getFuturesTickers()` → 标的行情事实集 |
+| `market-facts.ts` | `getSpotTickers()` → 标的行情事实集（真 24h 口径，见上文「行情口径」） |
 | `prompt.ts` | 中/英 prompt 构造（含事实注入与硬约束） |
 | `deepseek.ts` | DeepSeek 客户端：JSON 模式、硬超时、重试、模型切换 |
 | `quality-gate.ts` | 质量门槛全部规则（纯函数） |

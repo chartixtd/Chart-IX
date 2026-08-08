@@ -21,7 +21,11 @@ import { checkTpSlHit } from "@/lib/trading/tp-sl";
  */
 export function PaperTpSlWatcher() {
   const userId = useAuth().userId;
-  const { data } = usePaperAccount(!!userId);
+  // 有任何实时行情流入就保持监控（交易页/dashboard 收藏夹/首页热门币都在推 ticker，
+  // 模拟盘止损在这些页面历来是生效的——见文件头注释）；只在真正无行情的页面
+  // （设置/文章等）停掉账户轮询，省请求不改行为。
+  const hasTicks = useMarketStore((s) => Object.keys(s.tickers).length > 0);
+  const { data } = usePaperAccount(!!userId && hasTicks);
   const closePosition = useClosePaperPosition();
   const { toast } = useToast();
 
@@ -36,7 +40,7 @@ export function PaperTpSlWatcher() {
   const closingRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !hasTicks) return;
 
     const unsubscribe = useMarketStore.subscribe((state) => {
       const positions = dataRef.current?.positions ?? [];
@@ -70,7 +74,7 @@ export function PaperTpSlWatcher() {
     });
 
     return unsubscribe;
-  }, [userId]);
+  }, [userId, hasTicks]);
 
   return null;
 }

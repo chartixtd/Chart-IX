@@ -1,25 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { decrypt } from "@/lib/crypto";
+import { getApiUserId } from "@/lib/supabase/api-auth";
+import { getDecryptedApiKeys } from "@/lib/trading/api-key-cache";
 import { getFuturesOpenOrders, cancelFuturesOrder, cancelAllFuturesOrders } from "@/lib/bingx/futures";
 import { describeBingXError } from "@/lib/trading/errors";
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const { data: authData } = await supabase.auth.getUser();
-    if (!authData.user) return NextResponse.json({ success: false, error: { message: "Unauthorized" } }, { status: 401 });
+    const userId = await getApiUserId("readonly");
+    if (!userId) return NextResponse.json({ success: false, error: { message: "Unauthorized" } }, { status: 401 });
 
-    const { data: apiKeys, error: keyError } = await supabase
-      .from("api_keys").select("api_key_encrypted, secret_encrypted")
-      .eq("user_id", authData.user.id).eq("is_valid", true).limit(1);
-
-    if (keyError || !apiKeys?.length) {
+    const keys = await getDecryptedApiKeys(userId);
+    if (!keys) {
       return NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 });
     }
-
-    const apiKey = decrypt(apiKeys[0].api_key_encrypted);
-    const secret = decrypt(apiKeys[0].secret_encrypted);
+    const { apiKey, secret } = keys;
 
     const { searchParams } = request.nextUrl;
     const symbol = searchParams.get("symbol") || undefined;
@@ -53,16 +48,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: "Futures trading requires Pro subscription" } }, { status: 403 });
     }
 
-    const { data: apiKeys, error: keyError } = await supabase
-      .from("api_keys").select("api_key_encrypted, secret_encrypted")
-      .eq("user_id", authData.user.id).eq("is_valid", true).limit(1);
-
-    if (keyError || !apiKeys?.length) {
+    const keys = await getDecryptedApiKeys(authData.user.id);
+    if (!keys) {
       return NextResponse.json({ success: false, error: { message: "No valid API key found" } }, { status: 400 });
     }
-
-    const apiKey = decrypt(apiKeys[0].api_key_encrypted);
-    const secret = decrypt(apiKeys[0].secret_encrypted);
+    const { apiKey, secret } = keys;
 
     const body = await request.json();
     const { action, symbol, orderId } = body;

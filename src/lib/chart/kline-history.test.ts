@@ -39,6 +39,36 @@ describe("mergeOlderKlines", () => {
   it("returns an empty array when both inputs are empty", () => {
     expect(mergeOlderKlines([], [])).toEqual([]);
   });
+
+  it("keeps candles that slid out of the latest window (no hole)", () => {
+    const k = (t: number): BingXKline => ({
+      openTime: t,
+      open: 1,
+      high: 1,
+      low: 1,
+      close: 1,
+      volume: 1,
+      closeTime: t + 999,
+      quoteVolume: 1,
+    });
+    const older = [k(1), k(2), k(3)];
+    const latestBefore = [k(4), k(5), k(6)];
+    const merged1 = mergeOlderKlines(older, latestBefore);
+    expect(merged1.map((c) => c.openTime)).toEqual([1, 2, 3, 4, 5, 6]);
+
+    // 窗口前移一根：k(4) 滑出 latest，若不保留就会出现空洞
+    const latestAfter = [k(5), k(6), k(7)];
+    const merged2 = mergeOlderKlines(merged1, latestAfter);
+    expect(merged2.map((c) => c.openTime)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it("latest page wins on overlapping timestamps (closed candle final values)", () => {
+    const a: BingXKline = { openTime: 10, open: 1, high: 1, low: 1, close: 1, volume: 1, closeTime: 1009, quoteVolume: 1 };
+    const b: BingXKline = { openTime: 10, open: 9, high: 9, low: 9, close: 9, volume: 9, closeTime: 1009, quoteVolume: 9 };
+    const merged = mergeOlderKlines([a], [b]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].close).toBe(9);
+  });
 });
 
 describe("determineHasMore", () => {

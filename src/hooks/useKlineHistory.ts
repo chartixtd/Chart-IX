@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { BingXKline } from "@/types/bingx";
 import { mergeOlderKlines, determineHasMore, computeNextEndTime } from "@/lib/chart/kline-history";
@@ -89,6 +89,22 @@ export function useKlineHistory(symbol: string, interval: string, market = "spot
     setHasMore(true);
     setIsLoadingMore(false);
   }
+
+  // `latestQuery` 轮询的是固定大小（PAGE_SIZE 根）的滑动窗口：每收线一根，最早
+  // 那根就会被挤出窗口。它此时既不在 `olderCandles`（只在 loadMore 成功时更新）
+  // 也不在新一页 `latestQuery.data` 里，若不做处理就会在 candles 里留下空洞。
+  // 这里把"上一次已确认（非 placeholder）的 latest 页快照"折叠进 olderCandles，
+  // 这样任何滑出窗口的蜡烛在下一次轮询前就已经被保留下来。跨 symbol/interval
+  // 切换时用 seriesKey 校验，避免把上一条序列的快照错误地折进新序列。
+  const prevLatestSnapshotRef = useRef<{ key: string; data: BingXKline[] } | null>(null);
+  useEffect(() => {
+    if (!latestQuery.data || latestQuery.isPlaceholderData) return;
+    const prev = prevLatestSnapshotRef.current;
+    if (prev && prev.key === seriesKey && prev.data !== latestQuery.data) {
+      setOlderCandles((old) => mergeOlderKlines(old, prev.data));
+    }
+    prevLatestSnapshotRef.current = { key: seriesKey, data: latestQuery.data };
+  }, [latestQuery.data, latestQuery.isPlaceholderData, seriesKey]);
 
   const loadMore = useCallback(() => {
     if (isLoadingMoreRef.current || !hasMoreRef.current) return;

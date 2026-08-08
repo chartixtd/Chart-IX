@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useMarketStore } from "@/stores/market";
-import type { BingXTicker } from "@/types/bingx";
+import type { BingXTicker, BingXTrade } from "@/types/bingx";
 import { gunzipWsMessage } from "@/lib/bingx/ws-utils";
 import { symbolFromDepthChannel } from "@/lib/bingx/depth";
 
@@ -14,6 +14,7 @@ const isDev = process.env.NODE_ENV !== "production";
 // `@depth20@500ms` 之类的间隔后缀会被服务端拒绝（code 100400）。
 const DEPTH_CHANNEL = "depth20";
 const DEPTH_CHANNEL_SUFFIX = "@" + DEPTH_CHANNEL;
+const TRADE_CHANNEL_SUFFIX = "@trade";
 
 /** Map raw WebSocket ticker data to BingXTicker */
 function mapTicker(raw: Record<string, string>): BingXTicker {
@@ -32,6 +33,17 @@ function mapTicker(raw: Record<string, string>): BingXTicker {
     // this is display-only data, not the REST-sourced price used for risk
     // valuation in preflight.ts, which does its own closeTime freshness check.
     closeTime: Date.now(),
+  };
+}
+
+/** 单笔成交对象（非数组）：{p,q,T,m,s,t} → 项目既有的 BingXTrade 形状。 */
+function mapTrade(raw: Record<string, string | number | boolean>): BingXTrade {
+  return {
+    id: String(raw.t ?? ""),
+    price: String(raw.p ?? "0"),
+    qty: String(raw.q ?? "0"),
+    time: Number(raw.T ?? Date.now()),
+    isBuyerMaker: Boolean(raw.m),
   };
 }
 
@@ -87,6 +99,11 @@ class BingXWebSocketManager {
         const depthSym = symbolFromDepthChannel(dt, DEPTH_CHANNEL_SUFFIX);
         if (depthSym) {
           useMarketStore.getState().removeDepth(depthSym);
+          continue;
+        }
+        if (dt.endsWith(TRADE_CHANNEL_SUFFIX)) {
+          const sym = dt.slice(0, dt.length - TRADE_CHANNEL_SUFFIX.length);
+          if (sym) useMarketStore.getState().removeTrades(sym);
           continue;
         }
         if (dt.endsWith("@ticker")) {
@@ -150,6 +167,14 @@ class BingXWebSocketManager {
         const d = msg.data as { asks?: [string, string][]; bids?: [string, string][] } | undefined;
         if (!d?.asks || !d?.bids) return;
         useMarketStore.getState().setDepth(depthSym, { asks: d.asks, bids: d.bids });
+        return;
+      }
+
+      if (dt.endsWith(TRADE_CHANNEL_SUFFIX)) {
+        const sym = dt.slice(0, dt.length - TRADE_CHANNEL_SUFFIX.length);
+        const raw = msg.data as Record<string, string | number | boolean> | undefined;
+        if (!sym || !raw) return;
+        useMarketStore.getState().pushTrade(sym, mapTrade(raw));
         return;
       }
 
@@ -223,5 +248,13 @@ export function useBingXDepth(symbol: string | null) {
   useEffect(() => {
     if (!manager || !symbol) return;
     return manager.subscribe([`${symbol}${DEPTH_CHANNEL_SUFFIX}`]);
+  }, [symbol]);
+}
+
+/** 订阅单个交易对的逐笔成交推送；数据进 useMarketStore.trades。 */
+export function useBingXTrades(symbol: string | null) {
+  useEffect(() => {
+    if (!manager || !symbol) return;
+    return manager.subscribe([`${symbol}${TRADE_CHANNEL_SUFFIX}`]);
   }, [symbol]);
 }

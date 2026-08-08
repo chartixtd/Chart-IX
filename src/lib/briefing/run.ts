@@ -88,8 +88,23 @@ function alertNoWait(message: string): void {
   void alert(message);
 }
 
-/** 心跳：让「没有文章」可以和「任务根本没跑」区分开 */
-async function beat(status: "ok" | "error" | "skipped") {
+/**
+ * 心跳：让「没有文章」可以和「任务根本没跑」区分开。
+ *
+ * 四个状态的语义必须互不重叠，否则 cron_heartbeats 回答不了运维真正要问的那个
+ * 问题——「今天的早报发出去了吗」：
+ * - `ok`      本次 tick 真的写了一篇（正常稿或兜底稿）
+ * - `error`   跑到了、但没写成
+ * - `skipped` 今天**已经有稿**，本次 tick 幂等早退（含唯一约束冲突）
+ * - `idle`    在发布时间窗之外，本次 tick 什么都没做
+ *
+ * `skipped` 与 `idle` 曾经是同一个值，于是窗口外的 tick 会在发文后不久把 `ok`
+ * 覆盖掉，监控看到的永远是同一个绿色状态，哪怕一篇都没发过。分开之后
+ * `ok`/`skipped` 都蕴含「今天已经有稿」，`idle` 则明确表示「还没到点」。
+ * cron_heartbeats.last_status 是无约束的 TEXT（见 026 迁移），加值不需要改库；
+ * 后台与用户端的心跳展示都只读 job_name = 'telegram-push'，不受影响。
+ */
+async function beat(status: "ok" | "error" | "skipped" | "idle") {
   try {
     await createServiceRoleClient()
       .from("cron_heartbeats")
@@ -174,7 +189,9 @@ async function runPipeline(
   //    （包括缺环境变量的告警）都不该被它们触发。
   const hour = utcPlus8Hour(nowMs);
   if (!options.ignoreSchedule && (hour < PUBLISH_HOUR_START || hour > PUBLISH_HOUR_END)) {
-    await beat("skipped");
+    // 写 idle 而不是 skipped：窗口外的 tick 只说明「还没到点」，不能和
+    // 「今天已经发过了」共用一个状态值，否则它会把 ok 覆盖成一个含义模糊的绿灯
+    await beat("idle");
     return { status: "skipped", slug, detail: `UTC+8 ${hour} 时不在发布窗口内` };
   }
 
@@ -195,6 +212,7 @@ async function runPipeline(
     .eq("slug", slug)
     .maybeSingle();
   if (existing) {
+    // skipped = 今天已经有稿。它和 ok 一样蕴含「早报发出去了」
     await beat("skipped");
     return { status: "skipped", slug };
   }

@@ -474,6 +474,28 @@ describe("runDailyBriefing — 发布时间窗", () => {
     expect(r.status).toBe("skipped");
     expect(callDeepSeek).not.toHaveBeenCalled();
     expect(db.inserted).toHaveLength(0);
+    expect(db.beats).toEqual(["idle"]);
+  });
+
+  // ── B：两种「没出稿」的心跳必须能区分 ──
+  // 共用一个状态值时，窗口外的 tick 会把发文后的 ok 覆盖掉，cron_heartbeats
+  // 从此回答不了「今天的早报发出去了吗」——监控看到的永远是同一个绿灯。
+  it("窗口外写 idle，今天已有稿写 skipped——两者不共用状态值", async () => {
+    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+
+    await runDailyBriefing(MIDNIGHT_UTC8);
+    expect(db.beats).toEqual(["idle"]);
+
+    db.beats = [];
+    db.existingArticle = { id: "a1" };
+    await runDailyBriefing(NOW);
+    expect(db.beats).toEqual(["skipped"]);
+  });
+
+  it("唯一约束冲突同样写 skipped——它也意味着今天已经有稿", async () => {
+    callDeepSeek.mockResolvedValue(FAIL);
+    db.insertError = { code: "23505", message: "duplicate key" };
+    await runDailyBriefing(NOW);
     expect(db.beats).toEqual(["skipped"]);
   });
 

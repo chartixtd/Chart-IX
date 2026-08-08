@@ -286,6 +286,53 @@ describe("checkBriefing", () => {
     expect(r.failures.some((f) => f.rule === "structure")).toBe(true);
   });
 
+  // ── I5：headlines 里带 $ 的价格做一次宽松核对 ──
+  it("headlines 里伪造的价格被抓出", () => {
+    const j = validJson();
+    j.headlines[0].points.push("比特币突破 $70,000 创下阶段新高");
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.detail.includes("要闻中的价格"))).toBe(true);
+  });
+
+  it("headlines 里与事实集吻合的价格放行", () => {
+    const j = validJson();
+    j.headlines[0].points.push("比特币报 $64,959.52，日内波动收敛");
+    expect(check(j).ok).toBe(true);
+  });
+
+  it("headlines 里的价格出现在源文中即放行——源文写法可以不带 $", () => {
+    const j = validJson();
+    j.headlines[2].points.push("特斯拉股价跌破 $300");
+    const noisySources: BriefingSource[] = [
+      ...SOURCES,
+      { title: "Tesla slips below 300 in premarket", url: "https://e.com/t", source: "CNBC", publishedAt: 0, summary: "" },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: noisySources, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("模型把源文的价格做了正常四舍五入时不算伪造", () => {
+    const j = validJson();
+    j.headlines[2].points.push("某标的报 $70,000 附近");
+    const noisySources: BriefingSource[] = [
+      ...SOURCES,
+      { title: "Index prints $69,999 at the close", url: "https://e.com/i", source: "CNBC", publishedAt: 0, summary: "" },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: noisySources, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("headlines 里的百分比仍然完全不核对（误报率最高的一类）", () => {
+    const j = validJson();
+    j.headlines[0].points.push("某国失业率降至 3.9%，非农超预期");
+    expect(check(j).ok).toBe(true);
+  });
+
   // ── I2：结构合法但元素类型漂移 ──
   // 这类输出曾能通过门槛（join 把对象变成 "[object Object]"，长度也够），
   // 然后在 render.ts 的 escapeHtml 里抛 TypeError，把整轮打成 failed 且

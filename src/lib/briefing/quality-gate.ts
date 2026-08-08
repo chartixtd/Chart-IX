@@ -318,6 +318,60 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: BriefingSou
   return failures;
 }
 
+/** 源文里出现过的**任何**数字，不要求带 $——见 checkHeadlineNumbers 的说明 */
+const BARE_NUMBER_RE = /\d[\d,]*(?:\.\d+)?/g;
+
+function extractSourceNumbers(sources: BriefingSource[]): number[] {
+  const text = sources.map((s) => `${s.title} ${s.summary}`).join(" ");
+  const out: number[] = [];
+  for (const m of text.matchAll(BARE_NUMBER_RE)) {
+    const value = parseFloat(m[0].replace(/,/g, ""));
+    if (Number.isFinite(value)) out.push(value);
+  }
+  return out;
+}
+
+/**
+ * headlines 的**宽松**价格核对。
+ *
+ * 把数字核对的作用域限定在 analysis 本身是对的（headlines 是对新闻的转述，
+ * 里面的 CPI、利率、涨跌数据来自源文而非我们的行情事实集）。但后果是：
+ * headline 里伪造的「BTC 突破 $70,000」会零校验地发布，而同一篇文章的分析段
+ * 却被机械核对到 ±0.5%。这条规则补上那个口子。
+ *
+ * 刻意宽松，三处让步都是为了压住误报：
+ * 1. 只查带 $ 的价格。PRICE_RE 本就要求 $，年份、条数、CPI 读数不会被卷进来；
+ *    百分比完全不查——那是 headlines 里误报率最高的一类。
+ * 2. 不做标的邻近绑定。headline 是一句话转述，绑定假设在这里不成立。
+ * 3. 源文侧比对**所有**数字而不只是带 $ 的，且同样给 ±0.5% 容差。源站标题常写
+ *    "Tesla slips below 300"（无 $），模型也常把源文的 $69,999 改写成 $70,000；
+ *    用精确集合匹配会把这两类正常改写都判成伪造。
+ *
+ * 误报的代价只是当天落到兜底稿，漏报的代价是把伪造的价格发出去，方向不对称。
+ */
+function checkHeadlineNumbers(
+  b: BriefingJson,
+  facts: MarketFact[],
+  sources: BriefingSource[]
+): GateFailure[] {
+  const hits = extractPriceHits(headlinesText(b));
+  if (hits.length === 0) return [];
+
+  const sourceNumbers = extractSourceNumbers(sources);
+  const near = (v: number, ref: number) => Math.abs(v - ref) <= Math.abs(ref) * PRICE_TOLERANCE_RATIO;
+
+  return hits
+    .filter(
+      (hit) =>
+        !facts.some((f) => near(hit.value, f.lastPrice)) &&
+        !sourceNumbers.some((n) => near(hit.value, n))
+    )
+    .map((hit) => ({
+      rule: "hallucinated-number",
+      detail: `要闻中的价格 $${hit.value} 既不在行情事实集内、也未在源文中出现`,
+    }));
+}
+
 function checkBannedPhrases(b: BriefingJson): GateFailure[] {
   const text = fullText(b).toLowerCase();
   return BANNED_PHRASES.filter((p) => text.includes(p.toLowerCase())).map((p) => ({
@@ -373,6 +427,7 @@ export function checkBriefing(input: {
 
   failures.push(...checkLengths(briefing));
   failures.push(...checkNumbers(briefing, input.facts, input.sources));
+  failures.push(...checkHeadlineNumbers(briefing, input.facts, input.sources));
   failures.push(...checkBannedPhrases(briefing));
   failures.push(...checkLanguage(briefing, input.locale));
 

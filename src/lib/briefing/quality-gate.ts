@@ -1,3 +1,4 @@
+import { MAX_SOURCES_IN_PROMPT } from "./prompt";
 import type { BriefingJson, BriefingLocale, BriefingSource, MarketFact } from "./types";
 
 export interface GateFailure {
@@ -272,6 +273,18 @@ function fullText(b: BriefingJson): string {
 }
 
 /**
+ * 「模型真正看过的来源」。
+ *
+ * 来源白名单的正当性完全建立在「这个数字模型确实读到过」之上，可 prompt 只塞了
+ * 前 MAX_SOURCES_IN_PROMPT 条（见 prompt.ts），24h 过滤后的 sources 却可能有
+ * 200 条。拿全量去背书等于让一个伪造价格被模型从没见过的数字放行——这与 I1
+ * 刚修好的原则（列出的来源必须正好是分析真正看过的那些）直接矛盾。
+ */
+function seenSources(sources: BriefingSource[]): BriefingSource[] {
+  return sources.slice(0, MAX_SOURCES_IN_PROMPT);
+}
+
+/**
  * 数字幻觉核对。作用域限定在 analysis：headlines 是对新闻的转述，里面的
  * CPI、利率、涨跌数据来自源文而非我们的行情事实集，一并核对会产生大量误报。
  * analysis 中若引用了源文里出现过的数字，同样放行。
@@ -279,7 +292,9 @@ function fullText(b: BriefingJson): string {
 function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: BriefingSource[]): GateFailure[] {
   const failures: GateFailure[] = [];
   const text = analysisText(b);
-  const sourceText = sources.map((s) => `${s.title} ${s.summary}`).join(" ");
+  const sourceText = seenSources(sources)
+    .map((s) => `${s.title} ${s.summary}`)
+    .join(" ");
   const sourcePrices = new Set(extractPrices(sourceText));
   const sourcePercents = new Set(extractPercents(sourceText));
 
@@ -329,10 +344,32 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: BriefingSou
 /** 源文里出现过的**任何**数字，不要求带 $——见 checkHeadlineNumbers 的说明 */
 const BARE_NUMBER_RE = /\d[\d,]*(?:\.\d+)?/g;
 
+/**
+ * 白名单候选的有效数字位数下限。
+ *
+ * BARE_NUMBER_RE 匹配的是**片段**而不是「一个完整的数」：`2026-08-08` 会产出
+ * 2026、8、8，`14:30` 产出 14、30，`Q4` 产出 4。这些小整数每天都会把白名单塞满，
+ * 而白名单的比对带 ±0.5% 容差，于是 1..99 这一段几乎被铺满，1000 美元以下的
+ * 伪造价格有相当概率被「背书」通过。
+ *
+ * 取 3 位是因为它既能清掉全部两位以内的片段，又不影响真正要放行的两类正例：
+ * 源文写 "Tesla slips below 300"（3 位）、模型把源文的 $69,999 改写成 $70,000
+ * （5 位）。多出来的误报只会让当天落到兜底稿，方向是安全的那一侧。
+ */
+const MIN_SOURCE_NUMBER_DIGITS = 3;
+
+/** 去掉千分位、小数点与前导零之后剩下的位数 */
+function significantDigits(raw: string): number {
+  return raw.replace(/[,.]/g, "").replace(/^0+/, "").length;
+}
+
 function extractSourceNumbers(sources: BriefingSource[]): number[] {
-  const text = sources.map((s) => `${s.title} ${s.summary}`).join(" ");
+  const text = seenSources(sources)
+    .map((s) => `${s.title} ${s.summary}`)
+    .join(" ");
   const out: number[] = [];
   for (const m of text.matchAll(BARE_NUMBER_RE)) {
+    if (significantDigits(m[0]) < MIN_SOURCE_NUMBER_DIGITS) continue;
     const value = parseFloat(m[0].replace(/,/g, ""));
     if (Number.isFinite(value)) out.push(value);
   }
@@ -354,6 +391,10 @@ function extractSourceNumbers(sources: BriefingSource[]): number[] {
  * 3. 源文侧比对**所有**数字而不只是带 $ 的，且同样给 ±0.5% 容差。源站标题常写
  *    "Tesla slips below 300"（无 $），模型也常把源文的 $69,999 改写成 $70,000；
  *    用精确集合匹配会把这两类正常改写都判成伪造。
+ *
+ * 但这个"宽松"是有边界的：比对池只取模型真正看过的那些来源（seenSources），
+ * 且丢掉有效数字不足 3 位的片段（MIN_SOURCE_NUMBER_DIGITS）——否则日期、时间、
+ * 序号切出来的小整数会把白名单塞满，宽松就变成了形同虚设。
  *
  * 误报的代价只是当天落到兜底稿，漏报的代价是把伪造的价格发出去，方向不对称。
  */

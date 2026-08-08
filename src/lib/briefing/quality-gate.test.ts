@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { extractPrices, extractPercents, parseBriefingJson, checkBriefing } from "./quality-gate";
+import { MAX_SOURCES_IN_PROMPT } from "./prompt";
 import type { BriefingJson, MarketFact, BriefingSource } from "./types";
 
 const FACTS: MarketFact[] = [
@@ -367,6 +368,89 @@ describe("checkBriefing", () => {
     (j.analysis as { watchlist: unknown }).watchlist = [{ title: "x" }];
     const r = check(j);
     expect(r.failures.every((f) => f.rule === "structure")).toBe(true);
+  });
+});
+
+// ── A：来源比对池的两处收窄 ──
+// 白名单的正当性完全建立在「这个数字模型确实读到过」之上。收窄前它取的是全部
+// sources（24h 过滤后最多 200 条，模型只看前 40 条），而 BARE_NUMBER_RE 切出来的
+// 是片段（2026-08-08 → 2026/8/8，14:30 → 14/30），小整数每天都会把白名单塞满。
+describe("checkBriefing — 来源比对池", () => {
+  function src(title: string): BriefingSource {
+    return { title, url: "https://e.com/x", source: "CNBC", publishedAt: 0, summary: "" };
+  }
+  /** 正好 MAX_SOURCES_IN_PROMPT 条不含任何数字的占位来源 */
+  const FILLER: BriefingSource[] = Array.from({ length: MAX_SOURCES_IN_PROMPT }, (_, i) =>
+    src(`Neutral market wrap ${String.fromCharCode(97 + (i % 26))}`)
+  );
+
+  it("排在第 41 条的来源不能替 headlines 里的价格背书（模型根本没看过它）", () => {
+    const j = validJson();
+    j.headlines[2].points.push("某标的报 $70,000 附近");
+    const r = checkBriefing({
+      json: j,
+      facts: FACTS,
+      sources: [...FILLER, src("Index prints 69,999 at the close")],
+      locale: "zh-CN",
+      finishReason: "stop",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.detail.includes("要闻中的价格"))).toBe(true);
+  });
+
+  it("同一条来源排进前 40 条时照常放行", () => {
+    const j = validJson();
+    j.headlines[2].points.push("某标的报 $70,000 附近");
+    const r = checkBriefing({
+      json: j,
+      facts: FACTS,
+      sources: [src("Index prints 69,999 at the close"), ...FILLER],
+      locale: "zh-CN",
+      finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("analysis 的来源白名单同样只认模型看过的那 40 条", () => {
+    const j = validJson();
+    j.analysis.overview += "市场消化了 3.1% 的通胀读数，情绪趋于稳定，短期内仍以震荡为主。";
+    const r = checkBriefing({
+      json: j,
+      facts: FACTS,
+      sources: [...FILLER, src("US CPI came in at 3.1% year over year")],
+      locale: "zh-CN",
+      finishReason: "stop",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("日期与时间切出来的小整数不再进白名单", () => {
+    const j = validJson();
+    j.headlines[2].points.push("某标的报 $14 附近");
+    const r = checkBriefing({
+      json: j,
+      facts: FACTS,
+      // 2026-08-08 与 14:30 会被 BARE_NUMBER_RE 切成 2026/8/8/14/30
+      sources: [src("Filed 2026-08-08 14:30, no price in the headline"), ...FILLER],
+      locale: "zh-CN",
+      finishReason: "stop",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.detail.includes("要闻中的价格"))).toBe(true);
+  });
+
+  it("三位及以上的数字仍然放行——300 与 69,999 这两个正例不受影响", () => {
+    const j = validJson();
+    j.headlines[2].points.push("特斯拉股价跌破 $300，某指数报 $70,000");
+    const r = checkBriefing({
+      json: j,
+      facts: FACTS,
+      sources: [src("Tesla slips below 300"), src("Index prints $69,999 at the close"), ...FILLER],
+      locale: "zh-CN",
+      finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
   });
 });
 

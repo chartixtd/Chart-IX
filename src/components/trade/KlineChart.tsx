@@ -25,6 +25,7 @@ import {
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useKlineHistory } from "@/hooks/useKlineHistory";
+import { useSymbolSpec } from "@/hooks/useSymbolSpec";
 import { useMarketStore } from "@/stores/market";
 import { useChartStore } from "@/stores/chartStore";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -152,6 +153,12 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
   const pendingPriceRef = useRef<number | undefined>(undefined);
 
   const { candles: klines, isLoading, isLoadingMore, hasMore, loadMore, isPlaceholder } = useKlineHistory(symbol, interval, market);
+  // 蜡烛系列的价格精度：lightweight-charts 不设 priceFormat 时默认
+  // precision:2/minMove:0.01。BTC/黄金这种大额标的凑巧看不出问题，但外汇
+  // （EUR/USD ~1.16，真实精度 5 位）、日元对（精度 3 位）、低价币这些标的的
+  // K线会被这个默认值整体吃进同一个 0.01 网格——同一段时间内所有报价都四舍五入
+  // 成同一个数，图表上就是一条看不出蜡烛的平线，正是这次要修的问题。
+  const { data: spec } = useSymbolSpec(symbol, market === "futures" ? "futures" : "spot");
   // Latest-value refs: let the scroll-triggered pagination subscription avoid
   // resubscribing on every render (loadMore's identity changes as olderCandles
   // grows) — same pattern as appliedRef below.
@@ -302,6 +309,20 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     prevBarCountRef.current = 0;
     prevLastTimeRef.current = null;
   }, [symbol, interval]);
+
+  // ---- Sync candle price precision with the symbol's real spec ----
+  // 图表实例只创建一次（见上方 CandlestickSeries 初始化），priceFormat 必须在
+  // symbol 切换、spec 加载完成后用 applyOptions 更新，而不是只在建图时设一次。
+  // spec 未就绪前保留上一个 symbol 的 priceFormat 总比突然跳回默认的 2 位精度
+  // 好——真正的风险只在 spec 尚未到达的极短窗口内，不会导致数据错误，只是
+  // 展示上稍微滞后一帧。
+  useEffect(() => {
+    if (!candleSeries || !spec) return;
+    const minMove = Math.pow(10, -spec.pricePrecision);
+    candleSeries.applyOptions({
+      priceFormat: { type: "price", precision: spec.pricePrecision, minMove },
+    });
+  }, [candleSeries, spec]);
 
   // ---- Build indicator series + panes from the applied list ----
   // Rebuilding wholesale on any add/remove keeps pane indices consistent, which

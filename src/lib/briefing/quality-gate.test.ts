@@ -42,6 +42,54 @@ function check(json: unknown, finishReason: string | null = "stop") {
   return checkBriefing({ json, facts: FACTS, sources: SOURCES, locale: "zh-CN", finishReason });
 }
 
+// ── 英文路径的夹具 ──
+// 事实集用真实的 8 标的形态（含 SOL），因为 C1 的误绑正是 SOL 造成的：
+// con[SOL]idation / [SOL]id 是行情文案的高频词。
+const EN_FACTS: MarketFact[] = [
+  { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
+  { symbol: "ETH-USDT", label: "ETH", lastPrice: 1914.99, change24hPct: 0.59 },
+  { symbol: "SOL-USDT", label: "SOL", lastPrice: 132.4, change24hPct: -2.11 },
+  { symbol: "XAUT-USDT", label: "XAUT", lastPrice: 4325.51, change24hPct: 1.37 },
+];
+
+function validJsonEn(over: Partial<BriefingJson> = {}): BriefingJson {
+  return {
+    title: "Daily Briefing | Bitcoin steady, gold tokens extend gains",
+    summary:
+      "Risk assets and gold tokens both firmed over the past day, with macro expectations still unsettled.",
+    headlines: [
+      {
+        topic: "Crypto",
+        points: [
+          "Bitcoin held its range through Asian hours",
+          "Ether tracked the broader market higher",
+        ],
+      },
+      {
+        topic: "Gold and commodities",
+        points: ["Gold tokens pushed to fresh highs on steady haven demand"],
+      },
+      { topic: "Macro", points: ["Traders wait on this week's inflation print"] },
+    ],
+    analysis: {
+      overview:
+        "Bitcoin spent the session in consolidation near $64,959.52 before easing, while gold tokens quietly outperformed. That combination usually shows up when macro expectations have not converged, and it argues for patience rather than conviction in either direction over the next few sessions.",
+      crypto:
+        "It remains unclear whether the bid persists, though ETH changed hands at $1,914.99 with a 0.59% gain over the past day. Volume did not confirm the move, so the range stays intact until buyers turn up in size and carry price through the prior high.",
+      gold: "Gold tokens are solidly bid, with XAUT at $4,325.51 after a 1.37% advance that outpaced the major crypto assets. Whether that holds depends on real rates, which have drifted lower for three straight sessions and remain the cleanest read on haven demand.",
+      watchlist: [
+        "Fed speakers on the calendar this week",
+        "Whether gold tokens can hold their recent highs",
+      ],
+    },
+    ...over,
+  };
+}
+
+function checkEn(json: unknown, finishReason: string | null = "stop") {
+  return checkBriefing({ json, facts: EN_FACTS, sources: SOURCES, locale: "en-US", finishReason });
+}
+
 describe("extractPrices", () => {
   it("抽取带 $ 与千分位的价格", () => {
     expect(extractPrices("BTC 报 $64,959.52 上行")).toEqual([64959.52]);
@@ -185,12 +233,6 @@ describe("checkBriefing", () => {
     expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
   });
 
-  it("附近没有标的标签时，来源里出现过的数字仍放行", () => {
-    const j = validJson();
-    j.analysis.overview += "市场消化了 3.1% 的通胀读数，情绪趋于稳定，短期内仍以震荡为主。";
-    expect(check(j).ok).toBe(true);
-  });
-
   it("同句内有多个标签时绑定最近的那个", () => {
     const j = validJson();
     j.analysis.overview =
@@ -242,5 +284,92 @@ describe("checkBriefing", () => {
     const r = check(null);
     expect(r.ok).toBe(false);
     expect(r.failures.some((f) => f.rule === "structure")).toBe(true);
+  });
+});
+
+// ── C1 回归：英文散文路径 ──
+// 旧实现用 lastIndexOf 做无边界子串匹配，行情文案的高频词会把数字误绑到错标的：
+// con[SOL]idation、[SOL]id、wh[ETH]er、tog[ETH]er。终审实测 6 句正常英文散文里
+// 4 句被拒，而英文稿说 "Bitcoin"/"gold" 远多于 "BTC"/"XAUT"，真正该赢的标签
+// 往往根本不在窗口里。全部 30 个既有用例都是 zh-CN + 中文散文，英文路径零覆盖，
+// 这正是 C1 能溜过每一道任务级审查的原因。
+describe("checkBriefing — 英文稿路径", () => {
+  it("英文合格稿通过（正文含 consolidation 且紧邻正确价格）", () => {
+    const j = validJsonEn();
+    expect(j.analysis.overview).toContain("consolidation");
+    const r = checkEn(j);
+    expect(r.failures).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+
+  it("consolidation 附近的正确 BTC 价格不再被误绑到 SOL", () => {
+    const j = validJsonEn();
+    j.analysis.overview =
+      "Bitcoin is solidly bid, changing hands at $64,959.52 in Asian hours, and the consolidation phase lifted gold tokens as well. Neither move came with unusual volume, so the range still frames the next few sessions rather than a breakout.";
+    expect(checkEn(j).ok).toBe(true);
+  });
+
+  it("consolidation 附近的源文数字仍走来源白名单（误绑会绕开白名单）", () => {
+    const j = validJsonEn();
+    // 旧实现：窗口里的 con[SOL]idation 绑到 SOL，随后 continue 跳过来源白名单，
+    // 于是这个明明来自当天新闻的 3.1% 被判成编造。
+    j.analysis.overview +=
+      " The consolidation followed a CPI print of 3.1% that markets had already discounted.";
+    expect(checkEn(j).ok).toBe(true);
+  });
+
+  it("whether 不再被当成 ETH 标签", () => {
+    const j = validJsonEn();
+    j.analysis.crypto =
+      "It remains unclear whether the bid persists; the pair added 0.92% today while the tape stayed thin. Positioning has not shifted enough to call a trend, and the next inflation print is the obvious catalyst for either side.";
+    // 0.92% 是 BTC 的真实涨跌；旧实现会绑到 wh[ETH]er 的 ETH(+0.59%) 而拒稿
+    expect(checkEn(j).ok).toBe(true);
+  });
+
+  it("英文稿里换标的仍被抓出", () => {
+    const j = validJsonEn();
+    j.analysis.gold = j.analysis.gold.replace("$4,325.51", "$64,959.52");
+    const r = checkEn(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("紧跟标点/括号的标签仍能绑定：BTC, 与 (ETH)", () => {
+    const j = validJsonEn();
+    j.analysis.crypto =
+      "Two majors led the tape today. For BTC, $4,325.51 would be a different market entirely, and the same is true of (ETH) at these levels, so the session stayed range bound with little conviction on either side of the book.";
+    const r = checkEn(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.detail.includes("BTC"))).toBe(true);
+  });
+
+  it("斜杠分隔的标签仍能绑定：XAUT/PAXG", () => {
+    const facts: MarketFact[] = [
+      ...EN_FACTS,
+      { symbol: "PAXG-USDT", label: "PAXG", lastPrice: 4331.2, change24hPct: 1.43 },
+    ];
+    const j = validJsonEn();
+    j.analysis.gold =
+      "The two gold tokens XAUT/PAXG $1,914.99 would imply a market that simply does not exist, which is why the pair remains the cleanest read on haven demand across the whole session and into the following one.";
+    const r = checkBriefing({ json: j, facts, sources: SOURCES, locale: "en-US", finishReason: "stop" });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.detail.includes("PAXG"))).toBe(true);
+  });
+
+  it("中文稿里紧贴 CJK 的标签仍能绑定", () => {
+    const j = validJson();
+    j.analysis.crypto = j.analysis.crypto.replace("BTC 报 $64,959.52", "比特币BTC报 $4,325.51");
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.detail.includes("BTC"))).toBe(true);
+  });
+
+  it("事实集为空时不绑定任何标的，也不抛错", () => {
+    const j = validJsonEn();
+    const r = checkBriefing({
+      json: j, facts: [], sources: SOURCES, locale: "en-US", finishReason: "stop",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.every((f) => f.rule === "hallucinated-number")).toBe(true);
   });
 });

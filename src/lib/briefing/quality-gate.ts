@@ -72,6 +72,40 @@ export function extractPercents(text: string): number[] {
   return extractPercentHits(text).map((h) => h.value);
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * 按传入的 facts 动态构造「标的标签」正则。标的表**不写死**——事实集来自
+ * market-facts.ts，两处各写一份迟早会发散。
+ *
+ * 左右两侧都要求非字母数字边界，这是关键：早期实现用的是 `lastIndexOf(label)`
+ * 这种无边界子串匹配，正常英文行情散文会被大面积误绑——con[SOL]idation、
+ * [SOL]id、wh[ETH]er、tog[ETH]er 都是高频词。实测 6 句正常英文散文里有 4 句
+ * 因此被拒。而且这**不是**「偏安全」的误报：绑定成功的分支会跳过来源白名单与
+ * 全局事实校验，于是一个伪造的 0.6% 出现在 "whether" 附近反而会绑到 ETH
+ * （+0.59%，容差 ±0.2pp）而**通过**——本该拦下的数字被放行了。
+ *
+ * 边界用 [^A-Z0-9] 而非 \b：中文场景下「以太坊ETH报价」的两侧都是 CJK，
+ * \b 在 CJK 与拉丁字母之间同样成立，但 [^A-Z0-9] 语义更直白且对 `BTC,`、
+ * `(ETH)`、`XAUT/PAXG`、`BTC-USDT` 这些真实形态都成立。
+ * 长标签排前面，避免某天出现互为前缀的两个标签时短的先赢。
+ */
+function buildLabelRegExp(facts: MarketFact[]): { re: RegExp; byLabel: Map<string, MarketFact> } | null {
+  const byLabel = new Map<string, MarketFact>();
+  for (const fact of facts) {
+    const key = fact.label.toUpperCase();
+    if (!byLabel.has(key)) byLabel.set(key, fact);
+  }
+  if (byLabel.size === 0) return null;
+  const alternation = [...byLabel.keys()]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join("|");
+  return { re: new RegExp(`(?:^|[^A-Z0-9])(${alternation})(?![A-Z0-9])`, "g"), byLabel };
+}
+
 /**
  * 回看数字前方、**同一句之内**最近的事实标签。
  *
@@ -82,14 +116,17 @@ export function extractPercents(text: string): number[] {
  * 窗口按句子终止符截断，避免把上一句的标的错误绑过来；再叠一个字符数上限，
  * 兜住整段没有标点的极端情况。
  *
- * 刻意偏向「绑得严」：误绑最坏结果是当天降级成朴素的兜底稿，漏绑却会把错误的
- * 金融论断发布出去。两者代价不对称。
+ * 绑不到标签不等于放行：调用方会退回「来源白名单 + 全局事实集」这条更宽但仍然
+ * 机械的校验。英文稿更常写 "Bitcoin"/"gold" 而非 "BTC"/"XAUT"，走的正是这条路。
  */
 function nearestLabeledFact(
   text: string,
   index: number,
   facts: MarketFact[]
 ): MarketFact | null {
+  const built = buildLabelRegExp(facts);
+  if (!built) return null;
+
   const capped = text.slice(Math.max(0, index - LABEL_PROXIMITY_WINDOW), index);
   // 只保留最后一个句子终止符之后的部分
   const sentenceStart = Math.max(
@@ -97,13 +134,13 @@ function nearestLabeledFact(
   );
   const window = (sentenceStart >= 0 ? capped.slice(sentenceStart + 1) : capped).toUpperCase();
 
-  let best: { fact: MarketFact; at: number } | null = null;
-  for (const fact of facts) {
-    const at = window.lastIndexOf(fact.label.toUpperCase());
-    if (at === -1) continue;
-    if (!best || at > best.at) best = { fact, at };
+  // 取最后一个匹配 = 离数字最近的那个标签
+  let best: MarketFact | null = null;
+  for (const m of window.matchAll(built.re)) {
+    const fact = built.byLabel.get(m[1]);
+    if (fact) best = fact;
   }
-  return best?.fact ?? null;
+  return best;
 }
 
 /**

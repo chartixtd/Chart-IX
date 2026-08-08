@@ -256,6 +256,7 @@
     "mobile_buy": "买入",
     "mobile_sell": "卖出",
     "mobile_book": "盘口",
+    "mobile_trades": "成交",
     "mobile_positions": "持仓",
     "mobile_order_sheet": "下单",
     "mobile_symbol_picker": "选择交易对",
@@ -278,7 +279,16 @@
     },
     "market_overview": {
       "list": "列表",
-      "orderbook": "盘口"
+      "orderbook": "盘口",
+      "trades": "成交"
+    },
+    "recent_trades": {
+      "time": "时间",
+      "price": "价格",
+      "qty": "数量",
+      "empty": "暂无成交",
+      "locked": "逐笔成交与大额成交提醒为 Pro 专属功能",
+      "locked_cta": "升级 Pro 解锁"
     },
     "indicators": {
       "hide": "隐藏",

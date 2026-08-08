@@ -232,6 +232,17 @@
       "symbol": "Simbol",
       "last_price": "Harga Terkini"
     },
+    "market_overview": {
+      "trades": "Dagangan"
+    },
+    "recent_trades": {
+      "time": "Masa",
+      "price": "Harga",
+      "qty": "Kuantiti",
+      "empty": "Belum ada dagangan",
+      "locked": "Aliran dagangan langsung dengan makluman dagangan besar adalah ciri Pro",
+      "locked_cta": "Naik taraf ke Pro untuk membuka kunci"
+    },
     "orders": {
       "title": "Sejarah Dagangan",
       "all": "Semua",
@@ -256,6 +267,7 @@
     "mobile_buy": "Beli",
     "mobile_sell": "Jual",
     "mobile_book": "Buku",
+    "mobile_trades": "Dagangan",
     "mobile_positions": "Posisi",
     "mobile_order_sheet": "Buat pesanan",
     "mobile_symbol_picker": "Pilih pasangan",

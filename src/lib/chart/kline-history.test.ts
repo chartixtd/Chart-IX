@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { mergeOlderKlines, determineHasMore, computeNextEndTime } from "./kline-history";
+import {
+  mergeOlderKlines,
+  determineHasMore,
+  computeNextEndTime,
+  windowsAreContiguous,
+  intervalToMs,
+} from "./kline-history";
 import type { BingXKline } from "@/types/bingx";
 
 function kline(openTime: number): BingXKline {
@@ -88,5 +94,37 @@ describe("determineHasMore", () => {
 describe("computeNextEndTime", () => {
   it("is one millisecond before the earliest loaded candle", () => {
     expect(computeNextEndTime(1700000000000)).toBe(1699999999999);
+  });
+});
+
+describe("intervalToMs", () => {
+  it("maps known interval strings to their millisecond duration", () => {
+    expect(intervalToMs("1m")).toBe(60_000);
+    expect(intervalToMs("1h")).toBe(3_600_000);
+    expect(intervalToMs("1d")).toBe(86_400_000);
+  });
+
+  it("falls back to 1 hour for an unrecognized interval", () => {
+    expect(intervalToMs("bogus")).toBe(3_600_000);
+  });
+});
+
+describe("windowsAreContiguous", () => {
+  const oneMinute = 60_000;
+
+  it("is true when the two windows overlap", () => {
+    expect(windowsAreContiguous(1_000_000, 940_000, oneMinute)).toBe(true);
+  });
+
+  it("is true when the newer window starts exactly one interval after the older window's max", () => {
+    expect(windowsAreContiguous(1_000_000, 1_060_000, oneMinute)).toBe(true);
+  });
+
+  it("is false when there is a gap of more than one interval between windows", () => {
+    expect(windowsAreContiguous(1_000_000, 1_120_001, oneMinute)).toBe(false);
+  });
+
+  it("is true when the 'newer' window is actually earlier (older data re-fetched)", () => {
+    expect(windowsAreContiguous(1_000_000, 100_000, oneMinute)).toBe(true);
   });
 });

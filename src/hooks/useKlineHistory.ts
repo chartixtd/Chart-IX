@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { BingXKline } from "@/types/bingx";
-import { mergeOlderKlines, determineHasMore, computeNextEndTime } from "@/lib/chart/kline-history";
+import {
+  mergeOlderKlines,
+  determineHasMore,
+  computeNextEndTime,
+  windowsAreContiguous,
+  intervalToMs,
+} from "@/lib/chart/kline-history";
 
 const PAGE_SIZE = 300;
 
@@ -40,6 +46,11 @@ async function fetchKlinesPage(
 function earliestOpenTime(klines: BingXKline[]): number | undefined {
   if (!klines.length) return undefined;
   return klines.reduce((min, k) => Math.min(min, k.openTime), klines[0].openTime);
+}
+
+function latestOpenTime(klines: BingXKline[]): number | undefined {
+  if (!klines.length) return undefined;
+  return klines.reduce((max, k) => Math.max(max, k.openTime), klines[0].openTime);
 }
 
 /**
@@ -96,15 +107,37 @@ export function useKlineHistory(symbol: string, interval: string, market = "spot
   // 这里把"上一次已确认（非 placeholder）的 latest 页快照"折叠进 olderCandles，
   // 这样任何滑出窗口的蜡烛在下一次轮询前就已经被保留下来。跨 symbol/interval
   // 切换时用 seriesKey 校验，避免把上一条序列的快照错误地折进新序列。
+  //
+  // 两道额外保护：
+  // 1) 只在用户已经翻过页（olderCandles 非空）时才折叠。未翻页时滑窗本身连续、
+  //    无空洞，折叠反而会让 olderCandles 从 0 无上界增长，且 updater 每次都返回
+  //    新数组导致每轮轮询多一次渲染——两者都与本次要修的性能问题方向相反。
+  //    `old.length ? merge : old` 在未翻页时返回同一引用，让 React 直接 bail out。
+  // 2) 折叠前校验两段窗口是否首尾相接/重叠（windowsAreContiguous）。React Query
+  //    默认不在后台标签页轮询、且本查询未开 refetchOnWindowFocus，标签页挂后台
+  //    很久再恢复时，上一份快照和新窗口之间会隔着一段真正没拉到的K线——这种情况
+  //    强行 merge 会把两段不连续的数据拼成一条断裂序列，下游按 index 空间连续
+  //    计算的指标（MA/RSI 等）会在接缝处产出静默错误的值。不连续时丢弃快照、把
+  //    olderCandles 重置为 []，回到"只有滑动窗口、必定连续"的安全态。
   const prevLatestSnapshotRef = useRef<{ key: string; data: BingXKline[] } | null>(null);
   useEffect(() => {
     if (!latestQuery.data || latestQuery.isPlaceholderData) return;
     const prev = prevLatestSnapshotRef.current;
     if (prev && prev.key === seriesKey && prev.data !== latestQuery.data) {
-      setOlderCandles((old) => mergeOlderKlines(old, prev.data));
+      const prevMax = latestOpenTime(prev.data);
+      const newMin = earliestOpenTime(latestQuery.data);
+      const contiguous =
+        prevMax === undefined || newMin === undefined
+          ? true // 没有内容可比较（理论上不会发生），保守地不触发丢弃
+          : windowsAreContiguous(prevMax, newMin, intervalToMs(interval));
+      setOlderCandles((old) => {
+        if (!old.length) return old; // 未翻页，无需折叠
+        if (!contiguous) return []; // 真空洞：丢弃快照，回到安全态
+        return mergeOlderKlines(old, prev.data);
+      });
     }
     prevLatestSnapshotRef.current = { key: seriesKey, data: latestQuery.data };
-  }, [latestQuery.data, latestQuery.isPlaceholderData, seriesKey]);
+  }, [latestQuery.data, latestQuery.isPlaceholderData, seriesKey, interval]);
 
   const loadMore = useCallback(() => {
     if (isLoadingMoreRef.current || !hasMoreRef.current) return;

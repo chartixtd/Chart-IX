@@ -16,3 +16,14 @@ export function trimDepth(book: BingXDepth, limit: number): BingXDepth {
   const bids = book.bids.length > limit ? book.bids.slice(0, limit) : book.bids;
   return { asks, bids };
 }
+
+/**
+ * "BTC-USDT@depth20" → "BTC-USDT"；非该频道（或频道名前没有 symbol）返回 null。
+ * `suffix` 需自带 "@"（如 "@depth20"）。抽成纯函数是因为字符串切片的
+ * off-by-one 极易出错且没有类型系统能帮忙捕获——必须靠测试锁死。
+ */
+export function symbolFromDepthChannel(dataType: string, suffix: string): string | null {
+  if (!dataType.endsWith(suffix)) return null;
+  const sym = dataType.slice(0, dataType.length - suffix.length);
+  return sym || null;
+}

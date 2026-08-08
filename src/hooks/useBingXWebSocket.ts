@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useMarketStore } from "@/stores/market";
 import type { BingXTicker } from "@/types/bingx";
 import { gunzipWsMessage } from "@/lib/bingx/ws-utils";
+import { symbolFromDepthChannel } from "@/lib/bingx/depth";
 
 const WS_URL = "wss://open-api-ws.bingx.com/market";
 const RECONNECT_DELAY = 3_000;
@@ -82,13 +83,16 @@ class BingXWebSocketManager {
 
       for (const dt of removed) {
         if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(subMsg("unsub", dt));
-        const at = dt.lastIndexOf("@");
-        if (at < 0) continue;
-        const sym = dt.slice(0, at);
-        const chan = dt.slice(at + 1);
         // 退订后不再有数据流入，留着会让"是否有行情"判断永久为真、并展示陈旧盘口
-        if (chan === "ticker") useMarketStore.getState().removeTicker(sym);
-        else if (chan.startsWith("depth")) useMarketStore.getState().removeDepth(sym);
+        const depthSym = symbolFromDepthChannel(dt, DEPTH_CHANNEL_SUFFIX);
+        if (depthSym) {
+          useMarketStore.getState().removeDepth(depthSym);
+          continue;
+        }
+        if (dt.endsWith("@ticker")) {
+          const sym = dt.slice(0, dt.length - "@ticker".length);
+          if (sym) useMarketStore.getState().removeTicker(sym);
+        }
       }
 
       if (this.refCounts.size === 0) this.disconnect();
@@ -141,11 +145,11 @@ class BingXWebSocketManager {
       const dt = msg.dataType as string | undefined;
       if (!dt) return;
 
-      if (dt.endsWith(DEPTH_CHANNEL_SUFFIX)) {
-        const sym = dt.slice(0, dt.length - DEPTH_CHANNEL_SUFFIX.length - 1);
+      const depthSym = symbolFromDepthChannel(dt, DEPTH_CHANNEL_SUFFIX);
+      if (depthSym) {
         const d = msg.data as { asks?: [string, string][]; bids?: [string, string][] } | undefined;
-        if (!sym || !d?.asks || !d?.bids) return;
-        useMarketStore.getState().setDepth(sym, { asks: d.asks, bids: d.bids });
+        if (!d?.asks || !d?.bids) return;
+        useMarketStore.getState().setDepth(depthSym, { asks: d.asks, bids: d.bids });
         return;
       }
 
@@ -174,6 +178,10 @@ class BingXWebSocketManager {
     ws.onclose = () => {
       useMarketStore.getState().setWsConnected(false);
       if (this.ws !== ws) return; // already superseded by a newer connection
+      // 断线瞬间 depths 里全是旧快照；不清空的话 useOrderBook 会在 wsConnected
+      // 重新变 true 之前的这段时间里继续把它们当"有效数据"展示（陈旧盘口）。
+      // ticker 不清：价格显示保留最后已知值是既有行为，且 useSpotTicker 有 REST 兜底。
+      useMarketStore.getState().clearDepths();
       this.ws = null;
       if (this.refCounts.size > 0) {
         if (isDev) console.log("[WS] closed, reconnecting in", RECONNECT_DELAY, "ms");

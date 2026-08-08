@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { trimDepth } from "./depth";
+import { trimDepth, symbolFromDepthChannel } from "./depth";
 
 // 实测的真实排序：asks 降序（最优/最低价在末尾）、bids 降序（最优/最高价在开头）
 const book = {
@@ -31,5 +31,22 @@ describe("trimDepth", () => {
   });
   it("limit 0 yields empty sides", () => {
     expect(trimDepth(book, 0)).toEqual({ asks: [], bids: [] });
+  });
+});
+
+describe("symbolFromDepthChannel", () => {
+  const SUFFIX = "@depth20";
+
+  it("extracts the symbol from a depth20 dataType", () => {
+    expect(symbolFromDepthChannel("BTC-USDT@depth20", SUFFIX)).toBe("BTC-USDT");
+  });
+  it("works for a different symbol", () => {
+    expect(symbolFromDepthChannel("ETH-USDT@depth20", SUFFIX)).toBe("ETH-USDT");
+  });
+  it("returns null for a non-matching channel suffix", () => {
+    expect(symbolFromDepthChannel("BTC-USDT@ticker", SUFFIX)).toBeNull();
+  });
+  it("returns null when there is no symbol before the suffix", () => {
+    expect(symbolFromDepthChannel("@depth20", SUFFIX)).toBeNull();
   });
 });

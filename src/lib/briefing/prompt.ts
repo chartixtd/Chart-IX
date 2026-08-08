@@ -1,11 +1,23 @@
 import type { BriefingLocale, BriefingSource, MarketFact } from "./types";
 
-/**
- * 单次 prompt 最多塞这么多条新闻，控制输入 token。
- * render.ts 复用同一个常量截断「信息来源」区块——列出的来源必须正好是分析
- * 真正看过的那些，否则文末挂着一串模型从未读到的链接。
- */
+/** 单次 prompt 最多塞这么多条新闻，控制输入 token */
 export const MAX_SOURCES_IN_PROMPT = 40;
+
+/**
+ * 每段分析的目标字数。
+ *
+ * 这不是审美偏好，是被输出 token 预算倒推出来的。原本写的是「80 到 600 字」，
+ * 三段就能到 1800 字，加上要闻、标题、导读与 JSON 结构开销，中文（约 1 字 1
+ * token）轻松越过 DEFAULT_MAX_TOKENS=3000。线上实测就是这么撞上的：
+ * finish_reason=length，JSON 截在半截解析不出来，整篇被丢弃、退化成兜底稿。
+ *
+ * 我让模型去写一个装不下的东西——上限存在，就总有一天会写到上限。
+ *
+ * **改这两个值必须同步看 deepseek.ts 的 DEFAULT_MAX_TOKENS**，它们是一对；
+ * prompt.test.ts 里有一条测试守着这个耦合。
+ */
+export const SECTION_TARGET_MIN = 150;
+export const SECTION_TARGET_MAX = 250;
 
 const LANG_INSTRUCTION: Record<BriefingLocale, string> = {
   "zh-CN": "全文使用简体中文作答，不要夹杂英文句子。",
@@ -64,19 +76,23 @@ ${factsBlock}
 
 {
   "title": "早报 | 8月8日 比特币小幅上行，黄金续创新高",
-  "summary": "一句话导读，20 到 120 字",
+  "summary": "一句话导读，40 到 80 字",
   "headlines": [
     { "topic": "加密货币", "points": ["要点一", "要点二"] },
     { "topic": "黄金与大宗", "points": ["要点一"] },
     { "topic": "宏观金融", "points": ["要点一"] }
   ],
   "analysis": {
-    "overview": "整体市场解读，80 到 600 字",
-    "crypto": "加密市场解读，80 到 600 字",
-    "gold": "黄金与大宗解读，80 到 600 字",
+    "overview": "整体市场解读，${SECTION_TARGET_MIN} 到 ${SECTION_TARGET_MAX} 字",
+    "crypto": "加密市场解读，${SECTION_TARGET_MIN} 到 ${SECTION_TARGET_MAX} 字",
+    "gold": "黄金与大宗解读，${SECTION_TARGET_MIN} 到 ${SECTION_TARGET_MAX} 字",
     "watchlist": ["今日关注的第一件事", "第二件事"]
   }
 }
 
-标题长度须在 10 到 60 字之间。headlines 至少包含 2 个主题。`;
+标题长度须在 10 到 60 字之间。headlines 至少包含 2 个主题、每个主题 1 到 3 条要点，
+每条要点一句话。watchlist 2 到 4 条，每条一句话。
+
+**整个 json 必须写得完整。** 上面给出的字数是目标而非下限，宁可写得紧凑也不要
+写到一半被截断——截断的 json 解析不出来，整篇会被丢弃。`;
 }

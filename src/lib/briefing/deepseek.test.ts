@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { callDeepSeek, DEFAULT_TIMEOUT_MS } from "./deepseek";
-import { buildBriefingPrompt } from "./prompt";
-import type { BriefingSource, MarketFact } from "./types";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -136,41 +134,5 @@ describe("callDeepSeek — 超时与 abort", () => {
     expect(DEFAULT_TIMEOUT_MS).toBeGreaterThan(25_000);
     // 承载路由 maxDuration=60（Vercel Hobby 上限），落库/推送/心跳还要时间
     expect(DEFAULT_TIMEOUT_MS).toBeLessThanOrEqual(40_000);
-  });
-});
-
-describe("buildBriefingPrompt", () => {
-  const sources: BriefingSource[] = [
-    { title: "Gold record", url: "https://e.com/a", source: "Investing.com", publishedAt: 1, summary: "s" },
-  ];
-  const facts: MarketFact[] = [
-    { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
-  ];
-
-  it("含 json 一词（DeepSeek JSON 模式的硬性要求）", () => {
-    expect(buildBriefingPrompt(sources, facts, "zh-CN", "2026-08-08").toLowerCase()).toContain("json");
-  });
-
-  it("注入真实行情事实", () => {
-    const p = buildBriefingPrompt(sources, facts, "zh-CN", "2026-08-08");
-    expect(p).toContain("64959.52");
-    expect(p).toContain("0.92");
-  });
-
-  it("注入新闻标题", () => {
-    expect(buildBriefingPrompt(sources, facts, "zh-CN", "2026-08-08")).toContain("Gold record");
-  });
-
-  it("含禁止编造数字的约束", () => {
-    expect(buildBriefingPrompt(sources, facts, "zh-CN", "2026-08-08")).toContain("不得");
-  });
-
-  it("英文 locale 要求以英文作答", () => {
-    expect(buildBriefingPrompt(sources, facts, "en-US", "2026-08-08")).toContain("English");
-  });
-
-  it("行情为空时明确告知无行情数据，避免模型硬写", () => {
-    const p = buildBriefingPrompt(sources, [], "zh-CN", "2026-08-08");
-    expect(p).toContain("无行情数据");
   });
 });

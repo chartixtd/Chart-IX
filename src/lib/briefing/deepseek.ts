@@ -10,7 +10,15 @@
  */
 
 const API_URL = "https://api.deepseek.com/chat/completions";
-const DEFAULT_MAX_TOKENS = 3000;
+/**
+ * 输出 token 上限。
+ *
+ * 与 prompt.ts 的 SECTION_TARGET_MAX 是一对：prompt 要求的篇幅必须留有余量地
+ * 装进这个数，否则模型写到上限被截断（finish_reason=length），JSON 截在半截
+ * 解析不出来，整篇退化成兜底稿——线上就这么发生过一次。
+ * prompt.test.ts 里有一条测试守着这个耦合。
+ */
+export const DEFAULT_MAX_TOKENS = 3000;
 
 /**
  * 单次调用超时。

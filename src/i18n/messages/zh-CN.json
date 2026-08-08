@@ -288,7 +288,8 @@
         "forex": "外汇",
         "stocks": "美股",
         "indices": "指数"
-      }
+      },
+      "closed": "休市"
     },
     "recent_trades": {
       "time": "时间",
@@ -315,7 +316,8 @@
       "restore_defaults": "恢复默认设置",
       "loading_history": "加载历史K线…",
       "pro_upsell": "30+ 技术指标与画图工具为 Pro 专属功能",
-      "pro_upsell_cta": "升级 Pro 解锁"
+      "pro_upsell_cta": "升级 Pro 解锁",
+      "no_data": "当前无行情数据，该品种可能正在休市。"
     },
     "drawing": {
       "select_tool": "选择工具（Esc）",

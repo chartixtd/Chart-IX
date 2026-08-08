@@ -19,10 +19,29 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { OrderBook } from "@/components/trade/OrderBook";
 import { RecentTrades } from "@/components/trade/RecentTrades";
-import { classifyInstrument, formatInstrumentLabel, INSTRUMENT_CATEGORIES, type InstrumentCategory } from "@/lib/instruments";
+import {
+  classifyInstrument,
+  formatInstrumentLabel,
+  isContractOpen,
+  hasUsableQuote,
+  INSTRUMENT_CATEGORIES,
+  type InstrumentCategory,
+} from "@/lib/instruments";
 import type { BingXTicker } from "@/types/bingx";
 
 const WS_SUBSCRIBE_LIMIT = 30;
+
+/** 列表里的一行。行情可能缺席（休市），但品种本身始终要能被看到和搜到。 */
+interface InstrumentRow {
+  symbol: string;
+  /** 展示名，代币化标的为 "XAU/USD" 这类友好名称，加密永续即 symbol 本身 */
+  label: string;
+  category: InstrumentCategory;
+  /** 可用行情；休市或数据异常（见 hasUsableQuote）时为 undefined */
+  ticker?: BingXTicker;
+  /** 交易所标记为休市（外汇周末、美股非交易时段） */
+  closed: boolean;
+}
 /** 每行的估计高度（px）。未测出真实高度前用它算窗口范围，测出后即被替换。 */
 const ESTIMATED_ROW_HEIGHT = 32;
 /** 视口上下各多渲染几行，避免快速滚动时先看到空白 */
@@ -49,18 +68,24 @@ const TickerRow = memo(function TickerRow({
   onSelect,
   measureRef,
   label,
+  closed,
 }: {
   symbol: string;
-  fallback: BingXTicker;
+  /** REST 快照行情。休市品种没有行情，此时为 undefined。 */
+  fallback?: BingXTicker;
   isActive: boolean;
   onSelect: (symbol: string) => void;
   measureRef?: (el: HTMLDivElement | null) => void;
   /** 代币化商品/外汇/美股/指数的展示名（如 "XAU/USD"）；不传则显示原始 symbol。 */
   label?: string;
+  /** 交易所标记为休市——与"有行情但数据异常"区分开，后者不打这个标 */
+  closed?: boolean;
 }) {
+  const t = useTranslations("trade.market_overview");
   const live = useMarketStore((s) => s.tickers[symbol]);
-  const ticker = live ?? fallback;
-  const isPositive = parseFloat(ticker.priceChangePercent) >= 0;
+  // WS 推来的那一条也要过一遍可用性判据：否则 openPrice=0 的坏数据会绕过
+  // 列表侧的过滤，从实时通道重新把 +822096901% 灌回这一行。
+  const ticker = hasUsableQuote(live) ? live : fallback;
   const isFavorite = useFavoritesStore((s) => s.favorites.includes(symbol));
   const toggleFavorite = useFavoritesStore((s) => s.toggleFavorite);
   const handleClick = useCallback(() => onSelect(symbol), [onSelect, symbol]);
@@ -94,16 +119,27 @@ const TickerRow = memo(function TickerRow({
       >
         {isFavorite ? "★" : "☆"}
       </button>
-      <span className="truncate text-left font-medium">{label ?? ticker.symbol}</span>
-      <span className="text-right tabular-nums">{formatPrice(Number(ticker.lastPrice))}</span>
-      <span
-        className={cn(
-          "w-16 text-right tabular-nums font-medium",
-          isPositive ? "text-success" : "text-danger"
-        )}
-      >
-        {formatPercent(parseFloat(ticker.priceChangePercent))}
-      </span>
+      <span className="truncate text-left font-medium">{label ?? symbol}</span>
+      {ticker ? (
+        <>
+          <span className="text-right tabular-nums">{formatPrice(Number(ticker.lastPrice))}</span>
+          <span
+            className={cn(
+              "w-16 text-right tabular-nums font-medium",
+              parseFloat(ticker.priceChangePercent) >= 0 ? "text-success" : "text-danger"
+            )}
+          >
+            {formatPercent(parseFloat(ticker.priceChangePercent))}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="text-right tabular-nums text-text-muted">—</span>
+          <span className="w-16 text-right text-[10px] text-text-muted">
+            {closed ? t("closed") : "—"}
+          </span>
+        </>
+      )}
     </div>
   );
 });
@@ -130,28 +166,75 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
   const isFutures = market === "futures";
   const { data: spotTickers, isLoading: spotLoading } = useSpotTickers(!isFutures);
   const { data: futuresTickers, isLoading: futuresLoading } = useFuturesTickers(isFutures);
-  const { data: contracts } = useFuturesContracts(isFutures);
-  const tickers = isFutures ? futuresTickers : spotTickers;
-  const isLoading = isFutures ? futuresLoading : spotLoading;
+  const { data: contracts, isLoading: contractsLoading } = useFuturesContracts(isFutures);
+  const isLoading = isFutures ? futuresLoading || contractsLoading : spotLoading;
   const favorites = useFavoritesStore((s) => s.favorites);
 
-  // symbol -> 分类 + 展示名，只在合约市场才需要（现货没有这批代币化标的）
-  const instrumentMeta = useMemo(() => {
-    if (!isFutures || !contracts) return null;
-    const map = new Map<string, { category: InstrumentCategory; label: string }>();
-    for (const c of contracts) {
-      map.set(c.symbol, {
-        category: classifyInstrument(c.symbol),
-        label: formatInstrumentLabel(c.symbol, c.displayName),
-      });
+  /**
+   * 合约市场的品种清单以 **合约接口** 为准，行情左连接上去。
+   *
+   * 这里曾经直接拿批量 ticker 当清单，导致休市品种整批消失：BingX 只为
+   * status=1 的合约返回行情，周末的外汇（39 个里 33 个）、美股非交易时段
+   * （352 个里 142 个）在 ticker 里根本不存在，用户在选择器里搜不到 EUR/USD
+   * 这类主流品种。合约接口不受交易时段影响，始终列出全部 1006 个合约。
+   */
+  const rows = useMemo<InstrumentRow[]>(() => {
+    if (!isFutures) {
+      // 现货没有代币化标的，也没有休市概念，清单仍以行情为准。
+      return (spotTickers ?? []).map((tk) => ({
+        symbol: tk.symbol,
+        label: tk.symbol,
+        category: "crypto" as const,
+        ticker: hasUsableQuote(tk) ? tk : undefined,
+        closed: false,
+      }));
     }
-    return map;
-  }, [isFutures, contracts]);
 
-  const wsSymbols = useMemo(() => {
-    if (!tickers) return [];
-    return tickers.slice(0, WS_SUBSCRIBE_LIMIT).map((t) => t.symbol);
-  }, [tickers]);
+    const tickerBySymbol = new Map<string, BingXTicker>();
+    const tickerOrder = new Map<string, number>();
+    (futuresTickers ?? []).forEach((tk, i) => {
+      tickerBySymbol.set(tk.symbol, tk);
+      tickerOrder.set(tk.symbol, i);
+    });
+
+    const build = (symbol: string, displayName: string | undefined, closed: boolean): InstrumentRow => {
+      const tk = tickerBySymbol.get(symbol);
+      return {
+        symbol,
+        label: formatInstrumentLabel(symbol, displayName),
+        category: classifyInstrument(symbol),
+        ticker: hasUsableQuote(tk) ? tk : undefined,
+        closed,
+      };
+    };
+
+    // 开市品种保持 BingX 自己的行情排序（大致按热度），休市品种按合约顺序缀在后面，
+    // 这样常用品种仍在顶部，不会被几百个休市美股冲散。
+    const open: InstrumentRow[] = [];
+    const closedRows: InstrumentRow[] = [];
+    const seen = new Set<string>();
+
+    for (const c of contracts ?? []) {
+      seen.add(c.symbol);
+      const closed = !isContractOpen(c.status);
+      (closed ? closedRows : open).push(build(c.symbol, c.displayName, closed));
+    }
+    // 合约列表加载完之前（或万一有行情却没有对应合约）也不能让列表空着
+    for (const tk of futuresTickers ?? []) {
+      if (!seen.has(tk.symbol)) open.push(build(tk.symbol, undefined, false));
+    }
+
+    const orderOf = (symbol: string) => tickerOrder.get(symbol) ?? Number.MAX_SAFE_INTEGER;
+    open.sort((a, b) => orderOf(a.symbol) - orderOf(b.symbol));
+
+    return [...open, ...closedRows];
+  }, [isFutures, spotTickers, futuresTickers, contracts]);
+
+  // 只订阅有实时行情的品种——休市品种没有推送，占着订阅额度纯属浪费。
+  const wsSymbols = useMemo(
+    () => rows.filter((r) => r.ticker).slice(0, WS_SUBSCRIBE_LIMIT).map((r) => r.symbol),
+    [rows]
+  );
 
   useBingXWebSocket(wsSymbols);
 
@@ -160,17 +243,18 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
   const deferredSearch = useDeferredValue(search);
   const searchLower = deferredSearch.toLowerCase();
   const filtered = useMemo(() => {
-    if (!tickers) return [];
-    let matches = tickers;
+    let matches = rows;
     if (isFutures && category !== "all") {
-      matches = matches.filter((tk) => (instrumentMeta?.get(tk.symbol)?.category ?? "crypto") === category);
+      matches = matches.filter((r) => r.category === category);
     }
     if (searchLower) {
-      matches = matches.filter((tk) => {
-        if (tk.symbol.toLowerCase().includes(searchLower)) return true;
-        const label = instrumentMeta?.get(tk.symbol)?.label;
-        return label ? label.toLowerCase().includes(searchLower) : false;
-      });
+      // 展示名也参与匹配，用户搜 "EUR/USD" 或 "GOLD" 都能命中，
+      // 不必知道 NCFXEUR2USD-USDT 这种内部代号。
+      matches = matches.filter(
+        (r) =>
+          r.symbol.toLowerCase().includes(searchLower) ||
+          r.label.toLowerCase().includes(searchLower)
+      );
     }
     // Pin favorited symbols to the top, otherwise keep the incoming (REST) order.
     // 不再按数量裁剪——BingX 现货/合约都有近千个交易对，全部展示，靠下面的
@@ -179,7 +263,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
     return favSet.size
       ? [...matches].sort((a, b) => Number(favSet.has(b.symbol)) - Number(favSet.has(a.symbol)))
       : matches;
-  }, [tickers, searchLower, favorites, isFutures, category, instrumentMeta]);
+  }, [rows, searchLower, favorites, isFutures, category]);
 
   const handleSelect = useCallback(
     (symbol: string) => onSelectSymbol?.(symbol),
@@ -307,15 +391,16 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
               className="min-h-0 flex-1 overflow-y-auto custom-scrollbar"
             >
               <div style={{ height: topPadding }} />
-              {visibleRows.map((ticker, i) => (
+              {visibleRows.map((row, i) => (
                 <TickerRow
-                  key={ticker.symbol}
-                  symbol={ticker.symbol}
-                  fallback={ticker}
-                  isActive={ticker.symbol === activeSymbol}
+                  key={row.symbol}
+                  symbol={row.symbol}
+                  fallback={row.ticker}
+                  isActive={row.symbol === activeSymbol}
                   onSelect={handleSelect}
                   measureRef={i === 0 ? measureFirstRow : undefined}
-                  label={instrumentMeta?.get(ticker.symbol)?.label}
+                  label={row.label}
+                  closed={row.closed}
                 />
               ))}
               <div style={{ height: bottomPadding }} />

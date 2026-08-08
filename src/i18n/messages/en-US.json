@@ -288,7 +288,8 @@
         "forex": "Forex",
         "stocks": "Stocks",
         "indices": "Indices"
-      }
+      },
+      "closed": "Closed"
     },
     "recent_trades": {
       "time": "Time",
@@ -315,7 +316,8 @@
       "restore_defaults": "Restore defaults",
       "loading_history": "Loading history…",
       "pro_upsell": "30+ technical indicators and drawing tools are Pro-exclusive",
-      "pro_upsell_cta": "Upgrade to Pro to unlock"
+      "pro_upsell_cta": "Upgrade to Pro to unlock",
+      "no_data": "No data for this instrument right now — its market may be closed."
     },
     "drawing": {
       "select_tool": "Selection tool (Esc)",

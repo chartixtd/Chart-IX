@@ -152,7 +152,11 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
   const rafRef = useRef<number | null>(null);
   const pendingPriceRef = useRef<number | undefined>(undefined);
 
-  const { candles: klines, isLoading, isLoadingMore, hasMore, loadMore, isPlaceholder } = useKlineHistory(symbol, interval, market);
+  const { candles: klines, isLoading, isLoadingMore, hasMore, loadMore, isPlaceholder, isError } = useKlineHistory(symbol, interval, market);
+  // 取数失败或确实没有数据时，画布上留着的是 keepPreviousData 带过来的上一个
+  // 品种的蜡烛（休市品种必然走到这条路径）。必须盖住，不能让用户把别的品种的
+  // 走势当成当前品种的。
+  const noData = !isLoading && (isError || (!isPlaceholder && !klines?.length));
   // 蜡烛系列的价格精度：lightweight-charts 不设 priceFormat 时默认
   // precision:2/minMove:0.01。BTC/黄金这种大额标的凑巧看不出问题，但外汇
   // （EUR/USD ~1.16，真实精度 5 位）、日元对（精度 3 位）、低价币这些标的的
@@ -838,8 +842,18 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
           </div>
         )}
 
-        {!isLoading && isPlaceholder && (
+        {!isLoading && isPlaceholder && !noData && (
           <div className="pointer-events-none absolute inset-0 z-[6] bg-bg-primary/40" />
+        )}
+
+        {/* 休市的外汇/美股在 BingX 侧连历史 K 线都取不到（返回 109415
+            "is pause currently"）。这里必须是不透明的：全局 keepPreviousData
+            会把上一个品种的蜡烛留在画布上，半透明遮罩挡不住，用户会把别人的
+            走势读成当前品种的。 */}
+        {noData && (
+          <div className="absolute inset-0 z-[8] flex items-center justify-center bg-bg-primary px-4 text-center text-xs text-text-muted">
+            {t("no_data")}
+          </div>
         )}
 
         {!isLoading && isLoadingMore && (

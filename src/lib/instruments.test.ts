@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { classifyInstrument, isNonCryptoInstrument, formatInstrumentLabel } from "./instruments";
+import {
+  classifyInstrument,
+  isNonCryptoInstrument,
+  formatInstrumentLabel,
+  isContractOpen,
+  hasUsableQuote,
+} from "./instruments";
 
 describe("classifyInstrument", () => {
   it("classifies each NC-prefixed instrument type", () => {
@@ -45,5 +51,33 @@ describe("formatInstrumentLabel", () => {
 
   it("leaves non-forex, non-6-letter displayNames alone (no slash inserted)", () => {
     expect(formatInstrumentLabel("NCSIDXY2USD-USDT", "US Dollar Index (DXY)-USDT")).toBe("US Dollar Index (DXY)");
+  });
+});
+
+describe("isContractOpen", () => {
+  it("treats status 1 as open and 25 (paused) as closed", () => {
+    expect(isContractOpen(1)).toBe(true);
+    expect(isContractOpen(25)).toBe(false);
+  });
+});
+
+describe("hasUsableQuote", () => {
+  it("accepts a normal quote", () => {
+    expect(hasUsableQuote({ lastPrice: "4345.21", openPrice: "4342.68" })).toBe(true);
+  });
+
+  it("accepts a numeric lastPrice (spot returns number, futures returns string)", () => {
+    expect(hasUsableQuote({ lastPrice: 64975.3, openPrice: "64000.1" })).toBe(true);
+  });
+
+  // BingX 对从未成交过的代币化标的返回 openPrice=0，priceChangePercent 随之
+  // 变成 +822096901.00% 这种天文数字，不能直接渲染。
+  it("rejects the openPrice=0 quotes that produce absurd percentages", () => {
+    expect(hasUsableQuote({ lastPrice: "82.20969", openPrice: "0.00000" })).toBe(false);
+    expect(hasUsableQuote({ lastPrice: "0.00000", openPrice: "0.00000" })).toBe(false);
+  });
+
+  it("rejects a missing ticker", () => {
+    expect(hasUsableQuote(undefined)).toBe(false);
   });
 });

@@ -69,7 +69,7 @@ import { FearGreedIndex } from "@/components/trade/FearGreedIndex";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useSpotTicker, useFuturesTicker, useFuturesContracts } from "@/hooks/useMarketData";
-import { formatInstrumentLabel } from "@/lib/instruments";
+import { formatInstrumentLabel, isContractOpen } from "@/lib/instruments";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { usePriceAlertsStore } from "@/stores/priceAlerts";
 import { useChartOverlay } from "@/hooks/useChartOverlay";
@@ -115,11 +115,17 @@ const TickerBar = memo(function TickerBar({
   const isPositive = ticker ? parseFloat(ticker.priceChangePercent) >= 0 : false;
 
   const { data: futuresContracts } = useFuturesContracts(isFuturesMarket);
-  const displaySymbol = useMemo(() => {
-    if (!isFuturesMarket) return symbol;
-    const displayName = futuresContracts?.find((c) => c.symbol === symbol)?.displayName;
-    return formatInstrumentLabel(symbol, displayName);
-  }, [isFuturesMarket, futuresContracts, symbol]);
+  const contract = useMemo(
+    () => (isFuturesMarket ? futuresContracts?.find((c) => c.symbol === symbol) : undefined),
+    [isFuturesMarket, futuresContracts, symbol]
+  );
+  const displaySymbol = useMemo(
+    () => (isFuturesMarket ? formatInstrumentLabel(symbol, contract?.displayName) : symbol),
+    [isFuturesMarket, contract, symbol]
+  );
+  // 休市时 BingX 对 ticker/K线/深度一律返回 109415，页面上会是一片空白。
+  // 用合约的 status 直接判定并标注，比让用户对着空白栏猜要诚实。
+  const marketClosed = contract ? !isContractOpen(contract.status) : false;
 
   return (
     <div className="flex items-center gap-4 border-b border-border-default px-4 py-3 overflow-x-auto">
@@ -186,6 +192,11 @@ const TickerBar = memo(function TickerBar({
         className={cn("flex shrink-0 items-center gap-3", onPickSymbol && "lg:pointer-events-none")}
       >
         <h2 className="font-sans text-lg font-semibold tracking-tight">{displaySymbol}</h2>
+        {marketClosed && (
+          <span className="shrink-0 rounded-xs bg-bg-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-muted">
+            {t("market_overview.closed")}
+          </span>
+        )}
         {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">{t("mobile_symbol_picker")} ▾</span>}
       </button>
       {ticker && (

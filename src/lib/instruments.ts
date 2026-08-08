@@ -51,3 +51,38 @@ export function formatInstrumentLabel(symbol: string, displayName?: string): str
   }
   return stripped;
 }
+
+/**
+ * 合约当前是否在交易时段内。BingX 的 `status`：1=可交易，25=休市。
+ *
+ * 实测（2026-08-08 周六）：1006 个合约里 801 个 status=1、205 个 status=25，
+ * 且与"批量 ticker 接口是否返回该 symbol"**完全一一对应**（801/801、205/205）。
+ * 休市的品种在 ticker、K线、深度接口上一律返回 109415 "is pause currently"，
+ * 连带时间范围的历史 K 线也取不到——BingX 在休市期间不提供任何数据。
+ *
+ * 加密永续 24/7 全部 status=1；外汇周末、美股非交易时段整批切到 25，
+ * 这正是"外汇品种缺失"的根源：列表若以 ticker 为数据源，一到周末
+ * 33/39 个外汇、142/352 个美股就整个从选择器里消失。
+ */
+export function isContractOpen(status: number): boolean {
+  return status === 1;
+}
+
+/**
+ * 这条行情是否可用于展示涨跌幅。
+ *
+ * BingX 对一批从未真正成交过的代币化标的返回 `openPrice: "0.00000"`，
+ * 于是 `priceChangePercent` 变成把 lastPrice 当成"从 0 涨上来"的天文数字——
+ * 实测 USD/RUB 报 +822096901.00%、GBP/NZD 报 +22896901.00%。直接渲染就是
+ * 列表里一串荒唐的百分比。
+ *
+ * 该判据只命中坏数据：对 2026-08-08 全量 801 条行情核对，加密 572 条、
+ * 商品 8 条、指数 5 条全部通过，只有 6 条外汇 + 10 条美股（正是 openPrice=0
+ * 的那批）被判为不可用，无一误伤。
+ */
+export function hasUsableQuote(ticker: { lastPrice: string | number; openPrice: string } | undefined): boolean {
+  if (!ticker) return false;
+  const last = Number(ticker.lastPrice);
+  const open = Number(ticker.openPrice);
+  return Number.isFinite(last) && last > 0 && Number.isFinite(open) && open > 0;
+}

@@ -241,7 +241,8 @@
         "forex": "Forex",
         "stocks": "Saham",
         "indices": "Indeks"
-      }
+      },
+      "closed": "Tutup"
     },
     "recent_trades": {
       "time": "Masa",
@@ -279,7 +280,10 @@
     "mobile_positions": "Posisi",
     "mobile_order_sheet": "Buat pesanan",
     "mobile_symbol_picker": "Pilih pasangan",
-    "offline_disabled": "Anda luar talian — pesanan tidak boleh dibuat"
+    "offline_disabled": "Anda luar talian — pesanan tidak boleh dibuat",
+    "indicators": {
+      "no_data": "Tiada data buat masa ini — pasaran instrumen ini mungkin tutup."
+    }
   },
   "upgrade": {
     "banner_title": "Naik Taraf ke Chart-IX Pro",

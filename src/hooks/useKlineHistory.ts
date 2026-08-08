@@ -22,6 +22,13 @@ interface UseKlineHistoryResult {
   loadMore: () => void;
   /** true 时 candles 是切换 symbol/interval 前的旧数据（keepPreviousData） */
   isPlaceholder: boolean;
+  /**
+   * 最新一页取数失败。休市的外汇/美股会走到这里：BingX 对这些 symbol 的
+   * K线接口直接返回 109415 "is pause currently"，代理层转成 502。
+   * 调用方必须据此覆盖掉 keepPreviousData 留下的上一个 symbol 的蜡烛——
+   * 否则选中 EUR/USD 时画布上显示的其实是上一个品种的走势。
+   */
+  isError: boolean;
 }
 
 async function fetchKlinesPage(
@@ -191,5 +198,6 @@ export function useKlineHistory(symbol: string, interval: string, market = "spot
     hasMore,
     loadMore,
     isPlaceholder: latestQuery.isPlaceholderData,
+    isError: latestQuery.isError,
   };
 }

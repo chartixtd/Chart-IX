@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderBriefingHtml, escapeHtml } from "./render";
+import { MAX_SOURCES_IN_PROMPT } from "./prompt";
 import { sanitizeArticleHtml } from "@/lib/sanitize-html";
 import type { BriefingJson, MarketFact, BriefingSource } from "./types";
 
@@ -104,6 +105,22 @@ describe("renderBriefingHtml", () => {
     expect(en).toContain("(24h +0.92%)");
     expect(en).not.toContain("（");
     expect(en).not.toContain("）");
+  });
+
+  // I1：sources.ts 允许每源 25 条 × 8 源 = 最多 200 条过 24h 过滤到这里，
+  // 而 prompt 只喂了前 40 条。列出的来源必须正好是分析真正看过的那些。
+  it("来源条数按 MAX_SOURCES_IN_PROMPT 截断", () => {
+    const many: BriefingSource[] = Array.from({ length: 150 }, (_, i) => ({
+      title: `news-${i}`,
+      url: `https://example.com/${i}`,
+      source: "S",
+      publishedAt: 150 - i,
+      summary: "",
+    }));
+    const out = renderBriefingHtml(JSON_INPUT, FACTS, many, "zh-CN");
+    expect(out).toContain(`news-${MAX_SOURCES_IN_PROMPT - 1}`);
+    expect(out).not.toContain(`news-${MAX_SOURCES_IN_PROMPT}`);
+    expect(out.match(/<a href="https:\/\/example\.com\//g)).toHaveLength(MAX_SOURCES_IN_PROMPT);
   });
 
   // 源站 url 是第三方数据，必须走完整渲染路径验证而不只是手写 HTML

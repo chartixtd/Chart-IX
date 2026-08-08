@@ -1,3 +1,4 @@
+import { MAX_SOURCES_IN_PROMPT } from "./prompt";
 import type { BriefingJson, BriefingLocale, BriefingSource, MarketFact } from "./types";
 
 export const DISCLAIMER: Record<BriefingLocale, string> = {
@@ -112,9 +113,13 @@ export function renderBriefingHtml(
     );
   }
 
+  // 来源按 MAX_SOURCES_IN_PROMPT 截断：sources.ts 允许每源 25 条 × 8 源，过完
+  // 24h 过滤后最多 200 条能到这里，而 prompt 只喂了前 40 条。不截断的话每篇早报
+  // 末尾会挂 100-150 条链接，其中绝大多数模型根本没读过——既是内容质量与 SEO
+  // 问题（每天 100+ 外链），也和兜底稿自己写的「再多读者也不会看」相互矛盾。
   if (sources.length > 0) {
     parts.push(`<h2>${c.sources}</h2>`);
-    parts.push(renderSourceList(sources));
+    parts.push(renderSourceList(sources.slice(0, MAX_SOURCES_IN_PROMPT)));
   }
 
   parts.push(`<hr>`);

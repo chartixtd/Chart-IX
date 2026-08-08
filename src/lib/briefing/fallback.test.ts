@@ -63,6 +63,23 @@ describe("renderFallbackHtml", () => {
     expect(html).not.toContain("<script>");
   });
 
+  // MAX_ITEMS=20 的截断此前无人钉住。改 render.ts 的来源上限时顺手补上，
+  // 免得两处上限被误当成同一个而一起改掉——两者理由不同：兜底稿的列表就是正文
+  //（读者会逐条扫），正常稿的列表是给分析做出处的。
+  it("来源超过 20 条时按 MAX_ITEMS 截断", () => {
+    const many: BriefingSource[] = Array.from({ length: 45 }, (_, i) => ({
+      title: `news-${i}`,
+      url: `https://e.com/${i}`,
+      source: "S",
+      publishedAt: 45 - i,
+      summary: "",
+    }));
+    const html = renderFallbackHtml(FACTS, many, "zh-CN");
+    expect(html).toContain("news-19");
+    expect(html).not.toContain("news-20");
+    expect(html.match(/<a href="https:\/\/e\.com\//g)).toHaveLength(20);
+  });
+
   it("经 sanitize 后内容不丢失", () => {
     const clean = sanitizeArticleHtml(renderFallbackHtml(FACTS, SOURCES, "zh-CN"));
     expect(clean).toContain("Bitcoin holds");

@@ -1,7 +1,11 @@
 import type { BriefingLocale, BriefingSource, MarketFact } from "./types";
 
-/** 单次 prompt 最多塞这么多条新闻，控制输入 token */
-const MAX_SOURCES_IN_PROMPT = 40;
+/**
+ * 单次 prompt 最多塞这么多条新闻，控制输入 token。
+ * render.ts 复用同一个常量截断「信息来源」区块——列出的来源必须正好是分析
+ * 真正看过的那些，否则文末挂着一串模型从未读到的链接。
+ */
+export const MAX_SOURCES_IN_PROMPT = 40;
 
 const LANG_INSTRUCTION: Record<BriefingLocale, string> = {
   "zh-CN": "全文使用简体中文作答，不要夹杂英文句子。",

@@ -285,6 +285,42 @@ describe("checkBriefing", () => {
     expect(r.ok).toBe(false);
     expect(r.failures.some((f) => f.rule === "structure")).toBe(true);
   });
+
+  // ── I2：结构合法但元素类型漂移 ──
+  // 这类输出曾能通过门槛（join 把对象变成 "[object Object]"，长度也够），
+  // 然后在 render.ts 的 escapeHtml 里抛 TypeError，把整轮打成 failed 且
+  // 绕过 L4 兜底稿。必须在门槛这一层拒掉，让它走重试与优雅降级。
+  it("watchlist 元素是对象时判定结构不完整（否则渲染器会崩溃并绕过兜底稿）", () => {
+    const j = validJson();
+    (j.analysis as { watchlist: unknown }).watchlist = [
+      { title: "关注美联储", detail: "本周讲话" },
+      { title: "关注黄金", detail: "能否站稳" },
+    ];
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "structure")).toBe(true);
+  });
+
+  it("headlines.points 元素是对象时判定结构不完整", () => {
+    const j = validJson();
+    (j.headlines[0] as { points: unknown }).points = [{ text: "比特币震荡" }];
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "structure")).toBe(true);
+  });
+
+  it("watchlist 含空串同样判定结构不完整", () => {
+    const j = validJson();
+    j.analysis.watchlist = ["关注美联储官员本周的公开讲话", "   "];
+    expect(check(j).ok).toBe(false);
+  });
+
+  it("被拒的稿子不会被送进渲染器（结构失败即短路，不再跑数字/长度规则）", () => {
+    const j = validJson();
+    (j.analysis as { watchlist: unknown }).watchlist = [{ title: "x" }];
+    const r = check(j);
+    expect(r.failures.every((f) => f.rule === "structure")).toBe(true);
+  });
 });
 
 // ── C1 回归：英文散文路径 ──

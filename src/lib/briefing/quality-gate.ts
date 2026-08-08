@@ -187,7 +187,18 @@ function checkStructure(json: unknown): { failures: GateFailure[]; briefing: Bri
     failures.push({ rule: "structure", detail: "headlines 少于 2 个主题" });
   } else {
     for (const h of b.headlines) {
-      if (!isNonEmptyString(h?.topic) || !Array.isArray(h?.points) || h.points.length === 0) {
+      // 元素类型必须逐个校验。只查「是非空数组」时，模型吐出
+      // points: [{text: "…"}] 这种很自然的漂移会**通过**门槛：长度规则读到的
+      // join 结果是 "[object Object]" 而不抛错，字符数也够；随后 render.ts 对
+      // 对象调 escapeHtml，s.replace 抛 TypeError，异常落进 runDailyBriefing
+      // 的外层 catch —— status: "failed"、无文章，L4 兜底稿根本没被尝试。
+      // 在这里拒掉只会让 generateOne 重试并最终优雅降级；崩溃不会。
+      if (
+        !isNonEmptyString(h?.topic) ||
+        !Array.isArray(h?.points) ||
+        h.points.length === 0 ||
+        !h.points.every(isNonEmptyString)
+      ) {
         failures.push({ rule: "structure", detail: `headlines 条目不完整: ${JSON.stringify(h)}` });
       }
     }
@@ -202,8 +213,14 @@ function checkStructure(json: unknown): { failures: GateFailure[]; briefing: Bri
         failures.push({ rule: "structure", detail: `analysis.${key} 缺失或为空` });
       }
     }
-    if (!Array.isArray(a.watchlist) || a.watchlist.length === 0) {
-      failures.push({ rule: "structure", detail: "analysis.watchlist 缺失或为空" });
+    // 同上：watchlist: [{title, detail}, …] 是模型最常见的漂移形态，
+    // 而 render.ts 会直接对元素调 escapeHtml
+    if (
+      !Array.isArray(a.watchlist) ||
+      a.watchlist.length === 0 ||
+      !a.watchlist.every(isNonEmptyString)
+    ) {
+      failures.push({ rule: "structure", detail: "analysis.watchlist 缺失、为空或含非字符串元素" });
     }
   }
 

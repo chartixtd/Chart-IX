@@ -80,8 +80,14 @@ export function parseRssItems(
   return items;
 }
 
+/**
+ * `label` 用于错误消息，缺省回落到 url。**调用方应当传源名**：这个错误会经
+ * news-server.ts 的全源失败分支一路传到 NewsClient 的空状态并直接渲染给访客，
+ * 写 url 等于把上游 RSS 地址暴露在页面上。
+ */
 export async function fetchRssFeed(
   url: string,
+  label?: string,
   summaryMaxLen: number = DEFAULT_SUMMARY_MAX_LEN
 ): Promise<RssItem[]> {
   const res = await fetch(url, {
@@ -89,6 +95,6 @@ export async function fetchRssFeed(
     // RSS 源本身不带 Next 缓存语义，交给上层的 TTL 缓存统一管
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`${url} responded ${res.status}`);
+  if (!res.ok) throw new Error(`${label ?? url} feed responded ${res.status}`);
   return parseRssItems(await res.text(), summaryMaxLen);
 }

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { parseRssItems } from "./rss";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { parseRssItems, fetchRssFeed } from "./rss";
 
 const RFC822 = `<rss><channel>
 <item>
@@ -81,5 +81,31 @@ describe("parseRssItems", () => {
   it("guid 缺失时用 link 兜底作为 id", () => {
     const items = parseRssItems(INVESTING);
     expect(items[0].id).toBe("https://example.com/gold");
+  });
+});
+
+describe("fetchRssFeed", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("响应非 2xx 时，错误消息用传入的 label 而非裸 url——这条错误会一路传到新闻页空状态并直接展示给访客", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("", { status: 500 }))
+    );
+    await expect(fetchRssFeed("https://example.com/feed", "CoinDesk")).rejects.toThrow(
+      "CoinDesk feed responded 500"
+    );
+  });
+
+  it("未传 label 时回落到 url", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("", { status: 503 }))
+    );
+    await expect(fetchRssFeed("https://example.com/feed")).rejects.toThrow(
+      "https://example.com/feed feed responded 503"
+    );
   });
 });

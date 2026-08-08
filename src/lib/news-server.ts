@@ -23,7 +23,8 @@ const NEWS_TTL_MS = 5 * 60 * 1000;
 const MAX_PER_FEED = 30;
 
 async function fetchFeed(source: string, lang: NewsLang, url: string): Promise<NewsItem[]> {
-  const items = await fetchRssFeed(url);
+  // 传 source 作为 label：抛出的错误会渲染进新闻页空状态，不能是裸 url
+  const items = await fetchRssFeed(url, source);
   return items.map((it) => ({
     id: it.id,
     title: it.title,

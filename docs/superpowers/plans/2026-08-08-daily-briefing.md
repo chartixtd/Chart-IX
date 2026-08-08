@@ -271,7 +271,9 @@ git commit -m "feat(briefing): 共享类型与 UTC+8 日界计算"
 - Produces:
   - `RssItem` 类型：`{ id: string; title: string; url: string; imageUrl: string | null; publishedAt: number; summary: string }`
   - `parseRssItems(xml: string, summaryMaxLen?: number): RssItem[]`
-  - `fetchRssFeed(url: string, summaryMaxLen?: number): Promise<RssItem[]>`
+  - `fetchRssFeed(url: string, label?: string, summaryMaxLen?: number): Promise<RssItem[]>`
+
+> **`label` 参数不是可有可无的。** 抛出的错误会一路传到用户界面：`news-server.ts:52` 重抛 → `news/page.tsx:38` 转字符串 → `NewsClient.tsx:68` 直接渲染进空状态。若报错里写 url，全源失败时访客会在页面上看到完整的上游 RSS 地址。`label` 让报错保持原来的「CoinDesk feed responded 500」形态。
 
 - [ ] **Step 1: 写失败的解析测试**
 
@@ -459,8 +461,14 @@ export function parseRssItems(
   return items;
 }
 
+/**
+ * `label` 用于错误消息，缺省回落到 url。**调用方应当传源名**：这个错误会经
+ * news-server.ts 的全源失败分支一路传到 NewsClient 的空状态并直接渲染给访客，
+ * 写 url 等于把上游 RSS 地址暴露在页面上。
+ */
 export async function fetchRssFeed(
   url: string,
+  label?: string,
   summaryMaxLen: number = DEFAULT_SUMMARY_MAX_LEN
 ): Promise<RssItem[]> {
   const res = await fetch(url, {
@@ -468,7 +476,7 @@ export async function fetchRssFeed(
     // RSS 源本身不带 Next 缓存语义，交给上层的 TTL 缓存统一管
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`${url} responded ${res.status}`);
+  if (!res.ok) throw new Error(`${label ?? url} feed responded ${res.status}`);
   return parseRssItems(await res.text(), summaryMaxLen);
 }
 ```
@@ -492,7 +500,8 @@ import type { NewsItem, NewsLang } from "@/types";
 
 ```ts
 async function fetchFeed(source: string, lang: NewsLang, url: string): Promise<NewsItem[]> {
-  const items = await fetchRssFeed(url);
+  // 传 source 作为 label：抛出的错误会渲染进新闻页空状态，不能是裸 url
+  const items = await fetchRssFeed(url, source);
   return items.map((it) => ({
     id: it.id,
     title: it.title,
@@ -672,7 +681,7 @@ export function filterLast24h(items: BriefingSource[], nowMs: number): BriefingS
 export async function fetchBriefingSources(nowMs: number): Promise<BriefingSource[]> {
   const results = await Promise.allSettled(
     BRIEFING_FEEDS.map(async (feed) => {
-      const items = await fetchRssFeed(feed.url);
+      const items = await fetchRssFeed(feed.url, feed.source);
       return items
         .sort((a, b) => b.publishedAt - a.publishedAt)
         .slice(0, MAX_PER_FEED)

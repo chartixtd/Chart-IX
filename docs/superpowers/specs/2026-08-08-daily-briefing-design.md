@@ -101,6 +101,16 @@ Investing.com 的 `pubDate` 是非 RFC822 格式（`Aug 07, 2026 20:16 GMT`）�
 7. **`feature_flags` 表已在 038 迁移中删除**，新迁移不得写入该表（007 曾写过）。
 8. 现有 `cron-auth.ts` 采用两级放行：带 `CRON_SECRET` 免限流，匿名 tick 走全站共享限流桶。**仓库是公开的**，这正是当初不把 secret 交给 workflow 的原因。
 
+## 前置条件（阻塞项，实施第一步必须先处理）
+
+**`.github/workflows/cron-tick.yml` 从未被提交过。** 2026-08-08 核实：`git ls-files .github` 返回 0，全历史无任何提交触及该目录。文件只存在于本地工作区，GitHub 上并无此 workflow——**当前线上的 `telegram-push` 与 `price-alerts` 实际上没有任何调度器在触发**。
+
+这与 `cron-auth.ts` 中记载的既有事故完全同形：028 迁移里的 pg_cron 注册 SQL 是模板、从未在线上执行，正是「Telegram 一直不会自动推送」的根因。修复被写出来了，但没有被发布出去，同一个失败模式重演了一次。
+
+本设计依赖该 workflow 作为调度器。若不先提交并推送，早报会以完全相同的方式静默不触发，且表现为「代码都对、就是没文章」——最难排查的一类故障。
+
+因此实施顺序上：**先提交并推送 `.github/workflows/cron-tick.yml`，确认 Actions 面板出现运行记录并且 `cron_heartbeats` 有新鲜时间戳，再开始本功能的开发。** 早报的 step 追加在一个已被验证在跑的 workflow 上，而不是一个假设在跑的 workflow 上。
+
 ## 架构
 
 ### 数据流

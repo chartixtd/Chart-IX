@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Locale } from "@/types";
 import { requireAdmin } from "@/lib/supabase/admin-auth";
+import { translateText } from "@/lib/translate";
 
 // ---------------------------------------------------------------------------
 // Plain-text translation via Google Translate's public endpoint
@@ -15,51 +16,6 @@ interface TranslateRequest {
 
 function extractLang(locale: Locale): string {
   return locale.split("-")[0] ?? "en";
-}
-
-/**
- * Google Translate free endpoint. Returns translated text or null on failure.
- * Handles newlines by temporarily replacing them so they survive translation.
- */
-async function translateText(
-  text: string,
-  fromLang: string,
-  toLang: string
-): Promise<string | null> {
-  // Protect newlines: replace \n with a marker Google Translate won't strip.
-  // Using full-width brackets + "NL" – treated as a non-translatable token.
-  const NL_MARKER = "\uFF3B" + "NL" + "\uFF3D"; // 【NL】using full-width brackets
-  const prepared = text.replace(/\n/g, NL_MARKER);
-
-  try {
-    const url =
-      `https://translate.googleapis.com/translate_a/single` +
-      `?client=gtx&sl=${fromLang}&tl=${toLang}&dt=t` +
-      `&q=${encodeURIComponent(prepared)}`;
-
-    const res = await fetch(url);
-    if (!res.ok) return null;
-
-    const data = await res.json();
-
-    // Response format: [[["translated","original",...],...],...]
-    if (Array.isArray(data) && Array.isArray(data[0])) {
-      const translated = data[0]
-        .map((seg: unknown[]) =>
-          seg && typeof seg[0] === "string" ? seg[0] : ""
-        )
-        .join("");
-
-      if (translated) {
-        // Restore newlines
-        return translated.replace(new RegExp(NL_MARKER.replace(/[\[\]]/g, "\\$&"), "g"), "\n");
-      }
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 // ---------------------------------------------------------------------------

@@ -271,7 +271,9 @@ git commit -m "feat(briefing): 共享类型与 UTC+8 日界计算"
 - Produces:
   - `RssItem` 类型：`{ id: string; title: string; url: string; imageUrl: string | null; publishedAt: number; summary: string }`
   - `parseRssItems(xml: string, summaryMaxLen?: number): RssItem[]`
-  - `fetchRssFeed(url: string, summaryMaxLen?: number): Promise<RssItem[]>`
+  - `fetchRssFeed(url: string, label?: string, summaryMaxLen?: number): Promise<RssItem[]>`
+
+> **`label` 参数不是可有可无的。** 抛出的错误会一路传到用户界面：`news-server.ts:52` 重抛 → `news/page.tsx:38` 转字符串 → `NewsClient.tsx:68` 直接渲染进空状态。若报错里写 url，全源失败时访客会在页面上看到完整的上游 RSS 地址。`label` 让报错保持原来的「CoinDesk feed responded 500」形态。
 
 - [ ] **Step 1: 写失败的解析测试**
 
@@ -459,8 +461,14 @@ export function parseRssItems(
   return items;
 }
 
+/**
+ * `label` 用于错误消息，缺省回落到 url。**调用方应当传源名**：这个错误会经
+ * news-server.ts 的全源失败分支一路传到 NewsClient 的空状态并直接渲染给访客，
+ * 写 url 等于把上游 RSS 地址暴露在页面上。
+ */
 export async function fetchRssFeed(
   url: string,
+  label?: string,
   summaryMaxLen: number = DEFAULT_SUMMARY_MAX_LEN
 ): Promise<RssItem[]> {
   const res = await fetch(url, {
@@ -468,7 +476,7 @@ export async function fetchRssFeed(
     // RSS 源本身不带 Next 缓存语义，交给上层的 TTL 缓存统一管
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`${url} responded ${res.status}`);
+  if (!res.ok) throw new Error(`${label ?? url} feed responded ${res.status}`);
   return parseRssItems(await res.text(), summaryMaxLen);
 }
 ```
@@ -492,7 +500,8 @@ import type { NewsItem, NewsLang } from "@/types";
 
 ```ts
 async function fetchFeed(source: string, lang: NewsLang, url: string): Promise<NewsItem[]> {
-  const items = await fetchRssFeed(url);
+  // 传 source 作为 label：抛出的错误会渲染进新闻页空状态，不能是裸 url
+  const items = await fetchRssFeed(url, source);
   return items.map((it) => ({
     id: it.id,
     title: it.title,
@@ -672,7 +681,7 @@ export function filterLast24h(items: BriefingSource[], nowMs: number): BriefingS
 export async function fetchBriefingSources(nowMs: number): Promise<BriefingSource[]> {
   const results = await Promise.allSettled(
     BRIEFING_FEEDS.map(async (feed) => {
-      const items = await fetchRssFeed(feed.url);
+      const items = await fetchRssFeed(feed.url, feed.source);
       return items
         .sort((a, b) => b.publishedAt - a.publishedAt)
         .slice(0, MAX_PER_FEED)
@@ -915,8 +924,9 @@ git commit -m "feat(briefing): 现货 24h 行情事实集（黄金用 XAUT/PAXG�
 - Produces:
   - `GateFailure = { rule: string; detail: string }`
   - `GateResult = { ok: boolean; failures: GateFailure[] }`
-  - `extractPrices(text: string): number[]`
-  - `extractPercents(text: string): number[]`
+  - `NumberHit = { value: number; index: number }`
+  - `extractPrices(text: string): number[]`、`extractPercents(text: string): number[]`
+  - `extractPriceHits(text: string): NumberHit[]`、`extractPercentHits(text: string): NumberHit[]`
   - `parseBriefingJson(raw: string): BriefingJson | null`
   - `checkBriefing(input: { json: unknown; facts: MarketFact[]; sources: BriefingSource[]; locale: BriefingLocale; finishReason: string | null }): GateResult`
 
@@ -931,6 +941,7 @@ import type { BriefingJson, MarketFact, BriefingSource } from "./types";
 
 const FACTS: MarketFact[] = [
   { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
+  { symbol: "ETH-USDT", label: "ETH", lastPrice: 1914.99, change24hPct: 0.59 },
   { symbol: "XAUT-USDT", label: "XAUT", lastPrice: 4325.51, change24hPct: 1.37 },
 ];
 
@@ -938,22 +949,27 @@ const SOURCES: BriefingSource[] = [
   { title: "美国 CPI 同比 3.1%", url: "https://e.com/1", source: "CNBC", publishedAt: 0, summary: "" },
 ];
 
+// 夹具的每段长度都必须真的越过阈值，否则基线用例自己就过不了门槛。
+// 实测（[...s].length）：overview 111 / crypto 109 / gold 100，正文合计 430，
+// 三者均在 SECTION_MIN=80..SECTION_MAX=600 内，正文高于 BODY_MIN=400 共 30 字余量。
+// 各用例替换的子串（$64,959.52、0.92%、1.37%）长度中性，替换后不会跌破阈值。
 function validJson(over: Partial<BriefingJson> = {}): BriefingJson {
   return {
     title: "早报 | 8月8日 比特币小幅上行，黄金续创新高",
     summary: "过去二十四小时加密市场温和上行，黄金延续强势，宏观面关注美联储表态。",
     headlines: [
-      { topic: "加密货币", points: ["比特币在六万四千美元上方震荡", "以太坊跟随小幅走高"] },
-      { topic: "黄金与大宗", points: ["黄金代币续创阶段新高"] },
+      { topic: "加密货币", points: ["比特币在六万四千美元上方反复震荡", "以太坊跟随大盘小幅走高"] },
+      { topic: "黄金与大宗", points: ["黄金代币续创阶段新高，避险资金持续流入"] },
+      { topic: "宏观金融", points: ["市场等待本周公布的通胀数据"] },
     ],
     analysis: {
       overview:
-        "过去二十四小时市场整体偏暖，风险资产与避险资产同步走高，反映资金面宽松而非单边押注方向，这种组合通常出现在宏观预期尚未收敛的阶段，市场在等待更明确的指引。",
+        "过去二十四小时市场整体偏暖，风险资产与避险资产同步走高，反映资金面宽松而非单边押注方向。这种组合通常出现在宏观预期尚未收敛的阶段，市场既不愿全面撤离风险，也不敢放弃避险头寸，因而呈现两头都不放的状态，等待更明确的政策指引。",
       crypto:
-        "BTC 报 $64,959.52，二十四小时上涨 0.92%，涨幅温和且未伴随异常放量，属于区间内的正常波动，尚不足以判定趋势发生改变，需要观察后续成交能否跟上。",
+        "BTC 报 $64,959.52，二十四小时上涨 0.92%，涨幅温和且未伴随异常放量，属于区间内的正常波动。从成交结构看，买盘并未出现明显的集中释放，尚不足以判定趋势发生改变，需要继续观察后续几个交易日成交能否跟上。",
       gold:
-        "黄金代币 XAUT 报 $4,325.51，二十四小时上涨 1.37%，强于加密资产，显示避险需求仍在，这与近期宏观不确定性上升的背景一致，值得持续留意其与实际利率的关系。",
-      watchlist: ["关注美联储官员讲话", "关注黄金能否站稳阶段高位"],
+        "黄金代币 XAUT 报 $4,325.51，二十四小时上涨 1.37%，明显强于同期加密资产，显示避险需求仍在累积。这与近期宏观不确定性上升的背景一致，后续值得留意其与实际利率之间的关系是否继续背离。",
+      watchlist: ["关注美联储官员本周的公开讲话", "关注黄金能否站稳当前阶段高位"],
     },
     ...over,
   };
@@ -1068,6 +1084,59 @@ describe("checkBriefing", () => {
     expect(check(j).ok).toBe(true);
   });
 
+  // ── 标的邻近绑定：以下两条各自复现一个曾能击穿门槛的真实场景 ──
+
+  // 两个数字都仍在事实集里，只是安到了错的标的上——这正是旧实现全部放行的场景
+  it("换标的被抓出：BTC 段落写成黄金的数字", () => {
+    const j = validJson();
+    j.analysis.crypto = j.analysis.crypto
+      .replace("$64,959.52", "$4,325.51")
+      .replace("0.92%", "1.37%");
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("换标的被抓出：黄金段落写成 BTC 的数字", () => {
+    const j = validJson();
+    j.analysis.gold = j.analysis.gold
+      .replace("$4,325.51", "$64,959.52")
+      .replace("1.37%", "0.92%");
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("绑定到标的后，来源白名单不能替伪造数字背书", () => {
+    const j = validJson();
+    j.analysis.crypto = j.analysis.crypto.replace("0.92%", "7.50%");
+    // 当天恰好有一条无关新闻里出现同一个数字——它不该让 BTC 段的伪造过关
+    const noisySources: BriefingSource[] = [
+      ...SOURCES,
+      { title: "iPhone 出货量下降 7.50%", url: "https://e.com/2", source: "CNBC", publishedAt: 0, summary: "" },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: noisySources, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("附近没有标的标签时，来源里出现过的数字仍放行", () => {
+    const j = validJson();
+    j.analysis.overview += "市场消化了 3.1% 的通胀读数，情绪趋于稳定，短期内仍以震荡为主。";
+    expect(check(j).ok).toBe(true);
+  });
+
+  // 这段替换文本 94 字、替换后正文 409 字，两个长度阈值都留了余量——
+  // 改写它时必须重新量长度，否则会因 length 规则失败而误以为绑定逻辑坏了
+  it("同句内有多个标签时绑定最近的那个", () => {
+    const j = validJson();
+    j.analysis.overview =
+      "回顾昨日整体走势，BTC 与以太坊双双走高，其中 ETH 报 $1,914.99，表现稳健且波动收敛，市场情绪整体偏向乐观，成交量也较前一个交易日温和放大，显示资金仍留在场内观望而非离场。";
+    expect(check(j).ok).toBe(true);
+  });
+
   it("禁用表述被抓出", () => {
     const j = validJson();
     j.analysis.watchlist = ["建议买入 BTC"];
@@ -1140,6 +1209,8 @@ export interface GateResult {
 const PRICE_TOLERANCE_RATIO = 0.005;
 /** 百分比容差，单位是"个百分点" */
 const PERCENT_TOLERANCE_PP = 0.2;
+/** 数字回看标的标签的最大字符距离（还会被句子边界进一步截断） */
+const LABEL_PROXIMITY_WINDOW = 40;
 
 const TITLE_MIN = 10;
 const TITLE_MAX = 60;
@@ -1163,22 +1234,71 @@ const BANNED_PHRASES = [
 const PRICE_RE = /\$\s*(\d[\d,]*(?:\.\d+)?)/g;
 const PERCENT_RE = /(-?\d+(?:\.\d+)?)\s*%/g;
 
-export function extractPrices(text: string): number[] {
-  const out: number[] = [];
-  for (const m of text.matchAll(PRICE_RE)) {
-    const n = parseFloat(m[1].replace(/,/g, ""));
-    if (Number.isFinite(n)) out.push(n);
+/** 带位置的数字命中——位置用于回看这句话在讲哪个标的 */
+export interface NumberHit {
+  value: number;
+  index: number;
+}
+
+function collectHits(text: string, re: RegExp, strip: boolean): NumberHit[] {
+  const out: NumberHit[] = [];
+  // matchAll 不会改动共享正则的 lastIndex（内部克隆），模块级 /g 正则可安全复用
+  for (const m of text.matchAll(re)) {
+    const raw = strip ? m[1].replace(/,/g, "") : m[1];
+    const value = parseFloat(raw);
+    if (Number.isFinite(value)) out.push({ value, index: m.index ?? 0 });
   }
   return out;
 }
 
+export function extractPriceHits(text: string): NumberHit[] {
+  return collectHits(text, PRICE_RE, true);
+}
+
+export function extractPercentHits(text: string): NumberHit[] {
+  return collectHits(text, PERCENT_RE, false);
+}
+
+export function extractPrices(text: string): number[] {
+  return extractPriceHits(text).map((h) => h.value);
+}
+
 export function extractPercents(text: string): number[] {
-  const out: number[] = [];
-  for (const m of text.matchAll(PERCENT_RE)) {
-    const n = parseFloat(m[1]);
-    if (Number.isFinite(n)) out.push(n);
+  return extractPercentHits(text).map((h) => h.value);
+}
+
+/**
+ * 回看数字前方、**同一句之内**最近的事实标签。
+ *
+ * 存在的理由：只问「这个数字是否匹配某个事实」挡不住张冠李戴——把 BTC 与黄金
+ * 的价格互换后，两个数字各自都还在事实集里，门槛会全部放行，而文章却在告诉
+ * 读者「BTC 报 $4,325.51」。绑定到具体标的后，换标的立刻暴露。
+ *
+ * 窗口按句子终止符截断，避免把上一句的标的错误绑过来；再叠一个字符数上限，
+ * 兜住整段没有标点的极端情况。
+ *
+ * 刻意偏向「绑得严」：误绑最坏结果是当天降级成朴素的兜底稿，漏绑却会把错误的
+ * 金融论断发布出去。两者代价不对称。
+ */
+function nearestLabeledFact(
+  text: string,
+  index: number,
+  facts: MarketFact[]
+): MarketFact | null {
+  const capped = text.slice(Math.max(0, index - LABEL_PROXIMITY_WINDOW), index);
+  // 只保留最后一个句子终止符之后的部分
+  const sentenceStart = Math.max(
+    ...["。", "！", "？", "\n", ". "].map((p) => capped.lastIndexOf(p))
+  );
+  const window = (sentenceStart >= 0 ? capped.slice(sentenceStart + 1) : capped).toUpperCase();
+
+  let best: { fact: MarketFact; at: number } | null = null;
+  for (const fact of facts) {
+    const at = window.lastIndexOf(fact.label.toUpperCase());
+    if (at === -1) continue;
+    if (!best || at > best.at) best = { fact, at };
   }
-  return out;
+  return best?.fact ?? null;
 }
 
 /**
@@ -1296,21 +1416,44 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: BriefingSou
   const sourcePrices = new Set(extractPrices(sourceText));
   const sourcePercents = new Set(extractPercents(sourceText));
 
-  for (const price of extractPrices(text)) {
-    if (sourcePrices.has(price)) continue;
-    const matched = facts.some(
-      (f) => Math.abs(price - f.lastPrice) <= f.lastPrice * PRICE_TOLERANCE_RATIO
-    );
-    if (!matched) {
-      failures.push({ rule: "hallucinated-number", detail: `价格 $${price} 不在行情事实集内` });
+  const priceOk = (v: number, f: MarketFact) =>
+    Math.abs(v - f.lastPrice) <= f.lastPrice * PRICE_TOLERANCE_RATIO;
+  const pctOk = (v: number, f: MarketFact) =>
+    Math.abs(v - f.change24hPct) <= PERCENT_TOLERANCE_PP;
+
+  for (const hit of extractPriceHits(text)) {
+    const bound = nearestLabeledFact(text, hit.index, facts);
+    if (bound) {
+      // 绑定到具体标的时，来源白名单**不适用**：否则当天任意一条无关新闻里
+      // 巧合出现的同一个数字，就能替一处伪造背书。
+      if (!priceOk(hit.value, bound)) {
+        failures.push({
+          rule: "hallucinated-number",
+          detail: `价格 $${hit.value} 与 ${bound.label} 的实际价格 ${bound.lastPrice} 不符`,
+        });
+      }
+      continue;
+    }
+    if (sourcePrices.has(hit.value)) continue;
+    if (!facts.some((f) => priceOk(hit.value, f))) {
+      failures.push({ rule: "hallucinated-number", detail: `价格 $${hit.value} 不在行情事实集内` });
     }
   }
 
-  for (const pct of extractPercents(text)) {
-    if (sourcePercents.has(pct)) continue;
-    const matched = facts.some((f) => Math.abs(pct - f.change24hPct) <= PERCENT_TOLERANCE_PP);
-    if (!matched) {
-      failures.push({ rule: "hallucinated-number", detail: `涨跌幅 ${pct}% 不在行情事实集内` });
+  for (const hit of extractPercentHits(text)) {
+    const bound = nearestLabeledFact(text, hit.index, facts);
+    if (bound) {
+      if (!pctOk(hit.value, bound)) {
+        failures.push({
+          rule: "hallucinated-number",
+          detail: `涨跌幅 ${hit.value}% 与 ${bound.label} 的实际涨跌 ${bound.change24hPct}% 不符`,
+        });
+      }
+      continue;
+    }
+    if (sourcePercents.has(hit.value)) continue;
+    if (!facts.some((f) => pctOk(hit.value, f))) {
+      failures.push({ rule: "hallucinated-number", detail: `涨跌幅 ${hit.value}% 不在行情事实集内` });
     }
   }
   return failures;
@@ -1366,7 +1509,7 @@ export function checkBriefing(input: {
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run src/lib/briefing/quality-gate.test.ts`
-Expected: PASS（26 个用例）
+Expected: PASS（25 个用例）
 
 - [ ] **Step 5: 提交**
 
@@ -1389,7 +1532,7 @@ git commit -m "feat(briefing): 质量门槛——结构/长度/数字幻觉/禁�
 - Produces:
   - `escapeHtml(s: string): string`
   - `formatPrice(n: number): string`、`formatPct(n: number): string`
-  - `renderMarketList(facts: MarketFact[]): string`、`renderSourceList(sources: BriefingSource[]): string`
+  - `renderMarketList(facts: MarketFact[], locale: BriefingLocale): string`、`renderSourceList(sources: BriefingSource[]): string`
   - `renderBriefingHtml(b: BriefingJson, facts: MarketFact[], sources: BriefingSource[], locale: BriefingLocale): string`
   - `DISCLAIMER: Record<BriefingLocale, string>`
 
@@ -1496,6 +1639,28 @@ describe("renderBriefingHtml", () => {
     const en = renderBriefingHtml(JSON_INPUT, FACTS, SOURCES, "en-US");
     expect(en).toContain("not investment advice");
   });
+
+  it("中文稿行情用全角括号", () => {
+    expect(html).toContain("（24h +0.92%）");
+  });
+
+  it("英文稿行情用半角括号，不混排全角", () => {
+    const en = renderBriefingHtml(JSON_INPUT, FACTS, SOURCES, "en-US");
+    expect(en).toContain("(24h +0.92%)");
+    expect(en).not.toContain("（");
+    expect(en).not.toContain("）");
+  });
+
+  // 源站 url 是第三方数据，必须走完整渲染路径验证而不只是手写 HTML
+  it("来源 url 携带 javascript 伪协议时，经渲染与 sanitize 后不残留", () => {
+    const evilSources: BriefingSource[] = [
+      { title: "evil", url: "javascript:alert(1)", source: "X", publishedAt: 1, summary: "" },
+    ];
+    const clean = sanitizeArticleHtml(
+      renderBriefingHtml(JSON_INPUT, FACTS, evilSources, "zh-CN")
+    );
+    expect(clean).not.toContain("javascript:");
+  });
 });
 ```
 
@@ -1587,14 +1752,20 @@ export function formatPct(n: number): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-/** 行情列表。正常稿与兜底稿共用，保证两种路径下的行情区块完全一致 */
-export function renderMarketList(facts: MarketFact[]): string {
+/**
+ * 行情列表。正常稿与兜底稿共用，保证两种路径下的行情区块完全一致。
+ *
+ * 必须按语言选括号：中文用全角（），英文用半角 ()。早报会出 en-US 版，
+ * 把全角括号写死会让英文正文出现「$64,959.52（24h +0.92%）」这种中英混排。
+ */
+export function renderMarketList(facts: MarketFact[], locale: BriefingLocale): string {
+  const [open, close] = locale === "zh-CN" ? ["（", "）"] : [" (", ")"];
   return `<ul>${facts
     .map(
       (f) =>
-        `<li><strong>${escapeHtml(f.label)}</strong> ${formatPrice(f.lastPrice)}（24h ${formatPct(
+        `<li><strong>${escapeHtml(f.label)}</strong> ${formatPrice(f.lastPrice)}${open}24h ${formatPct(
           f.change24hPct
-        )}）</li>`
+        )}${close}</li>`
     )
     .join("")}</ul>`;
 }
@@ -1635,7 +1806,7 @@ export function renderBriefingHtml(
   // 无法做响应式样式，而 ul/li 本就在白名单内且移动端更好读
   if (facts.length > 0) {
     parts.push(`<h3>${c.snapshot}</h3>`);
-    parts.push(renderMarketList(facts));
+    parts.push(renderMarketList(facts, locale));
   }
 
   if (b.analysis.watchlist.length > 0) {
@@ -1819,7 +1990,7 @@ export function renderFallbackHtml(
 
   if (facts.length > 0) {
     parts.push(`<h2>${c.snapshot}</h2>`);
-    parts.push(renderMarketList(facts));
+    parts.push(renderMarketList(facts, locale));
   }
 
   if (sources.length > 0) {
@@ -2466,10 +2637,15 @@ async function runPipeline(nowMs: number): Promise<BriefingRunResult> {
   if (degraded) {
     await alert(`24h 内仅 ${sources.length} 条新闻，低于 ${MIN_SOURCE_ITEMS}，直接走兜底稿`);
   } else {
-    const [zh, en] = await Promise.all([
+    // 用 allSettled 而非 all：L3 这一级存在的意义就是「一语成功就别丢掉它」。
+    // 若某天 generateOne 内部抛了（现在不会，但它调的东西以后可能变），Promise.all
+    // 会让整轮直接判失败，把已经生成好的另一语一起扔掉——恰好绕过 L3。
+    const [zhSettled, enSettled] = await Promise.allSettled([
       generateOne("zh-CN", sources, facts, dateStr),
       generateOne("en-US", sources, facts, dateStr),
     ]);
+    const zh = zhSettled.status === "fulfilled" ? zhSettled.value : null;
+    const en = enSettled.status === "fulfilled" ? enSettled.value : null;
 
     if (zh && en) {
       title["zh-CN"] = zh.title;
@@ -2548,13 +2724,27 @@ async function runPipeline(nowMs: number): Promise<BriefingRunResult> {
       .maybeSingle();
     if (setting?.value === true) {
       const subs = await getOptedInSubscriptions("new_content");
+
+      // 按订阅语言分组，每组只调一次——sendToSubscriptions 内部已经用 Promise.all
+      // 并发发送。逐个订阅者 await 会让这段随订阅数线性变长，而它跑在文章**已经
+      // 落库发布之后**、maxDuration=60 的函数里：被平台掐断就会出现「文章发了、
+      // 心跳还是旧的」，正是 cron_heartbeats 当初要防的静默失效。
+      // 分组键用订阅自带的 locale（而非归一后的内容语言），这样 ms-MY 用户点开的
+      // 仍是 /ms-MY/ 链接，只是正文回退成英文。
+      const byLocale = new Map<string, typeof subs>();
       for (const sub of subs) {
-        const locale = sub.locale === "zh-CN" ? "zh-CN" : "en-US";
-        const msg = buildContentMessage(locale, "article", title[locale]);
-        await sendToSubscriptions([sub], {
+        const group = byLocale.get(sub.locale);
+        if (group) group.push(sub);
+        else byLocale.set(sub.locale, [sub]);
+      }
+
+      for (const [subLocale, group] of byLocale) {
+        const contentLocale: BriefingLocale = subLocale === "zh-CN" ? "zh-CN" : "en-US";
+        const msg = buildContentMessage(contentLocale, "article", title[contentLocale]);
+        await sendToSubscriptions(group, {
           title: msg.title,
           body: msg.body,
-          url: `/${sub.locale}/articles/${slug}`,
+          url: `/${subLocale}/articles/${slug}`,
           tag: JOB_NAME,
         });
       }
@@ -2581,7 +2771,16 @@ export async function runDailyBriefing(nowMs: number): Promise<BriefingRunResult
     Sentry.captureException(err, { tags: { scope: "daily-briefing" } });
     await alert(`流水线异常: ${message}`);
     await beat("error");
-    return { status: "failed", slug: briefingSlug(utcPlus8DateString(nowMs)), detail: message };
+    // slug 要重算，但 utcPlus8DateString 对非有限的 nowMs 会抛 RangeError——
+    // 那正是把我们送进这个 catch 的同一行。兜底路径自己再抛一次就会击穿
+    // 「runDailyBriefing 永不抛出」这个两个调用方都依赖的契约。
+    let slug = "unknown";
+    try {
+      slug = briefingSlug(utcPlus8DateString(nowMs));
+    } catch {
+      /* 保持 "unknown" */
+    }
+    return { status: "failed", slug, detail: message };
   }
 }
 ```

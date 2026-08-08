@@ -1,4 +1,5 @@
 import { createTtlCache } from "@/lib/ttl-cache";
+import { fetchRssFeed } from "@/lib/rss";
 import type { NewsItem, NewsLang } from "@/types";
 
 /**
@@ -20,77 +21,20 @@ const NEWS_TTL_MS = 5 * 60 * 1000;
 /** 每个源各留这么多条再合并——CoinDesk/Cointelegraph 更新频率比吴说高得多，
  *  直接按全局时间排序取前 N 会把中文条目全挤掉，所以按源分别截断 */
 const MAX_PER_FEED = 30;
-const SUMMARY_MAX_LEN = 220;
-
-function decodeEntities(str: string): string {
-  return str
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    // Substack 的中文 feed 把每个汉字都编成十进制数字实体（&#26410; 等），
-    // 得先解出来，不然中文来源全篇都是乱码
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .trim();
-}
-
-function stripHtml(str: string): string {
-  return str.replace(/<[^>]*>/g, "").trim();
-}
-
-function extractTag(block: string, tag: string): string | null {
-  const match = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
-  return match ? decodeEntities(match[1]) : null;
-}
-
-function extractImage(block: string): string | null {
-  const media =
-    block.match(/<media:content[^>]*url="([^"]+)"/i) ||
-    block.match(/<media:thumbnail[^>]*url="([^"]+)"/i);
-  if (media) return media[1];
-  const enclosure = block.match(/<enclosure[^>]*url="([^"]+)"[^>]*type="image/i);
-  if (enclosure) return enclosure[1];
-  // 兜底：从 description 里塞的 <img src="..."> 里抠一张
-  const imgInDesc = block.match(/<img[^>]*src="([^"]+)"/i);
-  return imgInDesc ? imgInDesc[1] : null;
-}
 
 async function fetchFeed(source: string, lang: NewsLang, url: string): Promise<NewsItem[]> {
-  const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; Chart-IX/1.0)" },
-    // RSS 源本身不带 Next 缓存语义，交给上层的 TTL 缓存统一管
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`${source} feed responded ${res.status}`);
-  const xml = await res.text();
-
-  const items: NewsItem[] = [];
-  const itemBlocks = xml.match(/<item>[\s\S]*?<\/item>/gi) ?? [];
-  for (const block of itemBlocks) {
-    const title = extractTag(block, "title");
-    const link = extractTag(block, "link");
-    const pubDateStr = extractTag(block, "pubDate");
-    if (!title || !link || !pubDateStr) continue;
-    const publishedAt = Date.parse(pubDateStr);
-    if (Number.isNaN(publishedAt)) continue;
-
-    const description = extractTag(block, "description");
-    const guid = extractTag(block, "guid");
-    items.push({
-      id: guid ?? link,
-      title,
-      url: link.split("?")[0],
-      source,
-      lang,
-      imageUrl: extractImage(block),
-      publishedAt,
-      summary: description ? stripHtml(description).slice(0, SUMMARY_MAX_LEN) : "",
-    });
-  }
-  return items;
+  // 传 source 作为 label：抛出的错误会渲染进新闻页空状态，不能是裸 url
+  const items = await fetchRssFeed(url, source);
+  return items.map((it) => ({
+    id: it.id,
+    title: it.title,
+    url: it.url,
+    source,
+    lang,
+    imageUrl: it.imageUrl,
+    publishedAt: it.publishedAt,
+    summary: it.summary,
+  }));
 }
 
 const cache = createTtlCache<NewsItem[]>({

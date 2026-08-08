@@ -17,6 +17,7 @@ import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { OrderBook } from "@/components/trade/OrderBook";
+import { RecentTrades } from "@/components/trade/RecentTrades";
 import type { BingXTicker } from "@/types/bingx";
 
 const WS_SUBSCRIBE_LIMIT = 30;
@@ -112,7 +113,7 @@ const LoadingDummy = memo(function LoadingDummy() {
 export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookPriceClick }: MarketOverviewProps) {
   const t = useTranslations("trade");
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState<"list" | "orderbook">("list");
+  const [viewMode, setViewMode] = useState<"list" | "orderbook" | "trades">("list");
   const { data: tickers, isLoading } = useSpotTickers();
   const favorites = useFavoritesStore((s) => s.favorites);
 
@@ -215,11 +216,24 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
           >
             {t("market_overview.orderbook")}
           </button>
+          <button
+            onClick={() => setViewMode("trades")}
+            className={cn(
+              "flex-1 rounded-xs py-1 text-xs font-medium transition-colors",
+              viewMode === "trades" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            {t("market_overview.trades")}
+          </button>
         </div>
       </div>
       {viewMode === "orderbook" ? (
         <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
           <OrderBook symbol={activeSymbol} onPriceClick={onOrderBookPriceClick} />
+        </div>
+      ) : viewMode === "trades" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+          <RecentTrades symbol={activeSymbol} active={viewMode === "trades"} />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

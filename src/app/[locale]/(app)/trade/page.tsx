@@ -39,6 +39,10 @@ const OrderBook = dynamic(
   () => import("@/components/trade/OrderBook").then((m) => m.OrderBook),
   { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
 );
+const RecentTrades = dynamic(
+  () => import("@/components/trade/RecentTrades").then((m) => m.RecentTrades),
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
+);
 const OrderForm = dynamic(
   () => import("@/components/trade/order-form/OrderForm").then((m) => m.OrderForm),
   { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
@@ -399,6 +403,7 @@ export default function TradePage() {
   const [orderSheetOpen, setOrderSheetOpen] = useState(false);
   const [positionsSheetOpen, setPositionsSheetOpen] = useState(false);
   const [bookOverlayOpen, setBookOverlayOpen] = useState(false);
+  const [mobileBookTab, setMobileBookTab] = useState<"orderbook" | "trades">("orderbook");
   // 用 JS 断点做「挂载哪一棵树」的决定，才能真正避免双挂载。
   // 仅用于外壳选择，SSR 阶段返回 false；客户端水合帧起就是真实断点值——
   // 配合下面的 hydrated 门控，避免手机骨架先挂再翻桌面布局的那一闪。
@@ -575,7 +580,31 @@ export default function TradePage() {
             {bookOverlayOpen && (
               // 订单簿做成图表上的叠层，而不是抢一个 tab
               <div className="absolute inset-y-0 right-0 w-[62%] border-l border-border-default bg-bg-primary/95 backdrop-blur-sm">
-                <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />
+                <div className="flex border-b border-border-default">
+                  <button
+                    onClick={() => setMobileBookTab("orderbook")}
+                    className={cn(
+                      "flex-1 py-2 text-xs font-medium transition-colors",
+                      mobileBookTab === "orderbook" ? "text-gold" : "text-text-muted"
+                    )}
+                  >
+                    {t("mobile_book")}
+                  </button>
+                  <button
+                    onClick={() => setMobileBookTab("trades")}
+                    className={cn(
+                      "flex-1 py-2 text-xs font-medium transition-colors",
+                      mobileBookTab === "trades" ? "text-gold" : "text-text-muted"
+                    )}
+                  >
+                    {t("mobile_trades")}
+                  </button>
+                </div>
+                {mobileBookTab === "orderbook" ? (
+                  <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />
+                ) : (
+                  <RecentTrades symbol={symbol} active={mobileBookTab === "trades"} />
+                )}
               </div>
             )}
           </div>

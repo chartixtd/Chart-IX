@@ -45,6 +45,11 @@ export function canUseAdvancedChart(userTier: UserTier | null): boolean {
   return userTier === "pro";
 }
 
+/** 成交明细（逐笔成交流 + 大单高亮）。与图表高级指标同级的 Pro 专属能力。 */
+export function canViewTradeTape(userTier: UserTier | null): boolean {
+  return userTier === "pro";
+}
+
 /** 视频下载。目前对所有等级关闭（播放器也设了 controlsList="nodownload"）。 */
 export function canDownloadVideo(_userTier: UserTier | null): boolean {
   return false;

@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useMarketStore } from "@/stores/market";
-import { useBingXDepth } from "@/hooks/useBingXWebSocket";
+import { useBingXDepth, useBingXTrades } from "@/hooks/useBingXWebSocket";
 import { trimDepth } from "@/lib/bingx/depth";
 import { SCREENER_REFRESH_MS } from "@/lib/screener-scoring";
 import type { BingXSymbol, BingXTicker, BingXKline, BingXDepth, BingXTrade, BingXOpenInterest, BingXFundingRate } from "@/types/bingx";
@@ -133,15 +133,33 @@ export function useOrderBook(symbol: string, limit = 10) {
   };
 }
 
-// 最新成交
-export function useRecentTrades(symbol: string, limit = 20) {
-  return useQuery({
+// 最新成交 —— WS 实时推送优先，断线/无数据/未启用时回落 REST 轮询。
+// enabled 由调用方控制：只有面板可见且用户有权限时才应为 true——成交推送约
+// 2 次/秒且每次产生新数组引用，不可见面板保持订阅会造成无谓重渲染。
+export function useRecentTrades(symbol: string, enabled: boolean, limit = 20) {
+  useBingXTrades(enabled ? symbol : null);
+
+  const wsConnected = useMarketStore((s) => s.wsConnected);
+  const wsTrades = useMarketStore((s) => s.trades[symbol]);
+  const useWs = enabled && wsConnected && !!wsTrades && wsTrades.length > 0;
+
+  const query = useQuery({
     queryKey: ["bingx", "trades", symbol, limit],
     queryFn: () => fetchApi<BingXTrade[]>("trades", { symbol, limit: String(limit) }),
-    refetchInterval: 3_000,
+    refetchInterval: useWs ? false : 3_000,
     staleTime: 1_000,
-    enabled: !!symbol,
+    enabled: enabled && !!symbol && !useWs,
   });
+
+  const wsSlice = useMemo(
+    () => (wsTrades ? wsTrades.slice(0, limit) : undefined),
+    [wsTrades, limit]
+  );
+
+  if (useWs && wsSlice) {
+    return { data: wsSlice, isLoading: false };
+  }
+  return { data: query.data, isLoading: query.isPending };
 }
 
 // 合约未平仓量

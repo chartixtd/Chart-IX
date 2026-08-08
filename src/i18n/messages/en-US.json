@@ -256,6 +256,7 @@
     "mobile_buy": "Buy",
     "mobile_sell": "Sell",
     "mobile_book": "Book",
+    "mobile_trades": "Trades",
     "mobile_positions": "Positions",
     "mobile_order_sheet": "Place order",
     "mobile_symbol_picker": "Select pair",
@@ -278,7 +279,16 @@
     },
     "market_overview": {
       "list": "List",
-      "orderbook": "Order Book"
+      "orderbook": "Order Book",
+      "trades": "Trades"
+    },
+    "recent_trades": {
+      "time": "Time",
+      "price": "Price",
+      "qty": "Qty",
+      "empty": "No trades yet",
+      "locked": "Live trade feed with large-trade alerts is a Pro feature",
+      "locked_cta": "Upgrade to Pro to unlock"
     },
     "indicators": {
       "hide": "Hide",

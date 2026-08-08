@@ -63,6 +63,31 @@ export interface BriefingRunOptions {
   ignoreSchedule?: boolean;
 }
 
+/**
+ * 非终局告警一律**不 await**。
+ *
+ * PIPELINE_BUDGET_MS 只约束了 DeepSeek 调用，可 `alert()` 恰恰只在失败分支触发——
+ * 正是预算已经很紧的时候。sendTelegramMessage 是 10s 超时 × 3 次尝试加退避，
+ * 且 backoffDelayMs 会照单遵守 Telegram 返回的 retry_after，一条被限流的消息
+ * 最多耗约 31.5 秒；而糟糕的一天会朝同一个 chat 连发 6-9 条，那正是触发限流的
+ * 条件。await 下去等于把整条流水线挂在告警上，重新掉回「被平台掐断 → 无 insert、
+ * 无心跳、无告警」那条路——预算存在的意义就是不让这件事发生。
+ *
+ * 不 await 是安全的，理由有三：
+ * 1. alertBriefing 开头的 console.error 与 Sentry.captureMessage 是**同步**执行的，
+ *    真正会掉的只有 Telegram 那一路投递，可观测性的主干一点没少。
+ * 2. alertBriefing 自己吞掉全部异常（见 alert.ts 的 try/catch），不会产生
+ *    unhandledRejection。
+ * 3. 另一种改法（把剩余预算传进去、据此收缩 maxAttempts/timeoutMs）仍然把
+ *    一次 admin_settings 查询加一次 Telegram 往返留在关键路径上，×6 条告警，
+ *    只是把暴露变小而不是消除。
+ *
+ * 终局告警（后面只剩 beat + return，没有还能被掐断掉的工作）保留 await。
+ */
+function alertNoWait(message: string): void {
+  void alert(message);
+}
+
 /** 心跳：让「没有文章」可以和「任务根本没跑」区分开 */
 async function beat(status: "ok" | "error" | "skipped") {
   try {
@@ -101,7 +126,7 @@ async function generateOne(
   for (const [attempt, model] of models.entries()) {
     const remaining = deadlineMs - Date.now();
     if (remaining < MIN_CALL_BUDGET_MS) {
-      await alert(
+      alertNoWait(
         `${locale} 剩余预算 ${Math.max(0, remaining)}ms 不足以再发起第 ${attempt + 1} 次调用，停止重试`
       );
       return null;
@@ -115,7 +140,7 @@ async function generateOne(
       timeoutMs: Math.min(DEFAULT_TIMEOUT_MS, remaining),
     });
     if (!res.ok) {
-      await alert(`${locale} 第 ${attempt + 1} 次调用失败(${model}): ${res.error}`);
+      alertNoWait(`${locale} 第 ${attempt + 1} 次调用失败(${model}): ${res.error}`);
       continue;
     }
     const parsed = parseBriefingJson(res.content);
@@ -127,7 +152,7 @@ async function generateOne(
       finishReason: res.finishReason,
     });
     if (gate.ok && parsed) return parsed;
-    await alert(
+    alertNoWait(
       `${locale} 第 ${attempt + 1} 次未过质量门槛(${model}): ` +
         gate.failures.map((f) => `${f.rule}/${f.detail}`).join("; ")
     );
@@ -195,7 +220,7 @@ async function runPipeline(
   let degraded = sources.length < MIN_SOURCE_ITEMS;
 
   if (degraded) {
-    await alert(`24h 内仅 ${sources.length} 条新闻，低于 ${MIN_SOURCE_ITEMS}，直接走兜底稿`);
+    alertNoWait(`24h 内仅 ${sources.length} 条新闻，低于 ${MIN_SOURCE_ITEMS}，直接走兜底稿`);
   } else {
     // 用 allSettled 而非 all：L3 这一级存在的意义就是「一语成功就别丢掉它」。
     // 若某天 generateOne 内部抛了（现在不会，但它调的东西以后可能变），Promise.all
@@ -208,7 +233,7 @@ async function runPipeline(
     // 运维排查「en-US 为什么走了翻译」时必须看得到真正抛出的错误。
     for (const [i, settled] of [zhSettled, enSettled].entries()) {
       if (settled.status === "rejected") {
-        await alert(`${LOCALES[i]} 生成过程抛出异常: ${String(settled.reason)}`);
+        alertNoWait(`${LOCALES[i]} 生成过程抛出异常: ${String(settled.reason)}`);
       }
     }
     const zh = zhSettled.status === "fulfilled" ? zhSettled.value : null;
@@ -245,14 +270,14 @@ async function runPipeline(
         content[okLocale] = renderBriefingHtml(good, facts, sources, okLocale);
         title[badLocale] = translated.title;
         content[badLocale] = renderBriefingHtml(translated, facts, sources, badLocale);
-        await alert(`${badLocale} 生成失败，已用翻译通道兜住`);
+        alertNoWait(`${badLocale} 生成失败，已用翻译通道兜住`);
       } else {
         degraded = true;
-        await alert(`${badLocale} 生成失败且翻译通道也失败，改发零 AI 兜底稿`);
+        alertNoWait(`${badLocale} 生成失败且翻译通道也失败，改发零 AI 兜底稿`);
       }
     } else {
       degraded = true;
-      await alert("中英两语均未通过质量门槛，改发零 AI 兜底稿");
+      alertNoWait("中英两语均未通过质量门槛，改发零 AI 兜底稿");
     }
   }
 

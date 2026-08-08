@@ -247,7 +247,7 @@ beforeEach(() => {
   fetchBriefingSources.mockReset().mockResolvedValue(SOURCES);
   fetchMarketFacts.mockReset().mockResolvedValue(FACTS);
   translateText.mockReset();
-  alertBriefing.mockClear();
+  alertBriefing.mockReset().mockImplementation(async () => {});
   sendToSubscriptions.mockClear();
   getOptedInSubscriptions.mockReset().mockResolvedValue([]);
   process.env.DEEPSEEK_API_KEY = "test-key";
@@ -429,6 +429,23 @@ describe("runDailyBriefing — 墙钟预算", () => {
     expect(callDeepSeek.mock.calls.length).toBeLessThan(6);
     const messages = alertBriefing.mock.calls.map((c) => String(c[0]));
     expect(messages.some((m) => m.includes("剩余预算"))).toBe(true);
+  });
+
+  // ── R2：告警路径不能重新把流水线挂死 ──
+  it("失败告警不 await——被限流的 Telegram 不会再把流水线拖过 maxDuration", async () => {
+    callDeepSeek.mockResolvedValue(FAIL);
+    // 一条被限流的告警最多耗约 31.5 秒（10s 超时 × 3 次 + retry_after 退避），
+    // 而糟糕的一天会连发 6-9 条。这里干脆让告警永远不 resolve：只要还有一处
+    // await 落在循环内的告警上，流水线就再也走不到落库。
+    alertBriefing.mockImplementation(() => new Promise<void>(() => {}));
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("fallback");
+    expect(db.inserted).toHaveLength(1);
+    expect(db.beats).toContain("ok");
+    // 告警确实发起了，只是没被等待
+    expect(alertBriefing.mock.calls.length).toBeGreaterThan(0);
   });
 
   it("每次调用都带上不超过剩余预算的 timeoutMs", async () => {

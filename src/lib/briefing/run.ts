@@ -7,7 +7,7 @@ import { briefingSlug, utcPlus8DateString } from "@/lib/briefing/date";
 import { fetchBriefingSources, MIN_SOURCE_ITEMS } from "@/lib/briefing/sources";
 import { fetchMarketFacts } from "@/lib/briefing/market-facts";
 import { buildBriefingPrompt } from "@/lib/briefing/prompt";
-import { callDeepSeek } from "@/lib/briefing/deepseek";
+import { callDeepSeek, DEFAULT_TIMEOUT_MS } from "@/lib/briefing/deepseek";
 import { checkBriefing, parseBriefingJson } from "@/lib/briefing/quality-gate";
 import { renderBriefingHtml } from "@/lib/briefing/render";
 import { fallbackTitle, renderFallbackHtml } from "@/lib/briefing/fallback";
@@ -16,6 +16,26 @@ import type { BriefingJson, BriefingLocale, BriefingSource, MarketFact } from "@
 
 const JOB_NAME = "daily-briefing";
 const LOCALES: BriefingLocale[] = ["zh-CN", "en-US"];
+
+/**
+ * 整条流水线的墙钟预算。
+ *
+ * 两个路由都是 maxDuration=60，而本项目跑在 Vercel Hobby——60 秒是套餐上限、
+ * 不可调（外部触发器见 .github/workflows/cron-tick.yml）。被平台掐断时没有
+ * insert、没有心跳、没有告警：心跳停在旧值，唯一症状是 GitHub Actions 里一个
+ * 红色 step。而 L3/L4/L5 **每一级都在生成步骤之后**，所以超时会绕过整套降级
+ * 架构——兜底稿存在的意义就是保证栏目不断更，它却恰恰在最需要它的场景里够不着。
+ *
+ * 48 秒给流水线，剩下约 12 秒留给冷启动、落库、推送与心跳。
+ */
+const PIPELINE_BUDGET_MS = 48_000;
+
+/**
+ * 剩余预算低于这个数就不再发起新的模型调用，直接落到 L4（兜底稿是纯字符串
+ * 拼接 + 一次 insert，几百毫秒就能跑完）。宁可发一篇朴素的稿，也不要被平台
+ * 掐死在第三次尝试里、什么都没写。
+ */
+const MIN_CALL_BUDGET_MS = 8_000;
 
 export interface BriefingRunResult {
   status: "published" | "fallback" | "skipped" | "failed";
@@ -37,12 +57,18 @@ async function beat(status: "ok" | "error" | "skipped") {
   }
 }
 
-/** 生成一语。失败或不过门槛时换备用模型再试一次（降级阶梯 L1/L2） */
+/**
+ * 生成一语。失败或不过门槛时换备用模型再试一次（降级阶梯 L1/L2）。
+ *
+ * `deadlineMs` 是整条流水线的墙钟终点，中英两语共享同一个终点（它们是并发跑的）。
+ * 每次调用前先看剩余预算：不够一次完整调用就不再尝试，让调用方尽快落到 L4。
+ */
 async function generateOne(
   locale: BriefingLocale,
   sources: BriefingSource[],
   facts: MarketFact[],
-  dateStr: string
+  dateStr: string,
+  deadlineMs: number
 ): Promise<BriefingJson | null> {
   const apiKey = process.env.DEEPSEEK_API_KEY!;
   const prompt = buildBriefingPrompt(sources, facts, locale, dateStr);
@@ -53,7 +79,21 @@ async function generateOne(
   ];
 
   for (const [attempt, model] of models.entries()) {
-    const res = await callDeepSeek({ apiKey, model, prompt });
+    const remaining = deadlineMs - Date.now();
+    if (remaining < MIN_CALL_BUDGET_MS) {
+      await alert(
+        `${locale} 剩余预算 ${Math.max(0, remaining)}ms 不足以再发起第 ${attempt + 1} 次调用，停止重试`
+      );
+      return null;
+    }
+    // 超时取「单次上限」与「剩余预算」的较小者：最后一次尝试不能跨过 deadline，
+    // 否则被平台掐断的又是那条什么都没写的路径。
+    const res = await callDeepSeek({
+      apiKey,
+      model,
+      prompt,
+      timeoutMs: Math.min(DEFAULT_TIMEOUT_MS, remaining),
+    });
     if (!res.ok) {
       await alert(`${locale} 第 ${attempt + 1} 次调用失败(${model}): ${res.error}`);
       continue;
@@ -76,6 +116,9 @@ async function generateOne(
 }
 
 async function runPipeline(nowMs: number): Promise<BriefingRunResult> {
+  // 墙钟终点用 Date.now() 而不是 nowMs：nowMs 是「逻辑当下」（日期、24h 窗口都
+  // 按它算，测试会喂固定值），预算要的是真实流逝时间。
+  const deadlineMs = Date.now() + PIPELINE_BUDGET_MS;
   const dateStr = utcPlus8DateString(nowMs);
   const slug = briefingSlug(dateStr);
   const supabase = createServiceRoleClient();
@@ -126,9 +169,16 @@ async function runPipeline(nowMs: number): Promise<BriefingRunResult> {
     // 若某天 generateOne 内部抛了（现在不会，但它调的东西以后可能变），Promise.all
     // 会让整轮直接判失败，把已经生成好的另一语一起扔掉——恰好绕过 L3。
     const [zhSettled, enSettled] = await Promise.allSettled([
-      generateOne("zh-CN", sources, facts, dateStr),
-      generateOne("en-US", sources, facts, dateStr),
+      generateOne("zh-CN", sources, facts, dateStr, deadlineMs),
+      generateOne("en-US", sources, facts, dateStr, deadlineMs),
     ]);
+    // rejection 原因不能静默丢弃：本文件其他失败模式都会 alert()，
+    // 运维排查「en-US 为什么走了翻译」时必须看得到真正抛出的错误。
+    for (const [i, settled] of [zhSettled, enSettled].entries()) {
+      if (settled.status === "rejected") {
+        await alert(`${LOCALES[i]} 生成过程抛出异常: ${String(settled.reason)}`);
+      }
+    }
     const zh = zhSettled.status === "fulfilled" ? zhSettled.value : null;
     const en = enSettled.status === "fulfilled" ? enSettled.value : null;
 

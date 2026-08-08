@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { callDeepSeek } from "./deepseek";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { callDeepSeek, DEFAULT_TIMEOUT_MS } from "./deepseek";
 import { buildBriefingPrompt } from "./prompt";
 import type { BriefingSource, MarketFact } from "./types";
 
@@ -75,6 +75,62 @@ describe("callDeepSeek", () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ choices: [] }));
     const r = await callDeepSeek({ ...BASE, fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(r.ok).toBe(false);
+  });
+});
+
+// 超时/abort 分支此前零覆盖。它是 C2 的核心：单次调用必须在预算内被掐掉，
+// 否则三次串行尝试会越过路由 maxDuration=60（Vercel Hobby 的套餐上限），
+// 被平台掐断时整套降级阶梯都够不着。
+describe("callDeepSeek — 超时与 abort", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 模拟一个永不返回、只在收到 abort 信号时才 reject 的请求 */
+  function hangingFetch() {
+    return vi.fn((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => {
+          const err = new Error("This operation was aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      })
+    );
+  }
+
+  it("超过 timeoutMs 会 abort 请求并归一成失败结果，而不是挂住", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = hangingFetch();
+    const p = callDeepSeek({
+      ...BASE,
+      timeoutMs: 5_000,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    const r = await p;
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("aborted");
+    const signal = (fetchImpl.mock.calls[0][1] as RequestInit).signal;
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("未到 timeoutMs 前不会 abort", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = hangingFetch();
+    void callDeepSeek({
+      ...BASE,
+      timeoutMs: 5_000,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await vi.advanceTimersByTimeAsync(4_999);
+    const signal = (fetchImpl.mock.calls[0][1] as RequestInit).signal;
+    expect(signal?.aborted).toBe(false);
+  });
+
+  it("缺省超时必须装得进 60 秒的函数上限——两次尝试仍有余量", () => {
+    expect(DEFAULT_TIMEOUT_MS).toBeLessThanOrEqual(25_000);
+    expect(DEFAULT_TIMEOUT_MS * 2).toBeLessThan(60_000);
   });
 });
 

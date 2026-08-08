@@ -11,7 +11,20 @@
 
 const API_URL = "https://api.deepseek.com/chat/completions";
 const DEFAULT_MAX_TOKENS = 3000;
-const DEFAULT_TIMEOUT_MS = 45_000;
+
+/**
+ * 单次调用超时。
+ *
+ * 曾经是 45 秒，而调用方最坏会串行打 3 次（同模型重试一次 + 换模型一次），
+ * 合计 135 秒；承载它的路由 maxDuration=60，且本项目跑在 Vercel Hobby
+ * ——60 秒是套餐上限、加钱以外无法调高。两次尝试就已经越界，被平台掐断时
+ * 没有 insert、没有心跳、没有告警，整套降级阶梯（L3/L4/L5 都在生成步骤之后）
+ * 被直接绕过。
+ *
+ * 降到 22 秒后，配合 run.ts 的墙钟预算，最坏情况能在预算内跑完两次尝试并
+ * 留出落库时间。调用方仍会把「剩余预算」作为上限二次收窄本值。
+ */
+export const DEFAULT_TIMEOUT_MS = 22_000;
 
 export type DeepSeekResult =
   | { ok: true; content: string; finishReason: string | null }

@@ -280,7 +280,15 @@
     "market_overview": {
       "list": "List",
       "orderbook": "Order Book",
-      "trades": "Trades"
+      "trades": "Trades",
+      "category": {
+        "all": "All",
+        "crypto": "Crypto",
+        "commodities": "Commodities",
+        "forex": "Forex",
+        "stocks": "Stocks",
+        "indices": "Indices"
+      }
     },
     "recent_trades": {
       "time": "Time",

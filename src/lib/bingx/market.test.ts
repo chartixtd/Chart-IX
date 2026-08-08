@@ -6,7 +6,7 @@ vi.mock("./client", () => ({
   bingxClient: { publicRequest: (...args: unknown[]) => publicRequest(...args) },
 }));
 
-const { getSpotTicker, getSpotKlines, getFuturesKlines, getFuturesTickers } = await import("./market");
+const { getSpotTicker, getSpotKlines, getFuturesKlines, getFuturesTickers, getFuturesDepth } = await import("./market");
 
 beforeEach(() => {
   publicRequest.mockReset();
@@ -91,6 +91,57 @@ describe("getFuturesKlines", () => {
       "/openApi/swap/v3/quote/klines",
       { symbol: "BTC-USDT", interval: "1h", limit: 100, startTime: undefined, endTime: undefined }
     );
+  });
+
+  // 实测（2026-08-08）：/openApi/swap/v3/quote/klines 返回的是对象数组
+  // {open,high,low,close,volume,time}，不是现货 v1 那种元组数组。之前按元组
+  // 下标取值，parseFloat(undefined) 全是 NaN——合约图表从没真正渲染过数据。
+  it("maps the real object-shaped response (not a tuple array like spot)", async () => {
+    publicRequest.mockResolvedValue([
+      { open: "64975.3", high: "64985.6", low: "64951.0", close: "64974.7", volume: "13.5505", time: 1700000000000 },
+    ]);
+    const result = await getFuturesKlines("BTC-USDT", "1h");
+    expect(result).toEqual([{
+      openTime: 1700000000000,
+      open: 64975.3,
+      high: 64985.6,
+      low: 64951,
+      close: 64974.7,
+      volume: 13.5505,
+      closeTime: 1700003599999,
+      quoteVolume: 13.5505 * 64974.7,
+    }]);
+  });
+});
+
+describe("getFuturesDepth", () => {
+  // 实测（2026-08-08）：合约深度接口的 limit 只接受 5/10/20/50/100/500/1000，
+  // UI 请求的 8（OrderBook 用的档位）会被 BingX 拒成 400——必须向上取整。
+  it("snaps an unsupported limit up to the nearest allowed value", async () => {
+    publicRequest.mockResolvedValue({ bids: [], asks: [] });
+    await getFuturesDepth("BTC-USDT", 8);
+    expect(publicRequest).toHaveBeenCalledWith("/openApi/swap/v2/quote/depth", {
+      symbol: "BTC-USDT",
+      limit: 10,
+    });
+  });
+
+  it("passes an already-valid limit through unchanged", async () => {
+    publicRequest.mockResolvedValue({ bids: [], asks: [] });
+    await getFuturesDepth("BTC-USDT", 20);
+    expect(publicRequest).toHaveBeenCalledWith("/openApi/swap/v2/quote/depth", {
+      symbol: "BTC-USDT",
+      limit: 20,
+    });
+  });
+
+  it("falls back to 1000 when the requested limit exceeds every allowed value", async () => {
+    publicRequest.mockResolvedValue({ bids: [], asks: [] });
+    await getFuturesDepth("BTC-USDT", 5000);
+    expect(publicRequest).toHaveBeenCalledWith("/openApi/swap/v2/quote/depth", {
+      symbol: "BTC-USDT",
+      limit: 1000,
+    });
   });
 });
 

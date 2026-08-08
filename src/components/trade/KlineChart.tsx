@@ -69,6 +69,9 @@ interface KlineChartProps {
   symbol: string;
   interval?: string;
   className?: string;
+  /** K 线走哪个市场的接口取——现货符号在合约市场未必存在（如代币化商品/
+   *  外汇/美股/指数，只在合约侧上架），选错市场会导致取不到数据。 */
+  market?: string;
   /** 进出场成交标记 */
   tradeMarkers?: ChartTradeMarker[];
   /** 进场/止盈/止损/强平等价格线 */
@@ -103,7 +106,7 @@ interface InstanceSeries {
   series: ISeriesApi<SeriesType>;
 }
 
-export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, priceLines }: KlineChartProps) {
+export function KlineChart({ symbol, interval = "1h", className, market = "spot", tradeMarkers, priceLines }: KlineChartProps) {
   const locale = useLocale();
   const t = useTranslations("trade.indicators");
   const chartRef = useRef<HTMLDivElement>(null);
@@ -148,7 +151,7 @@ export function KlineChart({ symbol, interval = "1h", className, tradeMarkers, p
   const rafRef = useRef<number | null>(null);
   const pendingPriceRef = useRef<number | undefined>(undefined);
 
-  const { candles: klines, isLoading, isLoadingMore, hasMore, loadMore, isPlaceholder } = useKlineHistory(symbol, interval);
+  const { candles: klines, isLoading, isLoadingMore, hasMore, loadMore, isPlaceholder } = useKlineHistory(symbol, interval, market);
   // Latest-value refs: let the scroll-triggered pagination subscription avoid
   // resubscribing on every render (loadMore's identity changes as olderCandles
   // grows) — same pattern as appliedRef below.

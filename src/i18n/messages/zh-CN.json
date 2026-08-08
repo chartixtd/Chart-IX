@@ -280,7 +280,15 @@
     "market_overview": {
       "list": "列表",
       "orderbook": "盘口",
-      "trades": "成交"
+      "trades": "成交",
+      "category": {
+        "all": "全部",
+        "crypto": "加密货币",
+        "commodities": "大宗商品",
+        "forex": "外汇",
+        "stocks": "美股",
+        "indices": "指数"
+      }
     },
     "recent_trades": {
       "time": "时间",

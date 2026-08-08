@@ -9,15 +9,17 @@ import {
   memo,
 } from "react";
 import { useTranslations } from "next-intl";
-import { useSpotTickers } from "@/hooks/useMarketData";
+import { useSpotTickers, useFuturesTickers, useFuturesContracts } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { useMarketStore } from "@/stores/market";
 import { useFavoritesStore } from "@/stores/favorites";
+import type { TradeMarketType } from "@/stores/tradePrefs";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { OrderBook } from "@/components/trade/OrderBook";
 import { RecentTrades } from "@/components/trade/RecentTrades";
+import { classifyInstrument, formatInstrumentLabel, INSTRUMENT_CATEGORIES, type InstrumentCategory } from "@/lib/instruments";
 import type { BingXTicker } from "@/types/bingx";
 
 const WS_SUBSCRIBE_LIMIT = 30;
@@ -31,6 +33,10 @@ interface MarketOverviewProps {
   activeSymbol?: string;
   /** 盘口视图里点击某一档价格时回调，价格是解析后的 number */
   onOrderBookPriceClick?: (price: number) => void;
+  /** 当前交易市场。合约市场（"futures"）里混了代币化商品/外汇/美股/指数
+   *  （见 src/lib/instruments.ts），需要换一套交易对来源并按分类过滤；
+   *  现货/模拟盘沿用原来的现货交易对列表。 */
+  market?: TradeMarketType;
 }
 
 // Subscribes to its own symbol's live price — a tick only re-renders this one
@@ -42,12 +48,15 @@ const TickerRow = memo(function TickerRow({
   isActive,
   onSelect,
   measureRef,
+  label,
 }: {
   symbol: string;
   fallback: BingXTicker;
   isActive: boolean;
   onSelect: (symbol: string) => void;
   measureRef?: (el: HTMLDivElement | null) => void;
+  /** 代币化商品/外汇/美股/指数的展示名（如 "XAU/USD"）；不传则显示原始 symbol。 */
+  label?: string;
 }) {
   const live = useMarketStore((s) => s.tickers[symbol]);
   const ticker = live ?? fallback;
@@ -85,7 +94,7 @@ const TickerRow = memo(function TickerRow({
       >
         {isFavorite ? "★" : "☆"}
       </button>
-      <span className="truncate text-left font-medium">{ticker.symbol}</span>
+      <span className="truncate text-left font-medium">{label ?? ticker.symbol}</span>
       <span className="text-right tabular-nums">{formatPrice(Number(ticker.lastPrice))}</span>
       <span
         className={cn(
@@ -110,12 +119,34 @@ const LoadingDummy = memo(function LoadingDummy() {
   );
 });
 
-export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookPriceClick }: MarketOverviewProps) {
+export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookPriceClick, market = "spot" }: MarketOverviewProps) {
   const t = useTranslations("trade");
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "orderbook" | "trades">("list");
-  const { data: tickers, isLoading } = useSpotTickers();
+  const [category, setCategory] = useState<"all" | InstrumentCategory>("all");
+  // 合约市场混了代币化商品/外汇/美股/指数（见 src/lib/instruments.ts），
+  // 这些标的只在合约侧上架，现货交易对列表里查不到——市场是 futures 时必须
+  // 换一套来源，否则它们在选择器里永远不可见。
+  const isFutures = market === "futures";
+  const { data: spotTickers, isLoading: spotLoading } = useSpotTickers(!isFutures);
+  const { data: futuresTickers, isLoading: futuresLoading } = useFuturesTickers(isFutures);
+  const { data: contracts } = useFuturesContracts(isFutures);
+  const tickers = isFutures ? futuresTickers : spotTickers;
+  const isLoading = isFutures ? futuresLoading : spotLoading;
   const favorites = useFavoritesStore((s) => s.favorites);
+
+  // symbol -> 分类 + 展示名，只在合约市场才需要（现货没有这批代币化标的）
+  const instrumentMeta = useMemo(() => {
+    if (!isFutures || !contracts) return null;
+    const map = new Map<string, { category: InstrumentCategory; label: string }>();
+    for (const c of contracts) {
+      map.set(c.symbol, {
+        category: classifyInstrument(c.symbol),
+        label: formatInstrumentLabel(c.symbol, c.displayName),
+      });
+    }
+    return map;
+  }, [isFutures, contracts]);
 
   const wsSymbols = useMemo(() => {
     if (!tickers) return [];
@@ -130,9 +161,17 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
   const searchLower = deferredSearch.toLowerCase();
   const filtered = useMemo(() => {
     if (!tickers) return [];
-    const matches = searchLower
-      ? tickers.filter((t) => t.symbol.toLowerCase().includes(searchLower))
-      : tickers;
+    let matches = tickers;
+    if (isFutures && category !== "all") {
+      matches = matches.filter((tk) => (instrumentMeta?.get(tk.symbol)?.category ?? "crypto") === category);
+    }
+    if (searchLower) {
+      matches = matches.filter((tk) => {
+        if (tk.symbol.toLowerCase().includes(searchLower)) return true;
+        const label = instrumentMeta?.get(tk.symbol)?.label;
+        return label ? label.toLowerCase().includes(searchLower) : false;
+      });
+    }
     // Pin favorited symbols to the top, otherwise keep the incoming (REST) order.
     // 不再按数量裁剪——BingX 现货/合约都有近千个交易对，全部展示，靠下面的
     // 窗口化渲染（只渲染视口内的行）保证长列表滚动流畅。
@@ -140,7 +179,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
     return favSet.size
       ? [...matches].sort((a, b) => Number(favSet.has(b.symbol)) - Number(favSet.has(a.symbol)))
       : matches;
-  }, [tickers, searchLower, favorites]);
+  }, [tickers, searchLower, favorites, isFutures, category, instrumentMeta]);
 
   const handleSelect = useCallback(
     (symbol: string) => onSelectSymbol?.(symbol),
@@ -226,14 +265,30 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
             {t("market_overview.trades")}
           </button>
         </div>
+        {isFutures && viewMode === "list" && (
+          <div className="flex gap-1 overflow-x-auto">
+            {(["all", ...INSTRUMENT_CATEGORIES] as const).map((c) => (
+              <button
+                key={c}
+                onClick={() => setCategory(c)}
+                className={cn(
+                  "shrink-0 rounded-xs px-2 py-1 text-xs font-medium transition-colors",
+                  category === c ? "bg-gold/20 text-gold" : "bg-bg-tertiary text-text-muted hover:text-text-secondary"
+                )}
+              >
+                {t(`market_overview.category.${c}`)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {viewMode === "orderbook" ? (
         <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
-          <OrderBook symbol={activeSymbol} onPriceClick={onOrderBookPriceClick} />
+          <OrderBook symbol={activeSymbol} onPriceClick={onOrderBookPriceClick} market={isFutures ? "futures" : "spot"} />
         </div>
       ) : viewMode === "trades" ? (
         <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
-          <RecentTrades symbol={activeSymbol} active={viewMode === "trades"} />
+          <RecentTrades symbol={activeSymbol} active={viewMode === "trades"} market={isFutures ? "futures" : "spot"} />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -260,6 +315,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
                   isActive={ticker.symbol === activeSymbol}
                   onSelect={handleSelect}
                   measureRef={i === 0 ? measureFirstRow : undefined}
+                  label={instrumentMeta?.get(ticker.symbol)?.label}
                 />
               ))}
               <div style={{ height: bottomPadding }} />

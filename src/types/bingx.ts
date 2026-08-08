@@ -110,6 +110,13 @@ export interface BingXContract {
   status: number;
   apiStateOpen: string;
   apiStateClose: string;
+  /**
+   * 人类可读名称，如 "GOLD(XAU)-USDT"、"EURUSD-USDT"、"NASDAQ100-USDT"。
+   * 只有 BingX 的代币化商品/外汇/美股/指数合约（symbol 带 NC{CO,FX,SK,SI} 前缀，
+   * 见 src/lib/instruments.ts）才需要它——这些合约的原始 symbol
+   * （如 "NCCOGOLD2USD-USDT"）不适合直接展示给用户。真正的加密永续没有这个字段。
+   */
+  displayName?: string;
 }
 
 /** 合约未平仓量 */

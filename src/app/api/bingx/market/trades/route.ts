@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSpotTrades } from "@/lib/bingx/market";
+import { getSpotTrades, getFuturesTrades } from "@/lib/bingx/market";
 import {
   checkMarketRateLimit, rateLimitedResponse,
   clampLimit, isValidSymbol, invalidSymbolResponse,
@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const symbol = searchParams.get("symbol");
     const limit = clampLimit(searchParams.get("limit"), 20, 200);
+    const market = searchParams.get("market") || "spot";
 
     if (!symbol) {
       return NextResponse.json(
@@ -22,7 +23,9 @@ export async function GET(request: NextRequest) {
     }
     if (!isValidSymbol(symbol)) return invalidSymbolResponse();
 
-    const data = await getSpotTrades(symbol, limit);
+    const data = market === "futures"
+      ? await getFuturesTrades(symbol, limit)
+      : await getSpotTrades(symbol, limit);
     // Client polls every 3s (see useRecentTrades).
     return withMarketCache({ success: true, data }, 2, 5);
   } catch (error) {

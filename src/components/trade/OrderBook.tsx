@@ -10,11 +10,13 @@ interface OrderBookProps {
   symbol: string;
   /** 点击某一行价格时回调，价格是解析后的 number。不传则价格行不可点击。 */
   onPriceClick?: (price: number) => void;
+  /** REST 回落请求走哪个市场的深度接口；WebSocket 主路径本身不区分市场。 */
+  market?: "spot" | "futures";
 }
 
-export const OrderBook = memo(function OrderBook({ symbol, onPriceClick }: OrderBookProps) {
+export const OrderBook = memo(function OrderBook({ symbol, onPriceClick, market = "spot" }: OrderBookProps) {
   const t = useTranslations("trading");
-  const { data, isLoading, isPlaceholderData } = useOrderBook(symbol, 8);
+  const { data, isLoading, isPlaceholderData } = useOrderBook(symbol, 8, market);
 
   if (isLoading) {
     return (

@@ -233,7 +233,15 @@
       "last_price": "Harga Terkini"
     },
     "market_overview": {
-      "trades": "Dagangan"
+      "trades": "Dagangan",
+      "category": {
+        "all": "Semua",
+        "crypto": "Kripto",
+        "commodities": "Komoditi",
+        "forex": "Forex",
+        "stocks": "Saham",
+        "indices": "Indeks"
+      }
     },
     "recent_trades": {
       "time": "Masa",

@@ -14,6 +14,8 @@ interface RecentTradesProps {
   symbol: string;
   /** 这个面板当前是否可见（标签是否选中）——不可见时不订阅 WebSocket。 */
   active: boolean;
+  /** REST 回落请求走哪个市场的成交接口；WebSocket 主路径本身不区分市场。 */
+  market?: "spot" | "futures";
 }
 
 function formatTime(ms: number): string {
@@ -23,14 +25,14 @@ function formatTime(ms: number): string {
     .join(":");
 }
 
-export const RecentTrades = memo(function RecentTrades({ symbol, active }: RecentTradesProps) {
+export const RecentTrades = memo(function RecentTrades({ symbol, active, market = "spot" }: RecentTradesProps) {
   const t = useTranslations("trade.recent_trades");
   const locale = useLocale();
   const auth = useAuth();
 
   const canView = canViewTradeTape(auth.tier);
   const enabled = active && canView;
-  const { data, isLoading } = useRecentTrades(symbol, enabled);
+  const { data, isLoading } = useRecentTrades(symbol, enabled, 20, market);
 
   // Pro 权限未就绪（auth.loading）时不显示锁——避免 Pro 用户刷新页面时闪一下锁定态。
   if (!auth.loading && !canView) {

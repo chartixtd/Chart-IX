@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSpotDepth } from "@/lib/bingx/market";
+import { getSpotDepth, getFuturesDepth } from "@/lib/bingx/market";
 import {
   checkMarketRateLimit, rateLimitedResponse,
   clampLimit, isValidSymbol, invalidSymbolResponse,
@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const symbol = searchParams.get("symbol");
     const limit = clampLimit(searchParams.get("limit"), 10, 100);
+    const market = searchParams.get("market") || "spot";
 
     if (!symbol) {
       return NextResponse.json(
@@ -22,7 +23,9 @@ export async function GET(request: NextRequest) {
     }
     if (!isValidSymbol(symbol)) return invalidSymbolResponse();
 
-    const data = await getSpotDepth(symbol, limit);
+    const data = market === "futures"
+      ? await getFuturesDepth(symbol, limit)
+      : await getSpotDepth(symbol, limit);
     // Client polls every 2s (see useOrderBook) — a 1s CDN window still cuts
     // concurrent-viewer load meaningfully without staling the book.
     return withMarketCache({ success: true, data }, 1, 3);

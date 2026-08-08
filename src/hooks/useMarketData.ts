@@ -6,7 +6,7 @@ import { useMarketStore } from "@/stores/market";
 import { useBingXDepth, useBingXTrades } from "@/hooks/useBingXWebSocket";
 import { trimDepth } from "@/lib/bingx/depth";
 import { SCREENER_REFRESH_MS } from "@/lib/screener-scoring";
-import type { BingXSymbol, BingXTicker, BingXKline, BingXDepth, BingXTrade, BingXOpenInterest, BingXFundingRate } from "@/types/bingx";
+import type { BingXSymbol, BingXTicker, BingXKline, BingXDepth, BingXTrade, BingXOpenInterest, BingXFundingRate, BingXContract } from "@/types/bingx";
 
 async function fetchApi<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(`/api/bingx/market/${endpoint}`, window.location.origin);
@@ -30,13 +30,14 @@ export function useSpotSymbols(symbol?: string) {
 }
 
 // 24h行情 (批量) — 仅提供列表结构/排序，实时价格由各行自行订阅 WebSocket store
-export function useSpotTickers() {
+export function useSpotTickers(enabled = true) {
   return useQuery({
     queryKey: ["bingx", "tickers", "spot"],
     queryFn: () => fetchApi<BingXTicker[]>("ticker"),
     // WebSocket 已实时推送价格，这里只需低频刷新以捕获新上架/下架的交易对
     refetchInterval: 30_000,
     staleTime: 10_000,
+    enabled,
   });
 }
 
@@ -76,12 +77,24 @@ export function useFuturesTicker(symbol: string) {
 
 // 合约批量行情 —— screener 专用。全市场几百个合约的快照体积不小，
 // 且 screener 本身按小时重筛，所以刷新节奏跟 screener 对齐而不是跟现货列表对齐。
-export function useFuturesTickers() {
+export function useFuturesTickers(enabled = true) {
   return useQuery({
     queryKey: ["bingx", "tickers", "futures"],
     queryFn: () => fetchApi<BingXTicker[]>("ticker", { market: "futures" }),
     refetchInterval: SCREENER_REFRESH_MS,
     staleTime: SCREENER_REFRESH_MS / 2,
+    enabled,
+  });
+}
+
+// 合约列表（含代币化商品/外汇/美股/指数的 displayName）—— 上架/下架、
+// displayName 变化都很少见，长 staleTime 避免每次打开交易对列表都重新请求。
+export function useFuturesContracts(enabled = true) {
+  return useQuery({
+    queryKey: ["bingx", "contracts", "futures"],
+    queryFn: () => fetchApi<BingXContract[]>("symbols", { market: "futures" }),
+    staleTime: 5 * 60_000,
+    enabled,
   });
 }
 
@@ -100,7 +113,7 @@ export function useKlines(symbol: string, interval = "1h", market = "spot") {
 // WS 的 depth20 只能服务 limit ≤ 20；更深的请求继续走 REST。
 const WS_DEPTH_LEVELS = 20;
 
-export function useOrderBook(symbol: string, limit = 10) {
+export function useOrderBook(symbol: string, limit = 10, market: "spot" | "futures" = "spot") {
   const canUseWs = !!symbol && limit <= WS_DEPTH_LEVELS;
   useBingXDepth(canUseWs ? symbol : null);
 
@@ -111,8 +124,8 @@ export function useOrderBook(symbol: string, limit = 10) {
   const useWs = canUseWs && wsConnected && !!wsEntry;
 
   const query = useQuery({
-    queryKey: ["bingx", "depth", symbol, limit],
-    queryFn: () => fetchApi<BingXDepth>("depth", { symbol, limit: String(limit) }),
+    queryKey: ["bingx", "depth", market, symbol, limit],
+    queryFn: () => fetchApi<BingXDepth>("depth", { symbol, limit: String(limit), market }),
     refetchInterval: useWs ? false : 2_000,
     staleTime: 1_000,
     enabled: !!symbol && !useWs,
@@ -136,7 +149,7 @@ export function useOrderBook(symbol: string, limit = 10) {
 // 最新成交 —— WS 实时推送优先，断线/无数据/未启用时回落 REST 轮询。
 // enabled 由调用方控制：只有面板可见且用户有权限时才应为 true——成交推送约
 // 2 次/秒且每次产生新数组引用，不可见面板保持订阅会造成无谓重渲染。
-export function useRecentTrades(symbol: string, enabled: boolean, limit = 20) {
+export function useRecentTrades(symbol: string, enabled: boolean, limit = 20, market: "spot" | "futures" = "spot") {
   useBingXTrades(enabled ? symbol : null);
 
   const wsConnected = useMarketStore((s) => s.wsConnected);
@@ -144,8 +157,8 @@ export function useRecentTrades(symbol: string, enabled: boolean, limit = 20) {
   const useWs = enabled && wsConnected && !!wsTrades && wsTrades.length > 0;
 
   const query = useQuery({
-    queryKey: ["bingx", "trades", symbol, limit],
-    queryFn: () => fetchApi<BingXTrade[]>("trades", { symbol, limit: String(limit) }),
+    queryKey: ["bingx", "trades", market, symbol, limit],
+    queryFn: () => fetchApi<BingXTrade[]>("trades", { symbol, limit: String(limit), market }),
     refetchInterval: useWs ? false : 3_000,
     staleTime: 1_000,
     enabled: enabled && !!symbol && !useWs,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, memo, useCallback, useEffect } from "react";
+import { useState, memo, useCallback, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
@@ -68,7 +68,8 @@ const FuturesWalletSummary = dynamic(
 import { FearGreedIndex } from "@/components/trade/FearGreedIndex";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { useSpotTicker } from "@/hooks/useMarketData";
+import { useSpotTicker, useFuturesTicker, useFuturesContracts } from "@/hooks/useMarketData";
+import { formatInstrumentLabel } from "@/lib/instruments";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { usePriceAlertsStore } from "@/stores/priceAlerts";
 import { useChartOverlay } from "@/hooks/useChartOverlay";
@@ -104,8 +105,21 @@ const TickerBar = memo(function TickerBar({
   authLoading: boolean;
 }) {
   const t = useTranslations("trade");
-  const { data: ticker } = useSpotTicker(symbol);
+  const isFuturesMarket = market === "futures";
+  // 合约里混了代币化商品/外汇/美股/指数（见 src/lib/instruments.ts），这些
+  // symbol 在现货侧根本不存在——市场是 futures 时必须用合约 ticker，否则现货
+  // 请求直接 404/502，顶部价格栏对这些标的永远显示不出来。
+  const { data: spotTicker } = useSpotTicker(symbol);
+  const { data: futuresTicker } = useFuturesTicker(isFuturesMarket ? symbol : "");
+  const ticker = isFuturesMarket ? futuresTicker : spotTicker;
   const isPositive = ticker ? parseFloat(ticker.priceChangePercent) >= 0 : false;
+
+  const { data: futuresContracts } = useFuturesContracts(isFuturesMarket);
+  const displaySymbol = useMemo(() => {
+    if (!isFuturesMarket) return symbol;
+    const displayName = futuresContracts?.find((c) => c.symbol === symbol)?.displayName;
+    return formatInstrumentLabel(symbol, displayName);
+  }, [isFuturesMarket, futuresContracts, symbol]);
 
   return (
     <div className="flex items-center gap-4 border-b border-border-default px-4 py-3 overflow-x-auto">
@@ -171,7 +185,7 @@ const TickerBar = memo(function TickerBar({
         onClick={onPickSymbol}
         className={cn("flex shrink-0 items-center gap-3", onPickSymbol && "lg:pointer-events-none")}
       >
-        <h2 className="font-sans text-lg font-semibold tracking-tight">{symbol}</h2>
+        <h2 className="font-sans text-lg font-semibold tracking-tight">{displaySymbol}</h2>
         {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">{t("mobile_symbol_picker")} ▾</span>}
       </button>
       {ticker && (
@@ -499,6 +513,7 @@ export default function TradePage() {
           symbol={symbol}
           interval={interval}
           className="h-full"
+          market={market}
           tradeMarkers={tradeMarkers}
           priceLines={priceLines}
         />
@@ -536,6 +551,7 @@ export default function TradePage() {
               onSelectSymbol={handleSymbolSelect}
               activeSymbol={symbol}
               onOrderBookPriceClick={handleOrderBookPriceClick}
+              market={market}
             />
           </Panel>
 
@@ -601,9 +617,9 @@ export default function TradePage() {
                   </button>
                 </div>
                 {mobileBookTab === "orderbook" ? (
-                  <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} />
+                  <OrderBook symbol={symbol} onPriceClick={handleOrderBookPriceClick} market={market === "futures" ? "futures" : "spot"} />
                 ) : (
-                  <RecentTrades symbol={symbol} active={mobileBookTab === "trades"} />
+                  <RecentTrades symbol={symbol} active={mobileBookTab === "trades"} market={market === "futures" ? "futures" : "spot"} />
                 )}
               </div>
             )}
@@ -657,7 +673,7 @@ export default function TradePage() {
         className="lg:hidden"
       >
         <div className="-mx-6 -mt-6 h-[70dvh]">
-          <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} />
+          <MarketOverview onSelectSymbol={handleSymbolSelect} activeSymbol={symbol} market={market} />
         </div>
       </Modal>
     </div>

@@ -229,3 +229,84 @@
     animation: shimmer 2s linear infinite;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * 文章正文排版
+ *
+ * 详情页一直写着 `prose prose-sm`，但本项目**没有装** @tailwindcss/typography，
+ * 那两个类名从来就是空的；同时 Tailwind 的 preflight 会清掉 h2/p/ul 的默认外边距。
+ * 结果是正文里所有段落、小标题、列表全部挤成一坨——早报上线后第一眼看到的
+ * 「完全不像文章」就是这么来的。
+ *
+ * 这里按项目自己的色板补一套，作用于所有文章（含后台手写的），不引入新依赖。
+ * ------------------------------------------------------------------------- */
+@layer components {
+  .prose-custom > div > * + * {
+    margin-top: 1.15em;
+  }
+
+  .prose-custom h2 {
+    @apply mt-10 border-b border-border-default pb-2 text-xl font-semibold tracking-tight text-text-primary lg:text-2xl;
+  }
+
+  .prose-custom h3 {
+    @apply mt-8 text-base font-semibold text-text-primary lg:text-lg;
+  }
+
+  /* 紧跟小标题的段落/列表不该再叠一层大间距 */
+  .prose-custom h2 + *,
+  .prose-custom h3 + * {
+    margin-top: 0.6em;
+  }
+
+  .prose-custom p {
+    @apply text-text-primary;
+    text-wrap: pretty;
+  }
+
+  .prose-custom ul,
+  .prose-custom ol {
+    @apply space-y-2 pl-5;
+  }
+
+  .prose-custom ul {
+    @apply list-disc;
+  }
+
+  .prose-custom ol {
+    @apply list-decimal;
+  }
+
+  .prose-custom li::marker {
+    @apply text-text-muted;
+  }
+
+  .prose-custom strong {
+    @apply font-semibold text-text-primary;
+  }
+
+  .prose-custom a {
+    @apply text-gold underline decoration-gold/40 underline-offset-2 transition-colors hover:decoration-gold;
+  }
+
+  .prose-custom blockquote {
+    @apply border-l-2 border-gold/40 pl-4 text-text-secondary;
+  }
+
+  .prose-custom code {
+    @apply rounded-sm bg-bg-tertiary px-1.5 py-0.5 text-[0.9em] text-text-primary;
+  }
+
+  .prose-custom pre {
+    @apply overflow-x-auto rounded-sm border border-border-default bg-bg-tertiary p-4;
+  }
+
+  .prose-custom hr {
+    @apply my-8 border-border-default;
+  }
+
+  /* 结尾免责声明：明显弱于正文，但仍可读 */
+  .prose-custom em {
+    @apply text-text-secondary;
+  }
+}

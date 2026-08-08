@@ -334,8 +334,8 @@ async function runPipeline(
     if (zh && en) {
       title["zh-CN"] = zh.title;
       title["en-US"] = en.title;
-      content["zh-CN"] = renderBriefingHtml(zh, facts, sources, "zh-CN");
-      content["en-US"] = renderBriefingHtml(en, facts, sources, "en-US");
+      content["zh-CN"] = renderBriefingHtml(zh, facts, "zh-CN");
+      content["en-US"] = renderBriefingHtml(en, facts, "en-US");
     } else if (zh || en) {
       // L3：两语中恰有一语成功，另一语走翻译通道。
       // en-US 缺失会让英文与马来文读者看到空白正文，绝不能留空——但「留空」的
@@ -353,7 +353,7 @@ async function runPipeline(
       // 英文」取代了原先的「兜底中文 + 兜底英文」——前者严格更好，而兜底稿的
       // 标题与正文本来就按 locale 分别生成，混搭是安全的。
       title[okLocale] = good.title;
-      content[okLocale] = renderBriefingHtml(good, facts, sources, okLocale);
+      content[okLocale] = renderBriefingHtml(good, facts, okLocale);
 
       // 翻译同样受墙钟预算约束：生成阶段可能已经吃掉大半预算，此时宁可直接发
       // 兜底稿，也不要在翻译途中被平台掐断而什么都没写。
@@ -389,7 +389,7 @@ async function runPipeline(
         // 用翻译后的**字段**重新渲染，而不是翻译渲染好的 HTML：小标题、括号
         // 样式、免责声明都会正确本地化，价格与链接原样不动。
         title[badLocale] = translated.title;
-        content[badLocale] = renderBriefingHtml(translated, facts, sources, badLocale);
+        content[badLocale] = renderBriefingHtml(translated, facts, badLocale);
         note(diag, `${badLocale} 生成失败，已用翻译通道兜住`);
       } else {
         degraded = true;

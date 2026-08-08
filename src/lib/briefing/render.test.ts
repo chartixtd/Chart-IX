@@ -1,16 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { renderBriefingHtml, escapeHtml } from "./render";
-import { MAX_SOURCES_IN_PROMPT } from "./prompt";
 import { sanitizeArticleHtml } from "@/lib/sanitize-html";
-import type { BriefingJson, MarketFact, BriefingSource } from "./types";
+import type { BriefingJson, MarketFact } from "./types";
 
 const FACTS: MarketFact[] = [
   { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
   { symbol: "XAUT-USDT", label: "XAUT", lastPrice: 4325.51, change24hPct: -1.37 },
-];
-
-const SOURCES: BriefingSource[] = [
-  { title: "Bitcoin holds", url: "https://example.com/a", source: "CoinDesk", publishedAt: 1, summary: "" },
 ];
 
 const JSON_INPUT: BriefingJson = {
@@ -27,7 +22,7 @@ describe("escapeHtml", () => {
 });
 
 describe("renderBriefingHtml", () => {
-  const html = renderBriefingHtml(JSON_INPUT, FACTS, SOURCES, "zh-CN");
+  const html = renderBriefingHtml(JSON_INPUT, FACTS, "zh-CN");
 
   it("渲染要闻要点", () => {
     expect(html).toContain("要点一");
@@ -52,9 +47,18 @@ describe("renderBriefingHtml", () => {
     expect(html).toContain("-1.37%");
   });
 
-  it("来源渲染为链接", () => {
-    expect(html).toContain('href="https://example.com/a"');
-    expect(html).toContain("CoinDesk");
+  // 正常稿刻意不列信息来源：一串外链是噪音，而源站标题全是英文，
+  // 挂在中文正文后面就成了中英混排。分析本身已经是对这些新闻的提炼。
+  it("正常稿不列信息来源，也不含任何外链", () => {
+    expect(html).not.toContain("信息来源");
+    expect(html).not.toContain("<a href");
+    expect(html).not.toContain("CoinDesk");
+  });
+
+  it("英文正常稿同样不列来源", () => {
+    const en = renderBriefingHtml(JSON_INPUT, FACTS, "en-US");
+    expect(en).not.toContain("Sources");
+    expect(en).not.toContain("<a href");
   });
 
   it("附免责声明", () => {
@@ -66,13 +70,13 @@ describe("renderBriefingHtml", () => {
       ...JSON_INPUT,
       analysis: { ...JSON_INPUT.analysis, overview: "<img src=x onerror=alert(1)>" },
     };
-    const out = renderBriefingHtml(evil, FACTS, SOURCES, "zh-CN");
+    const out = renderBriefingHtml(evil, FACTS, "zh-CN");
     expect(out).not.toContain("<img");
     expect(out).toContain("&lt;img");
   });
 
   it("行情为空时不渲染行情区块，且不抛错", () => {
-    const out = renderBriefingHtml(JSON_INPUT, [], SOURCES, "zh-CN");
+    const out = renderBriefingHtml(JSON_INPUT, [], "zh-CN");
     expect(out).toContain("总览");
   });
 
@@ -82,7 +86,6 @@ describe("renderBriefingHtml", () => {
     expect(clean).toContain("要点一");
     expect(clean).toContain("$64,959.52");
     expect(clean).toContain("不构成投资建议");
-    expect(clean).toContain('href="https://example.com/a"');
   });
 
   it("sanitizer 会强制给链接加 rel 并剥掉 javascript 协议", () => {
@@ -92,7 +95,7 @@ describe("renderBriefingHtml", () => {
   });
 
   it("英文稿使用英文免责声明", () => {
-    const en = renderBriefingHtml(JSON_INPUT, FACTS, SOURCES, "en-US");
+    const en = renderBriefingHtml(JSON_INPUT, FACTS, "en-US");
     expect(en).toContain("not investment advice");
   });
 
@@ -101,7 +104,7 @@ describe("renderBriefingHtml", () => {
   });
 
   it("英文稿行情用半角括号，不混排全角", () => {
-    const en = renderBriefingHtml(JSON_INPUT, FACTS, SOURCES, "en-US");
+    const en = renderBriefingHtml(JSON_INPUT, FACTS, "en-US");
     expect(en).toContain("(24h +0.92%)");
     expect(en).not.toContain("（");
     expect(en).not.toContain("）");
@@ -109,28 +112,8 @@ describe("renderBriefingHtml", () => {
 
   // I1：sources.ts 允许每源 25 条 × 8 源 = 最多 200 条过 24h 过滤到这里，
   // 而 prompt 只喂了前 40 条。列出的来源必须正好是分析真正看过的那些。
-  it("来源条数按 MAX_SOURCES_IN_PROMPT 截断", () => {
-    const many: BriefingSource[] = Array.from({ length: 150 }, (_, i) => ({
-      title: `news-${i}`,
-      url: `https://example.com/${i}`,
-      source: "S",
-      publishedAt: 150 - i,
-      summary: "",
-    }));
-    const out = renderBriefingHtml(JSON_INPUT, FACTS, many, "zh-CN");
-    expect(out).toContain(`news-${MAX_SOURCES_IN_PROMPT - 1}`);
-    expect(out).not.toContain(`news-${MAX_SOURCES_IN_PROMPT}`);
-    expect(out.match(/<a href="https:\/\/example\.com\//g)).toHaveLength(MAX_SOURCES_IN_PROMPT);
-  });
+
 
   // 源站 url 是第三方数据，必须走完整渲染路径验证而不只是手写 HTML
-  it("来源 url 携带 javascript 伪协议时，经渲染与 sanitize 后不残留", () => {
-    const evilSources: BriefingSource[] = [
-      { title: "evil", url: "javascript:alert(1)", source: "X", publishedAt: 1, summary: "" },
-    ];
-    const clean = sanitizeArticleHtml(
-      renderBriefingHtml(JSON_INPUT, FACTS, evilSources, "zh-CN")
-    );
-    expect(clean).not.toContain("javascript:");
-  });
+  // 第三方 url 进入 HTML 的路径现在只剩兜底稿，对应覆盖在 fallback.test.ts
 });

@@ -1,4 +1,3 @@
-import { MAX_SOURCES_IN_PROMPT } from "./prompt";
 import type { BriefingJson, BriefingLocale, BriefingSource, MarketFact } from "./types";
 
 export const DISCLAIMER: Record<BriefingLocale, string> = {
@@ -14,14 +13,12 @@ const COPY: Record<BriefingLocale, Record<string, string>> = {
     analysis: "市场解读",
     snapshot: "行情快照",
     watchlist: "今日关注",
-    sources: "信息来源",
   },
   "en-US": {
     headlines: "Last 24 Hours",
     analysis: "Market Read",
     snapshot: "Market Snapshot",
     watchlist: "On the Radar",
-    sources: "Sources",
   },
 };
 
@@ -80,7 +77,6 @@ export function renderSourceList(sources: BriefingSource[]): string {
 export function renderBriefingHtml(
   b: BriefingJson,
   facts: MarketFact[],
-  sources: BriefingSource[],
   locale: BriefingLocale
 ): string {
   const c = COPY[locale];
@@ -113,15 +109,15 @@ export function renderBriefingHtml(
     );
   }
 
-  // 来源按 MAX_SOURCES_IN_PROMPT 截断：sources.ts 允许每源 25 条 × 8 源，过完
-  // 24h 过滤后最多 200 条能到这里，而 prompt 只喂了前 40 条。不截断的话每篇早报
-  // 末尾会挂 100-150 条链接，其中绝大多数模型根本没读过——既是内容质量与 SEO
-  // 问题（每天 100+ 外链），也和兜底稿自己写的「再多读者也不会看」相互矛盾。
-  if (sources.length > 0) {
-    parts.push(`<h2>${c.sources}</h2>`);
-    parts.push(renderSourceList(sources.slice(0, MAX_SOURCES_IN_PROMPT)));
-  }
-
+  // 正常稿**不列信息来源**。
+  //
+  // 原本每篇末尾挂着几十条源站链接。上线后看实际效果，它有两个问题：一是读者
+  // 要的是读完就懂的简报，一串外链只是噪音；二是源站标题全是英文，挂在中文
+  // 正文后面就成了中英混排，观感很差。分析本身已经是对这些新闻的提炼，
+  // 逐条列出反而削弱了它。
+  //
+  // 兜底稿是另一回事：那里的新闻标题**就是内容本体**（没有 AI 判断可给），
+  // 所以 fallback.ts 仍然列出来。
   parts.push(`<hr>`);
   parts.push(`<p><em>${escapeHtml(DISCLAIMER[locale])}</em></p>`);
 

@@ -418,13 +418,15 @@ describe("runDailyBriefing — L3 翻译通道", () => {
 
     await runDailyBriefing(NOW);
     const en = db.inserted[0].content["en-US"];
+    // 小标题是渲染器按 locale 产出的，不是翻译器翻出来的——它们出现即证明
+    // 走的是「翻字段 → 重新渲染」，而不是把整篇 HTML 丢进翻译器
     expect(en).toContain("Market Read");
-    expect(en).toContain("Sources");
+    expect(en).toContain("Last 24 Hours");
+    expect(en).toContain("Market Snapshot");
     expect(en).toContain("(24h +0.92%)");
     expect(en).not.toContain("（");
-    // 价格与链接不经过翻译器，原样保留
+    // 价格不经过翻译器，原样保留
     expect(en).toContain("$64,959.52");
-    expect(en).toContain('href="https://example.com/0"');
     // HTML 整篇没有被丢进翻译器
     for (const call of translateText.mock.calls) {
       expect(call[0]).not.toContain("<");

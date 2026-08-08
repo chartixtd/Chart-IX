@@ -108,4 +108,34 @@ describe("fetchRssFeed", () => {
       "https://example.com/feed feed responded 503"
     );
   });
+
+  // 早报把这个函数放上了无人值守的关键路径：一个卡住的源在 undici 默认的
+  // 300 秒超时下能吃掉整个 60 秒函数预算，落进「无文章、无心跳、无告警」。
+  it("带超时 signal——卡住的源不能拖垮整轮抓取", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("<rss></rss>", { status: 200 }));
+    vi.stubGlobal("fetch", fetchImpl);
+    await fetchRssFeed("https://example.com/feed", "CoinDesk");
+    const signal = (fetchImpl.mock.calls[0][1] as RequestInit).signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
+  });
+
+  it("超时触发后 fetch 抛出，交给上层 allSettled 记为失败", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+        })
+      )
+    );
+    // 用一个立即触发的 signal 替身验证传播路径，而不是真等 8 秒
+    const original = AbortSignal.timeout;
+    AbortSignal.timeout = () => original.call(AbortSignal, 0);
+    try {
+      await expect(fetchRssFeed("https://example.com/feed", "CoinDesk")).rejects.toThrow();
+    } finally {
+      AbortSignal.timeout = original;
+    }
+  });
 });

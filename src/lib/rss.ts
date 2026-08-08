@@ -15,6 +15,19 @@ export interface RssItem {
 
 const DEFAULT_SUMMARY_MAX_LEN = 220;
 
+/**
+ * 单个源的抓取超时。
+ *
+ * 原先没有任何 AbortSignal，undici 默认的 header/body 超时是 300 秒。
+ * 以前只有带 TTL 缓存的资讯页在调它，慢一次是可接受的；每日早报把它放上了
+ * 无人值守的关键路径：fetchBriefingSources 用 allSettled 等**全部** 8 个源，
+ * 一个卡住的源就能在生成还没开始前吃掉整个 60 秒函数预算，落进那条
+ * 「无文章、无心跳、无告警」的被杀路径。
+ *
+ * 8 秒对一个 RSS 源足够宽松，卡住的源会被 allSettled 记为 rejected 并跳过。
+ */
+const FEED_TIMEOUT_MS = 8_000;
+
 function decodeEntities(str: string): string {
   return str
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
@@ -94,6 +107,7 @@ export async function fetchRssFeed(
     headers: { "User-Agent": "Mozilla/5.0 (compatible; Chart-IX/1.0)" },
     // RSS 源本身不带 Next 缓存语义，交给上层的 TTL 缓存统一管
     cache: "no-store",
+    signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`${label ?? url} feed responded ${res.status}`);
   return parseRssItems(await res.text(), summaryMaxLen);

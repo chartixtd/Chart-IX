@@ -12,6 +12,11 @@ export function utcPlus8DateString(nowMs: number): string {
   return new Date(nowMs + UTC_PLUS_8_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/** 返回 UTC+8 时区下的小时（0-23）。用于早报的发布时间窗闸门 */
+export function utcPlus8Hour(nowMs: number): number {
+  return new Date(nowMs + UTC_PLUS_8_OFFSET_MS).getUTCHours();
+}
+
 /** 文章 slug。articles.slug 有 UNIQUE 约束，这也是本功能的幂等闸门 */
 export function briefingSlug(dateStr: string): string {
   return `daily-briefing-${dateStr}`;

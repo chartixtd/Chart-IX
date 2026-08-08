@@ -3,7 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
 import { buildContentMessage } from "@/lib/push/messages";
 import { translateBriefingJson } from "@/lib/briefing/translate-json";
-import { briefingSlug, utcPlus8DateString } from "@/lib/briefing/date";
+import { briefingSlug, utcPlus8DateString, utcPlus8Hour } from "@/lib/briefing/date";
 import { fetchBriefingSources, MIN_SOURCE_ITEMS } from "@/lib/briefing/sources";
 import { fetchMarketFacts } from "@/lib/briefing/market-facts";
 import { buildBriefingPrompt } from "@/lib/briefing/prompt";
@@ -37,10 +37,29 @@ const PIPELINE_BUDGET_MS = 48_000;
  */
 const MIN_CALL_BUDGET_MS = 8_000;
 
+/**
+ * 发布时间窗（UTC+8 小时，闭区间）。
+ *
+ * 闸门放在流水线里，**不依赖外部触发器怎么接线**：承载它的 GitHub Actions job
+ * 本身每 10 分钟 tick 一次，而给某个 job 再加一条 schedule 并不能限定其中某个
+ * step，那个 step 会在每天 144 次 tick 上全部触发。流水线内部若没有小时闸门，
+ * UTC+8 日期一翻篇（UTC 16:00）的第一次 tick 就会发文——日期正确，但当地时间
+ * 约 00:05 发布的"早报"。
+ *
+ * 幂等闸门保证窗口内打多少次都只出一篇。
+ */
+const PUBLISH_HOUR_START = 8;
+const PUBLISH_HOUR_END = 11;
+
 export interface BriefingRunResult {
   status: "published" | "fallback" | "skipped" | "failed";
   slug: string;
   detail?: string;
+}
+
+export interface BriefingRunOptions {
+  /** 后台手动触发用：绕过发布时间窗闸门，否则白天没法调试与补发 */
+  ignoreSchedule?: boolean;
 }
 
 /** 心跳：让「没有文章」可以和「任务根本没跑」区分开 */
@@ -115,12 +134,24 @@ async function generateOne(
   return null;
 }
 
-async function runPipeline(nowMs: number): Promise<BriefingRunResult> {
+async function runPipeline(
+  nowMs: number,
+  options: BriefingRunOptions
+): Promise<BriefingRunResult> {
   // 墙钟终点用 Date.now() 而不是 nowMs：nowMs 是「逻辑当下」（日期、24h 窗口都
   // 按它算，测试会喂固定值），预算要的是真实流逝时间。
   const deadlineMs = Date.now() + PIPELINE_BUDGET_MS;
   const dateStr = utcPlus8DateString(nowMs);
   const slug = briefingSlug(dateStr);
+
+  // ⓪ 发布时间窗。放在最前面：窗口外的 tick 一天有 130+ 次，任何更贵的检查
+  //    （包括缺环境变量的告警）都不该被它们触发。
+  const hour = utcPlus8Hour(nowMs);
+  if (!options.ignoreSchedule && (hour < PUBLISH_HOUR_START || hour > PUBLISH_HOUR_END)) {
+    await beat("skipped");
+    return { status: "skipped", slug, detail: `UTC+8 ${hour} 时不在发布窗口内` };
+  }
+
   const supabase = createServiceRoleClient();
 
   const authorId = process.env.BRIEFING_AUTHOR_ID;
@@ -314,9 +345,12 @@ async function runPipeline(nowMs: number): Promise<BriefingRunResult> {
  * 两个调用方（cron 路由与后台手动触发）因此都不必各写一遍 try/catch，
  * 且任何意外路径都保证留下心跳与告警。
  */
-export async function runDailyBriefing(nowMs: number): Promise<BriefingRunResult> {
+export async function runDailyBriefing(
+  nowMs: number,
+  options: BriefingRunOptions = {}
+): Promise<BriefingRunResult> {
   try {
-    return await runPipeline(nowMs);
+    return await runPipeline(nowMs, options);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     Sentry.captureException(err, { tags: { scope: "daily-briefing" } });

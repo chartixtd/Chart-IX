@@ -1388,8 +1388,12 @@ git commit -m "feat(briefing): 质量门槛——结构/长度/数字幻觉/禁�
 - Consumes: `BriefingJson`、`MarketFact`、`BriefingSource`、`BriefingLocale`
 - Produces:
   - `escapeHtml(s: string): string`
+  - `formatPrice(n: number): string`、`formatPct(n: number): string`
+  - `renderMarketList(facts: MarketFact[]): string`、`renderSourceList(sources: BriefingSource[]): string`
   - `renderBriefingHtml(b: BriefingJson, facts: MarketFact[], sources: BriefingSource[], locale: BriefingLocale): string`
   - `DISCLAIMER: Record<BriefingLocale, string>`
+
+> 行情列表与来源列表**必须**由 `renderMarketList` / `renderSourceList` 统一产出，Task 7 的兜底稿直接复用这两个函数——两份各自实现的格式化逻辑迟早会漂移。
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -1568,7 +1572,8 @@ export function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function formatPrice(n: number): string {
+/** 导出供 fallback.ts 复用——两处行情列表的数字格式必须一致 */
+export function formatPrice(n: number): string {
   // 低价币需要更多小数位，否则 DOGE 会显示成 $0.07
   const digits = n >= 1 ? 2 : 6;
   return `$${n.toLocaleString("en-US", {
@@ -1577,8 +1582,31 @@ function formatPrice(n: number): string {
   })}`;
 }
 
-function formatPct(n: number): string {
+/** 导出供 fallback.ts 复用 */
+export function formatPct(n: number): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+}
+
+/** 行情列表。正常稿与兜底稿共用，保证两种路径下的行情区块完全一致 */
+export function renderMarketList(facts: MarketFact[]): string {
+  return `<ul>${facts
+    .map(
+      (f) =>
+        `<li><strong>${escapeHtml(f.label)}</strong> ${formatPrice(f.lastPrice)}（24h ${formatPct(
+          f.change24hPct
+        )}）</li>`
+    )
+    .join("")}</ul>`;
+}
+
+/** 来源列表。正常稿与兜底稿共用 */
+export function renderSourceList(sources: BriefingSource[]): string {
+  return `<ul>${sources
+    .map(
+      (s) =>
+        `<li><a href="${escapeHtml(s.url)}">${escapeHtml(s.title)}</a> — ${escapeHtml(s.source)}</li>`
+    )
+    .join("")}</ul>`;
 }
 
 export function renderBriefingHtml(
@@ -1607,16 +1635,7 @@ export function renderBriefingHtml(
   // 无法做响应式样式，而 ul/li 本就在白名单内且移动端更好读
   if (facts.length > 0) {
     parts.push(`<h3>${c.snapshot}</h3>`);
-    parts.push(
-      `<ul>${facts
-        .map(
-          (f) =>
-            `<li><strong>${escapeHtml(f.label)}</strong> ${formatPrice(f.lastPrice)}（24h ${formatPct(
-              f.change24hPct
-            )}）</li>`
-        )
-        .join("")}</ul>`
-    );
+    parts.push(renderMarketList(facts));
   }
 
   if (b.analysis.watchlist.length > 0) {
@@ -1628,16 +1647,7 @@ export function renderBriefingHtml(
 
   if (sources.length > 0) {
     parts.push(`<h2>${c.sources}</h2>`);
-    parts.push(
-      `<ul>${sources
-        .map(
-          (s) =>
-            `<li><a href="${escapeHtml(s.url)}">${escapeHtml(s.title)}</a> — ${escapeHtml(
-              s.source
-            )}</li>`
-        )
-        .join("")}</ul>`
-    );
+    parts.push(renderSourceList(sources));
   }
 
   parts.push(`<hr>`);
@@ -1677,7 +1687,7 @@ git commit -m "feat(briefing): JSON→HTML 渲染；sanitizer 放开 <a> 以标�
 - Test: `src/lib/briefing/fallback.test.ts`
 
 **Interfaces:**
-- Consumes: `escapeHtml`、`DISCLAIMER`（Task 6）；`BriefingSource`、`MarketFact`、`BriefingLocale`
+- Consumes: `escapeHtml`、`DISCLAIMER`、`renderMarketList`、`renderSourceList`（均自 Task 6 的 `render.ts`）；`BriefingSource`、`MarketFact`、`BriefingLocale`
 - Produces:
   - `fallbackTitle(locale: BriefingLocale, dateStr: string): string`
   - `renderFallbackHtml(facts: MarketFact[], sources: BriefingSource[], locale: BriefingLocale): string`
@@ -1770,7 +1780,7 @@ Expected: FAIL，找不到模块 `./fallback`
 - [ ] **Step 3: 实现 fallback.ts**
 
 ```ts
-import { DISCLAIMER, escapeHtml } from "./render";
+import { DISCLAIMER, escapeHtml, renderMarketList, renderSourceList } from "./render";
 import type { BriefingLocale, BriefingSource, MarketFact } from "./types";
 
 /**
@@ -1793,18 +1803,6 @@ export function fallbackTitle(locale: BriefingLocale, dateStr: string): string {
   return `${COPY[locale].title} | ${dateStr}`;
 }
 
-function formatPrice(n: number): string {
-  const digits = n >= 1 ? 2 : 6;
-  return `$${n.toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })}`;
-}
-
-function formatPct(n: number): string {
-  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
-}
-
 /**
  * 新闻与行情都为空时返回空串——调用方据此判定连兜底稿都出不了（L5）。
  * 参数顺序与 renderBriefingHtml 保持一致：facts 在前、sources 在后。
@@ -1821,31 +1819,12 @@ export function renderFallbackHtml(
 
   if (facts.length > 0) {
     parts.push(`<h2>${c.snapshot}</h2>`);
-    parts.push(
-      `<ul>${facts
-        .map(
-          (f) =>
-            `<li><strong>${escapeHtml(f.label)}</strong> ${formatPrice(f.lastPrice)}（24h ${formatPct(
-              f.change24hPct
-            )}）</li>`
-        )
-        .join("")}</ul>`
-    );
+    parts.push(renderMarketList(facts));
   }
 
   if (sources.length > 0) {
     parts.push(`<h2>${c.headlines}</h2>`);
-    parts.push(
-      `<ul>${sources
-        .slice(0, MAX_ITEMS)
-        .map(
-          (s) =>
-            `<li><a href="${escapeHtml(s.url)}">${escapeHtml(s.title)}</a> — ${escapeHtml(
-              s.source
-            )}</li>`
-        )
-        .join("")}</ul>`
-    );
+    parts.push(renderSourceList(sources.slice(0, MAX_ITEMS)));
   }
 
   parts.push(`<hr>`);

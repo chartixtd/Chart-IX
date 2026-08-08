@@ -20,7 +20,19 @@ export function sanitizeArticleHtml(html: string): string {
       "h1", "h2", "h3", "h4", "h5", "h6",
       "strong", "b", "em", "i", "s", "u", "code", "pre",
       "blockquote", "ul", "ol", "li",
+      // 每日早报必须标注新闻来源，因此放开链接。属性收得很紧：
+      // 只允许 href/rel/target，协议限 http(s)（挡掉 javascript: 伪协议），
+      // 且用 transformTags 强制覆写 rel/target——不信任正文里给出的属性值。
+      "a",
     ],
-    allowedAttributes: {},
+    allowedAttributes: { a: ["href", "rel", "target"] },
+    allowedSchemes: ["http", "https"],
+    transformTags: {
+      a: sanitizeHtml.simpleTransform(
+        "a",
+        { rel: "nofollow noopener noreferrer", target: "_blank" },
+        true
+      ),
+    },
   });
 }

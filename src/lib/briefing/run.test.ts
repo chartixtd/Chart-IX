@@ -330,11 +330,27 @@ describe("runDailyBriefing — 降级诊断", () => {
     expect(r.reasons?.join("\n")).toContain("调用失败");
   });
 
-  it("正常发布时原因列表为空", async () => {
+  it("正常发布时只留成功记录，不含任何失败原因", async () => {
     callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
     const r = await runDailyBriefing(NOW);
     expect(r.status).toBe("published");
-    expect(r.reasons).toEqual([]);
+    const log = (r.reasons ?? []).join("\n");
+    expect(log).toContain("zh-CN 第 1 次生成成功");
+    expect(log).toContain("en-US 第 1 次生成成功");
+    expect(log).not.toContain("失败");
+    expect(log).not.toContain("未过质量门槛");
+  });
+
+  it("成功记录带耗时，供调超时值使用", async () => {
+    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    const r = await runDailyBriefing(NOW);
+    expect((r.reasons ?? []).join("\n")).toMatch(/耗时 \d+ms/);
+  });
+
+  it("成功记录不触发告警——一次正常发布不该发 Telegram", async () => {
+    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    await runDailyBriefing(NOW);
+    expect(alertBriefing).not.toHaveBeenCalled();
   });
 
   it("结果与原因写进 admin_settings，供无人值守时段事后查", async () => {
@@ -582,6 +598,21 @@ describe("runDailyBriefing — L4 兜底稿", () => {
 });
 
 // ── C2：墙钟预算 ──
+describe("常量之间必须自洽", () => {
+  it("一次完整生成装得进流水线预算", async () => {
+    const { PIPELINE_BUDGET_MS } = await import("./run");
+    const { DEFAULT_TIMEOUT_MS } = await import("./deepseek");
+    expect(DEFAULT_TIMEOUT_MS).toBeLessThan(PIPELINE_BUDGET_MS);
+  });
+
+  it("重试门槛不低于一次生成的耗时——否则重试注定超时，只是白烧预算", async () => {
+    const { MIN_CALL_BUDGET_MS } = await import("./run");
+    // 实测：22 秒不够一次生成。门槛必须至少是这个量级，否则「还剩十几秒，
+    // 再试一次」永远不可能成功。
+    expect(MIN_CALL_BUDGET_MS).toBeGreaterThanOrEqual(20_000);
+  });
+});
+
 describe("runDailyBriefing — 墙钟预算", () => {
   it("模型每次都耗尽超时预算时，流水线仍带着兜底稿走到落库", async () => {
     vi.useFakeTimers();
@@ -600,9 +631,11 @@ describe("runDailyBriefing — 墙钟预算", () => {
     expect(r.status).toBe("fallback");
     expect(db.inserted).toHaveLength(1);
     expect(db.beats).toContain("ok");
-    // 预算 48s：两语并发、每语最多两次 22s 的尝试，第三次因剩余不足被拦下
+    // 预算 48s，单次超时 34s，重试门槛 20s：两语并发跑完第一次（34s）后只剩
+    // 14s，低于门槛，不再发起注定超时的第二次，直接落到 L4。
+    // 这正是实测教训——用 14 秒去做一件要 30 秒的事，只会把剩余预算也烧掉。
     expect(elapsed).toBeLessThan(48_000);
-    expect(callDeepSeek.mock.calls.length).toBeLessThan(6);
+    expect(callDeepSeek.mock.calls.length).toBe(2);
     const messages = alertBriefing.mock.calls.map((c) => String(c[0]));
     expect(messages.some((m) => m.includes("剩余预算"))).toBe(true);
   });
@@ -637,7 +670,7 @@ describe("runDailyBriefing — 墙钟预算", () => {
 
     for (const call of callDeepSeek.mock.calls) {
       expect(call[0].timeoutMs).toBeGreaterThan(0);
-      expect(call[0].timeoutMs).toBeLessThanOrEqual(22_000);
+      expect(call[0].timeoutMs).toBeLessThanOrEqual(34_000);
     }
   });
 });

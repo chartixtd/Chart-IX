@@ -255,7 +255,7 @@ export function BriefingRunner({ data }: { data: BriefingPageData }) {
             )}
             {result.reasons && result.reasons.length > 0 && (
               <>
-                <div className="mt-3 text-xs font-medium text-text-secondary">降级原因：</div>
+                <div className="mt-3 text-xs font-medium text-text-secondary">运行记录：</div>
                 <Reasons items={result.reasons} />
               </>
             )}
@@ -281,7 +281,7 @@ export function BriefingRunner({ data }: { data: BriefingPageData }) {
             {data.lastRun.reasons.length > 0 ? (
               <Reasons items={data.lastRun.reasons} />
             ) : (
-              <p className="mt-2 text-xs text-text-secondary">没有降级，全程走的 AI 路径。</p>
+              <p className="mt-2 text-xs text-text-secondary">没有记录。</p>
             )}
           </>
         ) : (

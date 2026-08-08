@@ -28,14 +28,22 @@ const LOCALES: BriefingLocale[] = ["zh-CN", "en-US"];
  *
  * 48 秒给流水线，剩下约 12 秒留给冷启动、落库、推送与心跳。
  */
-const PIPELINE_BUDGET_MS = 48_000;
+export const PIPELINE_BUDGET_MS = 48_000;
 
 /**
  * 剩余预算低于这个数就不再发起新的模型调用，直接落到 L4（兜底稿是纯字符串
  * 拼接 + 一次 insert，几百毫秒就能跑完）。宁可发一篇朴素的稿，也不要被平台
  * 掐死在第三次尝试里、什么都没写。
+ *
+ * 曾经是 8 秒，配 22 秒的单次超时。线上实测把这个组合证伪了：一次生成本身就
+ * 要 20 秒以上，所以「还剩 14 秒，再试一次」根本不可能成功——只是拿注定超时的
+ * 一次调用把剩余预算也烧掉。门槛必须大于等于一次生成的实际耗时，否则重试只是
+ * 在浪费时间。
+ *
+ * 取 20 秒：快速失败（HTTP 4xx/5xx、空内容，耗时不到 1 秒）之后仍有充裕预算
+ * 重试——那才是重试真正能救回来的场景；而超时之后直接落到 L4。
  */
-const MIN_CALL_BUDGET_MS = 8_000;
+export const MIN_CALL_BUDGET_MS = 20_000;
 
 /**
  * 发布时间窗（UTC+8 小时，闭区间）。
@@ -111,8 +119,17 @@ function alertNoWait(message: string): void {
  * admin_settings，这样 cron 在无人值守时段降级也能事后查。
  */
 function note(diag: string[], message: string): void {
-  diag.push(message);
+  trace(diag, message);
   alertNoWait(message);
+}
+
+/**
+ * 只记录、不告警。用于「成功且耗时多少」这类信息——它们是调超时值的唯一依据
+ * （第一版 22 秒就是猜的，线上实测才发现一次生成都不够），但为一次正常发布
+ * 发 Telegram 是骚扰。
+ */
+function trace(diag: string[], message: string): void {
+  diag.push(message);
 }
 
 /** 终局原因：后面只剩 beat + return，可以安全 await */
@@ -183,14 +200,18 @@ async function generateOne(
     }
     // 超时取「单次上限」与「剩余预算」的较小者：最后一次尝试不能跨过 deadline，
     // 否则被平台掐断的又是那条什么都没写的路径。
+    const startedAt = Date.now();
     const res = await callDeepSeek({
       apiKey,
       model,
       prompt,
       timeoutMs: Math.min(DEFAULT_TIMEOUT_MS, remaining),
     });
+    // 耗时必须记进诊断：超时值该设多少全靠它，没有它就只能靠猜——
+    // 第一版 22 秒就是猜出来的，线上实测才发现一次生成都不够。
+    const tookMs = Date.now() - startedAt;
     if (!res.ok) {
-      note(diag, `${locale} 第 ${attempt + 1} 次调用失败(${model}): ${res.error}`);
+      note(diag, `${locale} 第 ${attempt + 1} 次调用失败(${model}, 耗时 ${tookMs}ms): ${res.error}`);
       continue;
     }
     const parsed = parseBriefingJson(res.content);
@@ -201,10 +222,13 @@ async function generateOne(
       locale,
       finishReason: res.finishReason,
     });
-    if (gate.ok && parsed) return parsed;
+    if (gate.ok && parsed) {
+      trace(diag, `${locale} 第 ${attempt + 1} 次生成成功(${model}, 耗时 ${tookMs}ms)`);
+      return parsed;
+    }
     note(
       diag,
-      `${locale} 第 ${attempt + 1} 次未过质量门槛(${model}): ` +
+      `${locale} 第 ${attempt + 1} 次未过质量门槛(${model}, 耗时 ${tookMs}ms): ` +
         gate.failures.map((f) => `${f.rule}/${f.detail}`).join("; ")
     );
   }

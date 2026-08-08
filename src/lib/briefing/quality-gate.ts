@@ -44,6 +44,8 @@ const PERCENT_RE = /(-?\d+(?:\.\d+)?)\s*%/g;
 export interface NumberHit {
   value: number;
   index: number;
+  /** 匹配文本的结束位置。量级后缀（K/M/bn/万）就紧跟在这之后 */
+  end: number;
 }
 
 function collectHits(text: string, re: RegExp, strip: boolean): NumberHit[] {
@@ -52,7 +54,8 @@ function collectHits(text: string, re: RegExp, strip: boolean): NumberHit[] {
   for (const m of text.matchAll(re)) {
     const raw = strip ? m[1].replace(/,/g, "") : m[1];
     const value = parseFloat(raw);
-    if (Number.isFinite(value)) out.push({ value, index: m.index ?? 0 });
+    const index = m.index ?? 0;
+    if (Number.isFinite(value)) out.push({ value, index, end: index + m[0].length });
   }
   return out;
 }
@@ -285,6 +288,35 @@ function seenSources(sources: BriefingSource[]): BriefingSource[] {
 }
 
 /**
+ * 量级后缀。财经新闻几乎不写完整数字：标题是「never fall below $60K」，
+ * 而模型转述时会展开成 $60,000——两者指同一个数，精确匹配却对不上。
+ *
+ * 线上第一次真跑就是栽在这里：源文「Bitcoin will never fall below $60K again」
+ * 被模型如实引用成 $60,000，白名单只提取到 60，于是把一句忠实转述判成了编造，
+ * 整篇 zh-CN 因此被打回、最终降级成零 AI 兜底稿。
+ */
+const MAGNITUDE_SUFFIXES: { re: RegExp; scale: number }[] = [
+  { re: /^(?:k|thousand|千)/i, scale: 1e3 },
+  { re: /^(?:万)/i, scale: 1e4 },
+  { re: /^(?:m|mn|million|百万)/i, scale: 1e6 },
+  { re: /^(?:亿)/i, scale: 1e8 },
+  { re: /^(?:b|bn|billion|十亿)/i, scale: 1e9 },
+  { re: /^(?:t|tn|trillion|万亿)/i, scale: 1e12 },
+];
+
+/**
+ * 从 `text` 中 `index` 之后紧邻的位置读出量级倍数，没有则为 1。
+ * 只看紧跟其后（允许一个空格）的那一小段，避免把下一句的词当成后缀。
+ */
+function magnitudeAt(text: string, index: number): number {
+  const tail = text.slice(index, index + 12).replace(/^\s?/, "");
+  for (const { re, scale } of MAGNITUDE_SUFFIXES) {
+    if (re.test(tail)) return scale;
+  }
+  return 1;
+}
+
+/**
  * 数字幻觉核对。作用域限定在 analysis：headlines 是对新闻的转述，里面的
  * CPI、利率、涨跌数据来自源文而非我们的行情事实集，一并核对会产生大量误报。
  * analysis 中若引用了源文里出现过的数字，同样放行。
@@ -295,7 +327,13 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: BriefingSou
   const sourceText = seenSources(sources)
     .map((s) => `${s.title} ${s.summary}`)
     .join(" ");
-  const sourcePrices = new Set(extractPrices(sourceText));
+  // 源文里的价格要连同量级后缀一起收：$60K 既可能被原样引用（60），
+  // 也可能被展开引用（60000），两种写法都是忠实转述。
+  const sourcePrices = new Set<number>();
+  for (const hit of extractPriceHits(sourceText)) {
+    sourcePrices.add(hit.value);
+    sourcePrices.add(hit.value * magnitudeAt(sourceText, hit.end));
+  }
   const sourcePercents = new Set(extractPercents(sourceText));
 
   const priceOk = (v: number, f: MarketFact) =>
@@ -369,9 +407,15 @@ function extractSourceNumbers(sources: BriefingSource[]): number[] {
     .join(" ");
   const out: number[] = [];
   for (const m of text.matchAll(BARE_NUMBER_RE)) {
-    if (significantDigits(m[0]) < MIN_SOURCE_NUMBER_DIGITS) continue;
     const value = parseFloat(m[0].replace(/,/g, ""));
-    if (Number.isFinite(value)) out.push(value);
+    if (!Number.isFinite(value)) continue;
+    const index = m.index ?? 0;
+    const scale = magnitudeAt(text, index + m[0].length);
+    // 有量级后缀的数一律收：`$60K` 的有效位只有两位，会被下面的位数过滤挡掉，
+    // 但它展开后的 60000 恰恰是模型最可能引用的写法。
+    if (scale > 1) out.push(value * scale);
+    if (significantDigits(m[0]) < MIN_SOURCE_NUMBER_DIGITS) continue;
+    out.push(value);
   }
   return out;
 }

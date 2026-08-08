@@ -241,6 +241,56 @@ describe("checkBriefing", () => {
     expect(check(j).ok).toBe(true);
   });
 
+  // ── 量级后缀：线上第一次真跑就栽在这里 ──
+  // 源文标题「Bitcoin will never fall below $60K again」被模型如实引用成
+  // $60,000，而白名单只提取到 60，于是把一句忠实转述判成编造，整篇 zh-CN
+  // 被打回、最终降级成零 AI 兜底稿。
+  it("源文写 $60K、模型展开成 $60,000 时不算编造", () => {
+    const j = validJson();
+    j.analysis.overview += "有观点认为比特币不会再跌破 $60,000，这一判断仍待验证。";
+    const withK: BriefingSource[] = [
+      ...SOURCES,
+      {
+        title: "Bitcoin will never fall below $60K again: Nansen founder",
+        url: "https://e.com/60k",
+        source: "Cointelegraph",
+        publishedAt: 0,
+        summary: "",
+      },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: withK, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("源文没提过的量级数字仍然算编造", () => {
+    const j = validJson();
+    j.analysis.overview += "有观点认为比特币不会再跌破 $30,000，这一判断仍待验证。";
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("百万/十亿级后缀同样能对上", () => {
+    const j = validJson();
+    j.analysis.overview += "报道称该基金规模达 $240,000,000,000，为业内罕见。";
+    const withB: BriefingSource[] = [
+      ...SOURCES,
+      {
+        title: "Millennium Manages $240 Billion Across Thousands of Positions",
+        url: "https://e.com/240b",
+        source: "Yahoo Finance",
+        publishedAt: 0,
+        summary: "",
+      },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: withB, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
+  });
+
   it("禁用表述被抓出", () => {
     const j = validJson();
     j.analysis.watchlist = ["建议买入 BTC"];

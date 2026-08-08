@@ -128,9 +128,14 @@ describe("callDeepSeek — 超时与 abort", () => {
     expect(signal?.aborted).toBe(false);
   });
 
-  it("缺省超时必须装得进 60 秒的函数上限——两次尝试仍有余量", () => {
-    expect(DEFAULT_TIMEOUT_MS).toBeLessThanOrEqual(25_000);
-    expect(DEFAULT_TIMEOUT_MS * 2).toBeLessThan(60_000);
+  // 这条原先断言的是「两次尝试要装进 60 秒」（上限 25 秒）。线上实测把那个前提
+  // 证伪了：22 秒连**一次**生成都不够，每次调用都是 aborted，重试阶梯从未真正
+  // 生效。真正的约束是「一次生成要装得下，且留得出落库的时间」，不是尝试次数。
+  it("缺省超时要装得下一次完整生成，并给流水线其余步骤留出余量", () => {
+    // 实测一次生成在 22 秒会被截断，所以下限必须显著高于它
+    expect(DEFAULT_TIMEOUT_MS).toBeGreaterThan(25_000);
+    // 承载路由 maxDuration=60（Vercel Hobby 上限），落库/推送/心跳还要时间
+    expect(DEFAULT_TIMEOUT_MS).toBeLessThanOrEqual(40_000);
   });
 });
 

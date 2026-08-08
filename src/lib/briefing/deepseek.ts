@@ -21,10 +21,20 @@ const DEFAULT_MAX_TOKENS = 3000;
  * 没有 insert、没有心跳、没有告警，整套降级阶梯（L3/L4/L5 都在生成步骤之后）
  * 被直接绕过。
  *
- * 降到 22 秒后，配合 run.ts 的墙钟预算，最坏情况能在预算内跑完两次尝试并
- * 留出落库时间。调用方仍会把「剩余预算」作为上限二次收窄本值。
+ * 后来降到 22 秒，配合 run.ts 的墙钟预算，理论上能在预算内跑完两次尝试。
+ * 但线上实测推翻了这个假设：22 秒**不够生成一次**。第一次真跑的诊断里，
+ * 除了 zh-CN 第一次侥幸返回，其余每一次调用都是 `This operation was aborted`，
+ * 两轮超时把 48 秒预算吃光，第三次只剩 2 秒。等于重试阶梯从来没真正生效过，
+ * 每天都直奔兜底稿。
+ *
+ * 现在取 34 秒：一次生成有充裕余量，且 34 + 落库/推送/心跳仍在 48 秒预算内。
+ * 代价是超时那次几乎吃掉整个预算、没有第二次机会——这是有意的取舍：
+ * 与其两次都来不及生成完，不如让一次真正跑完。快速失败（HTTP 4xx/5xx、
+ * 空内容）耗时很短，那种情况下预算仍然够重试，MIN_CALL_BUDGET_MS 会放行。
+ *
+ * 调用方仍会把「剩余预算」作为上限二次收窄本值。
  */
-export const DEFAULT_TIMEOUT_MS = 22_000;
+export const DEFAULT_TIMEOUT_MS = 34_000;
 
 export type DeepSeekResult =
   | { ok: true; content: string; finishReason: string | null }

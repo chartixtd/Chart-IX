@@ -82,12 +82,32 @@ export async function getSpotDepth(symbol: string, limit = 10): Promise<BingXDep
   });
 }
 
-/** 获取最新成交 */
+/** BingX 现货成交接口的原始响应形状。实测（2026-08-08）：`id`/`price`/`qty`
+ * 是 number 而不是 `BingXTrade` 声明的 string，方向字段是 `buyerMaker` 而不是
+ * `isBuyerMaker`。旧实现把响应直接断言成 `BingXTrade[]`，从未真正映射过——
+ * 这条 REST 路径以前是死代码，从没跑过，直接断言的假类型从未被发现。 */
+interface RawBingXTrade {
+  id: number | string;
+  price: number | string;
+  qty: number | string;
+  time: number;
+  buyerMaker: boolean;
+}
+
+/** 获取最新成交。响应按 time 降序（新到的在前），与 store/WS 的排序约定一致
+ * （实测 2026-08-08：连续请求里 time 值递减），故不需要 reverse。 */
 export async function getSpotTrades(symbol: string, limit = 20): Promise<BingXTrade[]> {
-  return bingxClient.publicRequest<BingXTrade[]>("/openApi/spot/v1/market/trades", {
+  const raw = await bingxClient.publicRequest<RawBingXTrade[]>("/openApi/spot/v1/market/trades", {
     symbol,
     limit,
   });
+  return raw.map((t) => ({
+    id: String(t.id),
+    price: String(t.price),
+    qty: String(t.qty),
+    time: t.time,
+    isBuyerMaker: t.buyerMaker,
+  }));
 }
 
 // ==================== 合约行情 ====================

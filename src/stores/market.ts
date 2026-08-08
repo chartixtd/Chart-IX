@@ -25,6 +25,10 @@ interface MarketState {
   removeTrades: (symbol: string) => void;
   /** 断线时整体清空——重连前 depths 里全是陈旧快照，留着会被 useOrderBook 误当作"仍在实时推送"而静默展示 */
   clearDepths: () => void;
+  /** 断线时整体清空——同 clearDepths 的理由：trades 里全是断线前的陈旧成交，
+   * 留着会让 useRecentTrades 的 useWs 判断（wsTrades 非空即可）在重连瞬间立刻
+   * 为真，把 REST 兜底关掉，若重订阅恰好被拒就永久冻结在旧数据上 */
+  clearTrades: () => void;
   setWsConnected: (connected: boolean) => void;
 }
 
@@ -69,6 +73,9 @@ export const useMarketStore = create<MarketState>((set) => ({
 
   clearDepths: () =>
     set((state) => (Object.keys(state.depths).length === 0 ? state : { depths: {} })),
+
+  clearTrades: () =>
+    set((state) => (Object.keys(state.trades).length === 0 ? state : { trades: {} })),
 
   pushTrade: (symbol, trade) =>
     set((state) => {

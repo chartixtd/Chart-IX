@@ -43,7 +43,9 @@ function mapTrade(raw: Record<string, string | number | boolean>): BingXTrade {
     price: String(raw.p ?? "0"),
     qty: String(raw.q ?? "0"),
     time: Number(raw.T ?? Date.now()),
-    isBuyerMaker: Boolean(raw.m),
+    // 严格判等，不用 Boolean(raw.m)：raw.m 的形参类型允许 string，
+    // Boolean("false") 是 true，会把方向判定整体反向。
+    isBuyerMaker: raw.m === true,
   };
 }
 
@@ -173,7 +175,9 @@ class BingXWebSocketManager {
       if (dt.endsWith(TRADE_CHANNEL_SUFFIX)) {
         const sym = dt.slice(0, dt.length - TRADE_CHANNEL_SUFFIX.length);
         const raw = msg.data as Record<string, string | number | boolean> | undefined;
-        if (!sym || !raw) return;
+        // 只接受单笔成交对象，不接受数组或缺字段的负载——若上游未来改成批量推送
+        // 或字段缺失，宁可丢这一条也不要把污染数据推进队列。
+        if (!sym || !raw || Array.isArray(raw) || raw.p == null || raw.q == null) return;
         useMarketStore.getState().pushTrade(sym, mapTrade(raw));
         return;
       }
@@ -207,6 +211,12 @@ class BingXWebSocketManager {
       // 重新变 true 之前的这段时间里继续把它们当"有效数据"展示（陈旧盘口）。
       // ticker 不清：价格显示保留最后已知值是既有行为，且 useSpotTicker 有 REST 兜底。
       useMarketStore.getState().clearDepths();
+      // trades 同理：断线前的旧成交留着的话，onopen 一到 wsConnected 立刻变
+      // true，useRecentTrades 的 useWs 判断只看 wsTrades 是否非空，会立刻为真
+      // 并关掉 REST 兜底——若重订阅恰好被服务端拒绝（@trade 和 @depth20 一样
+      // 可能被拒，onmessage 对非 0 code 静默 return、无重试），面板会永久冻结
+      // 在断线前的旧数据上且没有任何提示。
+      useMarketStore.getState().clearTrades();
       this.ws = null;
       if (this.refCounts.size > 0) {
         if (isDev) console.log("[WS] closed, reconnecting in", RECONNECT_DELAY, "ms");

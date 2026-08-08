@@ -151,8 +151,13 @@ export function useRecentTrades(symbol: string, enabled: boolean, limit = 20) {
     enabled: enabled && !!symbol && !useWs,
   });
 
-  if (useWs) {
-    return { data: wsTrades.slice(0, limit), isLoading: false };
+  const wsSlice = useMemo(
+    () => (wsTrades ? wsTrades.slice(0, limit) : undefined),
+    [wsTrades, limit]
+  );
+
+  if (useWs && wsSlice) {
+    return { data: wsSlice, isLoading: false };
   }
   return { data: query.data, isLoading: query.isPending };
 }

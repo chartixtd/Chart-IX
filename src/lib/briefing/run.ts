@@ -274,24 +274,51 @@ async function runPipeline(
       const from = okLocale === "zh-CN" ? "zh" : "en";
       const to = badLocale === "zh-CN" ? "zh" : "en";
 
+      // 已经过了质量门槛的那一语先落定，**不放在翻译成功分支里**：翻译失败时
+      // 也不能把它一起丢掉。下面的 L4 只填还空着的语言，于是「AI 中文 + 兜底
+      // 英文」取代了原先的「兜底中文 + 兜底英文」——前者严格更好，而兜底稿的
+      // 标题与正文本来就按 locale 分别生成，混搭是安全的。
+      title[okLocale] = good.title;
+      content[okLocale] = renderBriefingHtml(good, facts, sources, okLocale);
+
       // 翻译同样受墙钟预算约束：生成阶段可能已经吃掉大半预算，此时宁可直接发
       // 兜底稿，也不要在翻译途中被平台掐断而什么都没写。
-      const translated =
+      let translated =
         deadlineMs - Date.now() >= MIN_CALL_BUDGET_MS
           ? await translateBriefingJson(good, from, to, badLocale)
           : null;
 
+      // 机器翻译产物必须重跑**同一把尺子**。translateBriefingJson 内部只查了
+      // 语种占比，而 TITLE_MAX(60) 与 BANNED_PHRASES（含 "price target"、
+      // "guaranteed" 等英文条目）从未作用于翻译结果：中文标题译成英文很容易
+      // 超长，中文的合规表述也可能被译成禁用短语，于是一篇本该被拦下的稿子
+      // 会绕过门槛直接发布。不过就当作翻译失败，落到 L4。
+      if (translated) {
+        const gate = checkBriefing({
+          json: translated,
+          facts,
+          sources,
+          locale: badLocale,
+          finishReason: null,
+        });
+        if (!gate.ok) {
+          alertNoWait(
+            `${badLocale} 翻译结果未过质量门槛: ` +
+              gate.failures.map((f) => `${f.rule}/${f.detail}`).join("; ")
+          );
+          translated = null;
+        }
+      }
+
       if (translated) {
         // 用翻译后的**字段**重新渲染，而不是翻译渲染好的 HTML：小标题、括号
         // 样式、免责声明都会正确本地化，价格与链接原样不动。
-        title[okLocale] = good.title;
-        content[okLocale] = renderBriefingHtml(good, facts, sources, okLocale);
         title[badLocale] = translated.title;
         content[badLocale] = renderBriefingHtml(translated, facts, sources, badLocale);
         alertNoWait(`${badLocale} 生成失败，已用翻译通道兜住`);
       } else {
         degraded = true;
-        alertNoWait(`${badLocale} 生成失败且翻译通道也失败，改发零 AI 兜底稿`);
+        alertNoWait(`${badLocale} 生成失败且翻译通道也失败，${badLocale} 改发零 AI 兜底稿`);
       }
     } else {
       degraded = true;
@@ -299,9 +326,12 @@ async function runPipeline(
     }
   }
 
-  // L4：零 AI 兜底稿
+  // L4：零 AI 兜底稿。**只填还空着的语言**——L3 部分成功时（一语的 AI 稿已经
+  // 过了门槛、另一语翻译失败）不能把那篇已经合格的稿子一起覆盖掉。
+  // 用 content 当哨兵：title 与 content 在上面每一条路径里都是成对赋值的。
   if (degraded) {
     for (const locale of LOCALES) {
+      if (content[locale]) continue;
       const html = renderFallbackHtml(facts, sources, locale);
       if (!html) {
         await beat("error");

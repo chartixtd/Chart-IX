@@ -227,6 +227,26 @@ function isEnglishPrompt(opts: { prompt: string }) {
 }
 
 /**
+ * 长度相当的英文占位译文。
+ *
+ * 替身不能只吐一个短标记：翻译产物现在要重跑 checkBriefing（见「L3 翻译结果
+ * 重新过门槛」一节），而门槛对标题、导读、分析段都有长度下限，短标记会让每个
+ * 用例都以「长度不合格」落到兜底稿，翻译通道本身反而失去覆盖。
+ * 这里按输入字符数的两倍生成英文单词——正是中译英的典型膨胀倍率。
+ */
+const FILLER_WORDS = ["market", "traders", "session", "demand", "range", "volume", "macro", "signal"];
+function fakeEnglish(text: string): string {
+  const target = Math.min(500, Math.max(30, [...text].length * 2));
+  const words: string[] = [];
+  for (let i = 0, len = 0; len < target; i++) {
+    const w = FILLER_WORDS[i % FILLER_WORDS.length];
+    words.push(w);
+    len += w.length + 1;
+  }
+  return words.join(" ");
+}
+
+/**
  * 贴近真实的翻译端点替身。
  *
  * translateText 把内容放在 GET 查询串里，超过请求行上限的调用会拿到非 2xx
@@ -237,7 +257,7 @@ function isEnglishPrompt(opts: { prompt: string }) {
 const URL_LIMIT_BYTES = 8_000;
 function realisticTranslator() {
   return vi.fn(async (text: string) =>
-    encodeURIComponent(text).length > URL_LIMIT_BYTES ? null : `EN ${text.length} chars`
+    encodeURIComponent(text).length > URL_LIMIT_BYTES ? null : fakeEnglish(text)
   );
 }
 
@@ -337,6 +357,83 @@ describe("runDailyBriefing — L3 翻译通道", () => {
     const r = await runDailyBriefing(NOW);
     expect(r.status).toBe("fallback");
     expect(CJK_RE.test(db.inserted[0].content["en-US"])).toBe(false);
+  });
+
+  // ── D：翻译失败时不能把已经过门槛的那一语一起丢掉 ──
+  it("翻译失败时保留 AI 中文稿，只让英文落到兜底稿", async () => {
+    callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? FAIL : ok(ZH_JSON)));
+    translateText.mockResolvedValue(null);
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("fallback");
+    const a = db.inserted[0];
+    // 中文仍是 AI 稿：标题原样、正文里有 AI 写的分析段与「市场解读」小标题
+    expect(a.title["zh-CN"]).toBe(ZH_JSON.title);
+    expect(a.content["zh-CN"]).toContain(ZH_JSON.analysis.gold);
+    expect(a.content["zh-CN"]).toContain("市场解读");
+    // 英文才是兜底稿
+    expect(a.title["en-US"]).toContain("24-Hour News Roundup");
+    expect(a.content["en-US"]).toContain("Last 24 Hours");
+    expect(a.content["en-US"]).not.toContain("Market Read");
+  });
+
+  it("反向也成立：中文失败且翻译失败时，英文 AI 稿保留，中文用兜底稿", async () => {
+    callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? ok(EN_JSON) : FAIL));
+    translateText.mockResolvedValue(null);
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("fallback");
+    const a = db.inserted[0];
+    expect(a.title["en-US"]).toBe(EN_JSON.title);
+    expect(a.content["en-US"]).toContain("Market Read");
+    expect(a.title["zh-CN"]).toContain("24 小时要闻速览");
+    expect(a.content["zh-CN"]).toContain("24 小时要闻");
+    expect(a.content["zh-CN"]).not.toContain("市场解读");
+  });
+
+  // ── C：翻译产物要重跑 checkBriefing，而不只是查语种占比 ──
+  it("翻译结果含禁用表述时当作翻译失败，不会绕过质量门槛发出去", async () => {
+    callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? FAIL : ok(ZH_JSON)));
+    // 机器翻译把中文的合规措辞译成了 BANNED_PHRASES 里的英文条目
+    translateText.mockImplementation(async (text: string) => `${fakeEnglish(text)} price target`);
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("fallback");
+    expect(db.inserted[0].content["en-US"]).toContain("Last 24 Hours");
+    const messages = alertBriefing.mock.calls.map((c) => String(c[0]));
+    expect(
+      messages.some((m) => m.includes("翻译结果未过质量门槛") && m.includes("banned-phrase"))
+    ).toBe(true);
+  });
+
+  it("翻译把标题撑过 TITLE_MAX 时同样落到兜底稿", async () => {
+    callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? FAIL : ok(ZH_JSON)));
+    translateText.mockImplementation(async (text: string) =>
+      text === ZH_JSON.title ? "Bitcoin ".repeat(12).trim() : fakeEnglish(text)
+    );
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("fallback");
+    const messages = alertBriefing.mock.calls.map((c) => String(c[0]));
+    expect(messages.some((m) => m.includes("翻译结果未过质量门槛") && m.includes("length"))).toBe(
+      true
+    );
+  });
+
+  it("翻译结果过得了完整门槛时照常走翻译通道", async () => {
+    callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? FAIL : ok(ZH_JSON)));
+    translateText.mockImplementation(realisticTranslator());
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("published");
+    expect(db.inserted[0].content["en-US"]).toContain("Market Read");
+    const messages = alertBriefing.mock.calls.map((c) => String(c[0]));
+    expect(messages.some((m) => m.includes("翻译结果未过质量门槛"))).toBe(false);
   });
 
   it("generateOne 抛出时 rejection 原因会被告警，而不是静默丢弃", async () => {

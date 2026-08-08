@@ -4,6 +4,7 @@ import type { BriefingJson, MarketFact, BriefingSource } from "./types";
 
 const FACTS: MarketFact[] = [
   { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
+  { symbol: "ETH-USDT", label: "ETH", lastPrice: 1914.99, change24hPct: 0.59 },
   { symbol: "XAUT-USDT", label: "XAUT", lastPrice: 4325.51, change24hPct: 1.37 },
 ];
 
@@ -143,6 +144,57 @@ describe("checkBriefing", () => {
   it("analysis 中引用源文里出现过的数字不算编造", () => {
     const j = validJson();
     j.analysis.overview += "市场消化了 3.1% 的通胀读数，情绪趋于稳定，短期内仍以震荡为主。";
+    expect(check(j).ok).toBe(true);
+  });
+
+  // ── 标的邻近绑定：以下两条各自复现一个曾能击穿门槛的真实场景 ──
+
+  // 两个数字都仍在事实集里，只是安到了错的标的上——这正是旧实现全部放行的场景
+  it("换标的被抓出：BTC 段落写成黄金的数字", () => {
+    const j = validJson();
+    j.analysis.crypto = j.analysis.crypto
+      .replace("$64,959.52", "$4,325.51")
+      .replace("0.92%", "1.37%");
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("换标的被抓出：黄金段落写成 BTC 的数字", () => {
+    const j = validJson();
+    j.analysis.gold = j.analysis.gold
+      .replace("$4,325.51", "$64,959.52")
+      .replace("1.37%", "0.92%");
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("绑定到标的后，来源白名单不能替伪造数字背书", () => {
+    const j = validJson();
+    j.analysis.crypto = j.analysis.crypto.replace("0.92%", "7.50%");
+    // 当天恰好有一条无关新闻里出现同一个数字——它不该让 BTC 段的伪造过关
+    const noisySources: BriefingSource[] = [
+      ...SOURCES,
+      { title: "iPhone 出货量下降 7.50%", url: "https://e.com/2", source: "CNBC", publishedAt: 0, summary: "" },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: noisySources, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("附近没有标的标签时，来源里出现过的数字仍放行", () => {
+    const j = validJson();
+    j.analysis.overview += "市场消化了 3.1% 的通胀读数，情绪趋于稳定，短期内仍以震荡为主。";
+    expect(check(j).ok).toBe(true);
+  });
+
+  it("同句内有多个标签时绑定最近的那个", () => {
+    const j = validJson();
+    j.analysis.overview =
+      "回顾昨日整体走势，BTC 与以太坊双双走高，其中 ETH 报 $1,914.99，表现稳健且波动收敛，市场情绪整体偏向乐观，成交量也较前一个交易日温和放大，显示资金仍留在场内观望而非离场。";
     expect(check(j).ok).toBe(true);
   });
 

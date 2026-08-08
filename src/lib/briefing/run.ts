@@ -49,8 +49,9 @@ const MIN_CALL_BUDGET_MS = 8_000;
  *
  * 幂等闸门保证窗口内打多少次都只出一篇。
  */
-const PUBLISH_HOUR_START = 8;
-const PUBLISH_HOUR_END = 11;
+/** 导出供后台测试页显示——复制这两个数字会随时间和这里漂移 */
+export const PUBLISH_HOUR_START = 8;
+export const PUBLISH_HOUR_END = 11;
 
 export interface BriefingRunResult {
   status: "published" | "fallback" | "skipped" | "failed";

@@ -94,4 +94,26 @@ describe("renderBriefingHtml", () => {
     const en = renderBriefingHtml(JSON_INPUT, FACTS, SOURCES, "en-US");
     expect(en).toContain("not investment advice");
   });
+
+  it("中文稿行情用全角括号", () => {
+    expect(html).toContain("（24h +0.92%）");
+  });
+
+  it("英文稿行情用半角括号，不混排全角", () => {
+    const en = renderBriefingHtml(JSON_INPUT, FACTS, SOURCES, "en-US");
+    expect(en).toContain("(24h +0.92%)");
+    expect(en).not.toContain("（");
+    expect(en).not.toContain("）");
+  });
+
+  // 源站 url 是第三方数据，必须走完整渲染路径验证而不只是手写 HTML
+  it("来源 url 携带 javascript 伪协议时，经渲染与 sanitize 后不残留", () => {
+    const evilSources: BriefingSource[] = [
+      { title: "evil", url: "javascript:alert(1)", source: "X", publishedAt: 1, summary: "" },
+    ];
+    const clean = sanitizeArticleHtml(
+      renderBriefingHtml(JSON_INPUT, FACTS, evilSources, "zh-CN")
+    );
+    expect(clean).not.toContain("javascript:");
+  });
 });

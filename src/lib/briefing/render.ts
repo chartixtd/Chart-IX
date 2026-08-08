@@ -48,14 +48,20 @@ export function formatPct(n: number): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-/** 行情列表。正常稿与兜底稿共用，保证两种路径下的行情区块完全一致 */
-export function renderMarketList(facts: MarketFact[]): string {
+/**
+ * 行情列表。正常稿与兜底稿共用，保证两种路径下的行情区块完全一致。
+ *
+ * 必须按语言选括号：中文用全角（），英文用半角 ()。早报会出 en-US 版，
+ * 把全角括号写死会让英文正文出现「$64,959.52（24h +0.92%）」这种中英混排。
+ */
+export function renderMarketList(facts: MarketFact[], locale: BriefingLocale): string {
+  const [open, close] = locale === "zh-CN" ? ["（", "）"] : [" (", ")"];
   return `<ul>${facts
     .map(
       (f) =>
-        `<li><strong>${escapeHtml(f.label)}</strong> ${formatPrice(f.lastPrice)}（24h ${formatPct(
+        `<li><strong>${escapeHtml(f.label)}</strong> ${formatPrice(f.lastPrice)}${open}24h ${formatPct(
           f.change24hPct
-        )}）</li>`
+        )}${close}</li>`
     )
     .join("")}</ul>`;
 }
@@ -96,7 +102,7 @@ export function renderBriefingHtml(
   // 无法做响应式样式，而 ul/li 本就在白名单内且移动端更好读
   if (facts.length > 0) {
     parts.push(`<h3>${c.snapshot}</h3>`);
-    parts.push(renderMarketList(facts));
+    parts.push(renderMarketList(facts, locale));
   }
 
   if (b.analysis.watchlist.length > 0) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 
 export interface AuthState {
@@ -43,6 +44,8 @@ export function AuthProvider({
   children: React.ReactNode;
   initialAuth?: AuthState;
 }) {
+  const queryClient = useQueryClient();
+
   // Module variable assignment is not setState — safe to run during render.
   // Guarded to the browser only: this function body also runs during SSR,
   // where writing to a module-level variable would leak across requests.
@@ -148,12 +151,15 @@ export function AuthProvider({
         }
       } else if (event === "SIGNED_OUT") {
         setAuth({ userId: null, email: null, displayName: null, tier: null, role: null, loading: false });
+        // 账户类缓存（模拟盘/交易/成就等）若不清，换号后会短暂串到下一个用户；
+        // 极端时序下 PaperTpSlWatcher 可能基于上一个账号的仓位缓存触发平仓。
+        queryClient.clear();
       }
     });
 
     return () => subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchAuth]);
+  }, [fetchAuth, queryClient]);
 
   return (
     <AuthContext.Provider value={{ ...auth, refresh: fetchAuth }}>

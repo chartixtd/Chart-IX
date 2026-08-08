@@ -1,7 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useMarketStore } from "@/stores/market";
+import { useBingXDepth } from "@/hooks/useBingXWebSocket";
+import { trimDepth } from "@/lib/bingx/depth";
 import { SCREENER_REFRESH_MS } from "@/lib/screener-scoring";
 import type { BingXSymbol, BingXTicker, BingXKline, BingXDepth, BingXTrade, BingXOpenInterest, BingXFundingRate } from "@/types/bingx";
 
@@ -93,15 +96,41 @@ export function useKlines(symbol: string, interval = "1h", market = "spot") {
   });
 }
 
-// 订单簿
+// 订单簿 —— WS 实时推送优先，断线/无数据时立即回落 REST 轮询
+// WS 的 depth20 只能服务 limit ≤ 20；更深的请求继续走 REST。
+const WS_DEPTH_LEVELS = 20;
+
 export function useOrderBook(symbol: string, limit = 10) {
-  return useQuery({
+  const canUseWs = !!symbol && limit <= WS_DEPTH_LEVELS;
+  useBingXDepth(canUseWs ? symbol : null);
+
+  const wsConnected = useMarketStore((s) => s.wsConnected);
+  const wsEntry = useMarketStore((s) => s.depths[symbol]);
+  // 盘口是交易关键展示数据：只在"连接正常且确有本交易对快照"时才用 WS，
+  // 断线/切币尚无数据时立刻回落 REST 轮询，绝不静默展示陈旧盘口。
+  const useWs = canUseWs && wsConnected && !!wsEntry;
+
+  const query = useQuery({
     queryKey: ["bingx", "depth", symbol, limit],
     queryFn: () => fetchApi<BingXDepth>("depth", { symbol, limit: String(limit) }),
-    refetchInterval: 2_000,
+    refetchInterval: useWs ? false : 2_000,
     staleTime: 1_000,
-    enabled: !!symbol,
+    enabled: !!symbol && !useWs,
   });
+
+  const wsBook = useMemo(
+    () => (wsEntry ? trimDepth(wsEntry.book, limit) : undefined),
+    [wsEntry, limit]
+  );
+
+  if (useWs && wsBook) {
+    return { data: wsBook, isLoading: false, isPlaceholderData: false };
+  }
+  return {
+    data: query.data,
+    isLoading: query.isPending,
+    isPlaceholderData: query.isPlaceholderData,
+  };
 }
 
 // 最新成交

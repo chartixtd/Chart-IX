@@ -4,10 +4,16 @@ import { useEffect } from "react";
 import { useMarketStore } from "@/stores/market";
 import type { BingXTicker } from "@/types/bingx";
 import { gunzipWsMessage } from "@/lib/bingx/ws-utils";
+import { symbolFromDepthChannel } from "@/lib/bingx/depth";
 
 const WS_URL = "wss://open-api-ws.bingx.com/market";
 const RECONNECT_DELAY = 3_000;
 const isDev = process.env.NODE_ENV !== "production";
+
+// 实测：现货 WS 只接受 `SYMBOL@depth20` 这种不带间隔后缀的订阅；
+// `@depth20@500ms` 之类的间隔后缀会被服务端拒绝（code 100400）。
+const DEPTH_CHANNEL = "depth20";
+const DEPTH_CHANNEL_SUFFIX = "@" + DEPTH_CHANNEL;
 
 /** Map raw WebSocket ticker data to BingXTicker */
 function mapTicker(raw: Record<string, string>): BingXTicker {
@@ -29,11 +35,11 @@ function mapTicker(raw: Record<string, string>): BingXTicker {
   };
 }
 
-function subMsg(reqType: "sub" | "unsub", symbol: string) {
+function subMsg(reqType: "sub" | "unsub", dataType: string) {
   return JSON.stringify({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     reqType,
-    dataType: `${symbol}@ticker`,
+    dataType,
   });
 }
 
@@ -49,34 +55,44 @@ class BingXWebSocketManager {
   private refCounts = new Map<string, number>();
   private tickerCount = 0;
 
-  subscribe(symbols: string[]): () => void {
+  subscribe(dataTypes: string[]): () => void {
     const added: string[] = [];
-    for (const sym of symbols) {
-      const count = this.refCounts.get(sym) ?? 0;
-      this.refCounts.set(sym, count + 1);
-      if (count === 0) added.push(sym);
+    for (const dt of dataTypes) {
+      const count = this.refCounts.get(dt) ?? 0;
+      this.refCounts.set(dt, count + 1);
+      if (count === 0) added.push(dt);
     }
 
     if (!this.ws) {
       this.connect();
     } else if (this.ws.readyState === WebSocket.OPEN && added.length > 0) {
-      for (const sym of added) this.ws.send(subMsg("sub", sym));
+      for (const dt of added) this.ws.send(subMsg("sub", dt));
     }
 
     return () => {
       const removed: string[] = [];
-      for (const sym of symbols) {
-        const count = (this.refCounts.get(sym) ?? 1) - 1;
+      for (const dt of dataTypes) {
+        const count = (this.refCounts.get(dt) ?? 1) - 1;
         if (count <= 0) {
-          this.refCounts.delete(sym);
-          removed.push(sym);
+          this.refCounts.delete(dt);
+          removed.push(dt);
         } else {
-          this.refCounts.set(sym, count);
+          this.refCounts.set(dt, count);
         }
       }
 
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        for (const sym of removed) this.ws.send(subMsg("unsub", sym));
+      for (const dt of removed) {
+        if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(subMsg("unsub", dt));
+        // 退订后不再有数据流入，留着会让"是否有行情"判断永久为真、并展示陈旧盘口
+        const depthSym = symbolFromDepthChannel(dt, DEPTH_CHANNEL_SUFFIX);
+        if (depthSym) {
+          useMarketStore.getState().removeDepth(depthSym);
+          continue;
+        }
+        if (dt.endsWith("@ticker")) {
+          const sym = dt.slice(0, dt.length - "@ticker".length);
+          if (sym) useMarketStore.getState().removeTicker(sym);
+        }
       }
 
       if (this.refCounts.size === 0) this.disconnect();
@@ -91,7 +107,7 @@ class BingXWebSocketManager {
     ws.onopen = () => {
       useMarketStore.getState().setWsConnected(true);
       if (isDev) console.log("[WS] connected, subscribing...");
-      for (const sym of this.refCounts.keys()) ws.send(subMsg("sub", sym));
+      for (const dt of this.refCounts.keys()) ws.send(subMsg("sub", dt));
     };
 
     ws.onmessage = async (event) => {
@@ -126,7 +142,18 @@ class BingXWebSocketManager {
 
       if (msg.code === 0 && !msg.dataType) return;
       if (msg.code !== 0) return;
-      if (!msg.dataType || !(msg.dataType as string).endsWith("@ticker")) return;
+      const dt = msg.dataType as string | undefined;
+      if (!dt) return;
+
+      const depthSym = symbolFromDepthChannel(dt, DEPTH_CHANNEL_SUFFIX);
+      if (depthSym) {
+        const d = msg.data as { asks?: [string, string][]; bids?: [string, string][] } | undefined;
+        if (!d?.asks || !d?.bids) return;
+        useMarketStore.getState().setDepth(depthSym, { asks: d.asks, bids: d.bids });
+        return;
+      }
+
+      if (!dt.endsWith("@ticker")) return;
 
       const raw = msg.data;
       if (!raw) return;
@@ -151,6 +178,10 @@ class BingXWebSocketManager {
     ws.onclose = () => {
       useMarketStore.getState().setWsConnected(false);
       if (this.ws !== ws) return; // already superseded by a newer connection
+      // 断线瞬间 depths 里全是旧快照；不清空的话 useOrderBook 会在 wsConnected
+      // 重新变 true 之前的这段时间里继续把它们当"有效数据"展示（陈旧盘口）。
+      // ticker 不清：价格显示保留最后已知值是既有行为，且 useSpotTicker 有 REST 兜底。
+      useMarketStore.getState().clearDepths();
       this.ws = null;
       if (this.refCounts.size > 0) {
         if (isDev) console.log("[WS] closed, reconnecting in", RECONNECT_DELAY, "ms");
@@ -180,9 +211,17 @@ export function useBingXWebSocket(symbols: string[]) {
 
   useEffect(() => {
     if (!manager || symbols.length === 0) return;
-    return manager.subscribe(symbols);
+    return manager.subscribe(symbols.map((s) => s + "@ticker"));
     // Re-subscribe only when the actual symbol SET changes, not on reorder —
     // `key` (sorted) is the real dependency; `symbols` array identity is not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+}
+
+/** 订阅单个交易对的盘口推送；数据进 useMarketStore.depths。 */
+export function useBingXDepth(symbol: string | null) {
+  useEffect(() => {
+    if (!manager || !symbol) return;
+    return manager.subscribe([`${symbol}${DEPTH_CHANNEL_SUFFIX}`]);
+  }, [symbol]);
 }

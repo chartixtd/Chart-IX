@@ -309,15 +309,30 @@ function checkBannedPhrases(b: BriefingJson): GateFailure[] {
   }));
 }
 
+/**
+ * 语种自检。导出是因为翻译通道（L3）也要用同一把尺子：正文回退链是
+ * `content[locale] ?? content["en-US"]`，en-US 不仅要有、还必须**真的是英文**，
+ * 否则英文与马来文读者都会看到中文文章。
+ */
+export function isLocaleLanguageOk(text: string, locale: BriefingLocale): boolean {
+  const ratio = cjkRatio(text);
+  if (locale === "zh-CN") return ratio >= CJK_RATIO_MIN;
+  return ratio <= CJK_RATIO_MAX;
+}
+
 function checkLanguage(b: BriefingJson, locale: BriefingLocale): GateFailure[] {
-  const ratio = cjkRatio(fullText(b));
-  if (locale === "zh-CN" && ratio < CJK_RATIO_MIN) {
-    return [{ rule: "language", detail: `中文稿 CJK 占比仅 ${ratio.toFixed(2)}` }];
-  }
-  if (locale === "en-US" && ratio > CJK_RATIO_MAX) {
-    return [{ rule: "language", detail: `英文稿 CJK 占比达 ${ratio.toFixed(2)}` }];
-  }
-  return [];
+  const text = fullText(b);
+  if (isLocaleLanguageOk(text, locale)) return [];
+  const ratio = cjkRatio(text);
+  return [
+    {
+      rule: "language",
+      detail:
+        locale === "zh-CN"
+          ? `中文稿 CJK 占比仅 ${ratio.toFixed(2)}`
+          : `英文稿 CJK 占比达 ${ratio.toFixed(2)}`,
+    },
+  ];
 }
 
 export function checkBriefing(input: {

@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
 import { buildContentMessage } from "@/lib/push/messages";
-import { translateText } from "@/lib/translate";
+import { translateBriefingJson } from "@/lib/briefing/translate-json";
 import { briefingSlug, utcPlus8DateString } from "@/lib/briefing/date";
 import { fetchBriefingSources, MIN_SOURCE_ITEMS } from "@/lib/briefing/sources";
 import { fetchMarketFacts } from "@/lib/briefing/market-facts";
@@ -189,19 +189,35 @@ async function runPipeline(nowMs: number): Promise<BriefingRunResult> {
       content["en-US"] = renderBriefingHtml(en, facts, sources, "en-US");
     } else if (zh || en) {
       // L3：两语中恰有一语成功，另一语走翻译通道。
-      // en-US 缺失会让英文与马来文读者看到空白正文，绝不能留空。
+      // en-US 缺失会让英文与马来文读者看到空白正文，绝不能留空——但「留空」的
+      // 反面不是「随便填点什么」：把中文正文塞进 content["en-US"] 比留空更糟，
+      // 因为正文回退链 content[locale] ?? content["en-US"] 会让英文与马来文
+      // 读者都看到中文文章，而告警还写着「已用翻译通道兜住」。
       const okLocale: BriefingLocale = zh ? "zh-CN" : "en-US";
       const badLocale: BriefingLocale = zh ? "en-US" : "zh-CN";
       const good = (zh ?? en)!;
-      const goodHtml = renderBriefingHtml(good, facts, sources, okLocale);
       const from = okLocale === "zh-CN" ? "zh" : "en";
       const to = badLocale === "zh-CN" ? "zh" : "en";
 
-      title[okLocale] = good.title;
-      content[okLocale] = goodHtml;
-      title[badLocale] = (await translateText(good.title, from, to)) ?? good.title;
-      content[badLocale] = (await translateText(goodHtml, from, to)) ?? goodHtml;
-      await alert(`${badLocale} 生成失败，已用翻译通道兜住`);
+      // 翻译同样受墙钟预算约束：生成阶段可能已经吃掉大半预算，此时宁可直接发
+      // 兜底稿，也不要在翻译途中被平台掐断而什么都没写。
+      const translated =
+        deadlineMs - Date.now() >= MIN_CALL_BUDGET_MS
+          ? await translateBriefingJson(good, from, to, badLocale)
+          : null;
+
+      if (translated) {
+        // 用翻译后的**字段**重新渲染，而不是翻译渲染好的 HTML：小标题、括号
+        // 样式、免责声明都会正确本地化，价格与链接原样不动。
+        title[okLocale] = good.title;
+        content[okLocale] = renderBriefingHtml(good, facts, sources, okLocale);
+        title[badLocale] = translated.title;
+        content[badLocale] = renderBriefingHtml(translated, facts, sources, badLocale);
+        await alert(`${badLocale} 生成失败，已用翻译通道兜住`);
+      } else {
+        degraded = true;
+        await alert(`${badLocale} 生成失败且翻译通道也失败，改发零 AI 兜底稿`);
+      }
     } else {
       degraded = true;
       await alert("中英两语均未通过质量门槛，改发零 AI 兜底稿");

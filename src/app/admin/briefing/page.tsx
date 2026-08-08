@@ -31,7 +31,7 @@ export default async function AdminBriefingPage() {
   const client = createServiceRoleClient();
   const now = Date.now();
 
-  const [heartbeatRes, recentRes, pushSettingRes] = await Promise.all([
+  const [heartbeatRes, recentRes, pushSettingRes, lastRunRes] = await Promise.all([
     client
       .from("cron_heartbeats")
       .select("last_run_at, last_status")
@@ -47,6 +47,11 @@ export default async function AdminBriefingPage() {
       .from("admin_settings")
       .select("value")
       .eq("key", "daily_briefing_push_enabled")
+      .maybeSingle(),
+    client
+      .from("admin_settings")
+      .select("value")
+      .eq("key", "daily_briefing_last_run")
       .maybeSingle(),
   ]);
 
@@ -78,6 +83,9 @@ export default async function AdminBriefingPage() {
     todaySlug,
     todayPublished: recent.some((a) => a.slug === todaySlug),
     pushEnabled: pushSettingRes.data?.value === true,
+    // 上一次运行的降级原因。cron 在无人值守时段跑，等人发现「今天怎么是兜底稿」
+    // 时那次响应早没了，所以它必须能从库里读回来。
+    lastRun: (lastRunRes.data?.value as BriefingPageData["lastRun"]) ?? null,
     recent: recent.map((a) => ({
       slug: a.slug,
       titleZh: a.title?.["zh-CN"] ?? null,

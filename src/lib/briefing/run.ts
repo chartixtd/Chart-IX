@@ -57,12 +57,25 @@ export interface BriefingRunResult {
   status: "published" | "fallback" | "skipped" | "failed";
   slug: string;
   detail?: string;
+  /** 本次运行记下的降级/失败原因，按发生顺序。正常发布时为空数组 */
+  reasons?: string[];
 }
 
 export interface BriefingRunOptions {
   /** 后台手动触发用：绕过发布时间窗闸门，否则白天没法调试与补发 */
   ignoreSchedule?: boolean;
+  /**
+   * 后台调试用：先删掉今天已有的那篇再重新生成。
+   *
+   * 幂等闸门让「今天再跑一次」变成 skipped，这在正常运行时正是我们要的，
+   * 但在排查「为什么降级了」时会把人卡死——只能去数据库手动删。
+   * 只有 admin 路由会传这个，cron 永远不传。
+   */
+  force?: boolean;
 }
+
+/** 最近一次运行的诊断落在 admin_settings 的这个键下，供后台测试页读取 */
+const LAST_RUN_KEY = "daily_briefing_last_run";
 
 /**
  * 非终局告警一律**不 await**。
@@ -87,6 +100,25 @@ export interface BriefingRunOptions {
  */
 function alertNoWait(message: string): void {
   void alert(message);
+}
+
+/**
+ * 记录一条降级/失败原因，并按非终局告警的方式发出去。
+ *
+ * 补这个是因为线上第一次真跑就暴露了一个真空：兜底稿发出来了，而「为什么没走
+ * AI」只存在于 console 与 Sentry 里——后台什么都看不到，运维要回答最基本的
+ * 「它为什么降级」都得去翻另一个系统。诊断随运行结果一起返回，并落到
+ * admin_settings，这样 cron 在无人值守时段降级也能事后查。
+ */
+function note(diag: string[], message: string): void {
+  diag.push(message);
+  alertNoWait(message);
+}
+
+/** 终局原因：后面只剩 beat + return，可以安全 await */
+async function noteAwait(diag: string[], message: string): Promise<void> {
+  diag.push(message);
+  await alert(message);
 }
 
 /**
@@ -129,7 +161,8 @@ async function generateOne(
   sources: BriefingSource[],
   facts: MarketFact[],
   dateStr: string,
-  deadlineMs: number
+  deadlineMs: number,
+  diag: string[]
 ): Promise<BriefingJson | null> {
   const apiKey = process.env.DEEPSEEK_API_KEY!;
   const prompt = buildBriefingPrompt(sources, facts, locale, dateStr);
@@ -142,7 +175,8 @@ async function generateOne(
   for (const [attempt, model] of models.entries()) {
     const remaining = deadlineMs - Date.now();
     if (remaining < MIN_CALL_BUDGET_MS) {
-      alertNoWait(
+      note(
+        diag,
         `${locale} 剩余预算 ${Math.max(0, remaining)}ms 不足以再发起第 ${attempt + 1} 次调用，停止重试`
       );
       return null;
@@ -156,7 +190,7 @@ async function generateOne(
       timeoutMs: Math.min(DEFAULT_TIMEOUT_MS, remaining),
     });
     if (!res.ok) {
-      alertNoWait(`${locale} 第 ${attempt + 1} 次调用失败(${model}): ${res.error}`);
+      note(diag, `${locale} 第 ${attempt + 1} 次调用失败(${model}): ${res.error}`);
       continue;
     }
     const parsed = parseBriefingJson(res.content);
@@ -168,7 +202,8 @@ async function generateOne(
       finishReason: res.finishReason,
     });
     if (gate.ok && parsed) return parsed;
-    alertNoWait(
+    note(
+      diag,
       `${locale} 第 ${attempt + 1} 次未过质量门槛(${model}): ` +
         gate.failures.map((f) => `${f.rule}/${f.detail}`).join("; ")
     );
@@ -178,7 +213,8 @@ async function generateOne(
 
 async function runPipeline(
   nowMs: number,
-  options: BriefingRunOptions
+  options: BriefingRunOptions,
+  diag: string[]
 ): Promise<BriefingRunResult> {
   // 墙钟终点用 Date.now() 而不是 nowMs：nowMs 是「逻辑当下」（日期、24h 窗口都
   // 按它算，测试会喂固定值），预算要的是真实流逝时间。
@@ -200,9 +236,22 @@ async function runPipeline(
 
   const authorId = process.env.BRIEFING_AUTHOR_ID;
   if (!process.env.DEEPSEEK_API_KEY || !authorId) {
-    await alert("缺少 DEEPSEEK_API_KEY 或 BRIEFING_AUTHOR_ID 环境变量");
+    await noteAwait(diag, "缺少 DEEPSEEK_API_KEY 或 BRIEFING_AUTHOR_ID 环境变量");
     await beat("error");
     return { status: "failed", slug, detail: "missing env" };
+  }
+
+  // ①′ 强制重跑：只有后台调试会走到这里。删掉今天那篇再往下走，
+  //     否则幂等闸门会让每次重试都变成 skipped，人被卡在「想看它为什么降级
+  //     却跑不起来」的死角里。
+  if (options.force) {
+    const { error: delError } = await supabase.from("articles").delete().eq("slug", slug);
+    if (delError) {
+      await noteAwait(diag, `强制重跑时删除旧稿失败: ${delError.message}`);
+      await beat("error");
+      return { status: "failed", slug, detail: delError.message };
+    }
+    note(diag, `强制重跑：已删除既有的 ${slug}`);
   }
 
   // ① 幂等闸门。真正的并发保护是 articles.slug 的 UNIQUE 约束（见 ⑤），
@@ -228,7 +277,7 @@ async function runPipeline(
 
   // L5：连兜底稿都出不了
   if (sources.length === 0 && facts.length === 0) {
-    await alert("新闻与行情全部获取失败，今日无法出稿");
+    await noteAwait(diag, "新闻与行情全部获取失败，今日无法出稿");
     await beat("error");
     return { status: "failed", slug, detail: "no material" };
   }
@@ -239,20 +288,20 @@ async function runPipeline(
   let degraded = sources.length < MIN_SOURCE_ITEMS;
 
   if (degraded) {
-    alertNoWait(`24h 内仅 ${sources.length} 条新闻，低于 ${MIN_SOURCE_ITEMS}，直接走兜底稿`);
+    note(diag, `24h 内仅 ${sources.length} 条新闻，低于 ${MIN_SOURCE_ITEMS}，直接走兜底稿`);
   } else {
     // 用 allSettled 而非 all：L3 这一级存在的意义就是「一语成功就别丢掉它」。
     // 若某天 generateOne 内部抛了（现在不会，但它调的东西以后可能变），Promise.all
     // 会让整轮直接判失败，把已经生成好的另一语一起扔掉——恰好绕过 L3。
     const [zhSettled, enSettled] = await Promise.allSettled([
-      generateOne("zh-CN", sources, facts, dateStr, deadlineMs),
-      generateOne("en-US", sources, facts, dateStr, deadlineMs),
+      generateOne("zh-CN", sources, facts, dateStr, deadlineMs, diag),
+      generateOne("en-US", sources, facts, dateStr, deadlineMs, diag),
     ]);
     // rejection 原因不能静默丢弃：本文件其他失败模式都会 alert()，
     // 运维排查「en-US 为什么走了翻译」时必须看得到真正抛出的错误。
     for (const [i, settled] of [zhSettled, enSettled].entries()) {
       if (settled.status === "rejected") {
-        alertNoWait(`${LOCALES[i]} 生成过程抛出异常: ${String(settled.reason)}`);
+        note(diag, `${LOCALES[i]} 生成过程抛出异常: ${String(settled.reason)}`);
       }
     }
     const zh = zhSettled.status === "fulfilled" ? zhSettled.value : null;
@@ -303,7 +352,8 @@ async function runPipeline(
           finishReason: null,
         });
         if (!gate.ok) {
-          alertNoWait(
+          note(
+      diag,
             `${badLocale} 翻译结果未过质量门槛: ` +
               gate.failures.map((f) => `${f.rule}/${f.detail}`).join("; ")
           );
@@ -316,14 +366,14 @@ async function runPipeline(
         // 样式、免责声明都会正确本地化，价格与链接原样不动。
         title[badLocale] = translated.title;
         content[badLocale] = renderBriefingHtml(translated, facts, sources, badLocale);
-        alertNoWait(`${badLocale} 生成失败，已用翻译通道兜住`);
+        note(diag, `${badLocale} 生成失败，已用翻译通道兜住`);
       } else {
         degraded = true;
-        alertNoWait(`${badLocale} 生成失败且翻译通道也失败，${badLocale} 改发零 AI 兜底稿`);
+        note(diag, `${badLocale} 生成失败且翻译通道也失败，${badLocale} 改发零 AI 兜底稿`);
       }
     } else {
       degraded = true;
-      alertNoWait("中英两语均未通过质量门槛，改发零 AI 兜底稿");
+      note(diag, "中英两语均未通过质量门槛，改发零 AI 兜底稿");
     }
   }
 
@@ -367,7 +417,7 @@ async function runPipeline(
       await beat("skipped");
       return { status: "skipped", slug };
     }
-    await alert(`落库失败: ${insertError.message}`);
+    await noteAwait(diag, `落库失败: ${insertError.message}`);
     await beat("error");
     return { status: "failed", slug, detail: insertError.message };
   }
@@ -427,8 +477,12 @@ export async function runDailyBriefing(
   nowMs: number,
   options: BriefingRunOptions = {}
 ): Promise<BriefingRunResult> {
+  const diag: string[] = [];
   try {
-    return await runPipeline(nowMs, options);
+    const result = await runPipeline(nowMs, options, diag);
+    const withReasons = { ...result, reasons: diag };
+    await recordLastRun(withReasons);
+    return withReasons;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     Sentry.captureException(err, { tags: { scope: "daily-briefing" } });
@@ -443,6 +497,39 @@ export async function runDailyBriefing(
     } catch {
       /* 保持 "unknown" */
     }
-    return { status: "failed", slug, detail: message };
+    diag.push(`流水线异常: ${message}`);
+    const failed: BriefingRunResult = { status: "failed", slug, detail: message, reasons: diag };
+    await recordLastRun(failed);
+    return failed;
+  }
+}
+
+/**
+ * 把这次运行的结果与全部降级原因写进 admin_settings，供后台测试页显示。
+ *
+ * 为什么要落库而不只是随响应返回：cron 在无人值守时段跑，等运维发现「今天怎么
+ * 是兜底稿」的时候，那次响应早就没了。写失败绝不能影响主流程——文章此时通常
+ * 已经发布成功了。
+ */
+async function recordLastRun(result: BriefingRunResult): Promise<void> {
+  try {
+    await createServiceRoleClient()
+      .from("admin_settings")
+      .upsert(
+        {
+          key: LAST_RUN_KEY,
+          value: {
+            at: new Date().toISOString(),
+            status: result.status,
+            slug: result.slug,
+            detail: result.detail ?? null,
+            reasons: result.reasons ?? [],
+          },
+          description: "每日早报最近一次运行的诊断（程序自动写入）",
+        },
+        { onConflict: "key" }
+      );
+  } catch (err) {
+    console.error("[daily-briefing] recordLastRun failed", err);
   }
 }

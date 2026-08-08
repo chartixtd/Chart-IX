@@ -18,6 +18,13 @@ export interface BriefingPageData {
   todaySlug: string;
   todayPublished: boolean;
   pushEnabled: boolean;
+  lastRun: {
+    at: string;
+    status: string;
+    slug: string;
+    detail: string | null;
+    reasons: string[];
+  } | null;
   recent: {
     slug: string;
     titleZh: string | null;
@@ -33,7 +40,23 @@ interface RunResult {
   status?: "published" | "fallback" | "skipped" | "failed";
   slug?: string;
   detail?: string;
+  reasons?: string[];
   error?: string;
+}
+
+/** 降级原因列表。这是"它为什么没走 AI"的唯一答案来源 */
+function Reasons({ items }: { items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <ol className="mt-2 space-y-1 text-xs text-text-secondary">
+      {items.map((r, i) => (
+        <li key={i} className="flex gap-2">
+          <span className="shrink-0 text-text-secondary/60">{i + 1}.</span>
+          <span className="break-all">{r}</span>
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 const LOCALES = ["zh-CN", "en-US", "ms-MY"] as const;
@@ -97,11 +120,16 @@ export function BriefingRunner({ data }: { data: BriefingPageData }) {
 
   const envReady = data.env.deepseekKey && data.env.authorId;
 
-  async function run() {
+  async function run(force = false) {
+    if (force && !window.confirm(`将删除 ${data.todaySlug} 后重新生成，确定？`)) return;
     setRunning(true);
     setResult(null);
     try {
-      const res = await fetch("/api/admin/briefing/run-now", { method: "POST" });
+      const res = await fetch("/api/admin/briefing/run-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
       const body = (await res.json()) as RunResult;
       setResult(body);
       toast(
@@ -170,20 +198,39 @@ export function BriefingRunner({ data }: { data: BriefingPageData }) {
       </Card>
 
       <Card title="立即生成">
-        <button
-          onClick={run}
-          disabled={running || !envReady}
-          className={cn(
-            "rounded-sm px-4 py-2 text-sm font-medium transition-colors",
-            running || !envReady
-              ? "bg-bg-tertiary text-text-secondary cursor-not-allowed"
-              : "bg-gold/10 text-gold hover:bg-gold/20"
-          )}
-        >
-          {running ? "生成中…（最长约 50 秒）" : "立即生成早报"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => run(false)}
+            disabled={running || !envReady}
+            className={cn(
+              "rounded-sm px-4 py-2 text-sm font-medium transition-colors",
+              running || !envReady
+                ? "bg-bg-tertiary text-text-secondary cursor-not-allowed"
+                : "bg-gold/10 text-gold hover:bg-gold/20"
+            )}
+          >
+            {running ? "生成中…（最长约 50 秒）" : "立即生成早报"}
+          </button>
+          <button
+            onClick={() => run(true)}
+            disabled={running || !envReady || !data.todayPublished}
+            className={cn(
+              "rounded-sm px-4 py-2 text-sm font-medium transition-colors",
+              running || !envReady || !data.todayPublished
+                ? "bg-bg-tertiary text-text-secondary cursor-not-allowed"
+                : "bg-danger/10 text-danger hover:bg-danger/20"
+            )}
+          >
+            删除今天这篇并重新生成
+          </button>
+        </div>
         {!envReady && (
           <p className="mt-2 text-xs text-text-secondary">环境变量配齐并重新部署后才能触发。</p>
+        )}
+        {envReady && data.todayPublished && (
+          <p className="mt-2 text-xs text-text-secondary">
+            今天已有稿，普通触发会返回 skipped——排查降级原因时用右边那个红色按钮。
+          </p>
         )}
 
         {result && (
@@ -206,7 +253,42 @@ export function BriefingRunner({ data }: { data: BriefingPageData }) {
                 {result.detail}
               </pre>
             )}
+            {result.reasons && result.reasons.length > 0 && (
+              <>
+                <div className="mt-3 text-xs font-medium text-text-secondary">降级原因：</div>
+                <Reasons items={result.reasons} />
+              </>
+            )}
           </div>
+        )}
+      </Card>
+
+      <Card title="上一次运行">
+        {data.lastRun ? (
+          <>
+            <div className="text-sm text-text-primary">
+              {fmt(data.lastRun.at)} ·{" "}
+              <span className={STATUS_COPY[data.lastRun.status]?.tone ?? "text-text-secondary"}>
+                {STATUS_COPY[data.lastRun.status]?.label ?? data.lastRun.status}
+              </span>{" "}
+              <span className="text-text-secondary">{data.lastRun.slug}</span>
+            </div>
+            {data.lastRun.detail && (
+              <pre className="mt-2 whitespace-pre-wrap break-all text-xs text-text-secondary">
+                {data.lastRun.detail}
+              </pre>
+            )}
+            {data.lastRun.reasons.length > 0 ? (
+              <Reasons items={data.lastRun.reasons} />
+            ) : (
+              <p className="mt-2 text-xs text-text-secondary">没有降级，全程走的 AI 路径。</p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-text-secondary">
+            还没有记录。这个功能是在第一次线上运行之后才加的，所以已经发出去的那篇看不到原因——
+            用上面的「删除今天这篇并重新生成」跑一次就有了。
+          </p>
         )}
       </Card>
 

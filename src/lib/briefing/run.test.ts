@@ -94,6 +94,9 @@ const db = {
   inserted: [] as InsertedArticle[],
   beats: [] as string[],
   throwOnClient: false,
+  deletedSlugs: [] as string[],
+  deleteError: null as { message: string } | null,
+  lastRun: null as { status: string; slug: string; reasons: string[] } | null,
 
   reset() {
     db.existingArticle = null;
@@ -102,6 +105,9 @@ const db = {
     db.inserted = [];
     db.beats = [];
     db.throwOnClient = false;
+    db.deletedSlugs = [];
+    db.deleteError = null;
+    db.lastRun = null;
   },
 
   client() {
@@ -127,11 +133,25 @@ const db = {
                 db.inserted.push(row);
                 return { error: null };
               },
+              delete: () => ({
+                eq: async (_col: string, value: string) => {
+                  if (db.deleteError) return { error: db.deleteError };
+                  db.deletedSlugs.push(value);
+                  db.existingArticle = null;
+                  return { error: null };
+                },
+              }),
             };
           case "article_categories":
             return single({ id: "cat-1" });
           case "admin_settings":
-            return single({ value: db.pushEnabled });
+            return {
+              ...single({ value: db.pushEnabled }),
+              upsert: async (row: { key: string; value: typeof db.lastRun }) => {
+                if (row.key === "daily_briefing_last_run") db.lastRun = row.value;
+                return { error: null };
+              },
+            };
           default:
             throw new Error(`unexpected table ${table}`);
         }
@@ -296,6 +316,65 @@ describe("runDailyBriefing — 正常路径", () => {
     const r = await runDailyBriefing(NOW);
     expect(r.status).toBe("skipped");
     expect(callDeepSeek).not.toHaveBeenCalled();
+  });
+});
+
+// 线上第一次真跑就发现：兜底稿发出来了，但「为什么没走 AI」只在 Sentry 里，
+// 后台一无所知。这组用例锁住"降级必须自带可读原因"。
+describe("runDailyBriefing — 降级诊断", () => {
+  it("降级时把每条原因随结果返回", async () => {
+    callDeepSeek.mockResolvedValue(FAIL);
+    const r = await runDailyBriefing(NOW);
+    expect(r.status).toBe("fallback");
+    expect(r.reasons?.length).toBeGreaterThan(0);
+    expect(r.reasons?.join("\n")).toContain("调用失败");
+  });
+
+  it("正常发布时原因列表为空", async () => {
+    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    const r = await runDailyBriefing(NOW);
+    expect(r.status).toBe("published");
+    expect(r.reasons).toEqual([]);
+  });
+
+  it("结果与原因写进 admin_settings，供无人值守时段事后查", async () => {
+    callDeepSeek.mockResolvedValue(FAIL);
+    await runDailyBriefing(NOW);
+    expect(db.lastRun?.status).toBe("fallback");
+    expect(db.lastRun?.reasons.join("\n")).toContain("调用失败");
+  });
+
+  it("诊断落库失败不影响已经发布成功的文章", async () => {
+    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    const r = await runDailyBriefing(NOW);
+    expect(r.status).toBe("published");
+    expect(db.inserted).toHaveLength(1);
+  });
+});
+
+describe("runDailyBriefing — 强制重跑", () => {
+  it("force 会先删掉今天那篇再重新生成", async () => {
+    db.existingArticle = { id: "a1" };
+    callDeepSeek.mockImplementation(async (opts) => ok(isEnglishPrompt(opts) ? EN_JSON : ZH_JSON));
+    const r = await runDailyBriefing(NOW, { force: true });
+    expect(db.deletedSlugs).toEqual(["daily-briefing-2026-08-08"]);
+    expect(r.status).toBe("published");
+    expect(db.inserted).toHaveLength(1);
+  });
+
+  it("不传 force 时不会删任何东西", async () => {
+    db.existingArticle = { id: "a1" };
+    await runDailyBriefing(NOW);
+    expect(db.deletedSlugs).toEqual([]);
+  });
+
+  it("删除失败时判为 failed，不会接着重新生成", async () => {
+    db.existingArticle = { id: "a1" };
+    db.deleteError = { message: "permission denied" };
+    const r = await runDailyBriefing(NOW, { force: true });
+    expect(r.status).toBe("failed");
+    expect(callDeepSeek).not.toHaveBeenCalled();
+    expect(db.beats).toContain("error");
   });
 });
 

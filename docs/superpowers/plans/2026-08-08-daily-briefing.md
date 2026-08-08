@@ -924,8 +924,9 @@ git commit -m "feat(briefing): 现货 24h 行情事实集（黄金用 XAUT/PAXG�
 - Produces:
   - `GateFailure = { rule: string; detail: string }`
   - `GateResult = { ok: boolean; failures: GateFailure[] }`
-  - `extractPrices(text: string): number[]`
-  - `extractPercents(text: string): number[]`
+  - `NumberHit = { value: number; index: number }`
+  - `extractPrices(text: string): number[]`、`extractPercents(text: string): number[]`
+  - `extractPriceHits(text: string): NumberHit[]`、`extractPercentHits(text: string): NumberHit[]`
   - `parseBriefingJson(raw: string): BriefingJson | null`
   - `checkBriefing(input: { json: unknown; facts: MarketFact[]; sources: BriefingSource[]; locale: BriefingLocale; finishReason: string | null }): GateResult`
 
@@ -940,6 +941,7 @@ import type { BriefingJson, MarketFact, BriefingSource } from "./types";
 
 const FACTS: MarketFact[] = [
   { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
+  { symbol: "ETH-USDT", label: "ETH", lastPrice: 1914.99, change24hPct: 0.59 },
   { symbol: "XAUT-USDT", label: "XAUT", lastPrice: 4325.51, change24hPct: 1.37 },
 ];
 
@@ -1082,6 +1084,57 @@ describe("checkBriefing", () => {
     expect(check(j).ok).toBe(true);
   });
 
+  // ── 标的邻近绑定：以下两条各自复现一个曾能击穿门槛的真实场景 ──
+
+  // 两个数字都仍在事实集里，只是安到了错的标的上——这正是旧实现全部放行的场景
+  it("换标的被抓出：BTC 段落写成黄金的数字", () => {
+    const j = validJson();
+    j.analysis.crypto = j.analysis.crypto
+      .replace("$64,959.52", "$4,325.51")
+      .replace("0.92%", "1.37%");
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("换标的被抓出：黄金段落写成 BTC 的数字", () => {
+    const j = validJson();
+    j.analysis.gold = j.analysis.gold
+      .replace("$4,325.51", "$64,959.52")
+      .replace("1.37%", "0.92%");
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("绑定到标的后，来源白名单不能替伪造数字背书", () => {
+    const j = validJson();
+    j.analysis.crypto = j.analysis.crypto.replace("0.92%", "7.50%");
+    // 当天恰好有一条无关新闻里出现同一个数字——它不该让 BTC 段的伪造过关
+    const noisySources: BriefingSource[] = [
+      ...SOURCES,
+      { title: "iPhone 出货量下降 7.50%", url: "https://e.com/2", source: "CNBC", publishedAt: 0, summary: "" },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: noisySources, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("附近没有标的标签时，来源里出现过的数字仍放行", () => {
+    const j = validJson();
+    j.analysis.overview += "市场消化了 3.1% 的通胀读数，情绪趋于稳定，短期内仍以震荡为主。";
+    expect(check(j).ok).toBe(true);
+  });
+
+  it("同句内有多个标签时绑定最近的那个", () => {
+    const j = validJson();
+    j.analysis.overview =
+      "回顾昨日，BTC 与以太坊双双走高，其中 ETH 报 $1,914.99，表现稳健，市场情绪整体偏向乐观，成交也较前一日温和放大，显示资金仍在场内。";
+    expect(check(j).ok).toBe(true);
+  });
+
   it("禁用表述被抓出", () => {
     const j = validJson();
     j.analysis.watchlist = ["建议买入 BTC"];
@@ -1154,6 +1207,8 @@ export interface GateResult {
 const PRICE_TOLERANCE_RATIO = 0.005;
 /** 百分比容差，单位是"个百分点" */
 const PERCENT_TOLERANCE_PP = 0.2;
+/** 数字回看标的标签的最大字符距离（还会被句子边界进一步截断） */
+const LABEL_PROXIMITY_WINDOW = 40;
 
 const TITLE_MIN = 10;
 const TITLE_MAX = 60;
@@ -1177,22 +1232,71 @@ const BANNED_PHRASES = [
 const PRICE_RE = /\$\s*(\d[\d,]*(?:\.\d+)?)/g;
 const PERCENT_RE = /(-?\d+(?:\.\d+)?)\s*%/g;
 
-export function extractPrices(text: string): number[] {
-  const out: number[] = [];
-  for (const m of text.matchAll(PRICE_RE)) {
-    const n = parseFloat(m[1].replace(/,/g, ""));
-    if (Number.isFinite(n)) out.push(n);
+/** 带位置的数字命中——位置用于回看这句话在讲哪个标的 */
+export interface NumberHit {
+  value: number;
+  index: number;
+}
+
+function collectHits(text: string, re: RegExp, strip: boolean): NumberHit[] {
+  const out: NumberHit[] = [];
+  // matchAll 不会改动共享正则的 lastIndex（内部克隆），模块级 /g 正则可安全复用
+  for (const m of text.matchAll(re)) {
+    const raw = strip ? m[1].replace(/,/g, "") : m[1];
+    const value = parseFloat(raw);
+    if (Number.isFinite(value)) out.push({ value, index: m.index ?? 0 });
   }
   return out;
 }
 
+export function extractPriceHits(text: string): NumberHit[] {
+  return collectHits(text, PRICE_RE, true);
+}
+
+export function extractPercentHits(text: string): NumberHit[] {
+  return collectHits(text, PERCENT_RE, false);
+}
+
+export function extractPrices(text: string): number[] {
+  return extractPriceHits(text).map((h) => h.value);
+}
+
 export function extractPercents(text: string): number[] {
-  const out: number[] = [];
-  for (const m of text.matchAll(PERCENT_RE)) {
-    const n = parseFloat(m[1]);
-    if (Number.isFinite(n)) out.push(n);
+  return extractPercentHits(text).map((h) => h.value);
+}
+
+/**
+ * 回看数字前方、**同一句之内**最近的事实标签。
+ *
+ * 存在的理由：只问「这个数字是否匹配某个事实」挡不住张冠李戴——把 BTC 与黄金
+ * 的价格互换后，两个数字各自都还在事实集里，门槛会全部放行，而文章却在告诉
+ * 读者「BTC 报 $4,325.51」。绑定到具体标的后，换标的立刻暴露。
+ *
+ * 窗口按句子终止符截断，避免把上一句的标的错误绑过来；再叠一个字符数上限，
+ * 兜住整段没有标点的极端情况。
+ *
+ * 刻意偏向「绑得严」：误绑最坏结果是当天降级成朴素的兜底稿，漏绑却会把错误的
+ * 金融论断发布出去。两者代价不对称。
+ */
+function nearestLabeledFact(
+  text: string,
+  index: number,
+  facts: MarketFact[]
+): MarketFact | null {
+  const capped = text.slice(Math.max(0, index - LABEL_PROXIMITY_WINDOW), index);
+  // 只保留最后一个句子终止符之后的部分
+  const sentenceStart = Math.max(
+    ...["。", "！", "？", "\n", ". "].map((p) => capped.lastIndexOf(p))
+  );
+  const window = (sentenceStart >= 0 ? capped.slice(sentenceStart + 1) : capped).toUpperCase();
+
+  let best: { fact: MarketFact; at: number } | null = null;
+  for (const fact of facts) {
+    const at = window.lastIndexOf(fact.label.toUpperCase());
+    if (at === -1) continue;
+    if (!best || at > best.at) best = { fact, at };
   }
-  return out;
+  return best?.fact ?? null;
 }
 
 /**
@@ -1310,21 +1414,44 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: BriefingSou
   const sourcePrices = new Set(extractPrices(sourceText));
   const sourcePercents = new Set(extractPercents(sourceText));
 
-  for (const price of extractPrices(text)) {
-    if (sourcePrices.has(price)) continue;
-    const matched = facts.some(
-      (f) => Math.abs(price - f.lastPrice) <= f.lastPrice * PRICE_TOLERANCE_RATIO
-    );
-    if (!matched) {
-      failures.push({ rule: "hallucinated-number", detail: `价格 $${price} 不在行情事实集内` });
+  const priceOk = (v: number, f: MarketFact) =>
+    Math.abs(v - f.lastPrice) <= f.lastPrice * PRICE_TOLERANCE_RATIO;
+  const pctOk = (v: number, f: MarketFact) =>
+    Math.abs(v - f.change24hPct) <= PERCENT_TOLERANCE_PP;
+
+  for (const hit of extractPriceHits(text)) {
+    const bound = nearestLabeledFact(text, hit.index, facts);
+    if (bound) {
+      // 绑定到具体标的时，来源白名单**不适用**：否则当天任意一条无关新闻里
+      // 巧合出现的同一个数字，就能替一处伪造背书。
+      if (!priceOk(hit.value, bound)) {
+        failures.push({
+          rule: "hallucinated-number",
+          detail: `价格 $${hit.value} 与 ${bound.label} 的实际价格 ${bound.lastPrice} 不符`,
+        });
+      }
+      continue;
+    }
+    if (sourcePrices.has(hit.value)) continue;
+    if (!facts.some((f) => priceOk(hit.value, f))) {
+      failures.push({ rule: "hallucinated-number", detail: `价格 $${hit.value} 不在行情事实集内` });
     }
   }
 
-  for (const pct of extractPercents(text)) {
-    if (sourcePercents.has(pct)) continue;
-    const matched = facts.some((f) => Math.abs(pct - f.change24hPct) <= PERCENT_TOLERANCE_PP);
-    if (!matched) {
-      failures.push({ rule: "hallucinated-number", detail: `涨跌幅 ${pct}% 不在行情事实集内` });
+  for (const hit of extractPercentHits(text)) {
+    const bound = nearestLabeledFact(text, hit.index, facts);
+    if (bound) {
+      if (!pctOk(hit.value, bound)) {
+        failures.push({
+          rule: "hallucinated-number",
+          detail: `涨跌幅 ${hit.value}% 与 ${bound.label} 的实际涨跌 ${bound.change24hPct}% 不符`,
+        });
+      }
+      continue;
+    }
+    if (sourcePercents.has(hit.value)) continue;
+    if (!facts.some((f) => pctOk(hit.value, f))) {
+      failures.push({ rule: "hallucinated-number", detail: `涨跌幅 ${hit.value}% 不在行情事实集内` });
     }
   }
   return failures;

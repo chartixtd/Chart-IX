@@ -2637,10 +2637,15 @@ async function runPipeline(nowMs: number): Promise<BriefingRunResult> {
   if (degraded) {
     await alert(`24h 内仅 ${sources.length} 条新闻，低于 ${MIN_SOURCE_ITEMS}，直接走兜底稿`);
   } else {
-    const [zh, en] = await Promise.all([
+    // 用 allSettled 而非 all：L3 这一级存在的意义就是「一语成功就别丢掉它」。
+    // 若某天 generateOne 内部抛了（现在不会，但它调的东西以后可能变），Promise.all
+    // 会让整轮直接判失败，把已经生成好的另一语一起扔掉——恰好绕过 L3。
+    const [zhSettled, enSettled] = await Promise.allSettled([
       generateOne("zh-CN", sources, facts, dateStr),
       generateOne("en-US", sources, facts, dateStr),
     ]);
+    const zh = zhSettled.status === "fulfilled" ? zhSettled.value : null;
+    const en = enSettled.status === "fulfilled" ? enSettled.value : null;
 
     if (zh && en) {
       title["zh-CN"] = zh.title;
@@ -2719,13 +2724,27 @@ async function runPipeline(nowMs: number): Promise<BriefingRunResult> {
       .maybeSingle();
     if (setting?.value === true) {
       const subs = await getOptedInSubscriptions("new_content");
+
+      // 按订阅语言分组，每组只调一次——sendToSubscriptions 内部已经用 Promise.all
+      // 并发发送。逐个订阅者 await 会让这段随订阅数线性变长，而它跑在文章**已经
+      // 落库发布之后**、maxDuration=60 的函数里：被平台掐断就会出现「文章发了、
+      // 心跳还是旧的」，正是 cron_heartbeats 当初要防的静默失效。
+      // 分组键用订阅自带的 locale（而非归一后的内容语言），这样 ms-MY 用户点开的
+      // 仍是 /ms-MY/ 链接，只是正文回退成英文。
+      const byLocale = new Map<string, typeof subs>();
       for (const sub of subs) {
-        const locale = sub.locale === "zh-CN" ? "zh-CN" : "en-US";
-        const msg = buildContentMessage(locale, "article", title[locale]);
-        await sendToSubscriptions([sub], {
+        const group = byLocale.get(sub.locale);
+        if (group) group.push(sub);
+        else byLocale.set(sub.locale, [sub]);
+      }
+
+      for (const [subLocale, group] of byLocale) {
+        const contentLocale: BriefingLocale = subLocale === "zh-CN" ? "zh-CN" : "en-US";
+        const msg = buildContentMessage(contentLocale, "article", title[contentLocale]);
+        await sendToSubscriptions(group, {
           title: msg.title,
           body: msg.body,
-          url: `/${sub.locale}/articles/${slug}`,
+          url: `/${subLocale}/articles/${slug}`,
           tag: JOB_NAME,
         });
       }
@@ -2752,7 +2771,16 @@ export async function runDailyBriefing(nowMs: number): Promise<BriefingRunResult
     Sentry.captureException(err, { tags: { scope: "daily-briefing" } });
     await alert(`流水线异常: ${message}`);
     await beat("error");
-    return { status: "failed", slug: briefingSlug(utcPlus8DateString(nowMs)), detail: message };
+    // slug 要重算，但 utcPlus8DateString 对非有限的 nowMs 会抛 RangeError——
+    // 那正是把我们送进这个 catch 的同一行。兜底路径自己再抛一次就会击穿
+    // 「runDailyBriefing 永不抛出」这个两个调用方都依赖的契约。
+    let slug = "unknown";
+    try {
+      slug = briefingSlug(utcPlus8DateString(nowMs));
+    } catch {
+      /* 保持 "unknown" */
+    }
+    return { status: "failed", slug, detail: message };
   }
 }
 ```

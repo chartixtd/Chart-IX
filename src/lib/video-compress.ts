@@ -240,6 +240,51 @@ async function loadFFmpeg(): Promise<import("@ffmpeg/ffmpeg").FFmpeg> {
   return ffmpegLoadPromise;
 }
 
+/**
+ * 拼 ffmpeg 命令行。
+ *
+ * 抽成纯函数是因为 compressVideo 本身在测试环境跑不起来（要 WebAssembly +
+ * Worker + 32MB 下载）；所有分支判断集中在这里，全部可测。
+ *
+ * sourceFps 为 null 表示探测失败——此时完全不加帧率参数，退回不做帧率处理的
+ * 安全行为。只有源确实高于上限才封顶：`-r` 是双向的，对低帧率源用它会插帧，
+ * 凭空增加编码量。
+ */
+export function buildFFmpegArgs(
+  inputName: string,
+  outputName: string,
+  plan: CompressionPlan,
+  sourceFps: number | null
+): string[] {
+  const args = ["-i", inputName];
+
+  if (sourceFps !== null && sourceFps > MAX_FPS) {
+    args.push("-r", String(MAX_FPS));
+  }
+
+  if (!plan.skipScale) {
+    // -2 让宽度按比例走并自动取偶（libx264 要求偶数宽高）。
+    args.push("-vf", `scale=-2:${plan.height}`);
+  }
+
+  args.push(
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-b:v", `${plan.videoBitrateKbps}k`,
+    "-maxrate", `${plan.maxrateKbps}k`,
+    "-bufsize", `${plan.bufsizeKbps}k`,
+    "-g", String(plan.gopSize),
+    "-c:a", "aac",
+    "-b:a", `${plan.audioBitrateKbps}k`,
+    "-ac", String(plan.audioChannels),
+    "-pix_fmt", "yuv420p",
+    "-movflags", "+faststart",
+    outputName
+  );
+
+  return args;
+}
+
 export async function compressVideo(file: File, onProgress: (pct: number) => void): Promise<File> {
   const { fetchFile } = await import("@ffmpeg/util");
   const { durationSeconds, height } = await getVideoMetadata(file);

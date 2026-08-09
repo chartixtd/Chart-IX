@@ -6,6 +6,7 @@ import {
   parseSourceFps,
   MAX_FPS,
   resolveFFmpegCoreConfig,
+  buildFFmpegArgs,
 } from "./video-compress";
 
 describe("needsCompression", () => {
@@ -202,5 +203,86 @@ describe("resolveFFmpegCoreConfig", () => {
   it("两个核心版本号一致，都指向 umd 构建", () => {
     expect(resolveFFmpegCoreConfig(true).baseUrl).toMatch(/\/dist\/umd$/);
     expect(resolveFFmpegCoreConfig(false).baseUrl).toMatch(/\/dist\/umd$/);
+  });
+});
+
+// 取某个 flag 的值。ffmpeg 的参数是 [flag, value] 成对出现的扁平数组。
+function valueOf(args: string[], flag: string): string | undefined {
+  const i = args.indexOf(flag);
+  return i === -1 ? undefined : args[i + 1];
+}
+
+const PLAN_1080 = computeCompressionPlan(600, 1080); // 保 1080p，skipScale = true
+const PLAN_SCALED = computeCompressionPlan(1800, 1080); // 降到 480p，skipScale = false
+
+describe("buildFFmpegArgs", () => {
+  it("输入文件紧跟 -i，输出文件是最后一个参数", () => {
+    const args = buildFFmpegArgs("input.mp4", "output.mp4", PLAN_1080, 30);
+    expect(valueOf(args, "-i")).toBe("input.mp4");
+    expect(args[args.length - 1]).toBe("output.mp4");
+  });
+
+  it("不需要缩放时完全不加 -vf，省掉一遍全帧重采样", () => {
+    expect(PLAN_1080.skipScale).toBe(true);
+    expect(buildFFmpegArgs("in.mp4", "out.mp4", PLAN_1080, 30)).not.toContain("-vf");
+  });
+
+  it("需要缩放时按目标高度加 scale，宽度按比例取偶", () => {
+    expect(PLAN_SCALED.skipScale).toBe(false);
+    const args = buildFFmpegArgs("in.mp4", "out.mp4", PLAN_SCALED, 30);
+    expect(valueOf(args, "-vf")).toBe(`scale=-2:${PLAN_SCALED.height}`);
+  });
+
+  it("源帧率高于上限时封顶到 MAX_FPS", () => {
+    const args = buildFFmpegArgs("in.mp4", "out.mp4", PLAN_1080, 60);
+    expect(valueOf(args, "-r")).toBe(String(MAX_FPS));
+  });
+
+  it("源帧率等于上限时不加 -r，不做无谓的帧率转换", () => {
+    expect(buildFFmpegArgs("in.mp4", "out.mp4", PLAN_1080, MAX_FPS)).not.toContain("-r");
+  });
+
+  it("源帧率低于上限时不加 -r——加了会插帧，凭空增加编码量", () => {
+    expect(buildFFmpegArgs("in.mp4", "out.mp4", PLAN_1080, 24)).not.toContain("-r");
+  });
+
+  it("帧率探测失败时不加 -r，退回不做帧率处理的安全行为", () => {
+    expect(buildFFmpegArgs("in.mp4", "out.mp4", PLAN_1080, null)).not.toContain("-r");
+  });
+
+  it("绝不使用 -fps_max：这个核心是 FFmpeg 5.1，未知选项会让 ffmpeg 直接失败", () => {
+    for (const fps of [null, 24, 30, 60]) {
+      expect(buildFFmpegArgs("in.mp4", "out.mp4", PLAN_1080, fps)).not.toContain("-fps_max");
+    }
+  });
+
+  it("码率、VBV、关键帧间隔全部取自 plan，不在这里二次计算", () => {
+    const args = buildFFmpegArgs("in.mp4", "out.mp4", PLAN_SCALED, 30);
+    expect(valueOf(args, "-b:v")).toBe(`${PLAN_SCALED.videoBitrateKbps}k`);
+    expect(valueOf(args, "-maxrate")).toBe(`${PLAN_SCALED.maxrateKbps}k`);
+    expect(valueOf(args, "-bufsize")).toBe(`${PLAN_SCALED.bufsizeKbps}k`);
+    expect(valueOf(args, "-g")).toBe(String(PLAN_SCALED.gopSize));
+  });
+
+  it("音频码率与声道数取自 plan", () => {
+    const args = buildFFmpegArgs("in.mp4", "out.mp4", PLAN_SCALED, 30);
+    expect(valueOf(args, "-b:a")).toBe(`${PLAN_SCALED.audioBitrateKbps}k`);
+    expect(valueOf(args, "-ac")).toBe(String(PLAN_SCALED.audioChannels));
+  });
+
+  it("保留既有的编码器与容器设置", () => {
+    const args = buildFFmpegArgs("in.mp4", "out.mp4", PLAN_1080, 30);
+    expect(valueOf(args, "-c:v")).toBe("libx264");
+    expect(valueOf(args, "-preset")).toBe("veryfast");
+    expect(valueOf(args, "-c:a")).toBe("aac");
+    expect(valueOf(args, "-pix_fmt")).toBe("yuv420p");
+    expect(valueOf(args, "-movflags")).toBe("+faststart");
+  });
+
+  it("-r 和 -vf 都在 -i 之后——放在 -i 之前会被当成输入选项，含义完全不同", () => {
+    const args = buildFFmpegArgs("in.mp4", "out.mp4", PLAN_SCALED, 60);
+    const inputIdx = args.indexOf("-i");
+    expect(args.indexOf("-r")).toBeGreaterThan(inputIdx);
+    expect(args.indexOf("-vf")).toBeGreaterThan(inputIdx);
   });
 });

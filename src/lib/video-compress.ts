@@ -17,6 +17,8 @@ export const MAX_FPS = 30;
 
 // 关键帧间隔 = 10 秒。录屏的静止画面在两个关键帧之间几乎不花码率，拉长间隔
 // 直接换成画质；代价是拖动进度条的粒度变成 10 秒，对教学视频可接受。
+// （精确值取决于实际输出帧率：源低于 MAX_FPS 时不封顶帧率，此时关键帧间隔的
+// 时长会略有不同）
 const GOP_SECONDS = 10;
 
 // 上限而非目标：源低于它就按源走。1080p 以上对录屏没有额外可读性，只是烧码率。
@@ -209,8 +211,8 @@ export interface FFmpegCoreConfig {
  *
  * 布尔量由调用方传入而不是在这里读 globalThis，纯粹是为了可测。
  */
-export function resolveFFmpegCoreConfig(crossOriginIsolated: boolean): FFmpegCoreConfig {
-  return crossOriginIsolated
+export function resolveFFmpegCoreConfig(isCrossOriginIsolated: boolean): FFmpegCoreConfig {
+  return isCrossOriginIsolated
     ? { baseUrl: MULTI_THREAD_CORE_BASE_URL, multiThreaded: true }
     : { baseUrl: SINGLE_THREAD_CORE_BASE_URL, multiThreaded: false };
 }
@@ -253,16 +255,6 @@ async function loadFFmpeg(): Promise<import("@ffmpeg/ffmpeg").FFmpeg> {
   return ffmpegLoadPromise;
 }
 
-/**
- * 拼 ffmpeg 命令行。
- *
- * 抽成纯函数是因为 compressVideo 本身在测试环境跑不起来（要 WebAssembly +
- * Worker + 32MB 下载）；所有分支判断集中在这里，全部可测。
- *
- * sourceFps 为 null 表示探测失败——此时完全不加帧率参数，退回不做帧率处理的
- * 安全行为。只有源确实高于上限才封顶：`-r` 是双向的，对低帧率源用它会插帧，
- * 凭空增加编码量。
- */
 // 探测日志的收集上限。`ffmpeg -i` 的输出只有一两千字符，这个上限纯粹是防止
 // 某个畸形输入让 ffmpeg 疯狂刷屏时把内存吃光。
 const PROBE_LOG_MAX_CHARS = 20_000;
@@ -289,16 +281,31 @@ async function probeSourceFps(
   ffmpeg.on("log", onLog);
   try {
     await ffmpeg.exec(["-i", inputName]);
-  } catch {
+  } catch (err) {
     // exec 以返回码报错、理论上不会抛；真抛了就当探测不到。
+    console.warn("[video-compress] 源帧率探测执行失败，本次压缩不封顶帧率", err);
     return null;
   } finally {
     ffmpeg.off("log", onLog);
   }
 
-  return parseSourceFps(log);
+  const fps = parseSourceFps(log);
+  if (fps === null) {
+    console.warn("[video-compress] 源帧率探测失败，本次压缩不封顶帧率");
+  }
+  return fps;
 }
 
+/**
+ * 拼 ffmpeg 命令行。
+ *
+ * 抽成纯函数是因为 compressVideo 本身在测试环境跑不起来（要 WebAssembly +
+ * Worker + 32MB 下载）；所有分支判断集中在这里，全部可测。
+ *
+ * sourceFps 为 null 表示探测失败——此时完全不加帧率参数，退回不做帧率处理的
+ * 安全行为。只有源确实高于上限才封顶：`-r` 是双向的，对低帧率源用它会插帧，
+ * 凭空增加编码量。
+ */
 export function buildFFmpegArgs(
   inputName: string,
   outputName: string,
@@ -314,6 +321,11 @@ export function buildFFmpegArgs(
   if (!plan.skipScale) {
     // -2 让宽度按比例走并自动取偶（libx264 要求偶数宽高）。
     args.push("-vf", `scale=-2:${plan.height}`);
+  } else {
+    // 高度不变，但源宽度未知是否为偶数——libx264 要求偶数宽高，旧的
+    // scale=-2:H 顺带保证了这一点。trunc(iw/2)*2 / trunc(ih/2)*2 对已是
+    // 偶数的源是零成本的恒等运算，只在源宽度是奇数时才真正生效。
+    args.push("-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2");
   }
 
   args.push(

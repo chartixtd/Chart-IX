@@ -222,9 +222,11 @@ describe("buildFFmpegArgs", () => {
     expect(args[args.length - 1]).toBe("output.mp4");
   });
 
-  it("不需要缩放时完全不加 -vf，省掉一遍全帧重采样", () => {
+  it("需要缩放时按目标高度加 scale；skipScale 时改用宽高取偶而非省略 -vf——避免奇数宽度的源在 libx264 处编码失败", () => {
     expect(PLAN_1080.skipScale).toBe(true);
-    expect(buildFFmpegArgs("in.mp4", "out.mp4", PLAN_1080, 30)).not.toContain("-vf");
+    const args = buildFFmpegArgs("in.mp4", "out.mp4", PLAN_1080, 30);
+    expect(args).toContain("-vf");
+    expect(valueOf(args, "-vf")).toBe("scale=trunc(iw/2)*2:trunc(ih/2)*2");
   });
 
   it("需要缩放时按目标高度加 scale，宽度按比例取偶", () => {

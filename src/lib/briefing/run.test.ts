@@ -234,8 +234,14 @@ function isEnglishPrompt(opts: { prompt: string }) {
  * 这里按输入字符数的两倍生成英文单词——正是中译英的典型膨胀倍率。
  */
 const FILLER_WORDS = ["market", "traders", "session", "demand", "range", "volume", "macro", "signal"];
+/**
+ * 假翻译器。倍率 2.4 不是随手取的：中文一个字承载的信息约等于英文两到三个
+ * 字符，线上实测同一篇稿子中文标题 30 字译出 127 字符、段落 250 字译出 695
+ * 字符。早期版本按「长度不变」建模，于是英文的长度阈值怎么调都测不出问题——
+ * 夹具必须和现实同构，否则它守的是一个不存在的世界。
+ */
 function fakeEnglish(text: string): string {
-  const target = Math.min(500, Math.max(30, [...text].length * 2));
+  const target = Math.min(1400, Math.max(30, Math.round([...text].length * 2.4)));
   const words: string[] = [];
   for (let i = 0, len = 0; len < target; i++) {
     const w = FILLER_WORDS[i % FILLER_WORDS.length];
@@ -508,7 +514,10 @@ describe("runDailyBriefing — L3 翻译通道", () => {
   it("翻译把标题撑过 TITLE_MAX 时同样落到兜底稿", async () => {
     callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? FAIL : ok(ZH_JSON)));
     translateText.mockImplementation(async (text: string) =>
-      text === ZH_JSON.title ? "Bitcoin ".repeat(12).trim() : fakeEnglish(text)
+      // 25 次 = 199 字符，越过英文的 titleMax(150)。这个倍数随阈值走：
+      // 阈值按语言分开后，英文上限从 60 提到 150，原来的 12 次（95 字符）
+      // 已经在合法范围内，测不出任何东西了。
+      text === ZH_JSON.title ? "Bitcoin ".repeat(25).trim() : fakeEnglish(text)
     );
 
     const r = await runDailyBriefing(NOW);

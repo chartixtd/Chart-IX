@@ -18,14 +18,51 @@ const PERCENT_TOLERANCE_PP = 0.2;
 /** 数字回看标的标签的最大字符距离（还会被句子边界进一步截断） */
 const LABEL_PROXIMITY_WINDOW = 40;
 
-const TITLE_MIN = 10;
-const TITLE_MAX = 60;
-const SUMMARY_MIN = 20;
-const SUMMARY_MAX = 120;
-const SECTION_MIN = 80;
-const SECTION_MAX = 600;
-/** 渲染后正文总长下限，用于兜住"结构齐全但内容稀薄"的半截输出 */
-const BODY_MIN = 400;
+/**
+ * 长度阈值**按语言分开**。
+ *
+ * 阈值原本只有一套，是按中文定的，却拿去量英文——而同样的内容，英文要多得多的
+ * 字符：中文一个字承载的信息约等于英文两到三个字符。线上实测同一篇稿子：
+ *   标题   中文 ~30 字   →  英译 127 字符（旧上限 60）
+ *   导读   中文 ~80 字   →  英译 225 字符（旧上限 120）
+ *   段落   中文 ~250 字  →  英译 695/740 字符（旧上限 600）
+ * 译文完全正确，是尺子不对。结果是英文版每天被自己的门槛打回、降级成兜底稿。
+ *
+ * 英文一侧的数值即由上面这组实测倒推，并留出余量；不是一个拍脑袋的倍率。
+ * 正文总长下限同理放大——它防的是「结构齐全但内容稀薄」，与语言无关的是
+ * 信息量而不是字符数。
+ */
+interface LengthLimits {
+  titleMin: number;
+  titleMax: number;
+  summaryMin: number;
+  summaryMax: number;
+  sectionMin: number;
+  sectionMax: number;
+  /** 渲染后正文总长下限，用于兜住"结构齐全但内容稀薄"的半截输出 */
+  bodyMin: number;
+}
+
+const LIMITS: Record<BriefingLocale, LengthLimits> = {
+  "zh-CN": {
+    titleMin: 10,
+    titleMax: 60,
+    summaryMin: 20,
+    summaryMax: 120,
+    sectionMin: 80,
+    sectionMax: 600,
+    bodyMin: 400,
+  },
+  "en-US": {
+    titleMin: 24,
+    titleMax: 150,
+    summaryMin: 48,
+    summaryMax: 300,
+    sectionMin: 190,
+    sectionMax: 1500,
+    bodyMin: 960,
+  },
+};
 /** 中文稿的 CJK 字符占比下限；英文稿的 CJK 占比上限 */
 const CJK_RATIO_MIN = 0.3;
 const CJK_RATIO_MAX = 0.05;
@@ -239,25 +276,35 @@ function checkStructure(json: unknown): { failures: GateFailure[]; briefing: Bri
   return { failures, briefing: failures.length === 0 ? b : null };
 }
 
-function checkLengths(b: BriefingJson): GateFailure[] {
+function checkLengths(b: BriefingJson, locale: BriefingLocale): GateFailure[] {
+  const lim = LIMITS[locale];
   const failures: GateFailure[] = [];
   const titleLen = [...b.title].length;
-  if (titleLen < TITLE_MIN || titleLen > TITLE_MAX) {
-    failures.push({ rule: "length", detail: `title 长度 ${titleLen} 不在 ${TITLE_MIN}-${TITLE_MAX}` });
+  if (titleLen < lim.titleMin || titleLen > lim.titleMax) {
+    failures.push({
+      rule: "length",
+      detail: `title 长度 ${titleLen} 不在 ${lim.titleMin}-${lim.titleMax}`,
+    });
   }
   const summaryLen = [...b.summary].length;
-  if (summaryLen < SUMMARY_MIN || summaryLen > SUMMARY_MAX) {
-    failures.push({ rule: "length", detail: `summary 长度 ${summaryLen} 不在 ${SUMMARY_MIN}-${SUMMARY_MAX}` });
+  if (summaryLen < lim.summaryMin || summaryLen > lim.summaryMax) {
+    failures.push({
+      rule: "length",
+      detail: `summary 长度 ${summaryLen} 不在 ${lim.summaryMin}-${lim.summaryMax}`,
+    });
   }
   for (const key of ["overview", "crypto", "gold"] as const) {
     const len = [...b.analysis[key]].length;
-    if (len < SECTION_MIN || len > SECTION_MAX) {
-      failures.push({ rule: "length", detail: `analysis.${key} 长度 ${len} 不在 ${SECTION_MIN}-${SECTION_MAX}` });
+    if (len < lim.sectionMin || len > lim.sectionMax) {
+      failures.push({
+        rule: "length",
+        detail: `analysis.${key} 长度 ${len} 不在 ${lim.sectionMin}-${lim.sectionMax}`,
+      });
     }
   }
   const bodyLen = [...analysisText(b), ...headlinesText(b)].length;
-  if (bodyLen < BODY_MIN) {
-    failures.push({ rule: "length", detail: `正文总长 ${bodyLen} 低于 ${BODY_MIN}` });
+  if (bodyLen < lim.bodyMin) {
+    failures.push({ rule: "length", detail: `正文总长 ${bodyLen} 低于 ${lim.bodyMin}` });
   }
   return failures;
 }
@@ -447,13 +494,22 @@ function checkHeadlineNumbers(
   facts: MarketFact[],
   sources: BriefingSource[]
 ): GateFailure[] {
-  const hits = extractPriceHits(headlinesText(b));
+  const text = headlinesText(b);
+  const hits = extractPriceHits(text);
   if (hits.length === 0) return [];
 
   const sourceNumbers = extractSourceNumbers(sources);
   const near = (v: number, ref: number) => Math.abs(v - ref) <= Math.abs(ref) * PRICE_TOLERANCE_RATIO;
 
-  return hits
+  // 正文这侧同样要认量级后缀，否则「$1 billion」只会被读成 $1。
+  // 线上就栽在这里：源文 "$1B inflows" 译成 "$1 billion"，比对时一个是 1e9、
+  // 一个是 1，判成编造。量级词在两侧都归一，才谈得上比对。
+  const scaled = hits.map((hit) => ({
+    ...hit,
+    value: hit.value * magnitudeAt(text, hit.end),
+  }));
+
+  return scaled
     .filter(
       (hit) =>
         !facts.some((f) => near(hit.value, f.lastPrice)) &&
@@ -518,7 +574,7 @@ export function checkBriefing(input: {
   // 结构不完整时后续规则没有可靠的字段可读，直接返回
   if (!briefing) return { ok: false, failures };
 
-  failures.push(...checkLengths(briefing));
+  failures.push(...checkLengths(briefing, input.locale));
   failures.push(...checkNumbers(briefing, input.facts, input.sources));
   failures.push(...checkHeadlineNumbers(briefing, input.facts, input.sources));
   failures.push(...checkBannedPhrases(briefing));

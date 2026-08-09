@@ -291,6 +291,68 @@ describe("checkBriefing", () => {
     expect(r.ok).toBe(true);
   });
 
+  // ── 长度阈值按语言分开：线上第二个卡点 ──
+  // 阈值原本只有一套、按中文定，却拿去量英文。同一篇稿子英译后标题 127 字符、
+  // 段落 695/740 字符，全部超限，正确的译文被系统性打回、英文版天天降级。
+  it("同样长度的英文稿在中文尺子下超标，在英文尺子下合格", () => {
+    const en: BriefingJson = {
+      title: "Daily Briefing | Bitcoin steadies near sixty five thousand as gold tokens hold their recent gains",
+      summary:
+        "Risk assets and gold tokens both firmed over the past twenty four hours, with macro expectations still unsettled ahead of the inflation print.",
+      headlines: [
+        { topic: "Crypto", points: ["Bitcoin held its range through Asian hours as spot demand stayed steady"] },
+        { topic: "Gold", points: ["Gold tokens pushed higher on continued haven demand across the region"] },
+      ],
+      analysis: {
+        overview:
+          "Risk assets and safe havens advanced together over the past twenty four hours, which usually signals ample liquidity rather than a directional bet. That combination tends to appear when macro expectations have not yet converged, leaving participants unwilling to abandon either side of the book while they wait for clearer policy guidance from officials.",
+        crypto:
+          "Bitcoin changed hands around sixty five thousand dollars, a mild advance that did not come with unusual volume. Order flow showed no concentrated release of buying interest, so the prevailing range remains intact and it is too early to call a change in trend without several more sessions of confirmation.",
+        gold:
+          "Gold tokens outperformed crypto assets over the same window, suggesting hedging demand is still accumulating. That is consistent with the recent rise in macro uncertainty, and it is worth watching whether the relationship with real yields continues to diverge in the sessions ahead.",
+        watchlist: ["Watch for Federal Reserve commentary this week", "Watch whether gold holds its recent range"],
+      },
+    };
+    // 英文尺子：通过
+    expect(
+      checkBriefing({ json: en, facts: FACTS, sources: SOURCES, locale: "en-US", finishReason: "stop" }).ok
+    ).toBe(true);
+    // 同一篇拿中文尺子量：会因超长被拒——这正是线上发生的事
+    const asZh = checkBriefing({
+      json: en, facts: FACTS, sources: SOURCES, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(asZh.failures.some((f) => f.rule === "length")).toBe(true);
+  });
+
+  // ── 正文侧的量级后缀：线上第三个卡点 ──
+  // 源文 "$1B inflows" 译成 "$1 billion"，价格提取只读到 $1，判成编造。
+  it("要闻里的 $1 billion 能和源文的 $1B 对上", () => {
+    const j = validJson();
+    j.headlines[0].points.push("美国现货比特币 ETF 上周净流入 $1 billion，创四月以来最佳表现。");
+    const withB: BriefingSource[] = [
+      ...SOURCES,
+      {
+        title: "US spot Bitcoin ETFs post best week since April with $1B inflows",
+        url: "https://e.com/etf",
+        source: "Cointelegraph",
+        publishedAt: 0,
+        summary: "",
+      },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: withB, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("要闻里源文没提过的量级价格仍算编造", () => {
+    const j = validJson();
+    j.headlines[0].points.push("某基金单周净流入 $9 billion，规模空前。");
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
   it("禁用表述被抓出", () => {
     const j = validJson();
     j.analysis.watchlist = ["建议买入 BTC"];

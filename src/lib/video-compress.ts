@@ -112,6 +112,35 @@ export function computeCompressionPlan(durationSeconds: number, sourceHeight: nu
   };
 }
 
+// 合理的帧率区间。区间外一律当解析失败处理——宁可不加 -r（退回今天的行为），
+// 也不要拿一个离谱的值去做决策。
+const MIN_PLAUSIBLE_FPS = 1;
+const MAX_PLAUSIBLE_FPS = 1000;
+
+/**
+ * 从 `ffmpeg -i <file>` 的日志里读出源视频的帧率。
+ *
+ * 为什么不用 `-fps_max`：这个 wasm 核心是 FFmpeg 5.1（Lavc59.37），`-fps_max`
+ * 是 6.0 才有的选项，传给 5.1 会让 ffmpeg 因未知选项直接失败。而 `-r 30` 是
+ * 双向的——源低于 30fps 时它会插帧，凭空增加编码量。所以先探测、只在源确实
+ * 高于上限时才封顶。
+ *
+ * 解析不到返回 null，调用方据此完全不加帧率参数。
+ */
+export function parseSourceFps(log: string): number | null {
+  // ffmpeg 的视频流信息行形如：
+  //   Stream #0:0(und): Video: h264, yuv420p, 1920x1080, 4998 kb/s, 60 fps, 60 tbr, 90k tbn
+  // 只认 " fps"，不认后面的 tbr/tbn。前面要求逗号+空白，避免撞上别的词尾。
+  const match = /,\s*(\d+(?:\.\d+)?)\s*fps\b/.exec(log);
+  if (!match) return null;
+
+  const fps = Number.parseFloat(match[1]);
+  if (!Number.isFinite(fps) || fps < MIN_PLAUSIBLE_FPS || fps > MAX_PLAUSIBLE_FPS) {
+    return null;
+  }
+  return fps;
+}
+
 interface VideoMetadata {
   durationSeconds: number;
   height: number;

@@ -3,6 +3,7 @@ import {
   COMPRESSION_THRESHOLD_BYTES,
   needsCompression,
   computeCompressionPlan,
+  parseSourceFps,
   MAX_FPS,
 } from "./video-compress";
 
@@ -135,5 +136,50 @@ describe("computeCompressionPlan — 音频", () => {
     expect(plan.audioChannels).toBe(1);
     // 356515.84/901 = 395.689 总，减 64 = 331.689 → 332
     expect(plan.videoBitrateKbps).toBe(332);
+  });
+});
+
+const VIDEO_STREAM_LINE =
+  "  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), " +
+  "yuv420p(tv, bt709), 1920x1080 [SAR 1:1 DAR 16:9], 4998 kb/s, 60 fps, 60 tbr, 90k tbn (default)";
+
+describe("parseSourceFps", () => {
+  it("从视频流信息行里读出整数帧率", () => {
+    expect(parseSourceFps(VIDEO_STREAM_LINE)).toBe(60);
+  });
+
+  it("读得出小数帧率（29.97 这类 NTSC 帧率很常见）", () => {
+    const line = "  Stream #0:0: Video: h264, yuv420p, 1280x720, 1200 kb/s, 29.97 fps, 29.97 tbr, 90k tbn";
+    expect(parseSourceFps(line)).toBe(29.97);
+  });
+
+  it("取的是 fps 而不是紧随其后的 tbr", () => {
+    const line = "  Stream #0:0: Video: h264, 1920x1080, 24 fps, 90k tbr, 90k tbn";
+    expect(parseSourceFps(line)).toBe(24);
+  });
+
+  it("在完整的多行日志里也能定位到视频流那一行", () => {
+    const log = [
+      "ffmpeg version 5.1 Copyright (c) 2000-2022 the FFmpeg developers",
+      "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'input.mp4':",
+      "  Duration: 00:18:03.45, start: 0.000000, bitrate: 5123 kb/s",
+      VIDEO_STREAM_LINE,
+      "  Stream #0:1[0x2](und): Audio: aac (LC), 48000 Hz, stereo, fltp, 128 kb/s",
+      "At least one output file must be specified",
+    ].join("\n");
+    expect(parseSourceFps(log)).toBe(60);
+  });
+
+  it("日志里没有帧率时返回 null——调用方据此完全不加 -r", () => {
+    expect(parseSourceFps("At least one output file must be specified")).toBeNull();
+  });
+
+  it("空日志返回 null", () => {
+    expect(parseSourceFps("")).toBeNull();
+  });
+
+  it("荒谬的帧率当作解析失败，不拿去做决策", () => {
+    expect(parseSourceFps("Video: h264, 0 fps, 90k tbn")).toBeNull();
+    expect(parseSourceFps("Video: h264, 100000 fps, 90k tbn")).toBeNull();
   });
 });

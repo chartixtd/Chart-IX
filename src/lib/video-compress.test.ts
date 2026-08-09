@@ -5,6 +5,7 @@ import {
   computeCompressionPlan,
   parseSourceFps,
   MAX_FPS,
+  resolveFFmpegCoreConfig,
 } from "./video-compress";
 
 describe("needsCompression", () => {
@@ -181,5 +182,25 @@ describe("parseSourceFps", () => {
   it("荒谬的帧率当作解析失败，不拿去做决策", () => {
     expect(parseSourceFps("Video: h264, 0 fps, 90k tbn")).toBeNull();
     expect(parseSourceFps("Video: h264, 100000 fps, 90k tbn")).toBeNull();
+  });
+});
+
+describe("resolveFFmpegCoreConfig", () => {
+  it("跨源隔离成立时用多线程核心", () => {
+    const config = resolveFFmpegCoreConfig(true);
+    expect(config.multiThreaded).toBe(true);
+    expect(config.baseUrl).toContain("@ffmpeg/core-mt@0.12.10");
+  });
+
+  it("未隔离时回落单线程核心——功能不坏，只是慢", () => {
+    const config = resolveFFmpegCoreConfig(false);
+    expect(config.multiThreaded).toBe(false);
+    expect(config.baseUrl).toContain("@ffmpeg/core@0.12.10");
+    expect(config.baseUrl).not.toContain("core-mt");
+  });
+
+  it("两个核心版本号一致，都指向 umd 构建", () => {
+    expect(resolveFFmpegCoreConfig(true).baseUrl).toMatch(/\/dist\/umd$/);
+    expect(resolveFFmpegCoreConfig(false).baseUrl).toMatch(/\/dist\/umd$/);
   });
 });

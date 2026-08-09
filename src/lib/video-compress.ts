@@ -189,8 +189,31 @@ function getVideoMetadata(file: File): Promise<VideoMetadata> {
 let ffmpegInstance: import("@ffmpeg/ffmpeg").FFmpeg | null = null;
 let ffmpegLoadPromise: Promise<import("@ffmpeg/ffmpeg").FFmpeg> | null = null;
 
-// Single-threaded core (no COOP/COEP headers required) — see Global Constraints.
-const FFMPEG_CORE_BASE_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+const FFMPEG_CORE_VERSION = "0.12.10";
+const SINGLE_THREAD_CORE_BASE_URL = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/umd`;
+const MULTI_THREAD_CORE_BASE_URL = `https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt@${FFMPEG_CORE_VERSION}/dist/umd`;
+
+export interface FFmpegCoreConfig {
+  baseUrl: string;
+  /** 多线程核心要额外加载 ffmpeg-core.worker.js。 */
+  multiThreaded: boolean;
+}
+
+/**
+ * 选哪个 ffmpeg.wasm 核心。
+ *
+ * 多线程核心快 3–5 倍，但需要 SharedArrayBuffer，而 SharedArrayBuffer 只在
+ * 跨源隔离的文档里可用。next.config.mjs 给 /admin 加了 COOP/COEP 让它成立，
+ * 但 Safari 不支持 COEP: credentialless——那里隔离不成立，回落单线程核心，
+ * 功能完全正常，只是慢。所以这里是运行时判断，不是假设。
+ *
+ * 布尔量由调用方传入而不是在这里读 globalThis，纯粹是为了可测。
+ */
+export function resolveFFmpegCoreConfig(crossOriginIsolated: boolean): FFmpegCoreConfig {
+  return crossOriginIsolated
+    ? { baseUrl: MULTI_THREAD_CORE_BASE_URL, multiThreaded: true }
+    : { baseUrl: SINGLE_THREAD_CORE_BASE_URL, multiThreaded: false };
+}
 
 async function loadFFmpeg(): Promise<import("@ffmpeg/ffmpeg").FFmpeg> {
   if (ffmpegInstance) return ffmpegInstance;
@@ -200,9 +223,10 @@ async function loadFFmpeg(): Promise<import("@ffmpeg/ffmpeg").FFmpeg> {
     const { FFmpeg } = await import("@ffmpeg/ffmpeg");
     const { toBlobURL } = await import("@ffmpeg/util");
     const ffmpeg = new FFmpeg();
+    const core = resolveFFmpegCoreConfig(false);
     await ffmpeg.load({
-      coreURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
+      coreURL: await toBlobURL(`${core.baseUrl}/ffmpeg-core.js`, "text/javascript"),
+      wasmURL: await toBlobURL(`${core.baseUrl}/ffmpeg-core.wasm`, "application/wasm"),
     });
     ffmpegInstance = ffmpeg;
     return ffmpeg;

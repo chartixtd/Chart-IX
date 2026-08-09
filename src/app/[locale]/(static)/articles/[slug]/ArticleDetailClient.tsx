@@ -61,7 +61,7 @@ export function ArticleDetailClient({ article, isGated }: Props) {
       {/* Loading fallback for client-side hydration */}
       <Link
         href={`/${locale}/articles`}
-        className="mb-6 inline-flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary transition-colors"
+        className="mb-6 flex w-fit items-center gap-1 text-sm text-text-secondary hover:text-text-primary transition-colors"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -73,7 +73,7 @@ export function ArticleDetailClient({ article, isGated }: Props) {
       {article.category && (
         <Link
           href={`/${locale}/articles?category=${article.category.slug}`}
-          className="mb-3 inline-block text-sm font-medium text-gold hover:underline"
+          className="mb-3 block w-fit text-sm font-medium text-gold hover:underline"
         >
           {article.category.name[locale] ?? article.category.slug}
         </Link>

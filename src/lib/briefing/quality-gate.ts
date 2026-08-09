@@ -330,8 +330,29 @@ function fullText(b: BriefingJson): string {
  * 200 条。拿全量去背书等于让一个伪造价格被模型从没见过的数字放行——这与 I1
  * 刚修好的原则（列出的来源必须正好是分析真正看过的那些）直接矛盾。
  */
-function seenSources(sources: BriefingSource[]): BriefingSource[] {
+/**
+ * 白名单要扫的字段。`body` 可选——不是所有调用方都抓了正文（早期的测试夹具、
+ * 以及理论上未来某条不抓正文的路径），门槛不能因为字段缺失就崩。
+ */
+type SourceLike = BriefingSource & { body?: string };
+
+function seenSources(sources: SourceLike[]): SourceLike[] {
   return sources.slice(0, MAX_SOURCES_IN_PROMPT);
+}
+
+/**
+ * 把一条来源拼成用于白名单比对的文本。
+ *
+ * 必须含 body，否则白名单只看得到 RSS 的标题和一两句摘要，而 prompt 早就
+ * 把抓到的正文喂给模型了——模型能读到、写进早报的数字，门槛却读不到、
+ * 白名单永远找不到匹配。线上真实栽过一次：模型从正文里读出「长期价格或达
+ * 150万美元」，翻译成英文后是 $1,500,000，白名单却只扫了标题和摘要，
+ * 找不到这个数字，判成编造，把已经翻译好的英文版打回兜底稿。
+ */
+function sourceWhitelistText(sources: SourceLike[]): string {
+  return seenSources(sources)
+    .map((s) => `${s.title} ${s.summary} ${s.body ?? ""}`)
+    .join(" ");
 }
 
 /**
@@ -368,12 +389,10 @@ function magnitudeAt(text: string, index: number): number {
  * CPI、利率、涨跌数据来自源文而非我们的行情事实集，一并核对会产生大量误报。
  * analysis 中若引用了源文里出现过的数字，同样放行。
  */
-function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: BriefingSource[]): GateFailure[] {
+function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: SourceLike[]): GateFailure[] {
   const failures: GateFailure[] = [];
   const text = analysisText(b);
-  const sourceText = seenSources(sources)
-    .map((s) => `${s.title} ${s.summary}`)
-    .join(" ");
+  const sourceText = sourceWhitelistText(sources);
   // 源文里的价格要连同量级后缀一起收：$60K 既可能被原样引用（60），
   // 也可能被展开引用（60000），两种写法都是忠实转述。
   const sourcePrices = new Set<number>();
@@ -448,10 +467,8 @@ function significantDigits(raw: string): number {
   return raw.replace(/[,.]/g, "").replace(/^0+/, "").length;
 }
 
-function extractSourceNumbers(sources: BriefingSource[]): number[] {
-  const text = seenSources(sources)
-    .map((s) => `${s.title} ${s.summary}`)
-    .join(" ");
+function extractSourceNumbers(sources: SourceLike[]): number[] {
+  const text = sourceWhitelistText(sources);
   const out: number[] = [];
   for (const m of text.matchAll(BARE_NUMBER_RE)) {
     const value = parseFloat(m[0].replace(/,/g, ""));
@@ -492,7 +509,7 @@ function extractSourceNumbers(sources: BriefingSource[]): number[] {
 function checkHeadlineNumbers(
   b: BriefingJson,
   facts: MarketFact[],
-  sources: BriefingSource[]
+  sources: SourceLike[]
 ): GateFailure[] {
   const text = headlinesText(b);
   const hits = extractPriceHits(text);
@@ -558,7 +575,8 @@ function checkLanguage(b: BriefingJson, locale: BriefingLocale): GateFailure[] {
 export function checkBriefing(input: {
   json: unknown;
   facts: MarketFact[];
-  sources: BriefingSource[];
+  /** 含 body 时（SourceWithBody[]），数字白名单会扫正文而不只是标题/摘要 */
+  sources: SourceLike[];
   locale: BriefingLocale;
   finishReason: string | null;
 }): GateResult {

@@ -400,10 +400,15 @@ async function runPipeline(
       // 超长，中文的合规表述也可能被译成禁用短语，于是一篇本该被拦下的稿子
       // 会绕过门槛直接发布。不过就当作翻译失败，落到 L4。
       if (translated) {
+        // 必须传 withBodies，不能传外层的 sources（不含正文）。
+        // 生成阶段模型读的是 withBodies——它能从正文里读出「150万美元」这类
+        // 数字。若这里退回不含正文的 sources，白名单就只看得到 RSS 的标题和
+        // 摘要，找不到这个数字，把刚翻译好、内容完全正确的英文版错判为编造，
+        // 落到兜底稿。线上真实发生过一次，就是这里的变量传错了。
         const gate = checkBriefing({
           json: translated,
           facts,
-          sources,
+          sources: withBodies,
           locale: badLocale,
           finishReason: null,
         });

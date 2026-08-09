@@ -564,6 +564,61 @@ describe("checkBriefing — 来源比对池", () => {
     });
     expect(r.ok).toBe(true);
   });
+
+  // ── 白名单必须扫正文，不能只扫标题/摘要 ──
+  // 线上真实栽过：模型从抓到的正文里读出「长期价格或达150万美元」，中文没有
+  // $ 符号躲过了检查；译成英文后是「$1,500,000」，触发检查却找不到匹配——
+  // 白名单当时只拼了 title + summary，从没读过 body，而这个数字只出现在正文里，
+  // 不在 RSS 的标题或摘要中。已通过质量门槛的英文版因此被错误打回兜底稿。
+  it("只出现在正文（body）里的数字，白名单也要认——不能只看标题摘要", () => {
+    const j = validJson();
+    j.headlines[2].points.push("某分析师预计比特币长期有望触及 $1,500,000。");
+    const withBody: (BriefingSource & { body?: string })[] = [
+      {
+        title: "Bitwise CIO sees trillions flowing into Bitcoin over the next decade",
+        url: "https://e.com/bitwise",
+        source: "CoinDesk",
+        publishedAt: 0,
+        // RSS 摘要通常很短，不含具体数字——真正的数字埋在正文里
+        summary: "The Bitwise CIO discussed long-term institutional demand for Bitcoin.",
+        body: "Speaking on a podcast, the Bitwise CIO said trillions of dollars in institutional capital could flow into Bitcoin over the next decade, with the long-term price potentially reaching $1.5 million per coin.",
+      },
+      ...FILLER,
+    ];
+    const r = checkBriefing({
+      json: j,
+      facts: FACTS,
+      sources: withBody,
+      locale: "zh-CN",
+      finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("同一条来源没有 body 字段时，仍不报错，只是数字会因未在标题摘要中出现而被拒", () => {
+    const j = validJson();
+    j.headlines[2].points.push("某分析师预计比特币长期有望触及 $1,500,000。");
+    // 不带 body：模拟未抓到正文（付费墙/反爬）的常见情形，或旧的 BriefingSource[]
+    const noBody: BriefingSource[] = [
+      {
+        title: "Bitwise CIO sees trillions flowing into Bitcoin over the next decade",
+        url: "https://e.com/bitwise",
+        source: "CoinDesk",
+        publishedAt: 0,
+        summary: "The Bitwise CIO discussed long-term institutional demand for Bitcoin.",
+      },
+      ...FILLER,
+    ];
+    const r = checkBriefing({
+      json: j,
+      facts: FACTS,
+      sources: noBody,
+      locale: "zh-CN",
+      finishReason: "stop",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.detail.includes("要闻中的价格"))).toBe(true);
+  });
 });
 
 // ── C1 回归：英文散文路径 ──

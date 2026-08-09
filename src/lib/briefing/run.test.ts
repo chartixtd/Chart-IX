@@ -416,6 +416,61 @@ describe("runDailyBriefing — L3 翻译通道", () => {
     expect(CJK_RE.test(article.content["zh-CN"])).toBe(true);
   });
 
+  // 线上真实事故：模型从抓到的正文里读出「长期价格或达150万美元」（中文没有 $
+  // 符号，躲过了 checkHeadlineNumbers）；译成英文后是 "$1,500,000"，触发检查却
+  // 找不到匹配——run.ts 在重新过门槛时传的是不含正文的外层 sources，而不是
+  // 带正文的 withBodies。已经翻译好、内容完全正确的英文版因此被错判为编造，
+  // 整篇降级成兜底稿。这条测试钉住 run.ts 传给「翻译后重新过门槛」那次调用的
+  // 必须是带 body 的那份 sources，而不仅仅是 quality-gate 自身认不认 body
+  // （那部分已由 quality-gate.test.ts 单独覆盖）。
+  it("要闻里只出现在正文（body）中的数字，翻译后重新过门槛时必须认得出来", async () => {
+    const bodySource: BriefingSource = {
+      title: "Bitwise CIO sees trillions flowing into Bitcoin over the next decade",
+      url: "https://e.com/bitwise",
+      source: "CoinDesk",
+      publishedAt: 1,
+      // 摘要里没有具体数字——数字只埋在正文里
+      summary: "The Bitwise CIO discussed long-term institutional demand for Bitcoin.",
+    };
+    // 把这条含正文数字的来源换进本次的来源列表，排在最前面，确保在
+    // MAX_SOURCES_IN_PROMPT 的截断范围内
+    fetchBriefingSources.mockResolvedValueOnce([bodySource, ...SOURCES.slice(0, 39)]);
+    fetchArticleBodies.mockImplementation(async (sources: BriefingSource[]) =>
+      sources.map((s) =>
+        s.url === bodySource.url
+          ? {
+              ...s,
+              body: "Speaking on a podcast, the Bitwise CIO said trillions of dollars in institutional capital could flow into Bitcoin over the next decade, with the long-term price potentially reaching $1.5 million per coin.",
+            }
+          : { ...s, body: "" }
+      )
+    );
+
+    const bigNumberPoint = "某分析师预计比特币长期有望触及150万美元。";
+    const zhWithBigNumber: BriefingJson = {
+      ...ZH_JSON,
+      headlines: ZH_JSON.headlines.map((h, i) =>
+        i === 0 ? { ...h, points: [...h.points, bigNumberPoint] } : h
+      ),
+    };
+    // 只需生成中文——新设计下 en-US 永远走翻译，不再原生调用
+    callDeepSeek.mockResolvedValue(ok(zhWithBigNumber));
+
+    translateText.mockImplementation(async (text: string) =>
+      text === bigNumberPoint
+        ? "One analyst expects Bitcoin to eventually reach $1,500,000 over the long term."
+        : fakeEnglish(text)
+    );
+
+    await runDailyBriefing(NOW);
+
+    const article = db.inserted[0];
+    expect(article).toBeDefined();
+    expect(article.content["en-US"]).toContain("$1,500,000");
+    // 不含「24-Hour News Roundup」= 没有降级成零 AI 兜底稿
+    expect(article.content["en-US"]).not.toContain("24-Hour News Roundup");
+  });
+
   it("翻译走的是字段而不是整篇 HTML——小标题与括号样式都被正确本地化", async () => {
     callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? FAIL : ok(ZH_JSON)));
     translateText.mockImplementation(realisticTranslator());

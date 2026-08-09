@@ -5,32 +5,57 @@
 export const COMPRESSION_THRESHOLD_BYTES = 50 * 1024 * 1024;
 
 const TARGET_BYTES = Math.floor(COMPRESSION_THRESHOLD_BYTES * 0.85);
-const AUDIO_KBPS = 96;
-// Not a quality target — purely a technical floor so the byte-budget math
-// never hands ffmpeg a zero or negative bitrate for pathologically long
-// sources. The byte budget always wins over this; quality is sacrificed
-// before the upload is ever allowed to exceed the size cap.
+
+// 不是画质目标，纯粹是技术下限：保证体积预算的除法在病态长的源上不会给
+// ffmpeg 递一个 0 或负数码率。体积预算永远压过它——在允许上传超过体积上限
+// 之前，先牺牲画质。
 const MIN_VIDEO_KBPS = 100;
+
+// 帧率上限。设计里唯一的「嫌慢就调它」旋钮：改成 20 能省掉三分之一的编码
+// 帧数。注意这只是上限，低于它的源不会被插帧上采样（见 buildFFmpegArgs）。
+export const MAX_FPS = 30;
+
+// 关键帧间隔 = 10 秒。录屏的静止画面在两个关键帧之间几乎不花码率，拉长间隔
+// 直接换成画质；代价是拖动进度条的粒度变成 10 秒，对教学视频可接受。
+const GOP_SECONDS = 10;
+
+// 上限而非目标：源低于它就按源走。1080p 以上对录屏没有额外可读性，只是烧码率。
+const MAX_HEIGHT = 1080;
+
+const AUDIO_STEREO_KBPS = 96;
+const AUDIO_MONO_KBPS = 64;
+// 超过这个时长的视频码率已经紧张，把讲解人声降成单声道 64k——听感无损，
+// 省下的 32kbps 在这个码率区间相当于给画面加了约 10%。
+const AUDIO_MONO_THRESHOLD_SECONDS = 900;
+
+// 保住源分辨率所需的最低视频码率。这是**静态内容**的标定：录屏大部分帧
+// 静止，x264 对静止帧几乎不花码率，所以同样的 280kbps 在 1080p 录屏上比在
+// 480p 真人视频上还清晰。按真人视频标定（原来是 2000kbps）会让每一个超过
+// 10 分钟的录屏都掉到 480p，而文字和 K 线标注恰恰是最先糊掉的东西。
+const NATIVE_FLOOR_KBPS = 280;
 
 interface ResolutionStep {
   height: number;
   floorKbps: number;
 }
 
-// Ordered highest to lowest — the loop below relies on this order. These
-// floors only steer which resolution looks best at a given bitrate; they
-// never push the bitrate itself above what the size budget allows (a
-// rejected upload is worse than a softer picture — see MIN_VIDEO_KBPS).
-const RESOLUTION_STEPS: ResolutionStep[] = [
-  { height: 1080, floorKbps: 2000 },
-  { height: 720, floorKbps: 1200 },
-  { height: 480, floorKbps: 500 },
+// 保不住源分辨率时的降档序列，从高到低——下面的循环依赖这个顺序。
+// 最后一档 floor 为 0，是兜底：再低也只能是它。
+const FALLBACK_STEPS: ResolutionStep[] = [
+  { height: 720, floorKbps: 160 },
+  { height: 480, floorKbps: 0 },
 ];
 
 export interface CompressionPlan {
   height: number;
+  /** 目标高度与源高度相同——此时不需要 scale 滤镜，省掉一遍全帧重采样。 */
+  skipScale: boolean;
   videoBitrateKbps: number;
+  maxrateKbps: number;
+  bufsizeKbps: number;
   audioBitrateKbps: number;
+  audioChannels: number;
+  gopSize: number;
 }
 
 export function needsCompression(fileSizeBytes: number): boolean {
@@ -38,34 +63,52 @@ export function needsCompression(fileSizeBytes: number): boolean {
 }
 
 /**
- * Always targets the byte budget exactly (bitrate × duration ≈ TARGET_BYTES)
- * so the output reliably clears the hard size cap regardless of source
- * length. Resolution is picked to look as good as possible at whatever
- * bitrate the budget allows — dropping to a lower resolution when the
- * budget is tight makes the same bitrate look better — but resolution
- * never causes the bitrate to exceed the budget.
+ * 永远精确瞄准体积预算（码率 × 时长 ≈ TARGET_BYTES），所以无论源多长，输出
+ * 都能可靠地过 50MB 硬上限。
+ *
+ * 分辨率的取舍方向是「优先保住源分辨率」而不是「优先喂饱码率」：站内视频是
+ * K 线/盘面讲解的屏幕录制，画面大部分时间静止，编码器对静止帧几乎不花码率，
+ * 于是保住分辨率的边际成本很低、收益（文字和标注不糊）很高。只有当码率连
+ * NATIVE_FLOOR_KBPS 都够不上时才逐级降档。分辨率任何时候都不会反过来把码率
+ * 顶到预算之上——被 413 拒绝的上传比软一点的画面严重得多。
  */
 export function computeCompressionPlan(durationSeconds: number, sourceHeight: number): CompressionPlan {
-  const targetTotalKbps = (TARGET_BYTES * 8) / (1000 * durationSeconds);
-  const rawVideoKbps = Math.max(targetTotalKbps - AUDIO_KBPS, MIN_VIDEO_KBPS);
+  const mono = durationSeconds > AUDIO_MONO_THRESHOLD_SECONDS;
+  const audioBitrateKbps = mono ? AUDIO_MONO_KBPS : AUDIO_STEREO_KBPS;
+  const audioChannels = mono ? 1 : 2;
 
-  const lowestStep = RESOLUTION_STEPS[RESOLUTION_STEPS.length - 1];
-  let chosenStep = lowestStep;
-  for (const step of RESOLUTION_STEPS) {
-    if (step.height <= sourceHeight && rawVideoKbps >= step.floorKbps) {
-      chosenStep = step;
-      break;
+  const targetTotalKbps = (TARGET_BYTES * 8) / (1000 * durationSeconds);
+  const rawVideoKbps = Math.max(targetTotalKbps - audioBitrateKbps, MIN_VIDEO_KBPS);
+
+  // libx264 要求偶数高度，清掉最低位把奇数向下取偶。
+  const nativeHeight = Math.min(sourceHeight, MAX_HEIGHT) & ~1;
+
+  let height = nativeHeight;
+  if (rawVideoKbps < NATIVE_FLOOR_KBPS) {
+    for (const step of FALLBACK_STEPS) {
+      // step.height <= nativeHeight 保证降档只会往下走，绝不上采样。
+      // 一个都不匹配（源本来就比 480 还低）时 height 保持 nativeHeight。
+      if (step.height <= nativeHeight && rawVideoKbps >= step.floorKbps) {
+        height = step.height;
+        break;
+      }
     }
   }
 
   const videoBitrateKbps = Math.round(rawVideoKbps);
-  // libx264 requires an even height; clear the low bit to round odd values down.
-  const height = Math.min(chosenStep.height, sourceHeight) & ~1;
 
   return {
     height,
+    skipScale: height === sourceHeight,
     videoBitrateKbps,
-    audioBitrateKbps: AUDIO_KBPS,
+    // VBV 放宽到平均的 2×/4×。原来 maxrate 等于平均码率，等于把关键帧和运动
+    // 瞬间死死掐住，画面会周期性地糊一下；放宽之后静止段攒下的预算可以在运动
+    // 瞬间释放，而总体积仍由平均码率锚定（15% 的预算余量足够吸收波动）。
+    maxrateKbps: videoBitrateKbps * 2,
+    bufsizeKbps: videoBitrateKbps * 4,
+    audioBitrateKbps,
+    audioChannels,
+    gopSize: MAX_FPS * GOP_SECONDS,
   };
 }
 

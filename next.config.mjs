@@ -35,6 +35,37 @@ const nextConfig = {
         ],
       },
       {
+        // ffmpeg.wasm 的多线程核心（快 3–5 倍）需要 SharedArrayBuffer，而
+        // SharedArrayBuffer 只在跨源隔离的文档里可用，跨源隔离又需要下面这两
+        // 个头。视频压缩只发生在后台，所以只给 /admin 加：公开页面不受影响，
+        // 也就不会因为 COEP 拦掉第三方图片或嵌入内容——这正是 2026-08-02 那版
+        // 设计当初放弃多线程核心的顾虑。
+        //
+        // credentialless 而不是 require-corp：后台要加载 Supabase 存储的封面图，
+        // require-corp 要求对端回 CORP 头、会整批拦掉；credentialless 以无凭据
+        // 方式放行 no-cors 子资源，而 Supabase 的公开 URL 与签名 URL（鉴权在
+        // query 里）都不依赖 cookie，行为不变。
+        //
+        // Safari 不支持 credentialless——那里 crossOriginIsolated 为 false，
+        // src/lib/video-compress.ts 的 resolveFFmpegCoreConfig 自动回落单线程
+        // 核心，功能不坏，只是慢。
+        //
+        // 两条规则：path-to-regexp 里 "/admin/:path*" 对 "/admin" 本身是否匹配
+        // 依赖版本细节，与其赌不如显式各写一条。
+        source: "/admin",
+        headers: [
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: "Cross-Origin-Embedder-Policy", value: "credentialless" },
+        ],
+      },
+      {
+        source: "/admin/:path*",
+        headers: [
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: "Cross-Origin-Embedder-Policy", value: "credentialless" },
+        ],
+      },
+      {
         // SW 脚本必须每次revalidate，否则新版本要等浏览器的 24h 上限才生效
         source: "/sw.js",
         headers: [

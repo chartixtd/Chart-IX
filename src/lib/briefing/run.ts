@@ -13,6 +13,7 @@ import { checkBriefing, parseBriefingJson } from "@/lib/briefing/quality-gate";
 import { renderBriefingHtml } from "@/lib/briefing/render";
 import { fallbackTitle, renderFallbackHtml } from "@/lib/briefing/fallback";
 import { alertBriefing as alert } from "@/lib/briefing/alert";
+import { revalidateArticleLists } from "@/lib/articles-revalidate";
 import type { SourceWithBody } from "@/lib/briefing/extract";
 import type { BriefingJson, BriefingLocale, MarketFact } from "@/lib/briefing/types";
 
@@ -461,6 +462,8 @@ async function runPipeline(
       return { status: "failed", slug, detail: delError.message };
     }
     note(diag, `强制重跑：已删除既有的 ${slug}`);
+    // 删除已生效——即使后面的 insert 失败，缓存里的旧条目也不能再指向 404
+    revalidateArticleLists();
   }
 
   const { error: insertError } = await supabase.from("articles").insert({
@@ -484,6 +487,10 @@ async function runPipeline(
     await beat("error");
     return { status: "failed", slug, detail: insertError.message };
   }
+
+  // 列表页有 5 分钟静态缓存。cron 自动发布同样要主动失效，否则早上 9 点
+  // 发出的早报最多要到 9:05 才出现在文章列表里。
+  revalidateArticleLists();
 
   // 心跳与诊断在**推送之前**写。推送跑在预算已经花完的尾巴上，且
   // sendToSubscriptions 对单个端点没有超时——一个慢的 FCM 端点可以把函数

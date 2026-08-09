@@ -48,6 +48,7 @@ const getOptedInSubscriptions = vi.fn<(pref: string) => Promise<SubRow[]>>(async
 const fetchArticleBodies = vi.fn(async (sources: BriefingSource[]) =>
   sources.map((s) => ({ ...s, body: "" }))
 );
+const revalidateArticleLists = vi.fn();
 
 vi.mock("@sentry/nextjs", () => ({
   captureException: vi.fn(),
@@ -85,6 +86,11 @@ vi.mock("@/lib/briefing/extract", async (importOriginal) => ({
 }));
 vi.mock("@/lib/translate", () => ({
   translateText: (text: string, from: string, to: string) => translateText(text, from, to),
+}));
+// revalidatePath 只能在真实请求上下文里调用，测试里会打印
+// "static generation store missing" 的报错噪音——测试输出必须干净
+vi.mock("@/lib/articles-revalidate", () => ({
+  revalidateArticleLists: () => revalidateArticleLists(),
 }));
 
 const { runDailyBriefing } = await import("./run");
@@ -279,6 +285,7 @@ beforeEach(() => {
   fetchArticleBodies.mockReset().mockImplementation(async (sources: BriefingSource[]) =>
     sources.map((s) => ({ ...s, body: "" }))
   );
+  revalidateArticleLists.mockClear();
   process.env.DEEPSEEK_API_KEY = "test-key";
   process.env.BRIEFING_AUTHOR_ID = "author-1";
 });
@@ -320,6 +327,19 @@ describe("runDailyBriefing — 正常路径", () => {
     const r = await runDailyBriefing(NOW);
     expect(r.status).toBe("skipped");
     expect(callDeepSeek).not.toHaveBeenCalled();
+  });
+
+  // 列表页有 5 分钟静态缓存；不主动失效的话，9 点发的早报要到 9:05 才上列表
+  it("发布成功后主动失效文章列表缓存", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+    await runDailyBriefing(NOW);
+    expect(revalidateArticleLists).toHaveBeenCalled();
+  });
+
+  it("skipped 早退不触发缓存失效", async () => {
+    db.existingArticle = { id: "a1" };
+    await runDailyBriefing(NOW);
+    expect(revalidateArticleLists).not.toHaveBeenCalled();
   });
 });
 

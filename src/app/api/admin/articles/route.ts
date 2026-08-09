@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { logAdminAction } from "@/lib/supabase/admin-log";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/supabase/admin-auth";
+import { revalidateArticleLists } from "@/lib/articles-revalidate";
 import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
 import { buildContentMessage } from "@/lib/push/messages";
 
@@ -120,6 +121,9 @@ export async function POST(request: NextRequest) {
     } catch {
       // Logging failure should never break the response
     }
+
+    // 列表页有 5 分钟静态缓存，发布后必须主动失效，否则作者刷新看不到自己的文章
+    revalidateArticleLists();
 
     return NextResponse.json({ success: true, data });
   } catch (err) {
@@ -284,6 +288,8 @@ export async function PATCH(request: NextRequest) {
       // Logging failure should never break the response
     }
 
+    revalidateArticleLists();
+
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json(
@@ -349,6 +355,9 @@ export async function DELETE(request: NextRequest) {
     } catch {
       // Logging failure should never break the response
     }
+
+    // 删除同样要失效列表缓存，否则缓存里的条目会指向一个 404 的详情页
+    revalidateArticleLists();
 
     return NextResponse.json({ success: true });
   } catch (err) {

@@ -223,11 +223,24 @@ async function loadFFmpeg(): Promise<import("@ffmpeg/ffmpeg").FFmpeg> {
     const { FFmpeg } = await import("@ffmpeg/ffmpeg");
     const { toBlobURL } = await import("@ffmpeg/util");
     const ffmpeg = new FFmpeg();
-    const core = resolveFFmpegCoreConfig(false);
-    await ffmpeg.load({
+
+    // crossOriginIsolated 是浏览器全局量；在 SSR/测试环境里不存在，所以要探。
+    const isolated =
+      (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true;
+    const core = resolveFFmpegCoreConfig(isolated);
+
+    const loadOptions: { coreURL: string; wasmURL: string; workerURL?: string } = {
       coreURL: await toBlobURL(`${core.baseUrl}/ffmpeg-core.js`, "text/javascript"),
       wasmURL: await toBlobURL(`${core.baseUrl}/ffmpeg-core.wasm`, "application/wasm"),
-    });
+    };
+    if (core.multiThreaded) {
+      loadOptions.workerURL = await toBlobURL(
+        `${core.baseUrl}/ffmpeg-core.worker.js`,
+        "text/javascript"
+      );
+    }
+
+    await ffmpeg.load(loadOptions);
     ffmpegInstance = ffmpeg;
     return ffmpeg;
   })().catch((err) => {
@@ -250,6 +263,42 @@ async function loadFFmpeg(): Promise<import("@ffmpeg/ffmpeg").FFmpeg> {
  * 安全行为。只有源确实高于上限才封顶：`-r` 是双向的，对低帧率源用它会插帧，
  * 凭空增加编码量。
  */
+// 探测日志的收集上限。`ffmpeg -i` 的输出只有一两千字符，这个上限纯粹是防止
+// 某个畸形输入让 ffmpeg 疯狂刷屏时把内存吃光。
+const PROBE_LOG_MAX_CHARS = 20_000;
+
+/**
+ * 跑一次没有输出文件的 `ffmpeg -i input`，从日志里读源帧率。
+ *
+ * ffmpeg 打完流信息后会以「At least one output file must be specified」非 0
+ * 退出——这是预期行为，不是错误。`@ffmpeg/ffmpeg` 0.12.x 的 exec 返回退出码
+ * 而不抛异常，所以这里不需要区分成功失败，只管收日志。
+ *
+ * 任何环节出问题都返回 null，调用方据此不加帧率参数——探测不到的代价只是
+ * 60fps 的源不被封顶（回到今天的行为），绝不能因为探测失败就压不了视频。
+ */
+async function probeSourceFps(
+  ffmpeg: import("@ffmpeg/ffmpeg").FFmpeg,
+  inputName: string
+): Promise<number | null> {
+  let log = "";
+  const onLog = ({ message }: { message: string }) => {
+    if (log.length < PROBE_LOG_MAX_CHARS) log += message + "\n";
+  };
+
+  ffmpeg.on("log", onLog);
+  try {
+    await ffmpeg.exec(["-i", inputName]);
+  } catch {
+    // exec 以返回码报错、理论上不会抛；真抛了就当探测不到。
+    return null;
+  } finally {
+    ffmpeg.off("log", onLog);
+  }
+
+  return parseSourceFps(log);
+}
+
 export function buildFFmpegArgs(
   inputName: string,
   outputName: string,
@@ -299,25 +348,16 @@ export async function compressVideo(file: File, onProgress: (pct: number) => voi
   const handleProgress = ({ progress }: { progress: number }) => {
     onProgress(Math.min(100, Math.max(0, Math.round(progress * 100))));
   };
-  ffmpeg.on("progress", handleProgress);
 
   try {
     await ffmpeg.writeFile(inputName, await fetchFile(file));
 
-    await ffmpeg.exec([
-      "-i", inputName,
-      "-vf", `scale=-2:${plan.height}`,
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-b:v", `${plan.videoBitrateKbps}k`,
-      "-maxrate", `${plan.videoBitrateKbps}k`,
-      "-bufsize", `${plan.videoBitrateKbps * 2}k`,
-      "-c:a", "aac",
-      "-b:a", `${plan.audioBitrateKbps}k`,
-      "-pix_fmt", "yuv420p",
-      "-movflags", "+faststart",
-      outputName,
-    ]);
+    // 探测要在挂 progress 监听之前做：探测本身也会触发 progress 事件，会让
+    // 进度条先跳一下再归零。
+    const sourceFps = await probeSourceFps(ffmpeg, inputName);
+
+    ffmpeg.on("progress", handleProgress);
+    await ffmpeg.exec(buildFFmpegArgs(inputName, outputName, plan, sourceFps));
 
     const data = await ffmpeg.readFile(outputName);
     const arrayData = data instanceof Uint8Array ? data : new TextEncoder().encode(data as string);

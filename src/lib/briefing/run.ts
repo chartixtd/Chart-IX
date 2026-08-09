@@ -5,6 +5,7 @@ import { buildContentMessage } from "@/lib/push/messages";
 import { translateBriefingJson } from "@/lib/briefing/translate-json";
 import { briefingSlug, utcPlus8DateString, utcPlus8Hour } from "@/lib/briefing/date";
 import { fetchBriefingSources, MIN_SOURCE_ITEMS } from "@/lib/briefing/sources";
+import { fetchArticleBodies, MAX_BODIES } from "@/lib/briefing/extract";
 import { fetchMarketFacts } from "@/lib/briefing/market-facts";
 import { buildBriefingPrompt } from "@/lib/briefing/prompt";
 import { callDeepSeek, DEFAULT_TIMEOUT_MS } from "@/lib/briefing/deepseek";
@@ -12,7 +13,8 @@ import { checkBriefing, parseBriefingJson } from "@/lib/briefing/quality-gate";
 import { renderBriefingHtml } from "@/lib/briefing/render";
 import { fallbackTitle, renderFallbackHtml } from "@/lib/briefing/fallback";
 import { alertBriefing as alert } from "@/lib/briefing/alert";
-import type { BriefingJson, BriefingLocale, BriefingSource, MarketFact } from "@/lib/briefing/types";
+import type { SourceWithBody } from "@/lib/briefing/extract";
+import type { BriefingJson, BriefingLocale, MarketFact } from "@/lib/briefing/types";
 
 const JOB_NAME = "daily-briefing";
 const LOCALES: BriefingLocale[] = ["zh-CN", "en-US"];
@@ -194,7 +196,7 @@ async function beat(status: "ok" | "error" | "skipped" | "idle") {
  */
 async function generateOne(
   locale: BriefingLocale,
-  sources: BriefingSource[],
+  sources: SourceWithBody[],
   facts: MarketFact[],
   dateStr: string,
   deadlineMs: number,
@@ -333,6 +335,19 @@ async function runPipeline(
   if (degraded) {
     note(diag, `24h 内仅 ${sources.length} 条新闻，低于 ${MIN_SOURCE_ITEMS}，直接走兜底稿`);
   } else {
+    // 抓正文。只给标题的话，模型只能写出「复述标题」级别的空话——这是早报
+    // 第一版读起来言之无物的直接原因。抓失败是常态（付费墙、反爬、超时），
+    // 那些条目退回只用 RSS 摘要，不影响出稿。
+    const fetchStart = Date.now();
+    const withBodies = await fetchArticleBodies(sources);
+    const gotBodies = withBodies.filter((s) => s.body).length;
+    trace(
+      diag,
+      `正文抓取：${gotBodies}/${Math.min(MAX_BODIES, sources.length)} 篇成功，耗时 ${
+        Date.now() - fetchStart
+      }ms`
+    );
+
     // **只原生生成主语言，另一语一律走翻译。**
     //
     // 曾经是中英各生成一次（并发）。线上实测推翻了它：中文一次生成约 11 秒，
@@ -351,7 +366,7 @@ async function runPipeline(
     // 生成后必须显式补回来。
     let primary: BriefingJson | null = null;
     try {
-      primary = await generateOne(PRIMARY_LOCALE, sources, facts, dateStr, deadlineMs, diag);
+      primary = await generateOne(PRIMARY_LOCALE, withBodies, facts, dateStr, deadlineMs, diag);
     } catch (err) {
       note(diag, `${PRIMARY_LOCALE} 生成过程抛出异常: ${String(err)}`);
     }

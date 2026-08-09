@@ -28,7 +28,7 @@ const DEFAULT_SUMMARY_MAX_LEN = 220;
  */
 const FEED_TIMEOUT_MS = 8_000;
 
-function decodeEntities(str: string): string {
+export function decodeEntities(str: string): string {
   return str
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
     // Substack 的中文 feed 把每个汉字都编成十进制数字实体（&#26410; 等），
@@ -43,7 +43,7 @@ function decodeEntities(str: string): string {
     .trim();
 }
 
-function stripHtml(str: string): string {
+export function stripHtml(str: string): string {
   return str.replace(/<[^>]*>/g, "").trim();
 }
 

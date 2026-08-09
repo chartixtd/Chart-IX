@@ -1,4 +1,5 @@
-import type { BriefingLocale, BriefingSource, MarketFact } from "./types";
+import type { SourceWithBody } from "./extract";
+import type { BriefingLocale, MarketFact } from "./types";
 
 /** 单次 prompt 最多塞这么多条新闻，控制输入 token */
 export const MAX_SOURCES_IN_PROMPT = 40;
@@ -36,14 +37,19 @@ const LANG_INSTRUCTION: Record<BriefingLocale, string> = {
  * 下面的输出格式段同时满足这两点。
  */
 export function buildBriefingPrompt(
-  sources: BriefingSource[],
+  sources: SourceWithBody[],
   facts: MarketFact[],
   locale: BriefingLocale,
   dateStr: string
 ): string {
+  // 抓到正文的条目给正文，抓不到的退回 RSS 摘要。正文是模型能不能写出「提炼」
+  // 而不是「复述标题」的关键——只给标题，产出必然是似曾相识的空话。
   const newsBlock = sources
     .slice(0, MAX_SOURCES_IN_PROMPT)
-    .map((s, i) => `${i + 1}. [${s.source}] ${s.title}${s.summary ? ` — ${s.summary}` : ""}`)
+    .map((s, i) => {
+      const detail = s.body || s.summary;
+      return `${i + 1}. [${s.source}] ${s.title}${detail ? `\n   正文摘录：${detail}` : ""}`;
+    })
     .join("\n");
 
   const factsBlock =
@@ -69,7 +75,9 @@ ${factsBlock}
 - **不得**给出具体买卖点位、目标价、止损位或仓位建议。
 - **不得**使用「必涨」「稳赚」这类确定性表述。
 - 提到黄金时，须说明数据来自黄金代币（XAUT / PAXG），不得表述为伦敦金或 COMEX 黄金期货报价。
-- 分析要基于素材做出解读，而不是复述标题。
+- **分析必须基于上面的正文摘录做出解读，而不是复述标题。** 要点应当说清「发生了什么、
+  为什么重要、对市场意味着什么」，读者读完不必再去点开原文。
+- 要闻部分按主题归并同类新闻，不要逐条罗列；同一件事被多家报道时合并成一条。
 
 ## 输出格式
 只输出一个 json 对象，不要输出任何其他文字。格式示例：

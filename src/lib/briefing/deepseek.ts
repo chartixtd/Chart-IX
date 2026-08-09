@@ -74,6 +74,20 @@ export async function callDeepSeek(opts: {
         response_format: { type: "json_object" },
         max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
         temperature: 0.7,
+        // **必须显式关掉思维链。**
+        //
+        // DeepSeek v4 的 thinking 默认是 enabled，而 reasoning_tokens 计在
+        // completion_tokens_details 下——思维链的 token 同样吃 max_tokens。
+        // 线上连续三次失败（29 秒返回空、28 秒被截断、24 秒返回空）全是这一个
+        // 原因：模型把额度花在了我们根本读不到的 reasoning_content 上，轮到
+        // content 时要么没额度了、要么写到一半被切断。
+        //
+        // 排查时一直在调超时和篇幅，而额度压根没花在正文上——这类问题的隐蔽
+        // 之处在于，从 content 的角度看它和「模型写太长」完全同形。
+        //
+        // 早报是「照给定事实写摘要」，不需要链式推理；关掉它把整个额度还给正文，
+        // 同时省下二十多秒。
+        thinking: { type: "disabled" },
       }),
       signal: controller.signal,
     });
@@ -84,13 +98,32 @@ export async function callDeepSeek(opts: {
     }
 
     const data = (await res.json()) as {
-      choices?: { message?: { content?: string }; finish_reason?: string }[];
+      choices?: {
+        message?: { content?: string; reasoning_content?: string };
+        finish_reason?: string;
+      }[];
+      usage?: {
+        completion_tokens?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      };
     };
     const choice = data.choices?.[0];
     const content = choice?.message?.content ?? "";
 
     if (!content.trim()) {
-      return { ok: false, error: "DeepSeek 返回空内容" };
+      // 把 token 用量带进错误里。「返回空内容」这五个字本身什么也说明不了——
+      // 而 completion 很高、reasoning 也很高、content 却是空的，一眼就能看出
+      // 额度被思维链吃掉了。线上正是这个情况，却花了三轮才定位。
+      const completion = data.usage?.completion_tokens ?? 0;
+      const reasoning = data.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+      const hasReasoning = Boolean(choice?.message?.reasoning_content);
+      return {
+        ok: false,
+        error:
+          `DeepSeek 返回空内容（completion_tokens=${completion}, ` +
+          `reasoning_tokens=${reasoning}, 有 reasoning_content=${hasReasoning}, ` +
+          `finish_reason=${choice?.finish_reason ?? "null"}）`,
+      };
     }
 
     return { ok: true, content, finishReason: choice?.finish_reason ?? null };

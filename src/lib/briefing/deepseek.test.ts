@@ -36,6 +36,37 @@ describe("callDeepSeek", () => {
     expect(body.response_format).toEqual({ type: "json_object" });
   });
 
+  /**
+   * DeepSeek v4 的 thinking 默认 enabled，而 reasoning_tokens 计入
+   * completion_tokens_details——思维链同样吃 max_tokens。线上连续三次失败
+   * （29s 空、28s 截断、24s 空）全是这一个原因：额度花在了读不到的
+   * reasoning_content 上。早报是照事实写摘要，不需要链式推理。
+   */
+  it("显式关闭思维链——否则 reasoning 会吃掉 max_tokens，content 变空或被截断", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(OK_BODY));
+    await callDeepSeek({ ...BASE, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body as string);
+    expect(body.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("空内容的错误信息要带上 token 用量，否则「返回空内容」什么也说明不了", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        choices: [
+          { message: { content: "", reasoning_content: "想了很久" }, finish_reason: "length" },
+        ],
+        usage: { completion_tokens: 3000, completion_tokens_details: { reasoning_tokens: 2980 } },
+      })
+    );
+    const r = await callDeepSeek({ ...BASE, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain("reasoning_tokens=2980");
+      expect(r.error).toContain("completion_tokens=3000");
+      expect(r.error).toContain("有 reasoning_content=true");
+    }
+  });
+
   it("Authorization 头带 Bearer key", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(OK_BODY));
     await callDeepSeek({ ...BASE, fetchImpl: fetchImpl as unknown as typeof fetch });

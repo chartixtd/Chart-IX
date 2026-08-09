@@ -45,6 +45,9 @@ const sendToSubscriptions =
     async () => ({ sent: 0, removed: 0 })
   );
 const getOptedInSubscriptions = vi.fn<(pref: string) => Promise<SubRow[]>>(async () => []);
+const fetchArticleBodies = vi.fn(async (sources: BriefingSource[]) =>
+  sources.map((s) => ({ ...s, body: "" }))
+);
 
 vi.mock("@sentry/nextjs", () => ({
   captureException: vi.fn(),
@@ -72,6 +75,13 @@ vi.mock("@/lib/briefing/sources", async (importOriginal) => ({
 vi.mock("@/lib/briefing/market-facts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./market-facts")>()),
   fetchMarketFacts: () => fetchMarketFacts(),
+}));
+// 正文抓取会真的发 HTTP 请求：不挡掉的话，假定时器下的预算测试会永远挂住，
+// 而且单元测试本就不该碰网络。默认返回「一篇正文都没抓到」——这是最常见的
+// 真实形态（付费墙、反爬），流水线必须在这种情况下照常出稿。
+vi.mock("@/lib/briefing/extract", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./extract")>()),
+  fetchArticleBodies: (sources: BriefingSource[]) => fetchArticleBodies(sources),
 }));
 vi.mock("@/lib/translate", () => ({
   translateText: (text: string, from: string, to: string) => translateText(text, from, to),
@@ -260,6 +270,9 @@ beforeEach(() => {
   alertBriefing.mockReset().mockImplementation(async () => {});
   sendToSubscriptions.mockClear();
   getOptedInSubscriptions.mockReset().mockResolvedValue([]);
+  fetchArticleBodies.mockReset().mockImplementation(async (sources: BriefingSource[]) =>
+    sources.map((s) => ({ ...s, body: "" }))
+  );
   process.env.DEEPSEEK_API_KEY = "test-key";
   process.env.BRIEFING_AUTHOR_ID = "author-1";
 });

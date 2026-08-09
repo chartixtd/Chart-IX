@@ -6,18 +6,20 @@ import {
   SECTION_TARGET_MAX,
 } from "./prompt";
 import { DEFAULT_MAX_TOKENS } from "./deepseek";
-import type { BriefingSource, MarketFact } from "./types";
+import type { SourceWithBody } from "./extract";
+import type { MarketFact } from "./types";
 
 const FACTS: MarketFact[] = [
   { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
 ];
 
-const SOURCES: BriefingSource[] = Array.from({ length: 60 }, (_, i) => ({
+const SOURCES: SourceWithBody[] = Array.from({ length: 60 }, (_, i) => ({
   title: `Market wrap ${i}`,
   url: `https://example.com/${i}`,
   source: "CoinDesk",
   publishedAt: 60 - i,
   summary: "A neutral summary line.",
+  body: i < 12 ? `正文摘录内容 ${i}，讲清楚这条新闻究竟发生了什么。` : "",
 }));
 
 describe("buildBriefingPrompt", () => {
@@ -39,6 +41,20 @@ describe("buildBriefingPrompt", () => {
     const p = buildBriefingPrompt(SOURCES, FACTS, "zh-CN", "2026-08-08");
     expect(p).toContain(`Market wrap ${MAX_SOURCES_IN_PROMPT - 1}`);
     expect(p).not.toContain(`Market wrap ${MAX_SOURCES_IN_PROMPT}`);
+  });
+
+  it("抓到正文的条目喂正文，抓不到的退回摘要", () => {
+    const p = buildBriefingPrompt(SOURCES, FACTS, "zh-CN", "2026-08-08");
+    // 前 12 条有正文
+    expect(p).toContain("正文摘录内容 0");
+    // 第 13 条起没有正文，应退回 RSS 摘要
+    expect(p).toContain("A neutral summary line.");
+  });
+
+  it("明确要求基于正文提炼而非复述标题", () => {
+    const p = buildBriefingPrompt(SOURCES, FACTS, "zh-CN", "2026-08-08");
+    expect(p).toContain("而不是复述标题");
+    expect(p).toContain("按主题归并");
   });
 
   it("行情为空时明确告知无行情数据，避免模型硬写", () => {

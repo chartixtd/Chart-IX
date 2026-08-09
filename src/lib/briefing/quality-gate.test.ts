@@ -370,6 +370,78 @@ describe("checkBriefing", () => {
     expect(r.failures.some((f) => f.rule === "banned-phrase")).toBe(true);
   });
 
+  // ── 英文禁用词的词边界：稳定性审查抓出的第 1 号问题 ──
+  // 子串匹配时 "all in" 命中 over[all in]flation / sm[all in]crease——宏观简报
+  // 几乎每天会写的词组，实测四句正常英文全部误命中，英文版会被天天打回兜底稿。
+  it("overall inflation 这类正常英文不再误命中 all in", () => {
+    const j = validJsonEn();
+    j.analysis.overview =
+      "Overall inflation cooled to 2.4% in July, and overall interest in gold tokens rose. A small increase in ETF inflows suggested institutional demand is broadly higher overall in Asia, though positioning stayed light ahead of the print.";
+    // 2.4% 会走白名单，给它一条源文背书
+    const withCpi: BriefingSource[] = [
+      ...SOURCES,
+      { title: "US inflation cooled to 2.4% in July", url: "https://e.com/cpi", source: "CNBC", publishedAt: 0, summary: "" },
+    ];
+    const r = checkBriefing({
+      json: j, facts: EN_FACTS, sources: withCpi, locale: "en-US", finishReason: "stop",
+    });
+    expect(r.failures.filter((f) => f.rule === "banned-phrase")).toEqual([]);
+  });
+
+  it("真正的 go all in 仍然被抓出（词边界不放走真值）", () => {
+    const j = validJsonEn();
+    j.analysis.overview =
+      "Some traders argue this is the moment to go all in. " + j.analysis.overview;
+    const r = checkBriefing({
+      json: j, facts: EN_FACTS, sources: SOURCES, locale: "en-US", finishReason: "stop",
+    });
+    expect(r.failures.some((f) => f.detail.includes("all in"))).toBe(true);
+  });
+
+  // ── magnitudeAt 的词边界与排序：稳定性审查修复时暴露的潜伏缺陷 ──
+  it("before/market 这类词的首字母不再被当成量级后缀", () => {
+    // 修复前 "$64,959.52 before easing" 会被裸 b 放大成 649 亿再比对，必判编造
+    const j = validJson();
+    j.analysis.crypto = j.analysis.crypto.replace(
+      "BTC 报 $64,959.52，",
+      "BTC 报 $64,959.52 before easing，"
+    );
+    expect(check(j).ok).toBe(true);
+  });
+
+  it("正文里的 $1.5 million 能和源文正文里的 $1,500,000 对上", () => {
+    const j = validJson();
+    j.analysis.overview += "另有分析师给出 $1.5 million 的长期目标区间，仅供参考。";
+    const withBody: (BriefingSource & { body?: string })[] = [
+      ...SOURCES,
+      {
+        title: "Analyst long-term view",
+        url: "https://e.com/lt",
+        source: "CoinDesk",
+        publishedAt: 0,
+        summary: "",
+        body: "The analyst reiterated a long-term price potentially reaching $1,500,000 per coin.",
+      },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: withBody, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("万亿排在万之前——150万亿不再被读成 150万", () => {
+    const j = validJson();
+    j.headlines[2].points.push("机构预计未来十年有 $1 万亿 规模资金流入该领域。");
+    const withT: BriefingSource[] = [
+      ...SOURCES,
+      { title: "Trillions could flow in: report says $1,000,000,000,000 over a decade", url: "https://e.com/t", source: "CNBC", publishedAt: 0, summary: "" },
+    ];
+    const r = checkBriefing({
+      json: j, facts: FACTS, sources: withT, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(true);
+  });
+
   it("中文稿写成英文被判语言串台", () => {
     const j = validJson({
       summary: "Over the past twenty four hours the market moved higher across the board today.",

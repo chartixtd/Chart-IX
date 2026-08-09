@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { extractArticleText, BODY_MAX_CHARS } from "./extract";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { extractArticleText, fetchArticleBodies, BODY_MAX_CHARS } from "./extract";
 
 const NAV_NOISE = `
 <html><head><style>.a{color:red}</style><script>var x=1;</script></head>
@@ -72,5 +72,62 @@ describe("extractArticleText", () => {
     const html = `<body><p>${REAL_PARAGRAPH}</p><p>${p2}</p></body>`;
     const out = extractArticleText(html);
     expect(out.indexOf("Bitcoin held")).toBeLessThan(out.indexOf("Gold tokens"));
+  });
+});
+
+// ── fetchOne 的体积上限：稳定性审查第 8 号发现 ──
+// 超时封住时间、封不住字节：一个 50MB 页面 6 秒内照样到手，×12 并发再喂进
+// [\s\S] 正则，在 1GB 内存的函数里是现实的 OOM——而 OOM 是最坏结局：
+// 无 insert、无心跳、无告警。
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("fetchArticleBodies — 体积防线", () => {
+  const SRC = {
+    title: "t",
+    url: "https://example.com/a",
+    source: "S",
+    publishedAt: 1,
+    summary: "s",
+  };
+
+  it("声明的 content-length 超限时直接放弃，不下载正文", async () => {
+    let textCalled = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({
+          "content-type": "text/html",
+          "content-length": String(50_000_000),
+        }),
+        text: async () => {
+          textCalled = true;
+          return "<p>never read</p>";
+        },
+      }))
+    );
+
+    const out = await fetchArticleBodies([SRC]);
+    expect(out[0].body).toBe("");
+    expect(textCalled).toBe(false);
+  });
+
+  it("未声明长度（chunked）时抓回的文本先截断再解析，不把巨页整个丢进正则", async () => {
+    const para = "This paragraph is long enough to be treated as real article body content here.";
+    // 巨大的填充在前、正文段落在 500K 截断点之后——截断生效则抓不到该段落
+    const huge = "<div>" + "x".repeat(600_000) + `</div><p>${para}</p>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "text/html" }),
+        text: async () => huge,
+      }))
+    );
+
+    const out = await fetchArticleBodies([SRC]);
+    expect(out[0].body).toBe("");
   });
 });

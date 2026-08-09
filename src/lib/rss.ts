@@ -33,8 +33,16 @@ export function decodeEntities(str: string): string {
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
     // Substack 的中文 feed 把每个汉字都编成十进制数字实体（&#26410; 等），
     // 得先解出来，不然中文来源全篇都是乱码
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    // fromCodePoint 对超出 Unicode 范围（>0x10FFFF）的实体抛 RangeError。
+    // 一条恶意或损坏的实体不该让整个源当天颗粒无收——保底原样保留该实体
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, hex) => {
+      const cp = parseInt(hex, 16);
+      return cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+    })
+    .replace(/&#(\d+);/g, (m, dec) => {
+      const cp = parseInt(dec, 10);
+      return cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+    })
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")

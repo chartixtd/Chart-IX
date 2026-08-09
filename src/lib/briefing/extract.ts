@@ -21,6 +21,13 @@ export const BODY_MAX_CHARS = 700;
 /** 单篇抓取超时。抓不到就退回只用标题，绝不为了一篇正文拖垮整条流水线 */
 const FETCH_TIMEOUT_MS = 6_000;
 
+/** 声明的 content-length 超过这个数直接放弃——新闻正文页不会有 2MB */
+const MAX_HTML_BYTES = 2_000_000;
+
+/** 未声明长度（chunked）时，抓回的文本先截到这个字符数再解析。
+ *  正文段落几乎都在页面前部，500K 字符足够 BODY_MAX_CHARS 取满 */
+const MAX_HTML_CHARS = 500_000;
+
 /** 短于这个长度的段落多半是导航、版权、订阅提示，不是正文 */
 const MIN_PARAGRAPH_CHARS = 40;
 
@@ -63,7 +70,14 @@ async function fetchOne(source: BriefingSource): Promise<SourceWithBody> {
     const contentType = res.headers.get("content-type") ?? "";
     // 只解析 HTML：有的源站会对爬虫返回 PDF 或 JSON，硬解析只会得到乱码
     if (!contentType.includes("html")) return { ...source, body: "" };
-    return { ...source, body: extractArticleText(await res.text()) };
+    // 体积上限。超时只封住时间、封不住字节：一个 50MB 的页面在 6 秒内照样能
+    // 到手，×12 并发再喂进三个 [\s\S] 正则，在 Vercel Hobby 1GB 内存的函数里
+    // 是现实的 OOM——而 OOM 是整个系统里最坏的结局：无 insert、无心跳、无告警。
+    // 声明头超限直接放弃；没有声明头（chunked）就抓回来后先截断再解析。
+    const declaredLength = Number(res.headers.get("content-length") ?? 0);
+    if (declaredLength > MAX_HTML_BYTES) return { ...source, body: "" };
+    const html = (await res.text()).slice(0, MAX_HTML_CHARS);
+    return { ...source, body: extractArticleText(html) };
   } catch {
     // 抓失败是常态（付费墙、反爬、超时），退回只用标题即可，不必告警
     return { ...source, body: "" };

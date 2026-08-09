@@ -364,6 +364,47 @@ describe("runDailyBriefing — 降级诊断", () => {
     expect(db.lastRun?.reasons.join("\n")).toContain("调用失败");
   });
 
+  // 稳定性审查第 3 号发现：skipped 早退带着空 reasons，写进去会把真正干过活的
+  // 那次运行的原因清掉——而覆盖它的往往正是操作者点「立即生成」想查原因的那一下
+  it("skipped 不覆盖上一次真实运行的诊断", async () => {
+    callDeepSeek.mockResolvedValue(FAIL);
+    await runDailyBriefing(NOW);
+    const recorded = db.lastRun;
+    expect(recorded?.status).toBe("fallback");
+
+    // 今天已有稿（刚插入的兜底稿），再点一次 → skipped
+    db.existingArticle = { id: "a1" };
+    const r2 = await runDailyBriefing(NOW);
+    expect(r2.status).toBe("skipped");
+    // 诊断仍是那次 fallback 的，没有被空记录冲掉
+    expect(db.lastRun).toBe(recorded);
+  });
+
+  it("窗口外的 idle 早退同样不覆盖诊断", async () => {
+    callDeepSeek.mockResolvedValue(FAIL);
+    await runDailyBriefing(NOW);
+    const recorded = db.lastRun;
+
+    const r2 = await runDailyBriefing(MIDNIGHT_UTC8);
+    expect(r2.status).toBe("skipped");
+    expect(db.lastRun).toBe(recorded);
+  });
+
+  // 稳定性审查第 7 号发现：推送跑在预算尾巴上且对单端点无超时，
+  // 心跳与诊断必须在推送**之前**落定——被平台掐断时损失的只能是推送
+  it("推送抛出时心跳与诊断都已写好，文章照常发布", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+    db.pushEnabled = true;
+    getOptedInSubscriptions.mockRejectedValue(new Error("push infra down"));
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("published");
+    expect(db.inserted).toHaveLength(1);
+    expect(db.beats).toContain("ok");
+    expect(db.lastRun?.status).toBe("published");
+  });
+
   it("诊断落库失败不影响已经发布成功的文章", async () => {
     callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     const r = await runDailyBriefing(NOW);
@@ -388,13 +429,30 @@ describe("runDailyBriefing — 强制重跑", () => {
     expect(db.deletedSlugs).toEqual([]);
   });
 
-  it("删除失败时判为 failed，不会接着重新生成", async () => {
+  // 删除推迟到新稿内容就绪之后——早删的话，生成中途任何失败都会让当天从
+  // 「有一篇稿」变成「一篇都没有」，而操作者只是点了个「重新生成」。
+  it("删除失败时判为 failed，旧稿原封不动、不会落新库", async () => {
     db.existingArticle = { id: "a1" };
     db.deleteError = { message: "permission denied" };
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     const r = await runDailyBriefing(NOW, { force: true });
     expect(r.status).toBe("failed");
-    expect(callDeepSeek).not.toHaveBeenCalled();
+    // 生成先于删除发生（这是新语义的代价），但绝不能写进库
+    expect(db.inserted).toHaveLength(0);
+    // 旧稿还在——删除失败时它没有被动过
+    expect(db.existingArticle).toEqual({ id: "a1" });
     expect(db.beats).toContain("error");
+  });
+
+  it("force 生成中途失败时，旧稿保留——删除从未发生", async () => {
+    db.existingArticle = { id: "a1" };
+    // RSS 与行情全挂：L5，连兜底稿都出不了
+    fetchBriefingSources.mockResolvedValue([]);
+    fetchMarketFacts.mockResolvedValue([]);
+    const r = await runDailyBriefing(NOW, { force: true });
+    expect(r.status).toBe("failed");
+    expect(db.deletedSlugs).toEqual([]);
+    expect(db.existingArticle).toEqual({ id: "a1" });
   });
 });
 
@@ -569,10 +627,10 @@ describe("runDailyBriefing — L3 翻译通道", () => {
   it("翻译把标题撑过 TITLE_MAX 时同样落到兜底稿", async () => {
     callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? FAIL : ok(ZH_JSON)));
     translateText.mockImplementation(async (text: string) =>
-      // 25 次 = 199 字符，越过英文的 titleMax(150)。这个倍数随阈值走：
-      // 阈值按语言分开后，英文上限从 60 提到 150，原来的 12 次（95 字符）
-      // 已经在合法范围内，测不出任何东西了。
-      text === ZH_JSON.title ? "Bitcoin ".repeat(25).trim() : fakeEnglish(text)
+      // 40 次 = 319 字符，越过英文的 titleMax(260)。这个倍数随阈值走：
+      // 上限每次上调，这里的构造长度都得跟着抬，否则夹具落回合法区间、
+      // 测试静默失效——它已经因为这个原因改过两次了。
+      text === ZH_JSON.title ? "Bitcoin ".repeat(40).trim() : fakeEnglish(text)
     );
 
     const r = await runDailyBriefing(NOW);

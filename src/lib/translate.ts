@@ -4,6 +4,8 @@
  * 故抽取共用。
  */
 
+import { decodeEntities } from "@/lib/rss";
+
 /**
  * 单次翻译的超时上限。
  *
@@ -51,8 +53,13 @@ export async function translateText(
         .join("");
 
       if (translated) {
-        // Restore newlines
-        return translated.replace(new RegExp(NL_MARKER.replace(/[\[\]]/g, "\\$&"), "g"), "\n");
+        // Restore newlines, then decode HTML entities: gtx 端点会把撇号/引号
+        // 编成 &#39; / &quot; 返回。不解码的话，下游 renderBriefingHtml 的
+        // escapeHtml 会把 & 再转义成 &amp;，最终页面上直接显示 "Fed&#39;s"。
+        // decodeEntities 与 RSS 解析共用同一实现（rss.ts）。
+        return decodeEntities(
+          translated.replace(new RegExp(NL_MARKER.replace(/[\[\]]/g, "\\$&"), "g"), "\n")
+        );
       }
     }
 

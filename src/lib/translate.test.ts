@@ -20,6 +20,22 @@ afterEach(() => {
 });
 
 describe("translateText", () => {
+  // gtx 端点会把撇号/引号编成 &#39; / &quot; 返回。不解码的话，下游
+  // renderBriefingHtml 的 escapeHtml 会把 & 再转义成 &amp;，页面上直接显示
+  // "Fed&#39;s"。稳定性审查第 10 号发现。
+  it("解码返回值里的 HTML 实体，Fed&#39;s 不会原样上页面", async () => {
+    const body = JSON.stringify([[["Fed&#39;s stance on &quot;inflation&quot;", "原文", null, null, 10]]]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchFn>(async () => new Response(body, { status: 200 }))
+    );
+
+    const out = await translateText("美联储的立场", "zh", "en");
+
+    expect(out).toBe("Fed's stance on \"inflation\"");
+  });
+
+
   it("给 fetch 带上 AbortSignal，不再让挂住的连接无限期占着函数", async () => {
     const fetchMock = vi.fn<FetchFn>(async () => okResponse());
     vi.stubGlobal("fetch", fetchMock);

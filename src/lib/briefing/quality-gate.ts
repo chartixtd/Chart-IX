@@ -55,11 +55,17 @@ const LIMITS: Record<BriefingLocale, LengthLimits> = {
   },
   "en-US": {
     titleMin: 24,
-    titleMax: 150,
+    // 英文上限必须能装下「中文写到上限、再按实测倍率翻译」的结果，否则一篇
+    // 完全合法的中文稿会在翻译后被英文尺子拒掉。实测倍率：标题 4.2×、
+    // 导读/段落 2.8×（见上面的生产数据）。zh titleMax 60 × 4.2 ≈ 252，
+    // 旧值 150 连一半余量都没有——第一次生产样本 127/150 已用掉 85%，
+    // 稍长一点的合法标题就是必死。max 检查在翻译产物上防的是"跑飞"而不是
+    // 截断（翻译不会截断），松一点是安全方向。
+    titleMax: 260,
     summaryMin: 48,
-    summaryMax: 300,
+    summaryMax: 350,
     sectionMin: 190,
-    sectionMax: 1500,
+    sectionMax: 1700,
     bodyMin: 960,
   },
 };
@@ -72,6 +78,26 @@ const BANNED_PHRASES = [
   "recommend buying", "recommend selling", "price target", "stop loss", "guaranteed",
   "sure thing", "all in", "will definitely",
 ];
+
+/**
+ * 英文禁用词必须按**词边界**匹配，不能子串匹配。
+ *
+ * 子串匹配时 "all in" 会命中 over[all in]flation、sm[all in]crease、
+ * over[all in]terest——这些是宏观+加密简报几乎每天都会出现的词组，实测四句
+ * 正常英文散文全部误命中。英文版是翻译产物、走的是同一道门槛，误命中的结果
+ * 是整个英文版被打回兜底稿。中文没有词边界概念，保持原样的 includes。
+ *
+ * 边界用 (?<![a-z0-9]) / (?![a-z0-9])：短语两端不能紧贴字母数字，但允许
+ * 标点与空白（"go all in." 仍然命中）。
+ */
+const BANNED_LATIN_RES: { phrase: string; re: RegExp }[] = BANNED_PHRASES.filter((p) =>
+  /[a-z]/i.test(p)
+).map((p) => ({
+  phrase: p,
+  re: new RegExp(`(?<![a-z0-9])${p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9])`, "i"),
+}));
+
+const BANNED_CJK = BANNED_PHRASES.filter((p) => !/[a-z]/i.test(p));
 
 /** 价格必须带 $ 才被视为价格——裸数字会把年份、条数一并卷进来 */
 const PRICE_RE = /\$\s*(\d[\d,]*(?:\.\d+)?)/g;
@@ -171,9 +197,10 @@ function buildLabelRegExp(facts: MarketFact[]): { re: RegExp; byLabel: Map<strin
 function nearestLabeledFact(
   text: string,
   index: number,
-  facts: MarketFact[]
+  // 由调用方构建一次后传入——checkNumbers 对每个数字命中都要回看一次，
+  // 在这里重建正则等于每个数字都重排一遍标签表
+  built: ReturnType<typeof buildLabelRegExp>
 ): MarketFact | null {
-  const built = buildLabelRegExp(facts);
   if (!built) return null;
 
   const capped = text.slice(Math.max(0, index - LABEL_PROXIMITY_WINDOW), index);
@@ -363,13 +390,29 @@ function sourceWhitelistText(sources: SourceLike[]): string {
  * 被模型如实引用成 $60,000，白名单只提取到 60，于是把一句忠实转述判成了编造，
  * 整篇 zh-CN 因此被打回、最终降级成零 AI 兜底稿。
  */
+/**
+ * 两条规则都吃过亏，不是风格问题：
+ *
+ * 1. 拉丁后缀必须带 `(?![a-z])` 词边界。裸 `b` 会匹配 before 的首字母、裸 `m`
+ *    会匹配 market——"$64,959.52 before easing" 被放大成 649 亿后再和事实集
+ *    比对，合法价格直接判编造。这个缺陷在只扫源文侧时一直潜伏（夹具没踩到），
+ *    扩到正文侧的第一天就把三条英文测试全部打红。
+ * 2. 数组按倍率**从大到小**排：`万亿` 若排在 `万` 之后永远轮不到——150万亿
+ *    会被读成 150万。同理 trillion 组要在 billion 组之前。
+ *    （单条正则内部的 billion|bn|b 顺序无所谓：`b` 先匹配但边界断言失败时，
+ *    正则引擎会回溯尝试更长的备选。）
+ */
 const MAGNITUDE_SUFFIXES: { re: RegExp; scale: number }[] = [
-  { re: /^(?:k|thousand|千)/i, scale: 1e3 },
-  { re: /^(?:万)/i, scale: 1e4 },
-  { re: /^(?:m|mn|million|百万)/i, scale: 1e6 },
-  { re: /^(?:亿)/i, scale: 1e8 },
-  { re: /^(?:b|bn|billion|十亿)/i, scale: 1e9 },
-  { re: /^(?:t|tn|trillion|万亿)/i, scale: 1e12 },
+  { re: /^(?:trillion|tn|t)(?![a-z])/i, scale: 1e12 },
+  { re: /^万亿/, scale: 1e12 },
+  { re: /^(?:billion|bn|b)(?![a-z])/i, scale: 1e9 },
+  { re: /^十亿/, scale: 1e9 },
+  { re: /^亿/, scale: 1e8 },
+  { re: /^(?:million|mn|m)(?![a-z])/i, scale: 1e6 },
+  { re: /^百万/, scale: 1e6 },
+  { re: /^万/, scale: 1e4 },
+  { re: /^(?:thousand|k)(?![a-z])/i, scale: 1e3 },
+  { re: /^千/, scale: 1e3 },
 ];
 
 /**
@@ -406,30 +449,41 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: SourceLike[
     Math.abs(v - f.lastPrice) <= f.lastPrice * PRICE_TOLERANCE_RATIO;
   const pctOk = (v: number, f: MarketFact) =>
     Math.abs(v - f.change24hPct) <= PERCENT_TOLERANCE_PP;
+  const labelRe = buildLabelRegExp(facts);
 
   for (const hit of extractPriceHits(text)) {
-    const bound = nearestLabeledFact(text, hit.index, facts);
+    // 正文侧同样要认量级后缀，与 checkHeadlineNumbers 对称。不认的话，
+    // 中文「150万美元」被 Google Translate 译成 "$1.5 million" 后只会被读成
+    // 1.5，而源文正文里写的是 $1,500,000——两侧归一口径不一致，合法译文
+    // 就会被判成编造。这正是线上第 5/6 号事故的形状，此前只修了 headlines 侧。
+    const value = hit.value * magnitudeAt(text, hit.end);
+    const bound = nearestLabeledFact(text, hit.index, labelRe);
     if (bound) {
       // 绑定到具体标的时，来源白名单**不适用**：否则当天任意一条无关新闻里
       // 巧合出现的同一个数字，就能替一处伪造背书。
-      if (!priceOk(hit.value, bound)) {
+      if (!priceOk(value, bound)) {
         failures.push({
           rule: "hallucinated-number",
-          detail: `价格 $${hit.value} 与 ${bound.label} 的实际价格 ${bound.lastPrice} 不符`,
+          detail: `价格 $${value} 与 ${bound.label} 的实际价格 ${bound.lastPrice} 不符`,
         });
       }
       continue;
     }
-    if (sourcePrices.has(hit.value)) continue;
-    if (!facts.some((f) => priceOk(hit.value, f))) {
-      failures.push({ rule: "hallucinated-number", detail: `价格 $${hit.value} 不在行情事实集内` });
+    if (sourcePrices.has(value)) continue;
+    if (!facts.some((f) => priceOk(value, f))) {
+      failures.push({ rule: "hallucinated-number", detail: `价格 $${value} 不在行情事实集内` });
     }
   }
 
   for (const hit of extractPercentHits(text)) {
-    const bound = nearestLabeledFact(text, hit.index, facts);
+    const bound = nearestLabeledFact(text, hit.index, labelRe);
     if (bound) {
       if (!pctOk(hit.value, bound)) {
+        // 有意**不**回落来源白名单，和价格侧保持一致。曾考虑过对百分比放宽
+        // （「SOL 领涨，成交量增长 12%」里的 12% 来自源文却会被绑到 SOL 判错），
+        // 但那正是 Task 5 人工裁决时演示过的漏洞原型：无关新闻里的 7.50% 替
+        // 伪造的「BTC 上涨 7.50%」背书。误报的代价是当天落兜底稿，漏报的代价
+        // 是把伪造涨跌发出去——按已定的取舍，宁严勿松。
         failures.push({
           rule: "hallucinated-number",
           detail: `涨跌幅 ${hit.value}% 与 ${bound.label} 的实际涨跌 ${bound.change24hPct}% 不符`,
@@ -539,8 +593,13 @@ function checkHeadlineNumbers(
 }
 
 function checkBannedPhrases(b: BriefingJson): GateFailure[] {
-  const text = fullText(b).toLowerCase();
-  return BANNED_PHRASES.filter((p) => text.includes(p.toLowerCase())).map((p) => ({
+  const text = fullText(b);
+  const lower = text.toLowerCase();
+  const hits: string[] = [
+    ...BANNED_CJK.filter((p) => lower.includes(p)),
+    ...BANNED_LATIN_RES.filter(({ re }) => re.test(text)).map(({ phrase }) => phrase),
+  ];
+  return hits.map((p) => ({
     rule: "banned-phrase",
     detail: `含禁用表述「${p}」`,
   }));

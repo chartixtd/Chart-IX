@@ -286,30 +286,21 @@ async function runPipeline(
     return { status: "failed", slug, detail: "missing env" };
   }
 
-  // ①′ 强制重跑：只有后台调试会走到这里。删掉今天那篇再往下走，
-  //     否则幂等闸门会让每次重试都变成 skipped，人被卡在「想看它为什么降级
-  //     却跑不起来」的死角里。
-  if (options.force) {
-    const { error: delError } = await supabase.from("articles").delete().eq("slug", slug);
-    if (delError) {
-      await noteAwait(diag, `强制重跑时删除旧稿失败: ${delError.message}`);
-      await beat("error");
-      return { status: "failed", slug, detail: delError.message };
-    }
-    note(diag, `强制重跑：已删除既有的 ${slug}`);
-  }
-
   // ① 幂等闸门。真正的并发保护是 articles.slug 的 UNIQUE 约束（见 ⑤），
-  //    这次查询只是为了让重复 tick 便宜地早退。
-  const { data: existing } = await supabase
-    .from("articles")
-    .select("id")
-    .eq("slug", slug)
-    .maybeSingle();
-  if (existing) {
-    // skipped = 今天已经有稿。它和 ok 一样蕴含「早报发出去了」
-    await beat("skipped");
-    return { status: "skipped", slug };
+  //    这次查询只是为了让重复 tick 便宜地早退。force 时跳过——旧稿的删除
+  //    **推迟到新稿内容就绪之后**（见 ⑤ 前），这样生成中途任何一步失败，
+  //    昨天点「重新生成」的人手里至少还留着原来那篇，而不是一篇都没有。
+  if (!options.force) {
+    const { data: existing } = await supabase
+      .from("articles")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (existing) {
+      // skipped = 今天已经有稿。它和 ok 一样蕴含「早报发出去了」
+      await beat("skipped");
+      return { status: "skipped", slug };
+    }
   }
 
   // ② 取素材。任一路失败都不该拖垮另一路
@@ -458,6 +449,20 @@ async function runPipeline(
     .eq("slug", "daily-briefing")
     .maybeSingle();
 
+  // 强制重跑的删除放在这里、内容全部就绪之后，而不是流水线开头。
+  // 早删的话，生成中途任何一步失败（RSS 全挂、模型全失败、连兜底稿都渲染不出）
+  // 都会让当天从「有一篇稿」变成「一篇都没有」——操作者只是点了个「重新生成」，
+  // 却把原有的文章弄丢了。删除失败按 failed 处理，此时旧稿原封不动。
+  if (options.force) {
+    const { error: delError } = await supabase.from("articles").delete().eq("slug", slug);
+    if (delError) {
+      await noteAwait(diag, `强制重跑时删除旧稿失败: ${delError.message}`);
+      await beat("error");
+      return { status: "failed", slug, detail: delError.message };
+    }
+    note(diag, `强制重跑：已删除既有的 ${slug}`);
+  }
+
   const { error: insertError } = await supabase.from("articles").insert({
     slug,
     title,
@@ -480,8 +485,25 @@ async function runPipeline(
     return { status: "failed", slug, detail: insertError.message };
   }
 
-  // ⑥ 推送（默认关闭）
+  // 心跳与诊断在**推送之前**写。推送跑在预算已经花完的尾巴上，且
+  // sendToSubscriptions 对单个端点没有超时——一个慢的 FCM 端点可以把函数
+  // 拖到被平台掐断。掐断发生在这行之后，损失的只是推送；发生在这行之前，
+  // 损失的是「文章发了、心跳还是旧的」——正是 cron_heartbeats 要防的状态。
+  await beat("ok");
+  const result: BriefingRunResult = {
+    status: degraded ? "fallback" : "published",
+    slug,
+    reasons: diag,
+  };
+  await recordLastRun(result);
+
+  // ⑥ 推送（默认关闭）。剩余预算不足时整体跳过：文章与心跳都已落定，
+  // 推送是唯一可以无损放弃的步骤，明天的稿子照常触发新的推送。
   try {
+    if (deadlineMs - Date.now() < 3_000) {
+      trace(diag, "剩余预算不足 3 秒，跳过推送");
+      return result;
+    }
     const { data: setting } = await supabase
       .from("admin_settings")
       .select("value")
@@ -522,8 +544,7 @@ async function runPipeline(
     console.error("[cron/daily-briefing] push failed", err);
   }
 
-  await beat("ok");
-  return { status: degraded ? "fallback" : "published", slug };
+  return result;
 }
 
 /**
@@ -539,7 +560,14 @@ export async function runDailyBriefing(
   try {
     const result = await runPipeline(nowMs, options, diag);
     const withReasons = { ...result, reasons: diag };
-    await recordLastRun(withReasons);
+    // skipped（窗口外 / 今天已有稿）**不写诊断记录**。这两条早退路径带着空的
+    // reasons，写进去会把真正干过活的那次运行的原因清掉——而覆盖它的往往
+    // 恰恰是操作者点「立即生成」想去查原因的那一下，或一次匿名 tick。
+    // 成功/兜底路径在 runPipeline 里已于推送前记录过，这里的重复 upsert
+    // 内容相同、幂等无害，保留是为了兜住「推送途中被平台掐断」的窗口。
+    if (withReasons.status !== "skipped") {
+      await recordLastRun(withReasons);
+    }
     return withReasons;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -397,6 +397,7 @@
   },
   "admin": {
     "back_to_site": "Kembali ke Laman",
+    "open_menu": "Buka menu",
     "sign_out": "Log Keluar",
     "dashboard": "Papan Pemuka",
     "articles": "Artikel",

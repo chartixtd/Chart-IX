@@ -455,6 +455,7 @@
   },
   "admin": {
     "back_to_site": "Back to Site",
+    "open_menu": "Open menu",
     "sign_out": "Sign Out",
     "dashboard": "Dashboard",
     "articles": "Articles",

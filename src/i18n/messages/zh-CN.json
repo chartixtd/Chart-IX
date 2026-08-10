@@ -455,6 +455,7 @@
   },
   "admin": {
     "back_to_site": "返回网站",
+    "open_menu": "打开菜单",
     "sign_out": "退出登录",
     "dashboard": "仪表盘",
     "articles": "文章管理",

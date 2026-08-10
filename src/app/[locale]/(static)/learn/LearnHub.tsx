@@ -7,7 +7,7 @@ export async function LearnHub({ locale }: { locale: string }) {
   const sections = [
     { key: "videos", href: `/${locale}/videos` },
     { key: "articles", href: `/${locale}/articles` },
-    { key: "paths", href: "#paths" },
+    { key: "news", href: `/${locale}/news` },
   ] as const;
 
   return (

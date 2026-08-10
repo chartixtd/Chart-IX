@@ -1039,12 +1039,12 @@
   },
   "learn": {
     "hub_title": "Pusat pembelajaran",
-    "hub_subtitle": "Kursus, artikel dan laluan berstruktur untuk membina pertimbangan dagangan langkah demi langkah",
+    "hub_subtitle": "Kursus, artikel dan berita industri untuk membina pertimbangan dagangan langkah demi langkah",
     "hub_videos": "Kursus video",
     "hub_videos_desc": "Pelajaran berstruktur, dari konsep asas hingga pelaksanaan langsung",
     "hub_articles": "Artikel",
     "hub_articles_desc": "Analisis mendalam dan pecahan strategi",
-    "hub_paths": "Laluan pembelajaran",
-    "hub_paths_desc": "Laluan tersusun dari pemula hingga yakin"
+    "hub_news": "Berita industri",
+    "hub_news_desc": "Pergerakan pasaran harian dan berita utama sepintas lalu"
   }
 }

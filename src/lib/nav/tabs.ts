@@ -42,6 +42,68 @@ export function resolveActiveTab(pathname: string, locale: string): TabKey | nul
   return null;
 }
 
+// 语言首页与这 5 个 tab 落地页是导航终点，不是"进去的"页面——不显示返回。
+// 注意这里只匹配 tab 落地页本身，它们的子路由（/more/alerts 之类）仍要显示。
+const BACK_HIDDEN_SEGMENTS: string[] = ["dashboard", "learn", "trade", "screener", "more"];
+
+/**
+ * 手机顶部栏是否显示返回按钮。
+ *
+ * 路径解析沿用 resolveActiveTab 的约定：语言前缀必须与当前语言一致，
+ * 容忍结尾斜杠。前缀不一致时返回 false——切换语言的过渡瞬间不该闪出返回键。
+ */
+export function shouldShowBackButton(pathname: string, locale: string): boolean {
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments[0] !== locale) return false;
+
+  const first = segments[1];
+  if (!first) return false; // 语言首页
+
+  // 长度为 2 才是 tab 落地页本身；/more/alerts 这类子路由要显示返回
+  if (segments.length === 2 && BACK_HIDDEN_SEGMENTS.includes(first)) return false;
+
+  return true;
+}
+
+/**
+ * 没有站内历史可退时（外部链接直入 / PWA 冷启动），返回按钮该跳去哪。
+ *
+ * 兜底是语言首页而不是 dashboard：公开页面（文章/视频/学习）的流量大头是
+ * 未登录用户，dashboard 对他们是一堵登录墙。
+ */
+export function resolveBackTarget(pathname: string, locale: string): string {
+  const home = `/${locale}`;
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments[0] !== locale) return home;
+
+  const first = segments[1];
+  const second = segments[2];
+  if (!first) return home;
+
+  switch (first) {
+    // 有第二段 = 详情页，退回列表页；没有 = 列表页本身，退回 learn hub
+    case "articles":
+      return second ? `/${locale}/articles` : `/${locale}/learn`;
+    case "videos":
+      return second ? `/${locale}/videos` : `/${locale}/learn`;
+    case "learn":
+      return `/${locale}/learn`;
+    case "community":
+      return `/${locale}/articles?tab=community`;
+    // 有第二段 = /settings/api-keys，退回设置；没有 = 设置本身，退回更多
+    case "settings":
+      return second ? `/${locale}/settings` : `/${locale}/more`;
+    case "more":
+      return `/${locale}/more`;
+    case "news":
+    case "orders":
+    case "upgrade":
+      return `/${locale}/more`;
+    default:
+      return home;
+  }
+}
+
 export interface MoreEntry {
   key: string;
   href: string;

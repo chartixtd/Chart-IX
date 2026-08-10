@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { MOBILE_TABS, resolveActiveTab, buildMoreEntries } from "./tabs";
+import {
+  MOBILE_TABS,
+  resolveActiveTab,
+  buildMoreEntries,
+  shouldShowBackButton,
+  resolveBackTarget,
+} from "./tabs";
 
 describe("MOBILE_TABS", () => {
   it("共 5 个位置，交易在正中间且标记为凸起", () => {
@@ -108,5 +114,86 @@ describe("buildMoreEntries", () => {
     const loggedInKeys = buildMoreEntries(base).map((e) => e.key);
     expect(loggedInKeys).toContain("alerts");
     expect(loggedInKeys).toContain("notifications");
+  });
+});
+
+describe("shouldShowBackButton", () => {
+  it("语言首页不显示返回——它是导航终点", () => {
+    expect(shouldShowBackButton("/zh-CN", "zh-CN")).toBe(false);
+  });
+
+  it("5 个 tab 根页都不显示返回", () => {
+    for (const seg of ["dashboard", "learn", "trade", "screener", "more"]) {
+      expect(shouldShowBackButton(`/zh-CN/${seg}`, "zh-CN")).toBe(false);
+    }
+  });
+
+  it("tab 根页的子路由要显示返回", () => {
+    expect(shouldShowBackButton("/zh-CN/more/alerts", "zh-CN")).toBe(true);
+    expect(shouldShowBackButton("/zh-CN/articles/hello", "zh-CN")).toBe(true);
+    expect(shouldShowBackButton("/zh-CN/settings/api-keys", "zh-CN")).toBe(true);
+  });
+
+  it("归属于某个 tab 但不是 tab 落地页的页面要显示返回", () => {
+    // learn tab 收编 articles/videos，但 tab 本身跳的是 /learn
+    expect(shouldShowBackButton("/zh-CN/articles", "zh-CN")).toBe(true);
+    expect(shouldShowBackButton("/zh-CN/videos", "zh-CN")).toBe(true);
+    expect(shouldShowBackButton("/zh-CN/settings", "zh-CN")).toBe(true);
+  });
+
+  it("不属于任何 tab 的页面也要显示返回", () => {
+    expect(shouldShowBackButton("/zh-CN/login", "zh-CN")).toBe(true);
+  });
+
+  it("能容忍结尾的斜杠", () => {
+    expect(shouldShowBackButton("/zh-CN/trade/", "zh-CN")).toBe(false);
+  });
+
+  it("路径的语言前缀与当前语言不一致时不显示——与 resolveActiveTab 的保守处理一致", () => {
+    expect(shouldShowBackButton("/en-US/settings", "zh-CN")).toBe(false);
+  });
+});
+
+describe("resolveBackTarget", () => {
+  it("详情页退回各自的列表页", () => {
+    expect(resolveBackTarget("/zh-CN/articles/hello", "zh-CN")).toBe("/zh-CN/articles");
+    expect(resolveBackTarget("/zh-CN/videos/abc", "zh-CN")).toBe("/zh-CN/videos");
+    expect(resolveBackTarget("/zh-CN/learn/basics", "zh-CN")).toBe("/zh-CN/learn");
+  });
+
+  it("文章/视频列表页退回学习 hub——learn tab 收编了它们", () => {
+    expect(resolveBackTarget("/zh-CN/articles", "zh-CN")).toBe("/zh-CN/learn");
+    expect(resolveBackTarget("/zh-CN/videos", "zh-CN")).toBe("/zh-CN/learn");
+  });
+
+  it("社区帖子退回社区列表（带 tab 参数）", () => {
+    expect(resolveBackTarget("/zh-CN/community/42", "zh-CN")).toBe("/zh-CN/articles?tab=community");
+  });
+
+  it("设置子页退回设置，设置本身退回更多", () => {
+    expect(resolveBackTarget("/zh-CN/settings/api-keys", "zh-CN")).toBe("/zh-CN/settings");
+    expect(resolveBackTarget("/zh-CN/settings", "zh-CN")).toBe("/zh-CN/more");
+  });
+
+  it("更多 tab 收编的页面都退回更多", () => {
+    expect(resolveBackTarget("/zh-CN/more/alerts", "zh-CN")).toBe("/zh-CN/more");
+    expect(resolveBackTarget("/zh-CN/more/notifications", "zh-CN")).toBe("/zh-CN/more");
+    expect(resolveBackTarget("/zh-CN/news", "zh-CN")).toBe("/zh-CN/more");
+    expect(resolveBackTarget("/zh-CN/orders", "zh-CN")).toBe("/zh-CN/more");
+    expect(resolveBackTarget("/zh-CN/upgrade", "zh-CN")).toBe("/zh-CN/more");
+  });
+
+  it("未收编的页面兜底到语言首页，而不是 dashboard——后者对未登录用户是登录墙", () => {
+    expect(resolveBackTarget("/zh-CN/login", "zh-CN")).toBe("/zh-CN");
+    expect(resolveBackTarget("/zh-CN/register", "zh-CN")).toBe("/zh-CN");
+    expect(resolveBackTarget("/zh-CN/offline", "zh-CN")).toBe("/zh-CN");
+  });
+
+  it("语言前缀不匹配时兜底到当前语言的首页", () => {
+    expect(resolveBackTarget("/en-US/settings", "zh-CN")).toBe("/zh-CN");
+  });
+
+  it("目标带上正确的语言前缀", () => {
+    expect(resolveBackTarget("/ms-MY/articles/x", "ms-MY")).toBe("/ms-MY/articles");
   });
 });

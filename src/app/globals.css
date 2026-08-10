@@ -140,6 +140,17 @@
       transform: translateY(-50%);
       min-height: 44px;
     }
+
+    /* .foil-sheen 用 overflow: hidden 限制桌面端的 sheen 动画范围，但在触摸设备上这会
+       夹住 .tap-44::after 的命中区扩展。由于 sheen 仅在 :hover 时触发（触摸设备无 hover），
+       在 (pointer: coarse) 下移除 overflow 是安全的，不会改变任何可见效果。 */
+    .foil-sheen {
+      overflow: visible;
+    }
+
+    .foil-sheen::before {
+      display: none;
+    }
   }
 
   /* Reduced motion: honor system preference across authored motion */

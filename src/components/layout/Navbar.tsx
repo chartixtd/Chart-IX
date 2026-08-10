@@ -9,7 +9,6 @@ import { createClient } from "@/lib/supabase/client";
 import { purgePageCache } from "@/stores/pwa";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
-import { PriceAlertBell } from "@/components/alerts/PriceAlertBell";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
@@ -101,7 +100,6 @@ export function Navbar() {
 
         {/* Right Section */}
         <div className="flex items-center gap-3">
-          <PriceAlertBell />
           <LanguageSwitcher />
           {auth.loading ? (
             <div className="h-8 w-20 animate-pulse rounded bg-bg-tertiary" />

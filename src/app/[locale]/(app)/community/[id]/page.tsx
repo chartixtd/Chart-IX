@@ -37,7 +37,7 @@ export default function CommunityPostPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
-      <Link href={`/${locale}/articles?tab=community`} className="mb-4 inline-block text-sm text-text-muted hover:text-gold">
+      <Link href={`/${locale}/articles?tab=community`} className="mb-4 hidden text-sm text-text-muted hover:text-gold lg:inline-block">
         {t("back_to_community")}
       </Link>
 

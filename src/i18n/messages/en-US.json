@@ -175,6 +175,7 @@
       "duration_min": "{minutes} min"
     },
     "detail": {
+      "back_to_videos": "Back to Videos",
       "category": "Category",
       "uploaded": "Uploaded",
       "description": "Description",

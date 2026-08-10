@@ -175,6 +175,7 @@
       "duration_min": "{minutes} 分钟"
     },
     "detail": {
+      "back_to_videos": "返回视频列表",
       "category": "分类",
       "uploaded": "发布于",
       "description": "简介",

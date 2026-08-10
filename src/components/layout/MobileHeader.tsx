@@ -69,8 +69,9 @@ export function MobileHeader() {
           </Link>
         )}
         {/* 价格提醒暂时隐藏（组件与路由都还在，见
-            docs/superpowers/specs/2026-08-10-mobile-nav-cleanup-design.md），
-            所以已登录时右侧就是空的 */}
+            docs/superpowers/specs/2026-08-10-mobile-nav-cleanup-design.md）；
+            语言切换挪进 /more 的设置——低频操作不该占手机上最贵的横向空间。
+            两者都不在，所以已登录时右侧就是空的 */}
         {!auth.loading && !auth.userId ? (
           <div className="flex items-center gap-2">
             <Link href={`/${locale}/login`}>

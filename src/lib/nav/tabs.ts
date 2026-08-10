@@ -132,7 +132,7 @@ export function buildMoreEntries(input: {
     entries.push({ key: "upgrade", href: `/${locale}/upgrade` });
   }
 
-  // 后台不做移动适配，这里只是个入口链接；它在 i18n 路由之外，不带语言前缀
+  // 后台在 i18n 路由之外，不带语言前缀
   if (role === "admin") {
     entries.push({ key: "admin", href: "/admin" });
   }

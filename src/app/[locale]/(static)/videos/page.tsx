@@ -8,9 +8,9 @@ import { VideosView } from "./VideosView";
 import VideosLoading from "./loading";
 import type { Video, VideoCategory } from "@/types";
 
-// Public catalog data, no per-user auth check — see the matching comment in
-// src/app/[locale]/(static)/learn/page.tsx for why this uses the service-role client
-// instead of the cookie-bound one.
+// Public catalog data, no per-user auth check — this uses the plain
+// service-role client instead of the cookie-bound one so the page stays out
+// of Next's dynamic-API opt-out, letting `revalidate` below actually apply.
 export const revalidate = 300;
 
 export function generateStaticParams() {

@@ -122,6 +122,26 @@
     font-family: var(--font-marcellus), "Noto Serif SC", Georgia, serif;
   }
 
+  /* 触摸命中区补足到 44px（iOS HIG 下限），视觉尺寸不变。
+     Button 的 sm≈28px、md≈40px 都不达标，但全站 100 处 size="sm" 横跨后台与
+     交易终端的密集布局，直接加 min-height 会把它们全撑高——所以只扩命中区。
+     只在垂直方向扩：left/right 锁在按钮自身宽度内，并排按钮不会互相抢点击。 */
+  @media (pointer: coarse) {
+    .tap-44 {
+      position: relative;
+    }
+
+    .tap-44::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      min-height: 44px;
+    }
+  }
+
   /* Reduced motion: honor system preference across authored motion */
   @media (prefers-reduced-motion: reduce) {
     *,

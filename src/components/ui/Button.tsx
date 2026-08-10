@@ -39,6 +39,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={cn(
           "inline-flex items-center justify-center gap-2 font-medium tracking-tight transition-all duration-200",
+          // 触摸设备上把命中区补到 44px，视觉尺寸不变（见 globals.css 的 .tap-44）
+          "tap-44",
           "active:scale-[0.97] active:duration-75",
           "disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100",
           variants[variant],

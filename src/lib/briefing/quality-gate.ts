@@ -182,6 +182,29 @@ function buildLabelRegExp(facts: MarketFact[]): { re: RegExp; byLabel: Map<strin
 }
 
 /**
+ * 并列枚举标记。
+ *
+ * 「XAUT 与 PAXG 分别下跌 0.52% 和 0.36%」这种写法里，「离数字最近的标签拥有
+ * 这个数字」这条假设直接不成立——0.52% 前方最近的标签是 PAXG，而它其实属于
+ * XAUT。线上 2026-08-10 第一次生成就是这么被拒的。
+ *
+ * 遇到枚举就**放弃绑定**，退回「来源白名单 + 全局事实集」那条更宽但仍然机械的
+ * 路——那正是绑不到标签时本来就会走的路。这不会开出新的漏洞：枚举句里的数字
+ * 仍须逐个落在当天真实的事实集里，只是不再要求它们与标签一一对齐。
+ */
+const ENUMERATION_RE = /分别|各自|respectively/i;
+
+/** 数字前方、同一句之内的那一小段文本。标的绑定与方向词都在它上面回看 */
+function windowBefore(text: string, index: number): string {
+  const capped = text.slice(Math.max(0, index - LABEL_PROXIMITY_WINDOW), index);
+  // 只保留最后一个句子终止符之后的部分
+  const sentenceStart = Math.max(
+    ...["。", "！", "？", "\n", ". "].map((p) => capped.lastIndexOf(p))
+  );
+  return sentenceStart >= 0 ? capped.slice(sentenceStart + 1) : capped;
+}
+
+/**
  * 回看数字前方、**同一句之内**最近的事实标签。
  *
  * 存在的理由：只问「这个数字是否匹配某个事实」挡不住张冠李戴——把 BTC 与黄金
@@ -193,6 +216,9 @@ function buildLabelRegExp(facts: MarketFact[]): { re: RegExp; byLabel: Map<strin
  *
  * 绑不到标签不等于放行：调用方会退回「来源白名单 + 全局事实集」这条更宽但仍然
  * 机械的校验。英文稿更常写 "Bitcoin"/"gold" 而非 "BTC"/"XAUT"，走的正是这条路。
+ *
+ * 句子里出现并列枚举（见 ENUMERATION_RE）时同样返回 null——那种句式下「最近的
+ * 标签」这条假设本身就是错的。
  */
 function nearestLabeledFact(
   text: string,
@@ -203,12 +229,9 @@ function nearestLabeledFact(
 ): MarketFact | null {
   if (!built) return null;
 
-  const capped = text.slice(Math.max(0, index - LABEL_PROXIMITY_WINDOW), index);
-  // 只保留最后一个句子终止符之后的部分
-  const sentenceStart = Math.max(
-    ...["。", "！", "？", "\n", ". "].map((p) => capped.lastIndexOf(p))
-  );
-  const window = (sentenceStart >= 0 ? capped.slice(sentenceStart + 1) : capped).toUpperCase();
+  const raw = windowBefore(text, index);
+  if (ENUMERATION_RE.test(raw)) return null;
+  const window = raw.toUpperCase();
 
   // 取最后一个匹配 = 离数字最近的那个标签
   let best: MarketFact | null = null;
@@ -217,6 +240,78 @@ function nearestLabeledFact(
     if (fact) best = fact;
   }
   return best;
+}
+
+/**
+ * 方向词。中文与英文都把涨跌的方向写在**词**里而不是数上：「XAUT 下跌 0.52%」
+ * 对应的事实是 -0.52%，句子完全正确，可门槛此前只认字面上的负号，于是把它判成
+ * 幻觉。线上 2026-08-10 三次生成里有两次栽在这一条上，当天发的是零 AI 兜底稿。
+ *
+ * 只有**下跌**词会带来一个额外的候选值（见 percentCandidates），上涨词不会——
+ * 这保证放宽只发生在「文字说跌、事实也是跌」的方向上，写错方向照样被拒。
+ */
+const DOWN_CUE_RE =
+  /跌|回落|走低|下挫|下滑|下降|下行|缩水|减少|(?<![a-z])(?:fell|fall(?:s|ing)?|declin\w*|drop\w*|slipp?\w*|lost|loss\w*|losing|lower|down|retreat\w*|shed|sank|sunk|slid\w*|weaken\w*)(?![a-z])/gi;
+
+const UP_CUE_RE =
+  /涨|走高|上扬|攀升|反弹|回升|上行|增长|(?<![a-z])(?:rose|rise|rising|gain\w*|climb\w*|advanc\w*|higher|up|surg\w*|jump\w*|rall\w*|add(?:s|ed|ing)?|firm\w*)(?![a-z])/gi;
+
+/** 方向词也可能写在数字**之后**：「ending 0.52% lower」「0.52% 的跌幅」 */
+const FORWARD_CUE_WINDOW = 24;
+
+type Direction = "up" | "down";
+
+function cueIndices(window: string, re: RegExp): number[] {
+  // matchAll 内部克隆正则，模块级 /g 正则可安全复用（与 collectHits 同理）
+  return [...window.matchAll(re)].map((m) => m.index ?? 0);
+}
+
+/**
+ * 窗口里离数字最近的那个方向词。回看窗口取最后一个（最靠近数字的），
+ * 前看窗口取第一个——「BTC 下跌 0.5%，ETH 上涨 0.3%」里给 0.3% 定调的
+ * 只能是「上涨」，不能是更早的那个「下跌」。
+ */
+function nearestDirection(window: string, prefer: "last" | "first"): Direction | null {
+  const down = cueIndices(window, DOWN_CUE_RE);
+  const up = cueIndices(window, UP_CUE_RE);
+  if (down.length === 0 && up.length === 0) return null;
+  if (up.length === 0) return "down";
+  if (down.length === 0) return "up";
+  const pick = (xs: number[]) => (prefer === "last" ? Math.max(...xs) : Math.min(...xs));
+  const d = pick(down);
+  const u = pick(up);
+  return (prefer === "last" ? d > u : d < u) ? "down" : "up";
+}
+
+function directionAt(text: string, hit: NumberHit): Direction | null {
+  const before = nearestDirection(windowBefore(text, hit.index), "last");
+  if (before) return before;
+  // 后向窗口在**任何**标点处就断。不断的话，「BTC 上涨 0.92%，XAUT 下跌 0.52%」
+  // 里后半句的「下跌」会漂给前一个数字，等于给 BTC 白送一个 -0.92 的候选值。
+  const after = text.slice(hit.end, hit.end + FORWARD_CUE_WINDOW).split(/[，,。；;！？!?\n]/)[0];
+  return nearestDirection(after, "first");
+}
+
+/** 数字本身带没带正负号。带了就以它为准，不再看方向词 */
+function hasExplicitSign(text: string, hit: NumberHit): boolean {
+  return hit.value < 0 || text[hit.index - 1] === "+";
+}
+
+/**
+ * 一个百分比在事实集口径下的候选值。
+ *
+ * 无符号、且最近的方向词是「跌」时，-v 与 v 都算候选。这是**单向**放宽，
+ * 不会放过写错方向的稿：
+ * - 「下跌 0.52%」事实 -0.52% → 候选含 -0.52，通过（这正是要修的误报）
+ * - 「上涨 0.52%」事实 -0.52% → 上涨词不产生负候选，仍被拒
+ * - 「下跌 0.92%」事实 +0.92% → 候选 {0.92, -0.92} 与 +0.92 比：0.92 命中……
+ *   这一例确实会通过，代价是「把涨写成跌、幅度还刚好对上」漏过去。同一个数字
+ *   在没有方向词时本来也会通过（门槛从来只核对数值），所以它不是这次放宽引入的
+ *   新洞；真正引入的只有负候选那一半。
+ */
+function percentCandidates(text: string, hit: NumberHit): number[] {
+  if (hasExplicitSign(text, hit)) return [hit.value];
+  return directionAt(text, hit) === "down" ? [hit.value, -hit.value] : [hit.value];
 }
 
 /**
@@ -232,10 +327,61 @@ export function parseBriefingJson(raw: string): BriefingJson | null {
     .trim();
   try {
     const parsed = JSON.parse(unfenced);
-    return parsed && typeof parsed === "object" ? (parsed as BriefingJson) : null;
+    if (!parsed || typeof parsed !== "object") return null;
+    return coerceBriefingShape(parsed) as BriefingJson;
   } catch {
     return null;
   }
+}
+
+/**
+ * 结构漂移的无损展平。
+ *
+ * 模型最常见的漂移不是漏字段，而是**多包一层**：本该是 `["关注美联储讲话"]` 的
+ * 地方给了 `[{ title: "关注美联储", detail: "本周有讲话" }]`，或者干脆给一个
+ * 字符串。语义完整，只是形状不对。checkStructure 会（也必须）拒掉这种输入——
+ * render.ts 对对象调 escapeHtml 会抛 TypeError——但拒稿的代价是白烧一次模型
+ * 调用，三次机会用完就落兜底稿。线上 2026-08-10 的第二次生成正是死在
+ * 「analysis.watchlist 含非字符串元素」上。
+ *
+ * 能还原成字符串的就地展平，还原不了的（比如空对象、嵌套数组）原样留着，
+ * 仍然交给 checkStructure 拒掉——这里只做形状归一，不发明内容。
+ */
+function flattenToString(v: unknown): unknown {
+  if (typeof v === "string") return v;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return v;
+  const parts = Object.values(v as Record<string, unknown>).filter(isNonEmptyString);
+  if (parts.length === 0) return v;
+  if (parts.length === 1) return parts[0];
+  // 首段当标题、其余接在后面。冒号按语种选：中文全角、英文半角加空格
+  const joiner = /[一-鿿]/.test(parts[0]) ? "：" : ": ";
+  return `${parts[0]}${joiner}${parts.slice(1).join(" ")}`;
+}
+
+/** 该是字符串数组的字段：单个字符串补成单元素数组，元素逐个展平 */
+function toStringArray(v: unknown): unknown {
+  if (isNonEmptyString(v)) return [v];
+  return Array.isArray(v) ? v.map(flattenToString) : v;
+}
+
+function coerceBriefingShape(json: object): object {
+  const b = json as Record<string, unknown>;
+
+  if (Array.isArray(b.headlines)) {
+    b.headlines = b.headlines.map((h) => {
+      if (!h || typeof h !== "object" || Array.isArray(h)) return h;
+      const item = h as Record<string, unknown>;
+      return { ...item, points: toStringArray(item.points) };
+    });
+  }
+
+  const a = b.analysis;
+  if (a && typeof a === "object" && !Array.isArray(a)) {
+    const analysis = a as Record<string, unknown>;
+    analysis.watchlist = toStringArray(analysis.watchlist);
+  }
+
+  return b;
 }
 
 function isNonEmptyString(v: unknown): v is string {
@@ -476,9 +622,11 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: SourceLike[
   }
 
   for (const hit of extractPercentHits(text)) {
+    // 「下跌 0.52%」的方向在词里、不在数上，候选值因此可能有两个
+    const candidates = percentCandidates(text, hit);
     const bound = nearestLabeledFact(text, hit.index, labelRe);
     if (bound) {
-      if (!pctOk(hit.value, bound)) {
+      if (!candidates.some((v) => pctOk(v, bound))) {
         // 有意**不**回落来源白名单，和价格侧保持一致。曾考虑过对百分比放宽
         // （「SOL 领涨，成交量增长 12%」里的 12% 来自源文却会被绑到 SOL 判错），
         // 但那正是 Task 5 人工裁决时演示过的漏洞原型：无关新闻里的 7.50% 替
@@ -492,7 +640,7 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: SourceLike[
       continue;
     }
     if (sourcePercents.has(hit.value)) continue;
-    if (!facts.some((f) => pctOk(hit.value, f))) {
+    if (!candidates.some((v) => facts.some((f) => pctOk(v, f)))) {
       failures.push({ rule: "hallucinated-number", detail: `涨跌幅 ${hit.value}% 不在行情事实集内` });
     }
   }

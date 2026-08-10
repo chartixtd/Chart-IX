@@ -779,3 +779,127 @@ describe("checkBriefing — 英文稿路径", () => {
     expect(r.failures.every((f) => f.rule === "hallucinated-number")).toBe(true);
   });
 });
+
+// ── 方向词：2026-08-10 的真实拒稿 ──
+// 那天三次生成里有两次被这条门槛拒掉，最终发的是零 AI 兜底稿。诊断原文：
+//   hallucinated-number/涨跌幅 0.52% 与 XAUT 的实际涨跌 -0.52% 不符
+//   hallucinated-number/涨跌幅 0.36% 与 PAXG 的实际涨跌 -0.36% 不符
+// 稿子写的是「XAUT 下跌 0.52%」——完全正确的中文，方向在词里、不在数上。
+const DOWN_FACTS: MarketFact[] = [
+  { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
+  { symbol: "XAUT-USDT", label: "XAUT", lastPrice: 4325.51, change24hPct: -0.52 },
+  { symbol: "PAXG-USDT", label: "PAXG", lastPrice: 4331.2, change24hPct: -0.36 },
+];
+
+function checkDown(json: unknown) {
+  return checkBriefing({
+    json, facts: DOWN_FACTS, sources: SOURCES, locale: "zh-CN", finishReason: "stop",
+  });
+}
+
+describe("checkBriefing — 涨跌幅的方向词", () => {
+  it("「下跌 0.52%」对上事实的 -0.52% 时通过", () => {
+    const j = validJson();
+    j.analysis.gold =
+      "黄金代币方面，XAUT 报 $4,325.51，二十四小时下跌 0.52%；PAXG 报 $4,331.20，同期下跌 0.36%。两者步调一致，说明是黄金本身的定价变化，而不是单个代币的流动性问题，短线获利了结的成分更大。";
+    const r = checkDown(j);
+    expect(r.failures).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+
+  it("并列枚举里不再按「最近的标签」张冠李戴", () => {
+    // 「XAUT 与 PAXG 分别下跌 0.52% 和 0.36%」：0.52% 前方最近的标签是 PAXG，
+    // 而它其实属于 XAUT。这是那天第一次生成被拒的形状。
+    const j = validJson();
+    j.analysis.gold =
+      "黄金代币 XAUT 与 PAXG 分别下跌 0.52% 和 0.36%，两者步调一致，说明是黄金本身的定价变化，而非单个代币的流动性问题。避险需求仍在，只是短线有获利了结，后续继续观察实际利率的方向。";
+    expect(checkDown(j).ok).toBe(true);
+  });
+
+  it("方向写反仍被抓出：事实在跌、稿子写涨", () => {
+    const j = validJson();
+    j.analysis.gold =
+      "黄金代币方面，XAUT 报 $4,325.51，二十四小时上涨 0.52%，避险需求继续累积。这与近期宏观不确定性上升的背景一致，后续值得留意其与实际利率之间的关系是否继续背离。";
+    const r = checkDown(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("后一句的方向词不会漂给前一个数字", () => {
+    // BTC 事实是 -0.92%，稿子写「上涨 0.92%」——方向错了。若后向窗口越过逗号，
+    // 后半句的「下跌」会替它凑出一个 -0.92 的候选值，把错的放行。
+    const facts: MarketFact[] = [
+      { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: -0.92 },
+      ...DOWN_FACTS.slice(1),
+    ];
+    const j = validJson();
+    j.analysis.crypto =
+      "BTC 报 $64,959.52，二十四小时上涨 0.92%，而黄金代币同期下跌 0.52%。两类资产走势分化，说明资金在风险与避险之间做了一次再平衡，尚不足以判定趋势发生改变。";
+    const r = checkBriefing({
+      json: j, facts, sources: SOURCES, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("英文侧同样认方向词（fell / lower）", () => {
+    const facts: MarketFact[] = [
+      { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
+      { symbol: "ETH-USDT", label: "ETH", lastPrice: 1914.99, change24hPct: 0.59 },
+      { symbol: "XAUT-USDT", label: "XAUT", lastPrice: 4325.51, change24hPct: -0.52 },
+    ];
+    const j = validJsonEn();
+    j.analysis.gold =
+      "Gold tokens gave back some ground, with XAUT at $4,325.51 after it fell 0.52% over the past day. Real rates remain the cleanest read on haven demand, and they have drifted higher for three straight sessions, which explains most of the move.";
+    const r = checkBriefing({
+      json: j, facts, sources: SOURCES, locale: "en-US", finishReason: "stop",
+    });
+    expect(r.failures).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+});
+
+// ── 结构漂移的展平 ──
+// 「多包一层」的输出语义是完整的，为它烧掉一次模型调用不值得——2026-08-10 的
+// 第二次生成就是死在 analysis.watchlist 含非字符串元素上。
+describe("parseBriefingJson — 结构漂移", () => {
+  it("对象型 watchlist 被展平成字符串", () => {
+    const raw = JSON.stringify({
+      ...validJson(),
+      analysis: {
+        ...validJson().analysis,
+        watchlist: [{ title: "关注美联储", detail: "本周有公开讲话" }, { text: "关注黄金" }],
+      },
+    });
+    const parsed = parseBriefingJson(raw)!;
+    expect(parsed.analysis.watchlist).toEqual(["关注美联储：本周有公开讲话", "关注黄金"]);
+    expect(check(parsed).ok).toBe(true);
+  });
+
+  it("字符串型 watchlist 被补成单元素数组", () => {
+    const raw = JSON.stringify({
+      ...validJson(),
+      analysis: { ...validJson().analysis, watchlist: "关注美联储本周的公开讲话" },
+    });
+    expect(parseBriefingJson(raw)!.analysis.watchlist).toEqual(["关注美联储本周的公开讲话"]);
+  });
+
+  it("对象型 points 被展平成字符串", () => {
+    const j = validJson();
+    const raw = JSON.stringify({
+      ...j,
+      headlines: [{ topic: "加密货币", points: [{ text: "比特币在六万四千美元上方震荡" }] }, j.headlines[1]],
+    });
+    expect(parseBriefingJson(raw)!.headlines[0].points).toEqual(["比特币在六万四千美元上方震荡"]);
+  });
+
+  it("展平不了的形状仍然被结构规则拒掉", () => {
+    const raw = JSON.stringify({
+      ...validJson(),
+      analysis: { ...validJson().analysis, watchlist: [{}, []] },
+    });
+    const r = check(parseBriefingJson(raw));
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "structure")).toBe(true);
+  });
+});

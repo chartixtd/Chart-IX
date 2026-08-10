@@ -13,15 +13,20 @@ const FACTS: MarketFact[] = [
 ];
 
 describe("fallbackTitle", () => {
-  it("中文标题含日期", () => {
-    expect(fallbackTitle("zh-CN", "2026-08-08")).toContain("2026-08-08");
+  // 兜底稿的标题必须和正常稿长一个样，否则列表页上降级那天看起来像换了个栏目
+  it("中文标题走标准格式", () => {
+    expect(fallbackTitle("zh-CN", "2026-08-08")).toBe("早报 | 8月8日 24 小时要闻速览");
   });
-  it("英文标题含日期", () => {
-    expect(fallbackTitle("en-US", "2026-08-08")).toContain("2026-08-08");
+  it("英文标题走标准格式", () => {
+    expect(fallbackTitle("en-US", "2026-08-08")).toBe(
+      "Daily Briefing | Aug 8 — 24-Hour News Roundup"
+    );
   });
   it("标题长度落在质量门槛的区间内", () => {
     expect([...fallbackTitle("zh-CN", "2026-08-08")].length).toBeGreaterThanOrEqual(10);
     expect([...fallbackTitle("zh-CN", "2026-08-08")].length).toBeLessThanOrEqual(60);
+    expect([...fallbackTitle("en-US", "2026-08-08")].length).toBeGreaterThanOrEqual(24);
+    expect([...fallbackTitle("en-US", "2026-08-08")].length).toBeLessThanOrEqual(260);
   });
 });
 

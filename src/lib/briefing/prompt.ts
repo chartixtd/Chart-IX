@@ -1,3 +1,4 @@
+import { briefingDateLabel } from "./title";
 import type { SourceWithBody } from "./extract";
 import type { BriefingLocale, MarketFact } from "./types";
 
@@ -72,6 +73,8 @@ ${factsBlock}
 ## 硬性约束
 - 正文中出现的所有价格与涨跌幅，**只能**引用上面「事实」段落给出的数值，不得自行推断、回忆或估算任何数字。
 - 引用价格时必须写成带美元符号与千分位的形式，例如 $64,959.52。
+- 引用涨跌幅时，**方向必须与事实一致**：事实是负数就写「下跌 0.52%」或「-0.52%」，
+  绝不能写成「上涨 0.52%」。写成「下跌 -0.52%」这种双重否定也是错的。
 - **不得**给出具体买卖点位、目标价、止损位或仓位建议。
 - **不得**使用「必涨」「稳赚」这类确定性表述。
 - 提到黄金时，须说明数据来自黄金代币（XAUT / PAXG），不得表述为伦敦金或 COMEX 黄金期货报价。
@@ -83,7 +86,7 @@ ${factsBlock}
 只输出一个 json 对象，不要输出任何其他文字。格式示例：
 
 {
-  "title": "早报 | 8月8日 比特币小幅上行，黄金续创新高",
+  "title": "早报 | ${briefingDateLabel(dateStr, locale)} 比特币小幅上行，黄金续创新高",
   "summary": "一句话导读，40 到 80 字",
   "headlines": [
     { "topic": "加密货币", "points": ["要点一", "要点二"] },
@@ -98,8 +101,11 @@ ${factsBlock}
   }
 }
 
-标题长度须在 10 到 60 字之间。headlines 至少包含 2 个主题、每个主题 1 到 3 条要点，
-每条要点一句话。watchlist 2 到 4 条，每条一句话。
+标题长度须在 10 到 60 字之间，并保持「早报 | ${briefingDateLabel(dateStr, locale)} 正题」这个格式。
+headlines 至少包含 2 个主题、每个主题 1 到 3 条要点，每条要点一句话。watchlist 2 到 4 条，每条一句话。
+
+**points 与 watchlist 都是字符串数组**，每个元素就是一句话本身，
+不要写成 {"title": …, "detail": …} 这样多包一层的对象。
 
 **整个 json 必须写得完整。** 上面给出的字数是目标而非下限，宁可写得紧凑也不要
 写到一半被截断——截断的 json 解析不出来，整篇会被丢弃。`;

@@ -1,4 +1,5 @@
 import { DISCLAIMER, escapeHtml, renderMarketList, renderSourceList } from "./render";
+import { formatBriefingTitle } from "./title";
 import type { BriefingLocale, BriefingSource, MarketFact } from "./types";
 
 /**
@@ -17,8 +18,15 @@ const COPY: Record<BriefingLocale, { title: string; headlines: string; snapshot:
 /** 单篇兜底稿最多列这么多条，再多读者也不会看 */
 const MAX_ITEMS = 20;
 
+/**
+ * 兜底稿的标题走**和正常稿完全相同**的格式化函数（见 title.ts）。
+ *
+ * 从前它自己拼成「24 小时要闻速览 | 2026-08-10」——既没有栏目名，日期还是 ISO
+ * 格式，和前一天的「早报 | 8月9日 …」摆在列表页里像两个不同的栏目。而降级恰恰
+ * 是最不该让读者察觉的时刻：内容朴素一点没关系，栏目不能看起来断了。
+ */
 export function fallbackTitle(locale: BriefingLocale, dateStr: string): string {
-  return `${COPY[locale].title} | ${dateStr}`;
+  return formatBriefingTitle(COPY[locale].title, dateStr, locale);
 }
 
 /**

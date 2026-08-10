@@ -12,6 +12,7 @@ import { callDeepSeek, DEFAULT_TIMEOUT_MS } from "@/lib/briefing/deepseek";
 import { checkBriefing, parseBriefingJson } from "@/lib/briefing/quality-gate";
 import { renderBriefingHtml } from "@/lib/briefing/render";
 import { fallbackTitle, renderFallbackHtml } from "@/lib/briefing/fallback";
+import { normalizeBriefingTitle } from "@/lib/briefing/title";
 import { alertBriefing as alert } from "@/lib/briefing/alert";
 import { revalidateArticleLists } from "@/lib/articles-revalidate";
 import type { SourceWithBody } from "@/lib/briefing/extract";
@@ -375,7 +376,9 @@ async function runPipeline(
       // 下面的 L4 只填还空着的语言，于是「AI 中文 + 兜底英文」取代了原先的
       // 「兜底中文 + 兜底英文」——前者严格更好，而兜底稿的标题与正文本来就
       // 按 locale 分别生成，混搭是安全的。
-      title[PRIMARY_LOCALE] = primary.title;
+      // 标题一律过一遍格式归一：模型给的标题时而是「早报｜8月9日 …」、时而照抄
+      // prompt 示例里的「8月8日」、时而只有正题。日期以我们算出的 dateStr 为准。
+      title[PRIMARY_LOCALE] = normalizeBriefingTitle(primary.title, dateStr, PRIMARY_LOCALE);
       content[PRIMARY_LOCALE] = renderBriefingHtml(primary, facts, PRIMARY_LOCALE);
 
       // 翻译同样受墙钟预算约束，但门槛比模型调用低得多：它是十几个并发的短
@@ -417,7 +420,9 @@ async function runPipeline(
       if (translated) {
         // 用翻译后的**字段**重新渲染，而不是翻译渲染好的 HTML：小标题、括号
         // 样式、免责声明都会正确本地化，价格与数字原样不动。
-        title[badLocale] = translated.title;
+        // 翻译器会把「早报 | 8月10日」译成 Morning Post / Daily Report 等各种说法，
+        // 日期也可能被写成 August 10 —— 同样归一到英文侧的标准格式
+        title[badLocale] = normalizeBriefingTitle(translated.title, dateStr, badLocale);
         content[badLocale] = renderBriefingHtml(translated, facts, badLocale);
         trace(diag, `${badLocale} 已由 ${PRIMARY_LOCALE} 翻译生成`);
       } else {

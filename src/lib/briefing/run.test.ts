@@ -706,8 +706,10 @@ describe("runDailyBriefing — L4 兜底稿", () => {
   });
 
   // I2：结构合法但元素类型漂移曾在渲染器里抛 TypeError，把整轮打成 failed
-  // 并**绕过**兜底稿。门槛拦下后必须优雅降级。
-  it("模型吐出对象型 watchlist 时降级成兜底稿，而不是崩成 failed", async () => {
+  // 并**绕过**兜底稿。现在这类「只是多包了一层」的漂移在解析阶段就被展平——
+  // 语义本来就是完整的，为它烧掉一次模型调用不值得（线上 2026-08-10 的第二次
+  // 生成正是死在这上面）。要守住的仍然是同一件事：不许崩。
+  it("模型吐出对象型 watchlist 时展平后照常出稿，不崩成 failed", async () => {
     const drifted = {
       ...ZH_JSON,
       analysis: {
@@ -722,8 +724,9 @@ describe("runDailyBriefing — L4 兜底稿", () => {
     } as CallResult);
 
     const r = await runDailyBriefing(NOW);
-    expect(r.status).toBe("fallback");
+    expect(r.status).not.toBe("failed");
     expect(db.inserted).toHaveLength(1);
+    expect(db.inserted[0].content["zh-CN"]).toContain("关注美联储：本周讲话");
   });
 
   it("新闻不足 MIN_SOURCE_ITEMS 时直接走兜底稿，不调用模型", async () => {

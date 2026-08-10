@@ -17,14 +17,16 @@ export const MOBILE_TABS: MobileTab[] = [
 
 /**
  * 每个 tab 收编哪些一级路由段。
- * 学习 tab 是 hub，收编视频与文章；更多 tab 收编所有低频页面。
+ * 学习 tab 是 hub，收编视频、文章与行业资讯；更多 tab 收编所有低频页面。
  */
 const TAB_SEGMENTS: Record<TabKey, string[]> = {
   dashboard: ["dashboard"],
-  learn: ["learn", "videos", "articles"],
+  // 行业资讯是学习性质的内容，归学习 hub；原先它和订单/设置挤在「更多」这个
+  // 杂物抽屉里，学习 tab 反而找不到它
+  learn: ["learn", "videos", "articles", "news"],
   trade: ["trade"],
   screener: ["screener"],
-  more: ["more", "news", "orders", "settings", "upgrade"],
+  more: ["more", "orders", "settings", "upgrade"],
 };
 
 export function resolveActiveTab(pathname: string, locale: string): TabKey | null {
@@ -95,7 +97,9 @@ export function resolveBackTarget(pathname: string, locale: string): string {
       return second ? `/${locale}/settings` : `/${locale}/more`;
     case "more":
       return `/${locale}/more`;
+    // 资讯归学习 hub（见 TAB_SEGMENTS），退回时也该回 /learn 而不是 /more
     case "news":
+      return `/${locale}/learn`;
     case "orders":
     case "upgrade":
       return `/${locale}/more`;
@@ -113,19 +117,14 @@ export function buildMoreEntries(input: {
   locale: string;
   tier: string | null;
   role: string | null;
-  /** null/undefined = 未登录（或 auth 还没加载完）。alerts/notifications 两个
-   * 入口都指向需要登录才有意义的功能——未登录访问会拿到 401，页面上会显示
-   * 「服务异常」之类的假警报，所以这两个入口本身也要在未登录时收起来 */
-  userId?: string | null;
 }): MoreEntry[] {
-  const { locale, tier, role, userId } = input;
+  const { locale, tier, role } = input;
+  // 资讯已移入「学习」；价格提醒与通知设置暂时隐藏（路由与页面都保留，
+  // 想开回来把条目加回这里即可）
   const entries: MoreEntry[] = [
-    { key: "news", href: `/${locale}/news` },
     { key: "orders", href: `/${locale}/orders` },
+    { key: "settings", href: `/${locale}/settings` },
   ];
-  if (userId) entries.push({ key: "alerts", href: `/${locale}/more/alerts` });
-  entries.push({ key: "settings", href: `/${locale}/settings` });
-  if (userId) entries.push({ key: "notifications", href: `/${locale}/more/notifications` });
 
   // tier 为 null 表示 auth 还没加载完。此时不显示升级入口，
   // 避免 Pro 用户在加载窗口内看到升级链接闪一下（沿用 Navbar 的既有判断）

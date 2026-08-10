@@ -37,14 +37,14 @@ describe("resolveActiveTab", () => {
     expect(resolveActiveTab("/en-US/more/alerts", "en-US")).toBe("more");
   });
 
-  it("学习 tab 收编视频与文章", () => {
+  it("学习 tab 收编视频、文章与行业资讯", () => {
     expect(resolveActiveTab("/zh-CN/videos", "zh-CN")).toBe("learn");
     expect(resolveActiveTab("/zh-CN/videos/abc-123", "zh-CN")).toBe("learn");
     expect(resolveActiveTab("/zh-CN/articles/hello", "zh-CN")).toBe("learn");
+    expect(resolveActiveTab("/zh-CN/news", "zh-CN")).toBe("learn");
   });
 
-  it("更多 tab 收编资讯、订单、设置、升级", () => {
-    expect(resolveActiveTab("/zh-CN/news", "zh-CN")).toBe("more");
+  it("更多 tab 收编订单、设置、升级——资讯已改归学习", () => {
     expect(resolveActiveTab("/zh-CN/orders", "zh-CN")).toBe("more");
     expect(resolveActiveTab("/zh-CN/settings", "zh-CN")).toBe("more");
     expect(resolveActiveTab("/zh-CN/upgrade", "zh-CN")).toBe("more");
@@ -66,7 +66,7 @@ describe("resolveActiveTab", () => {
 });
 
 describe("buildMoreEntries", () => {
-  const base = { locale: "zh-CN", tier: "free", role: "user", userId: "u1" };
+  const base = { locale: "zh-CN", tier: "free", role: "user" };
 
   it("免费用户能看到升级入口", () => {
     const keys = buildMoreEntries(base).map((e) => e.key);
@@ -90,15 +90,9 @@ describe("buildMoreEntries", () => {
   });
 
   it("常规入口按既定顺序排列并带语言前缀", () => {
-    const entries = buildMoreEntries({ locale: "ms-MY", tier: "pro", role: "user", userId: "u1" });
-    expect(entries.map((e) => e.key)).toEqual([
-      "news",
-      "orders",
-      "alerts",
-      "settings",
-      "notifications",
-    ]);
-    expect(entries[0].href).toBe("/ms-MY/news");
+    const entries = buildMoreEntries({ locale: "ms-MY", tier: "pro", role: "user" });
+    expect(entries.map((e) => e.key)).toEqual(["orders", "settings"]);
+    expect(entries[0].href).toBe("/ms-MY/orders");
   });
 
   it("auth 尚未加载完成时（tier 为 null）不显示升级入口，避免闪现", () => {
@@ -106,14 +100,18 @@ describe("buildMoreEntries", () => {
     expect(keys).not.toContain("upgrade");
   });
 
-  it("未登录（或 auth 未加载完）时不显示 alerts/notifications 入口，避免访问后拿到 401 出现假的服务异常提示", () => {
-    const loggedOutKeys = buildMoreEntries({ ...base, userId: null }).map((e) => e.key);
-    expect(loggedOutKeys).not.toContain("alerts");
-    expect(loggedOutKeys).not.toContain("notifications");
-
-    const loggedInKeys = buildMoreEntries(base).map((e) => e.key);
-    expect(loggedInKeys).toContain("alerts");
-    expect(loggedInKeys).toContain("notifications");
+  it("资讯、价格提醒、通知设置都不再出现在更多里", () => {
+    for (const input of [
+      base,
+      { ...base, tier: "pro" },
+      { ...base, role: "admin" },
+      { ...base, tier: null },
+    ]) {
+      const keys = buildMoreEntries(input).map((e) => e.key);
+      expect(keys).not.toContain("news");
+      expect(keys).not.toContain("alerts");
+      expect(keys).not.toContain("notifications");
+    }
   });
 });
 
@@ -178,9 +176,12 @@ describe("resolveBackTarget", () => {
   it("更多 tab 收编的页面都退回更多", () => {
     expect(resolveBackTarget("/zh-CN/more/alerts", "zh-CN")).toBe("/zh-CN/more");
     expect(resolveBackTarget("/zh-CN/more/notifications", "zh-CN")).toBe("/zh-CN/more");
-    expect(resolveBackTarget("/zh-CN/news", "zh-CN")).toBe("/zh-CN/more");
     expect(resolveBackTarget("/zh-CN/orders", "zh-CN")).toBe("/zh-CN/more");
     expect(resolveBackTarget("/zh-CN/upgrade", "zh-CN")).toBe("/zh-CN/more");
+  });
+
+  it("行业资讯退回学习中心——它已从「更多」改归「学习」", () => {
+    expect(resolveBackTarget("/zh-CN/news", "zh-CN")).toBe("/zh-CN/learn");
   });
 
   it("未收编的页面兜底到语言首页，而不是 dashboard——后者对未登录用户是登录墙", () => {

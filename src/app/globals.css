@@ -122,6 +122,45 @@
     font-family: var(--font-marcellus), "Noto Serif SC", Georgia, serif;
   }
 
+  /* 触摸命中区补足到 44px（iOS HIG 下限），视觉尺寸不变。
+     Button 的 sm≈28px、md≈40px 都不达标，但全站 100 处 size="sm" 横跨后台与
+     交易终端的密集布局，直接加 min-height 会把它们全撑高——所以只扩命中区。
+     只在垂直方向扩：left/right 锁在按钮自身宽度内，并排按钮不会互相抢点击。 */
+  @media (pointer: coarse) {
+    .tap-44 {
+      position: relative;
+    }
+
+    .tap-44::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      min-height: 44px;
+    }
+
+    /* .foil-sheen 用 overflow: hidden 限制桌面端的 sheen 动画范围，但在触摸设备上这会
+       夹住 .tap-44::after 的命中区扩展。由于 sheen 仅在 :hover 时触发（触摸设备无 hover），
+       在 (pointer: coarse) 下移除 overflow 是安全的，不会改变任何可见效果——
+       但前提是下面这条 ::before { display: none } 必须和它成对存在，两条规则缺一不可：
+       .foil-sheen::before 是 inset: 0、transform: translateX(-120%) 的亮色渐变层，且没有
+       pointer-events: none。overflow 一旦变成 visible，这层就会作为一块明亮的矩形出现在
+       按钮左侧，并且会拦截落在它上面的点击。所以不要因为这条规则看起来像“双重保险”就删掉它。
+
+       顺带记一条这里验证过的间距不变量：纵向堆叠的 size="sm" Button 之间不能小于 gap-2
+       (8px)——.tap-44::after 在 28px 高的按钮上每边会多出 8px 命中区，间距再小，下方按钮的
+       命中区就会盖住上方按钮的下边缘。 */
+    .foil-sheen {
+      overflow: visible;
+    }
+
+    .foil-sheen::before {
+      display: none;
+    }
+  }
+
   /* Reduced motion: honor system preference across authored motion */
   @media (prefers-reduced-motion: reduce) {
     *,

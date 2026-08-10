@@ -175,6 +175,7 @@
       "duration_min": "{minutes} minit"
     },
     "detail": {
+      "back_to_videos": "Kembali ke Video",
       "category": "Kategori",
       "uploaded": "Dimuat naik",
       "description": "Penerangan",

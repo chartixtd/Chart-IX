@@ -205,12 +205,12 @@ export default function VideoDetailPage() {
       {/* Back link */}
       <Link
         href={`/${locale}/videos`}
-        className="mb-4 inline-flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary transition-colors"
+        className="mb-4 hidden items-center gap-1 text-sm text-text-secondary transition-colors hover:text-text-primary lg:inline-flex"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
-        Back to Videos
+        {t("back_to_videos")}
       </Link>
 
       {/* Video player */}

@@ -48,29 +48,6 @@ export interface VideoCategory {
   sort_order: number;
 }
 
-// ==================== 学习路径 ====================
-export interface LearningPath {
-  id: number;
-  slug: string;
-  title: Record<Locale, string>;
-  description: Record<Locale, string> | null;
-  cover_image: string | null;
-  level: "beginner" | "intermediate" | "advanced";
-  sort_order: number;
-  is_published: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface LearningPathStep {
-  id: number;
-  path_id: number;
-  video_id: string;
-  sort_order: number;
-  created_at: string;
-  video?: Video;
-}
-
 // ==================== 小测 ====================
 export interface Quiz {
   id: number;

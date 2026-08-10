@@ -24,7 +24,7 @@ export default async function AdminDashboard() {
 
   const [
     usersTotal, usersFree, usersPro, usersToday, usersDisabled,
-    videosTotal, articlesTotal, articlesPublished, pathsTotal, quizzesTotal,
+    videosTotal, articlesTotal, articlesPublished, quizzesTotal,
     ordersTotal, orders7d, paperOrders, communityPosts,
     pushSettings, heartbeat, recentLogs,
   ] = await Promise.all([
@@ -37,7 +37,6 @@ export default async function AdminDashboard() {
     count("videos").eq("is_deleted", false),
     count("articles"),
     count("articles").eq("is_published", true),
-    count("learning_paths"),
     count("quizzes"),
 
     count("orders"),
@@ -75,7 +74,6 @@ export default async function AdminDashboard() {
       videos: videosTotal.count ?? 0,
       articles: articlesTotal.count ?? 0,
       articlesPublished: articlesPublished.count ?? 0,
-      learningPaths: pathsTotal.count ?? 0,
       quizzes: quizzesTotal.count ?? 0,
     },
     activity: {

@@ -14,7 +14,6 @@ export function AdminSidebar() {
     { href: "/admin", label: t("dashboard"), icon: "📊" },
     { href: "/admin/users", label: t("users"), icon: "👥" },
     { href: "/admin/videos", label: t("videos"), icon: "🎬" },
-    { href: "/admin/learning-paths", label: t("learning_paths"), icon: "🧭" },
     { href: "/admin/quizzes", label: t("quizzes"), icon: "❓" },
     { href: "/admin/articles", label: t("articles"), icon: "📄" },
     { href: "/admin/briefing", label: t("briefing"), icon: "🌅" },

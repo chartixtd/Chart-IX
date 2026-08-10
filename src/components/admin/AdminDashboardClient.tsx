@@ -11,7 +11,6 @@ export interface DashboardData {
     videos: number;
     articles: number;
     articlesPublished: number;
-    learningPaths: number;
     quizzes: number;
   };
   activity: {
@@ -165,7 +164,6 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
             hint={t("dash.published_n", { n: content.articlesPublished })}
             href="/admin/articles"
           />
-          <Stat label={t("learning_paths")} value={content.learningPaths} href="/admin/learning-paths" />
           <Stat label={t("quizzes")} value={content.quizzes} href="/admin/quizzes" />
         </div>
       </Section>

@@ -17,10 +17,9 @@ const MAX_ENTRIES_PER_TYPE = 5000;
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const client = createServiceRoleClient();
 
-  const [{ data: articles }, { data: videos }, { data: paths }] = await Promise.all([
+  const [{ data: articles }, { data: videos }] = await Promise.all([
     client.from("articles").select("slug, updated_at").eq("is_published", true).limit(MAX_ENTRIES_PER_TYPE),
     client.from("videos").select("id, updated_at").eq("is_deleted", false).limit(MAX_ENTRIES_PER_TYPE),
-    client.from("learning_paths").select("slug, updated_at").eq("is_published", true).limit(MAX_ENTRIES_PER_TYPE),
   ]);
 
   const entries: MetadataRoute.Sitemap = [];
@@ -34,7 +33,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         alternates: { languages: buildLanguageAlternates(path) },
       });
     }
-    // articles/learning_paths share one row per item across all locales
+    // articles share one row per item across all locales
     // (slug is locale-invariant — see supabase/migrations/007_articles.sql),
     // so every locale's alternate is the same slug under a different prefix.
     for (const a of articles ?? []) {
@@ -44,15 +43,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         changeFrequency: "monthly",
         priority: 0.6,
         alternates: { languages: buildLanguageAlternates(`/articles/${a.slug}`) },
-      });
-    }
-    for (const p of paths ?? []) {
-      entries.push({
-        url: `${SITE_URL}/${locale}/learn/${p.slug}`,
-        lastModified: p.updated_at ?? undefined,
-        changeFrequency: "monthly",
-        priority: 0.6,
-        alternates: { languages: buildLanguageAlternates(`/learn/${p.slug}`) },
       });
     }
     // Videos are authored in one language each (videos.language column) and

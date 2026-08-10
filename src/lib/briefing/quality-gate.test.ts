@@ -234,11 +234,24 @@ describe("checkBriefing", () => {
     expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
   });
 
-  it("同句内有多个标签时绑定最近的那个", () => {
+  // 同句多个标签时按「集合」判，不按「最近的那个」判：一句话同时提到两个标的
+  // 是每天都会发生的事（黄金那段每天写 XAUT 和 PAXG），而语序与数字的对应关系
+  // 没有可靠规律。要求「对得上句中某一个标的」仍是一道真门槛——见下面那条。
+  it("同句内有多个标签时，数字对上其中任意一个即可", () => {
     const j = validJson();
     j.analysis.overview =
       "回顾昨日整体走势，BTC 与以太坊双双走高，其中 ETH 报 $1,914.99，表现稳健且波动收敛，市场情绪整体偏向乐观，成交量也较前一个交易日温和放大，显示资金仍留在场内观望而非离场。";
     expect(check(j).ok).toBe(true);
+  });
+
+  it("同句内多个标签也挡得住第三方的数字", () => {
+    const j = validJson();
+    // 句中只提到 BTC 与 ETH，却写了 XAUT 的价格——候选集是事实集的子集，仍然拒
+    j.analysis.overview =
+      "回顾昨日整体走势，BTC 与以太坊双双走高，其中 ETH 报 $4,325.51，表现稳健且波动收敛，市场情绪整体偏向乐观，成交量也较前一个交易日温和放大，显示资金仍留在场内观望而非离场。";
+    const r = check(j);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
   });
 
   // ── 量级后缀：线上第一次真跑就栽在这里 ──
@@ -901,5 +914,50 @@ describe("parseBriefingJson — 结构漂移", () => {
     const r = check(parseBriefingJson(raw));
     expect(r.ok).toBe(false);
     expect(r.failures.some((f) => f.rule === "structure")).toBe(true);
+  });
+});
+
+// ── 并列枚举：中英语序不同，判据必须覆盖整句 ──
+// 2026-08-10 的中文版过了、英文版被拒（诊断原文：
+// hallucinated-number/价格 $4300.03 与 PAXG 的实际价格 4330.09 不符），
+// 英文早报因此降级成兜底稿。下面两段是当天的真实正文，英文那段是把中文那段
+// 喂给同一个翻译端点得到的原样输出。
+describe("checkBriefing — 并列枚举（2026-08-10 真实正文）", () => {
+  const GOLD_FACTS: MarketFact[] = [
+    { symbol: "BTC-USDT", label: "BTC", lastPrice: 64959.52, change24hPct: 0.92 },
+    { symbol: "ETH-USDT", label: "ETH", lastPrice: 1914.99, change24hPct: 0.59 },
+    { symbol: "XAUT-USDT", label: "XAUT", lastPrice: 4300.03, change24hPct: -0.68 },
+    { symbol: "PAXG-USDT", label: "PAXG", lastPrice: 4330.09, change24hPct: -0.31 },
+  ];
+
+  it("中文：「分别」在数字之前", () => {
+    const j = validJson();
+    j.analysis.gold =
+      "黄金代币XAUT和PAXG分别报$4,300.03和$4,330.09，24小时均小幅下跌约0.6%和0.3%。在加密市场波动和监管不确定性背景下，黄金作为避险资产依然受到关注，但近期价格表现平稳，可能受美元和美债收益率影响。";
+    const r = checkBriefing({
+      json: j, facts: GOLD_FACTS, sources: SOURCES, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.failures).toEqual([]);
+  });
+
+  it("英文：respectively 在整句末尾", () => {
+    const j = validJsonEn();
+    j.analysis.gold =
+      "Gold tokens XAUT and PAXG were quoted at $4,300.03 and $4,330.09 respectively, slightly down about 0.6% and 0.3% in 24 hours. Against the background of crypto market volatility and regulatory uncertainty, gold continues to receive attention as a safe-haven asset, but its recent price performance has been stable.";
+    const r = checkBriefing({
+      json: j, facts: GOLD_FACTS, sources: SOURCES, locale: "en-US", finishReason: null,
+    });
+    expect(r.failures).toEqual([]);
+  });
+
+  it("枚举句里的数字仍须是当天真实的行情数字", () => {
+    const j = validJsonEn();
+    j.analysis.gold =
+      "Gold tokens XAUT and PAXG were quoted at $4,300.03 and $9,999.99 respectively, slightly down about 0.6% and 0.3% in 24 hours. Against the background of crypto market volatility and regulatory uncertainty, gold continues to receive attention as a safe-haven asset, but its recent price performance has been stable.";
+    const r = checkBriefing({
+      json: j, facts: GOLD_FACTS, sources: SOURCES, locale: "en-US", finishReason: null,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => f.detail.includes("9999.99"))).toBe(true);
   });
 });

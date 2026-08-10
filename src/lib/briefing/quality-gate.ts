@@ -184,9 +184,9 @@ function buildLabelRegExp(facts: MarketFact[]): { re: RegExp; byLabel: Map<strin
 /**
  * 并列枚举标记。
  *
- * 「XAUT 与 PAXG 分别下跌 0.52% 和 0.36%」这种写法里，「离数字最近的标签拥有
- * 这个数字」这条假设直接不成立——0.52% 前方最近的标签是 PAXG，而它其实属于
- * XAUT。线上 2026-08-10 第一次生成就是这么被拒的。
+ * 「XAUT 与 PAXG 分别报 $4,300.03 和 $4,330.09」这种写法里，「离数字最近的标签
+ * 拥有这个数字」这条假设直接不成立——$4,300.03 前方最近的标签是 PAXG，而它其实
+ * 属于 XAUT。线上 2026-08-10 的中英两版**各被这一条拒过一次**。
  *
  * 遇到枚举就**放弃绑定**，退回「来源白名单 + 全局事实集」那条更宽但仍然机械的
  * 路——那正是绑不到标签时本来就会走的路。这不会开出新的漏洞：枚举句里的数字
@@ -194,18 +194,36 @@ function buildLabelRegExp(facts: MarketFact[]): { re: RegExp; byLabel: Map<strin
  */
 const ENUMERATION_RE = /分别|各自|respectively/i;
 
+const SENTENCE_ENDS = ["。", "！", "？", "\n", ". "];
+
 /** 数字前方、同一句之内的那一小段文本。标的绑定与方向词都在它上面回看 */
 function windowBefore(text: string, index: number): string {
   const capped = text.slice(Math.max(0, index - LABEL_PROXIMITY_WINDOW), index);
   // 只保留最后一个句子终止符之后的部分
-  const sentenceStart = Math.max(
-    ...["。", "！", "？", "\n", ". "].map((p) => capped.lastIndexOf(p))
-  );
+  const sentenceStart = Math.max(...SENTENCE_ENDS.map((p) => capped.lastIndexOf(p)));
   return sentenceStart >= 0 ? capped.slice(sentenceStart + 1) : capped;
 }
 
 /**
- * 回看数字前方、**同一句之内**最近的事实标签。
+ * 数字所在的**整句**（不设字符数上限，且要往后看）。
+ *
+ * 枚举标记只在回看窗口里找是不够的：中文把「分别」放在数字**前**，英文的
+ * respectively 却放在整句**末尾**——
+ *   zh  黄金代币XAUT和PAXG分别报$4,300.03和$4,330.09
+ *   en  Gold tokens XAUT and PAXG were quoted at $4,300.03 and $4,330.09 respectively
+ * 同一句话，中文版过了门槛、英文版被拒，英文早报因此降级成兜底稿。判据必须
+ * 覆盖整句，否则它只对一种语序有效。
+ */
+function sentenceAround(text: string, index: number): string {
+  const head = text.slice(0, index);
+  const start = Math.max(0, ...SENTENCE_ENDS.map((p) => head.lastIndexOf(p) + 1));
+  const rest = text.slice(index);
+  const m = /[。！？\n]|\.\s/.exec(rest);
+  return text.slice(start, index + (m ? m.index : rest.length));
+}
+
+/**
+ * 回看数字前方、**同一句之内**出现过的事实标签。
  *
  * 存在的理由：只问「这个数字是否匹配某个事实」挡不住张冠李戴——把 BTC 与黄金
  * 的价格互换后，两个数字各自都还在事实集里，门槛会全部放行，而文章却在告诉
@@ -214,32 +232,45 @@ function windowBefore(text: string, index: number): string {
  * 窗口按句子终止符截断，避免把上一句的标的错误绑过来；再叠一个字符数上限，
  * 兜住整段没有标点的极端情况。
  *
- * 绑不到标签不等于放行：调用方会退回「来源白名单 + 全局事实集」这条更宽但仍然
- * 机械的校验。英文稿更常写 "Bitcoin"/"gold" 而非 "BTC"/"XAUT"，走的正是这条路。
+ * 返回的是**窗口里的全部标签**而不是最近的那一个。差别只在一句话同时提到两个
+ * 标的时才显现，而那恰恰是每天都会发生的事——黄金那段每天都写「XAUT 和 PAXG
+ * 报 $A 和 $B」。此时「最近的标签拥有这个数字」是错的（$A 属于 XAUT，最近的
+ * 标签却是 PAXG），而要求「数字对得上句中提到的某一个标的」仍然是一道真门槛：
+ * 候选集是事实集的子集，比绑不到标签时走的全局校验严格得多。
+ *   - "The two gold tokens XAUT/PAXG $1,914.99"：1914.99 两个金币都对不上 → 仍被拒
+ *   - "BTC 与以太坊双双走高，其中 ETH 报 $1,914.99"：对上了句中的 ETH → 放行
  *
- * 句子里出现并列枚举（见 ENUMERATION_RE）时同样返回 null——那种句式下「最近的
- * 标签」这条假设本身就是错的。
+ * 返回 null 表示不绑定，调用方退回「来源白名单 + 全局事实集」这条更宽但仍然机械
+ * 的校验。两种情形会走到这里：句中一个标签都没有（英文稿更常写 "Bitcoin"/"gold"
+ * 而非 "BTC"/"XAUT"），或者句子是并列枚举（见 ENUMERATION_RE）——枚举句里连
+ * 「数字属于句中某个标的」都不该假定，因为标的与数字的对应关系全靠语序。
  */
-function nearestLabeledFact(
+function labeledFactCandidates(
   text: string,
   index: number,
   // 由调用方构建一次后传入——checkNumbers 对每个数字命中都要回看一次，
   // 在这里重建正则等于每个数字都重排一遍标签表
   built: ReturnType<typeof buildLabelRegExp>
-): MarketFact | null {
+): MarketFact[] | null {
   if (!built) return null;
+  if (ENUMERATION_RE.test(sentenceAround(text, index))) return null;
 
-  const raw = windowBefore(text, index);
-  if (ENUMERATION_RE.test(raw)) return null;
-  const window = raw.toUpperCase();
-
-  // 取最后一个匹配 = 离数字最近的那个标签
-  let best: MarketFact | null = null;
+  const window = windowBefore(text, index).toUpperCase();
+  const found: MarketFact[] = [];
   for (const m of window.matchAll(built.re)) {
     const fact = built.byLabel.get(m[1]);
-    if (fact) best = fact;
+    if (fact && !found.includes(fact)) found.push(fact);
   }
-  return best;
+  return found.length > 0 ? found : null;
+}
+
+/** 失败详情里的标的名与数值。多个候选时列全，便于事后回看当时比的是谁 */
+function joinLabels(facts: MarketFact[]): string {
+  return facts.map((f) => f.label).join("/");
+}
+
+function joinValues(facts: MarketFact[], pick: (f: MarketFact) => number): string {
+  return facts.map(pick).join("/");
 }
 
 /**
@@ -603,14 +634,17 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: SourceLike[
     // 1.5，而源文正文里写的是 $1,500,000——两侧归一口径不一致，合法译文
     // 就会被判成编造。这正是线上第 5/6 号事故的形状，此前只修了 headlines 侧。
     const value = hit.value * magnitudeAt(text, hit.end);
-    const bound = nearestLabeledFact(text, hit.index, labelRe);
-    if (bound) {
+    const bounds = labeledFactCandidates(text, hit.index, labelRe);
+    if (bounds) {
       // 绑定到具体标的时，来源白名单**不适用**：否则当天任意一条无关新闻里
       // 巧合出现的同一个数字，就能替一处伪造背书。
-      if (!priceOk(value, bound)) {
+      if (!bounds.some((f) => priceOk(value, f))) {
         failures.push({
           rule: "hallucinated-number",
-          detail: `价格 $${value} 与 ${bound.label} 的实际价格 ${bound.lastPrice} 不符`,
+          detail: `价格 $${value} 与 ${joinLabels(bounds)} 的实际价格 ${joinValues(
+            bounds,
+            (f) => f.lastPrice
+          )} 不符`,
         });
       }
       continue;
@@ -624,9 +658,9 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: SourceLike[
   for (const hit of extractPercentHits(text)) {
     // 「下跌 0.52%」的方向在词里、不在数上，候选值因此可能有两个
     const candidates = percentCandidates(text, hit);
-    const bound = nearestLabeledFact(text, hit.index, labelRe);
-    if (bound) {
-      if (!candidates.some((v) => pctOk(v, bound))) {
+    const bounds = labeledFactCandidates(text, hit.index, labelRe);
+    if (bounds) {
+      if (!candidates.some((v) => bounds.some((f) => pctOk(v, f)))) {
         // 有意**不**回落来源白名单，和价格侧保持一致。曾考虑过对百分比放宽
         // （「SOL 领涨，成交量增长 12%」里的 12% 来自源文却会被绑到 SOL 判错），
         // 但那正是 Task 5 人工裁决时演示过的漏洞原型：无关新闻里的 7.50% 替
@@ -634,7 +668,10 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: SourceLike[
         // 是把伪造涨跌发出去——按已定的取舍，宁严勿松。
         failures.push({
           rule: "hallucinated-number",
-          detail: `涨跌幅 ${hit.value}% 与 ${bound.label} 的实际涨跌 ${bound.change24hPct}% 不符`,
+          detail: `涨跌幅 ${hit.value}% 与 ${joinLabels(bounds)} 的实际涨跌 ${joinValues(
+            bounds,
+            (f) => f.change24hPct
+          )}% 不符`,
         });
       }
       continue;

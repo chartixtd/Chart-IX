@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { recordPath, hasInAppHistory, resetInAppHistoryForTests } from "./history";
+import { recordPath, hasInAppHistory, resetInAppHistoryForTests, recordSyntheticBack } from "./history";
 
 describe("站内导航记录器", () => {
   beforeEach(() => {
@@ -39,6 +39,39 @@ describe("站内导航记录器", () => {
     recordPath("/zh-CN/dashboard");
     recordPath("/zh-CN/articles");
     recordPath("/zh-CN/articles");
+    expect(hasInAppHistory()).toBe(true);
+  });
+
+  it("返回按钮自己发起的退到上级，不算用户的站内浏览——否则下次按返回会弹回刚离开的页面", () => {
+    recordPath("/zh-CN/articles/some-slug"); // 外部链接直入
+    expect(hasInAppHistory()).toBe(false);
+
+    // 按下返回：没有站内历史，push 到上级
+    recordSyntheticBack("/zh-CN/articles");
+    recordPath("/zh-CN/articles"); // 路由变化后 effect 照常触发
+
+    expect(hasInAppHistory()).toBe(false);
+  });
+
+  it("连按两次返回能继续往上走，不会在两页之间打转", () => {
+    recordPath("/zh-CN/articles/some-slug");
+
+    recordSyntheticBack("/zh-CN/articles");
+    recordPath("/zh-CN/articles");
+    expect(hasInAppHistory()).toBe(false); // 第二次仍走 push 分支
+
+    recordSyntheticBack("/zh-CN/learn");
+    recordPath("/zh-CN/learn");
+    expect(hasInAppHistory()).toBe(false);
+  });
+
+  it("合成跳转之后，用户真正的站内跳转仍然正常计数", () => {
+    recordPath("/zh-CN/articles/some-slug");
+    recordSyntheticBack("/zh-CN/articles");
+    recordPath("/zh-CN/articles");
+
+    // 用户自己点了一个链接
+    recordPath("/zh-CN/articles/another-slug");
     expect(hasInAppHistory()).toBe(true);
   });
 });

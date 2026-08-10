@@ -32,6 +32,21 @@ export function hasInAppHistory(): boolean {
   return navigatedInApp;
 }
 
+/**
+ * 返回按钮自己发起的「退到上级」跳转。
+ *
+ * 它不是用户的站内浏览，不能记成历史：记了的话，随后的 effect 会把
+ * navigatedInApp 置为 true，下一次按返回就会 back() 回到用户刚离开的
+ * 那一页，来回打转，再按一次甚至直接退出站点。
+ *
+ * 先把 lastPath 设成即将跳到的路径，随后 effect 里的 recordPath 就是
+ * 同路径调用、不会计数。
+ */
+export function recordSyntheticBack(pathname: string): void {
+  lastPath = pathname;
+  navigatedInApp = false;
+}
+
 /** 仅供测试：模块级状态在同一个 vitest 进程内会跨用例残留。 */
 export function resetInAppHistoryForTests(): void {
   lastPath = null;

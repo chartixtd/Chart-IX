@@ -9,7 +9,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { PriceAlertBell } from "@/components/alerts/PriceAlertBell";
 import { Button } from "@/components/ui/Button";
 import { shouldShowBackButton, resolveBackTarget } from "@/lib/nav/tabs";
-import { recordPath, hasInAppHistory } from "@/lib/nav/history";
+import { recordPath, hasInAppHistory, recordSyntheticBack } from "@/lib/nav/history";
 
 export function MobileHeader() {
   const locale = useLocale();
@@ -23,6 +23,7 @@ export function MobileHeader() {
   // 记录器是模块级的，跨路由组重挂载依然活着——判断因此不会被
   // (app)/(static) 之间的跳转打断。
   useEffect(() => {
+    if (!pathname) return;
     recordPath(pathname);
   }, [pathname]);
 
@@ -35,7 +36,9 @@ export function MobileHeader() {
     }
     // 外部链接直入 / PWA 冷启动：没有站内上一页可退，退到该页所属的上级，
     // 而不是 back() 把用户踢出站点
-    router.push(resolveBackTarget(pathname, locale));
+    const target = resolveBackTarget(pathname, locale);
+    recordSyntheticBack(target);
+    router.push(target);
   };
 
   return (

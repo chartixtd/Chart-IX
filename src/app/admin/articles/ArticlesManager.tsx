@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
+import { compressImage } from "@/lib/image-compress";
+import { pickCoverFromContent } from "@/lib/article-cover";
 import type { ArticleEditorsHandle } from "./ArticleEditors";
 import type { Article, ArticleCategory, Locale } from "@/types";
 
@@ -172,7 +174,8 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
     setCoverImageUploading(true);
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      // 与正文配图同样先在浏览器里压小再传
+      formData.append("file", await compressImage(file));
 
       const res = await fetch("/api/admin/upload", {
         method: "POST",
@@ -317,6 +320,11 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
     if (enHtml && enHtml !== "<p></p>") content["en-US"] = enHtml;
     if (msHtml && msHtml !== "<p></p>") content["ms-MY"] = msHtml;
 
+    // 没填封面时用正文的第一张配图兜底：列表页、分享卡、OG 图都要封面，
+    // 作者明明配了图却露占位图说不过去。已填的封面不动。
+    const cover = coverImage.trim() || pickCoverFromContent(content);
+    if (cover && cover !== coverImage) setCoverImage(cover);
+
     setSaving(true);
     try {
       const isEdit = editingId != null;
@@ -326,7 +334,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
         title,
         content: Object.keys(content).length > 0 ? content : {},
         category_id: categoryId ? parseInt(categoryId) : null,
-        cover_image: coverImage.trim() || null,
+        cover_image: cover,
         tier_required: tier,
         is_published: isPublished,
       };

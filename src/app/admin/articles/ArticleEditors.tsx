@@ -6,6 +6,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import ImageExtension from "@tiptap/extension-image";
 import { useToast } from "@/components/ui/Toast";
+import { compressImage } from "@/lib/image-compress";
 import type { Locale } from "@/types";
 
 const LOCALES: Locale[] = ["zh-CN", "en-US", "ms-MY"];
@@ -21,7 +22,7 @@ const LOCALES: Locale[] = ["zh-CN", "en-US", "ms-MY"];
 const EDITOR_CLASS =
   "prose prose-invert prose-sm max-w-none min-h-[200px] max-h-[45vh] overflow-y-auto px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50 lg:min-h-[320px] lg:max-h-[60vh] [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-sm";
 
-/** 与 /api/admin/upload 的服务端限制保持一致，好在选中文件时就先挡下来。 */
+/** 与 /api/admin/upload 的服务端限制一致，用来在发请求前先挡下必然失败的图。 */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const EXTENSIONS = [
@@ -93,8 +94,11 @@ function TiptapEditorBlock({
   const [uploading, setUploading] = useState(false);
 
   /**
-   * 一次可以选多张：逐张上传、逐张插入，这样先传完的图片马上出现在正文里，
-   * 中途某一张失败也不会连累其余的。
+   * 一次可以选多张。两处提速：上传前在浏览器里把图压小（见 image-compress），
+   * 以及多张并发上传而不是排队等——原先 5 张就要串行等 5 次。
+   *
+   * 并发之后仍按选中的先后顺序插入：Promise.allSettled 保序，正文里的图片
+   * 次序才不会随网络快慢乱掉。
    */
   const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -103,28 +107,36 @@ function TiptapEditorBlock({
     if (files.length === 0 || !editor) return;
 
     setUploading(true);
-    let failed = 0;
-    for (const file of files) {
-      if (file.size > MAX_UPLOAD_BYTES) {
-        toast(`${file.name}: exceeds 10 MB`, "error");
-        failed += 1;
-        continue;
-      }
-      try {
+    const results = await Promise.allSettled(
+      files.map(async (file) => {
+        const payload = await compressImage(file);
+        // 压缩后再判大小：原图超 10MB 但压完没有的，不该被挡下来
+        if (payload.size > MAX_UPLOAD_BYTES) throw new Error("exceeds 10 MB");
+
         const formData = new FormData();
-        formData.append("file", file);
+        formData.append("file", payload);
         const res = await fetch("/api/admin/upload", { method: "POST", body: formData });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Upload failed");
-        editor.chain().focus().setImage({ src: data.url, alt: file.name }).run();
-      } catch (err) {
-        failed += 1;
-        toast(`${file.name}: ${err instanceof Error ? err.message : "Upload failed"}`, "error");
-      }
-    }
+        return { src: data.url as string, alt: file.name };
+      })
+    );
     setUploading(false);
 
-    const uploaded = files.length - failed;
+    let uploaded = 0;
+    results.forEach((result, i) => {
+      if (result.status === "fulfilled") {
+        editor.chain().focus().setImage(result.value).run();
+        uploaded += 1;
+      } else {
+        const reason = result.reason;
+        toast(
+          `${files[i].name}: ${reason instanceof Error ? reason.message : "Upload failed"}`,
+          "error"
+        );
+      }
+    });
+
     if (uploaded > 0) {
       toast(uploaded === 1 ? "Image inserted" : `${uploaded} images inserted`, "success");
     }

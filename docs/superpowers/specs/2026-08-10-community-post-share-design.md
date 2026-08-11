@@ -65,11 +65,22 @@
 - `openGraph`：同样的 title/description，`type: "article"`，
   `images: post.cover_image ? [post.cover_image] : undefined`
 - `twitter`：同样的 title/description
-- **不设 `alternates.languages`**——这一点刻意不照搬文章页。`buildLanguageAlternates`
-  的语义是「这几个 URL 互为翻译版本」，对文章成立（`articles.title`/`content` 是
-  `{locale: text}` 对象，每个语言前缀下是真正不同的译文），对社区帖子**不成立**：
-  帖子的 `title`/`content` 是单一纯文本，三个语言前缀下是同一份内容。照搬会向搜索
-  引擎发出错误的翻译信号，把重复内容说成译文。宁可不给。
+- **`alternates` 设成只有 `canonical`，指向默认语言下的本帖 URL。** 这一处有两层
+  考量：
+  1. 不照搬文章页的 `languages`。`buildLanguageAlternates` 的语义是「这几个 URL
+     互为翻译版本」，对文章成立（`articles.title`/`content` 是 `{locale: text}`
+     对象，每个语言前缀下是真正不同的译文），对社区帖子**不成立**——帖子的
+     `title`/`content` 是单一纯文本，三个语言前缀下是同一份内容。
+  2. **但"不写 `alternates`"并不等于"没有 `alternates`"。**
+     `src/app/[locale]/layout.tsx:39` 已经全局设了
+     `alternates: { languages: buildLanguageAlternates("") }`，指向各语言的**首页**。
+     该文件自己的注释写明：Next 的 metadata 按顶层键浅合并，页面一旦设了
+     `alternates` 就会整体覆盖、而不是合并。所以页面什么都不写，就会继承这份
+     指向首页的 languages——等于宣称"本帖的其他语言版本是首页"，比不给更糟。
+
+  因此必须显式覆盖。写成 `alternates: { canonical: ... }`：既清掉了继承来的错误
+  languages，又顺带解决了同一份内容挂在三个语言前缀下的重复问题——三个 URL 统一
+  指向默认语言那一个。
 
 摘要函数不复用文章页的 `stripHtml`——那是给 HTML 用的，社区内容是纯文本，套上去只会
 让人误以为内容可能含 HTML。写一个只做「折叠空白 + 截断」的小函数，放在服务端

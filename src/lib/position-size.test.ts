@@ -157,6 +157,20 @@ describe("期货合约乘数", () => {
     expect(r.units).toBeCloseTo(1, 6);
     expect(r.positionValue).toBeCloseTo(225000, 4);
   });
+
+  it("不传 contractMultiplier 时引擎按乘数 1 计算——钉死这个契约，页面靠它才需要把 multiplier 输入框默认值设成 \"1\"，不代表引擎自己会校验", () => {
+    const r = computePositionSize({
+      assetClass: "futures", direction: "long", accountBalance: 10000,
+      riskMode: "amount", riskAmount: 500,
+      entryPrice: 4500, stopMode: "price", stopPrice: 4490,
+      leverage: 1,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // 每单位风险 = 10 点 × 1（默认乘数）= $10 → 500 / 10 = 50 张
+    expect(r.units).toBeCloseTo(50, 6);
+    expect(r.positionValue).toBeCloseTo(225000, 4);
+  });
 });
 
 describe("高级项", () => {
@@ -170,6 +184,24 @@ describe("高级项", () => {
 
   it("不填止盈时不产生盈亏比", () => {
     const r = computePositionSize(BASE);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.riskRewardRatio).toBeNull();
+    expect(r.expectedProfit).toBeNull();
+  });
+
+  it("做多但止盈填在止损那一侧（亏损方向）→ riskRewardRatio 与 expectedProfit 均为 null（回归：Math.abs 曾经把这种必亏的止盈算成正的盈亏比）", () => {
+    const r = computePositionSize({ ...BASE, takeProfitPrice: 44 }); // 做多，入场 50，止损 48，止盈 44 —— 在止损下方
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.riskRewardRatio).toBeNull();
+    expect(r.expectedProfit).toBeNull();
+  });
+
+  it("做空但止盈填在入场价上方（亏损方向）→ riskRewardRatio 与 expectedProfit 均为 null", () => {
+    const r = computePositionSize({
+      ...BASE, direction: "short", entryPrice: 48, stopPrice: 50, takeProfitPrice: 52,
+    });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.riskRewardRatio).toBeNull();
@@ -193,6 +225,16 @@ describe("高级项", () => {
     if (!plain.ok || !zero.ok) return;
     expect(zero.units).toBeCloseTo(plain.units, 10);
   });
+
+  it("非外汇资产传入 stopMode: \"pips\" 时引擎不做资产类别校验，仍按点数计算——页面已保证这在界面上不可达，这里钉死引擎自身的契约", () => {
+    const r = computePositionSize({ ...BASE, stopMode: "pips", stopPips: 50 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // 没有 forexPair，pipSize 回退到 0.0001 → 止损距离 = 50 × 0.0001 = 0.005
+    expect(r.stopDistance).toBeCloseTo(0.005, 6);
+    expect(r.units).toBeCloseTo(40000, 4);
+    expect(r.positionValue).toBeCloseTo(2000000, 2);
+  });
 });
 
 describe("无效输入", () => {
@@ -201,6 +243,20 @@ describe("无效输入", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.reason).toBe("stop-distance-zero");
+  });
+
+  it("止损价与入场价相同时，即使带滑点也仍是止损距离为 0 → 拒绝（回归：滑点曾经能垫出非零风险绕过这条守卫）", () => {
+    const r = computePositionSize({ ...BASE, stopPrice: 50, slippage: 0.05 });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("stop-distance-zero");
+  });
+
+  it("止损价为负 → 拒绝，reason 是 stop-invalid（回归：负止损价此前被当成合法输入接受）", () => {
+    const r = computePositionSize({ ...BASE, stopPrice: -10 });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("stop-invalid");
   });
 
   it("余额为 0 或负 → 拒绝", () => {

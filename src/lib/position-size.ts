@@ -125,10 +125,12 @@ function resolveRates(input: PositionSizeInput): { quoteToUsd: number; baseToUsd
   return { quoteToUsd: 1, baseToUsd: entryPrice };
 }
 
-/** 止损价：按价格输入就直接用；按点数输入则依方向从入场价推。 */
+/** 止损价：按价格输入就直接用（非正数判无效）；按点数输入则依方向从入场价推。 */
 function resolveStopPrice(input: PositionSizeInput): number | null {
   if (input.stopMode === "price") {
-    return typeof input.stopPrice === "number" && Number.isFinite(input.stopPrice)
+    return typeof input.stopPrice === "number" &&
+      Number.isFinite(input.stopPrice) &&
+      input.stopPrice > 0
       ? input.stopPrice
       : null;
   }
@@ -157,10 +159,15 @@ export function computePositionSize(input: PositionSizeInput): PositionSizeResul
   }
 
   const stopDistance = Math.abs(input.entryPrice - stopPrice);
+  // 零距离本身就是无效输入,不能让滑点“垫”出一个非零的每单位风险来绕过——
+  // 设计文档 §⑤ 把「止损距离为 0」列为验收标准,不是「止损距离 + 滑点为 0」。
+  if (stopDistance <= 0) return { ok: false, reason: "stop-distance-zero" };
   const slippage = isPositive(input.slippage) ? input.slippage : 0;
-  if (stopDistance + slippage <= 0) return { ok: false, reason: "stop-distance-zero" };
 
   const { quoteToUsd, baseToUsd } = resolveRates(input);
+  // quoteToUsd 只按入场价折算一次，风险与预期盈利都复用它——报价币非美元的
+  // 币对（如 USD/JPY）严格算应该分别按止损价/止盈价的汇率折算，但那是行业
+  // 标准简化，参照计算器几乎可以肯定也是这么做的，不当作 bug 处理。
 
   // 手续费按单位摊算，不按仓位价值的百分比——后者会让方程自我引用（仓位价值
   // 依赖数量、数量又依赖含费风险额），解不出来。入场与止损各收一次。
@@ -176,7 +183,14 @@ export function computePositionSize(input: PositionSizeInput): PositionSizeResul
   const accountRiskPct = (riskAmount / input.accountBalance) * 100;
 
   const tp = input.takeProfitPrice;
-  const hasTp = typeof tp === "number" && Number.isFinite(tp) && tp > 0 && stopDistance > 0;
+  // 止盈必须落在盈利一侧才算数：做多要求高于入场价，做空要求低于入场价。
+  // 否则 Math.abs 会把一笔填反方向、注定亏损的止盈算成正的盈亏比。
+  const hasTp =
+    typeof tp === "number" &&
+    Number.isFinite(tp) &&
+    tp > 0 &&
+    stopDistance > 0 &&
+    (input.direction === "long" ? tp > input.entryPrice : tp < input.entryPrice);
 
   return {
     ok: true,

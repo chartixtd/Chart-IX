@@ -38,7 +38,7 @@ export function formatRelativeTime(iso: string, localeStr: string, t: ReturnType
  * then a muted meta row.
  *
  * Reactions render read-only here. The interactive toggles live on the detail
- * page (src/app/[locale]/(app)/community/[id]/page.tsx): an article card carries no
+ * page's client component (src/components/community/CommunityPostClient.tsx): an article card carries no
  * controls, and once the whole card is a link, an <a> can't legally contain the
  * toggle buttons anyway. Author/admin actions stay, below the link and behind a
  * hairline, so they never nest inside the anchor either.

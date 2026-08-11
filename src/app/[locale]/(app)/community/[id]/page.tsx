@@ -1,4 +1,3 @@
-import { cache } from "react";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { SITE_URL } from "@/lib/constants";
@@ -6,16 +5,17 @@ import { routing } from "@/i18n/routing";
 import { buildShareExcerpt } from "@/lib/community-share";
 import { CommunityPostClient } from "./CommunityPostClient";
 
-// React 的请求级缓存：generateMetadata 和页面主体都要这条帖子，
-// 不包一层就会查两次库（沿用 articles/[slug]/page.tsx 的做法）。
-const getPostById = cache(async (id: string) => {
+// 只给 generateMetadata 用——页面主体不查库，直接渲染客户端组件（它自己
+// 用 usePost 再取一份帖子数据）。这条查询在一次请求里只会被调用一次，
+// 不需要额外包一层 cache() 去重。
+async function getPostById(id: string) {
   const supabase = await createClient();
   return supabase
     .from("community_posts")
     .select("id, title, content, cover_image")
     .eq("id", id)
     .maybeSingle();
-});
+}
 
 export async function generateMetadata({
   params,
@@ -45,7 +45,7 @@ export async function generateMetadata({
       title: post.title,
       description,
       type: "article",
-      images: post.cover_image ? [post.cover_image] : undefined,
+      images: post.cover_image ? [post.cover_image] : ["/opengraph-image"],
     },
     twitter: { title: post.title, description },
   };

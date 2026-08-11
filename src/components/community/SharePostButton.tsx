@@ -76,7 +76,7 @@ export function SharePostButton({
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v12M12 4 8 8M12 4l4 4" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
       </svg>
-      {copied ? t("link_copied") : t("share")}
+      <span aria-live="polite">{copied ? t("link_copied") : t("share")}</span>
     </button>
   );
 }

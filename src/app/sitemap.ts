@@ -5,7 +5,7 @@ import { buildLanguageAlternates } from "@/lib/seo";
 
 // /login and /register are excluded on purpose — auth pages have nothing for
 // a crawler to index and shouldn't compete with real content for crawl budget.
-const STATIC_PATHS = ["", "/videos", "/articles", "/trade", "/learn", "/upgrade"];
+const STATIC_PATHS = ["", "/videos", "/articles", "/trade", "/learn", "/upgrade", "/tools/position-size"];
 
 // Safety cap: sitemaps are limited to 50,000 URLs (Google's protocol limit,
 // which Next.js also enforces). Each of these queries was previously

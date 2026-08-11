@@ -344,6 +344,11 @@
     @apply my-8 border-border-default;
   }
 
+  /* 正文配图：不得超出 68ch 的阅读栏宽，也不许拉伸变形 */
+  .prose-custom img {
+    @apply my-6 h-auto max-w-full rounded-sm border border-border-default;
+  }
+
   /* 结尾免责声明：明显弱于正文，但仍可读 */
   .prose-custom em {
     @apply text-text-secondary;

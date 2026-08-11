@@ -2,9 +2,9 @@ import sanitizeHtml from "sanitize-html";
 
 /**
  * Server-side sanitizer for admin-authored article HTML (produced by the
- * TipTap StarterKit editor in src/app/admin/articles/ArticlesManager.tsx —
- * no Link/Image extensions enabled there, so the allowlist below matches
- * exactly what StarterKit can emit).
+ * TipTap editor in src/app/admin/articles/ArticleEditors.tsx — StarterKit
+ * plus the Image extension, so the allowlist below matches exactly what
+ * those can emit).
  *
  * This must run before the HTML is embedded into the server-rendered page.
  * The previous approach ran DOMPurify.sanitize() inside a "use client"
@@ -24,8 +24,15 @@ export function sanitizeArticleHtml(html: string): string {
       // 只允许 href/rel/target，协议限 http(s)（挡掉 javascript: 伪协议），
       // 且用 transformTags 强制覆写 rel/target——不信任正文里给出的属性值。
       "a",
+      // 正文配图（后台编辑器上传后拿到的公开 URL）。属性同样收紧：只留
+      // src/alt/title，src 受下面 allowedSchemes 约束，data: 与 javascript:
+      // 都进不来，onerror 这类事件属性也一律丢弃。
+      "img",
     ],
-    allowedAttributes: { a: ["href", "rel", "target"] },
+    allowedAttributes: {
+      a: ["href", "rel", "target"],
+      img: ["src", "alt", "title"],
+    },
     allowedSchemes: ["http", "https"],
     transformTags: {
       a: sanitizeHtml.simpleTransform(

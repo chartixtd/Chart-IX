@@ -1,161 +1,66 @@
-"use client";
+import { cache } from "react";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import { createClient } from "@/lib/supabase/server";
+import { SITE_URL } from "@/lib/constants";
+import { routing } from "@/i18n/routing";
+import { buildShareExcerpt } from "@/lib/community-share";
+import { CommunityPostClient } from "./CommunityPostClient";
 
-import { useParams } from "next/navigation";
-import Image from "next/image";
-import Link from "next/link";
-import { useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
-import { useAuth } from "@/components/auth/AuthProvider";
-import { Card } from "@/components/ui/Card";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { Skeleton } from "@/components/ui/Skeleton";
-import { cn } from "@/lib/utils";
-import { usePost, useToggleReaction, useUpdatePost, useDeleteCommunityPost } from "@/hooks/useCommunity";
-import { PostComposerModal } from "@/components/community/PostComposerModal";
-import { CommentThread } from "@/components/community/CommentThread";
-import { formatRelativeTime } from "@/components/community/CommunityPostCard";
+// React 的请求级缓存：generateMetadata 和页面主体都要这条帖子，
+// 不包一层就会查两次库（沿用 articles/[slug]/page.tsx 的做法）。
+const getPostById = cache(async (id: string) => {
+  const supabase = await createClient();
+  return supabase
+    .from("community_posts")
+    .select("id, title, content, cover_image")
+    .eq("id", id)
+    .maybeSingle();
+});
 
-const REACTION_EMOJI = ["👍", "❤️", "🚀", "🔥", "😂"];
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const { data: post } = await getPostById(id);
 
-export default function CommunityPostPage() {
-  const t = useTranslations("community");
-  const locale = useLocale();
-  const auth = useAuth();
-  const params = useParams<{ id: string }>();
-  const postId = params.id;
+  if (!post) return {};
 
-  const { data: post, isPending, error } = usePost(postId);
-  const toggleReaction = useToggleReaction(postId);
-  const updatePost = useUpdatePost(postId);
-  const deletePost = useDeleteCommunityPost();
-  const [editOpen, setEditOpen] = useState(false);
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const description = buildShareExcerpt(post.content) || undefined;
 
-  const isAuthor = post ? auth.userId === post.author_id : false;
-  const isAdmin = auth.role === "admin";
-  const isPro = auth.tier === "pro";
+  // alternates 必须显式写，而且只写 canonical：
+  //  · 不给 languages——那个字段意为「这几个 URL 互为翻译版本」，对文章成立
+  //    （title/content 是 {locale: text} 对象），对帖子不成立：帖子是单一纯
+  //    文本，三个语言前缀下是同一份内容。
+  //  · 但不能干脆不写。[locale]/layout.tsx 已全局设了指向各语言首页的
+  //    languages，而 Next 的 metadata 按顶层键浅合并——这里不写就会继承那份，
+  //    等于宣称「本帖的其他语言版本是首页」。写了 canonical 就整体覆盖掉了，
+  //    同时把三个语言前缀下的同一份内容统一指向默认语言那一个。
+  return {
+    title: post.title,
+    description,
+    alternates: { canonical: `${SITE_URL}/${routing.defaultLocale}/community/${id}` },
+    openGraph: {
+      title: post.title,
+      description,
+      type: "article",
+      images: post.cover_image ? [post.cover_image] : undefined,
+    },
+    twitter: { title: post.title, description },
+  };
+}
 
-  return (
-    <div className="mx-auto max-w-3xl px-4 py-6">
-      <Link href={`/${locale}/articles?tab=community`} className="mb-4 hidden text-sm text-text-muted hover:text-gold lg:inline-block">
-        {t("back_to_community")}
-      </Link>
+export default async function CommunityPostPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const { data: post } = await getPostById(id);
 
-      {isPending && (
-        <div className="space-y-3">
-          <Skeleton className="h-8 w-2/3" />
-          <Skeleton className="h-48 w-full" />
-          <Skeleton className="h-24 w-full" />
-        </div>
-      )}
+  if (!post) notFound();
 
-      {(error || (!isPending && !post)) && (
-        <p className="rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-          {t("post_not_found")}
-        </p>
-      )}
-
-      {post && (
-        <Card className="overflow-hidden" padding="none">
-          {post.cover_image && (
-            // Fixed height (was max-h-96 on the plain <img>) so the fill-based
-            // Image below has a definite box to fill.
-            <div className="relative h-96 w-full border-b border-border-default">
-              <Image src={post.cover_image} alt="" fill className="object-cover" sizes="(min-width: 768px) 768px, 100vw" />
-            </div>
-          )}
-
-          <div className="p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h1 className="text-xl font-semibold text-text-primary">{post.title}</h1>
-                <p className="mt-1 text-xs text-text-muted">
-                  {post.author?.display_name ?? t("anonymous")} · {formatRelativeTime(post.created_at, locale, t)}
-                  {post.updated_at !== post.created_at && ` · ${t("edited")}`}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                {isAuthor && (
-                  <button onClick={() => setEditOpen(true)} className="text-xs text-text-muted hover:text-gold">
-                    {t("edit")}
-                  </button>
-                )}
-                {isAdmin && (
-                  <button
-                    onClick={() => setConfirmDeleteOpen(true)}
-                    disabled={deletePost.isPending}
-                    className="text-xs text-text-muted hover:text-danger disabled:opacity-50"
-                  >
-                    {t("delete")}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">{post.content}</p>
-
-            <div className="mt-4 flex flex-wrap items-center gap-1.5 border-t border-border-default pt-4">
-              {REACTION_EMOJI.map((emoji) => {
-                const count = post.reaction_counts[emoji] ?? 0;
-                const active = post.viewer_reactions.includes(emoji);
-                return (
-                  <button
-                    key={emoji}
-                    onClick={() => isPro && toggleReaction.mutate(emoji)}
-                    // Deliberately not disabled while the mutation is in flight:
-                    // useToggleReaction writes the new state to the cache on click,
-                    // so the button already reflects the result. Disabling here
-                    // would freeze a control that has visibly already responded.
-                    disabled={!isPro}
-                    aria-pressed={active}
-                    title={isPro ? undefined : t("pro_required")}
-                    className={cn(
-                      "flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm transition-colors",
-                      active
-                        ? "border-gold/50 bg-gold/15 text-gold"
-                        : "border-border-default text-text-muted hover:border-gold/30 hover:text-text-secondary",
-                      !isPro && "cursor-not-allowed opacity-60"
-                    )}
-                  >
-                    <span>{emoji}</span>
-                    {count > 0 && <span className="tabular-nums">{count}</span>}
-                  </button>
-                );
-              })}
-            </div>
-
-            <CommentThread postId={post.id} />
-          </div>
-        </Card>
-      )}
-
-      {post && (
-        <PostComposerModal
-          open={editOpen}
-          onClose={() => setEditOpen(false)}
-          initial={{ title: post.title, content: post.content, cover_image: post.cover_image }}
-          onSubmit={async (input) => {
-            await updatePost.mutateAsync(input);
-            setEditOpen(false);
-          }}
-          submitting={updatePost.isPending}
-          error={updatePost.error?.message ?? null}
-        />
-      )}
-
-      {post && (
-        <ConfirmDialog
-          open={confirmDeleteOpen}
-          onClose={() => setConfirmDeleteOpen(false)}
-          onConfirm={() => {
-            deletePost.mutate(post.id, { onSuccess: () => setConfirmDeleteOpen(false) });
-          }}
-          title={t("delete")}
-          message={t("confirm_delete")}
-          confirmText={t("delete")}
-          loading={deletePost.isPending}
-        />
-      )}
-    </div>
-  );
+  return <CommunityPostClient postId={id} />;
 }

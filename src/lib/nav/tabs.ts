@@ -25,7 +25,9 @@ const TAB_SEGMENTS: Record<TabKey, string[]> = {
   // 杂物抽屉里，学习 tab 反而找不到它
   learn: ["learn", "videos", "articles", "news"],
   trade: ["trade"],
-  screener: ["screener"],
+  // 计算器等交易辅助工具归筛选器 tab——两者同属「开仓前的准备」，
+  // 且手机底部 5 个 tab 位置已满，不值得为一个工具再开一个
+  screener: ["screener", "tools"],
   more: ["more", "orders", "settings", "upgrade"],
 };
 
@@ -88,6 +90,8 @@ export function resolveBackTarget(pathname: string, locale: string): string {
       return second ? `/${locale}/articles` : `/${locale}/learn`;
     case "videos":
       return second ? `/${locale}/videos` : `/${locale}/learn`;
+    case "tools":
+      return `/${locale}/screener`;
     case "learn":
       return `/${locale}/learn`;
     case "community":

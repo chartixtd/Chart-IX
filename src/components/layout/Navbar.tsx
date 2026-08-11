@@ -14,8 +14,16 @@ import { cn } from "@/lib/utils";
 
 // Signed-out visitors only see Home — the product nav (videos/articles/news/trade/screener)
 // is gated behind login, so it shouldn't tease unauthenticated users on the marketing page.
-const GUEST_NAV_ITEMS = ["home"] as const;
-const USER_NAV_ITEMS = ["dashboard", "videos", "articles", "news", "trade", "screener"] as const;
+// 计算器未登录也完全可用（不是登录墙后的画饼），且它是拉新入口，
+// 所以 tools 在登录与未登录两种导航里都出现。
+const GUEST_NAV_ITEMS = ["home", "tools"] as const;
+const USER_NAV_ITEMS = ["dashboard", "videos", "articles", "news", "trade", "screener", "tools"] as const;
+
+// 导航项默认按 /{locale}/{item} 拼链接；这里放例外。tools 的落地页是具体的
+// 计算器，站内没有 /tools 索引页，直接拼会 404。
+const NAV_HREF_OVERRIDES: Record<string, string> = {
+  tools: "/tools/position-size",
+};
 
 export function Navbar() {
   const t = useTranslations("nav");
@@ -42,7 +50,9 @@ export function Navbar() {
       return (
         <Link
           key={item}
-          href={`/${locale}${item === "home" ? "" : `/${item}`}`}
+          href={`/${locale}${
+            item === "home" ? "" : NAV_HREF_OVERRIDES[item] ?? `/${item}`
+          }`}
           className={cn(
             "px-3 py-1.5 text-sm rounded-sm transition-colors",
             active ? "text-gold bg-gold/10" : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"

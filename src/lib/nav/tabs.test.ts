@@ -63,6 +63,10 @@ describe("resolveActiveTab", () => {
   it("能容忍结尾的斜杠", () => {
     expect(resolveActiveTab("/zh-CN/trade/", "zh-CN")).toBe("trade");
   });
+
+  it("工具页归筛选器 tab", () => {
+    expect(resolveActiveTab("/zh-CN/tools/position-size", "zh-CN")).toBe("screener");
+  });
 });
 
 describe("buildMoreEntries", () => {
@@ -150,6 +154,10 @@ describe("shouldShowBackButton", () => {
   it("路径的语言前缀与当前语言不一致时不显示——与 resolveActiveTab 的保守处理一致", () => {
     expect(shouldShowBackButton("/en-US/settings", "zh-CN")).toBe(false);
   });
+
+  it("工具页要显示返回——它不是 tab 落地页", () => {
+    expect(shouldShowBackButton("/zh-CN/tools/position-size", "zh-CN")).toBe(true);
+  });
 });
 
 describe("resolveBackTarget", () => {
@@ -196,5 +204,9 @@ describe("resolveBackTarget", () => {
 
   it("目标带上正确的语言前缀", () => {
     expect(resolveBackTarget("/ms-MY/articles/x", "ms-MY")).toBe("/ms-MY/articles");
+  });
+
+  it("工具页退回筛选器", () => {
+    expect(resolveBackTarget("/zh-CN/tools/position-size", "zh-CN")).toBe("/zh-CN/screener");
   });
 });

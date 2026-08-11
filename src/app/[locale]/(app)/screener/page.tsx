@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import Link from "next/link";
+import { useTranslations, useLocale } from "next-intl";
 import { useScreenerData } from "@/hooks/useScreenerData";
 import { ScreenerTable } from "@/components/screener/ScreenerTable";
 import { Button } from "@/components/ui/Button";
@@ -16,6 +17,8 @@ function formatCountdown(ms: number): string {
 
 export default function ScreenerPage() {
   const t = useTranslations("screener");
+  const tCalc = useTranslations("calculator");
+  const locale = useLocale();
   const { long, short, isLoading, marketCapUnavailable, error, isRefreshing, lastUpdated, refetch } =
     useScreenerData();
 
@@ -47,6 +50,13 @@ export default function ScreenerPage() {
           </Button>
         </div>
       </div>
+
+      <Link
+        href={`/${locale}/tools/position-size`}
+        className="mb-4 inline-flex items-center gap-1 text-sm text-text-secondary transition-colors hover:text-gold"
+      >
+        {tCalc("title")} →
+      </Link>
 
       <details className="mb-4 rounded-lg border border-border-default bg-bg-secondary">
         <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-text-primary">

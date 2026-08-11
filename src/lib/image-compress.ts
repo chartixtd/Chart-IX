@@ -49,6 +49,24 @@ export function replaceExtension(filename: string, ext: string): string {
 }
 
 /**
+ * 读出图片的像素尺寸。读不出来（格式不认、浏览器不支持）返回 null，调用方
+ * 应当据此走「不做尺寸相关处理」的那条路，而不是把上传拦下来。
+ */
+export async function readImageSize(
+  file: File
+): Promise<{ width: number; height: number } | null> {
+  if (typeof createImageBitmap !== "function") return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const size = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return size;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 压缩单张图片。任何一步不成立都原样返回入参——包括压完反而更大的情况
  * （小图转 WebP 有时会胖一点）。
  */

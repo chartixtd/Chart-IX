@@ -761,7 +761,10 @@
       "prev": "上一页",
       "next": "下一页",
       "no_articles": "未找到文章。",
-      "untitled": "无标题"
+      "untitled": "无标题",
+      "crop_title": "调整封面显示范围",
+      "crop_hint": "这张图不是 16:9，封面只会露出其中一块。拖动画面挪位置，用滑块缩放，框内就是最终显示的范围。",
+      "crop_confirm": "用这个范围"
     },
     "dash": {
       "users_title": "用户",

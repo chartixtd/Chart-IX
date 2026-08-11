@@ -11,7 +11,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
-import { compressImage } from "@/lib/image-compress";
+import { ImageCropModal } from "@/components/ui/ImageCropModal";
+import { compressImage, readImageSize, shouldCompress } from "@/lib/image-compress";
+import { matchesCoverAspect } from "@/lib/image-crop";
 import { pickCoverFromContent } from "@/lib/article-cover";
 import type { ArticleEditorsHandle } from "./ArticleEditors";
 import type { Article, ArticleCategory, Locale } from "@/types";
@@ -82,6 +84,8 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
   const [titleMs, setTitleMs] = useState("");
   const [coverImage, setCoverImage] = useState("");
   const [coverImageUploading, setCoverImageUploading] = useState(false);
+  /** 非空时打开取景器：这张图的比例与封面差得多，先让作者框一下 */
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const coverImageInputRef = useRef<HTMLInputElement>(null);
   const [categoryId, setCategoryId] = useState("");
   const [tier, setTier] = useState("free");
@@ -167,14 +171,33 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
   };
 
   /* ── Cover image upload ── */
-  const handleCoverImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+
+  /**
+   * 图片比例与封面的 16:9 差得多时，先让作者自己框一下要露出哪一段——
+   * 否则 object-cover 一律居中裁，竖图传上去只剩中间一条。比例本来就接近的
+   * 直接传，不平白多一步。
+   */
+  const handleCoverImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
 
+    // GIF 与 SVG 不进取景器：裁切要过 canvas，动图会只剩一帧、矢量会被光栅化，
+    // 和 image-compress 跳过它们是同一个理由。
+    const size = shouldCompress(file.type) ? await readImageSize(file) : null;
+    if (size && !matchesCoverAspect(size.width, size.height)) {
+      setCropFile(file);
+      return;
+    }
+    void uploadCoverImage(file);
+  };
+
+  const uploadCoverImage = async (file: File) => {
     setCoverImageUploading(true);
     try {
       const formData = new FormData();
-      // 与正文配图同样先在浏览器里压小再传
+      // 与正文配图同样先在浏览器里压小再传。已裁切过的图是 1600x900 WebP，
+      // compressImage 会因为「压完不比原图小」而原样放行。
       formData.append("file", await compressImage(file));
 
       const res = await fetch("/api/admin/upload", {
@@ -633,7 +656,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
                 ref={coverImageInputRef}
                 type="file"
                 accept="image/*"
-                onChange={handleCoverImageUpload}
+                onChange={handleCoverImageSelect}
                 className="block w-full text-sm text-text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-sm file:border-0 file:text-sm file:font-medium file:bg-bg-tertiary file:text-text-primary hover:file:bg-bg-secondary file:cursor-pointer"
               />
               {coverImageUploading && (
@@ -724,6 +747,21 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
           </div>
         </div>
       </Modal>
+
+      {/* 封面取景器：比例与 16:9 差得多的图才会走到这里 */}
+      <ImageCropModal
+        open={cropFile !== null}
+        file={cropFile}
+        title={t("articles_list.crop_title")}
+        hint={t("articles_list.crop_hint")}
+        confirmLabel={t("articles_list.crop_confirm")}
+        cancelLabel={tc("common.cancel")}
+        onCancel={() => setCropFile(null)}
+        onConfirm={(cropped) => {
+          setCropFile(null);
+          void uploadCoverImage(cropped);
+        }}
+      />
     </div>
   );
 }

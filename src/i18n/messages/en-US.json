@@ -761,7 +761,10 @@
       "prev": "Prev",
       "next": "Next",
       "no_articles": "No articles found.",
-      "untitled": "Untitled"
+      "untitled": "Untitled",
+      "crop_title": "Adjust cover framing",
+      "crop_hint": "This image isn't 16:9, so the cover will show only part of it. Drag to reposition, use the slider to zoom — what's inside the frame is what gets shown.",
+      "crop_confirm": "Use this framing"
     },
     "dash": {
       "users_title": "Users",

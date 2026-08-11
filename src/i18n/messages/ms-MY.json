@@ -703,7 +703,10 @@
       "prev": "Sebelumnya",
       "next": "Seterusnya",
       "no_articles": "Tiada artikel ditemui.",
-      "untitled": "Tanpa Tajuk"
+      "untitled": "Tanpa Tajuk",
+      "crop_title": "Laraskan bingkai kulit muka",
+      "crop_hint": "Imej ini bukan 16:9, jadi kulit muka hanya akan memaparkan sebahagian daripadanya. Seret untuk mengalih, guna slider untuk zum — apa yang di dalam bingkai itulah yang dipaparkan.",
+      "crop_confirm": "Guna bingkai ini"
     },
     "dash": {
       "users_title": "Pengguna",

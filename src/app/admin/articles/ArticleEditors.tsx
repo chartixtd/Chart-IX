@@ -19,7 +19,7 @@ const LOCALES: Locale[] = ["zh-CN", "en-US", "ms-MY"];
  * 编辑器横向撑破。
  */
 const EDITOR_CLASS =
-  "prose prose-invert prose-sm max-w-none min-h-[200px] max-h-[45vh] overflow-y-auto px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50 [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-sm";
+  "prose prose-invert prose-sm max-w-none min-h-[200px] max-h-[45vh] overflow-y-auto px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50 lg:min-h-[320px] lg:max-h-[60vh] [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-sm";
 
 /** 与 /api/admin/upload 的服务端限制保持一致，好在选中文件时就先挡下来。 */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;

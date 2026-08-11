@@ -7,7 +7,7 @@ interface ModalProps {
   title?: string;
   children: ReactNode;
   className?: string;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
   /**
    * "sheet" 在手机上从底部滑出、占满宽度，lg 及以上退回居中弹窗。
    * 手机上居中弹窗要么够不着关闭按钮，要么被键盘顶掉一半。
@@ -19,6 +19,8 @@ const sizeClasses = {
   sm: "max-w-sm",
   md: "max-w-md",
   lg: "max-w-lg",
+  // 给编辑器这类「要在里面干活」的弹窗用：512px 的 lg 放不下富文本编辑
+  xl: "max-w-4xl",
 };
 
 export function Modal({

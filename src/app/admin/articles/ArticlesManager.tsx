@@ -543,7 +543,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
             ? t("articles_list.edit_article")
             : t("articles_list.new_article")
         }
-        size="lg"
+        size="xl"
       >
         <div className="space-y-4">
           {/* Locale tabs */}

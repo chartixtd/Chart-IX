@@ -8,6 +8,13 @@ import type { Locale } from "@/types";
 
 const LOCALES: Locale[] = ["zh-CN", "en-US", "ms-MY"];
 
+/**
+ * 正文区自己滚动，而不是把弹窗撑高。没有 max-h 的话，一篇长文章会让弹窗
+ * 高出视口，标题栏与下方的封面/分类字段就都够不着了。
+ */
+const EDITOR_CLASS =
+  "prose prose-invert prose-sm max-w-none min-h-[200px] max-h-[45vh] overflow-y-auto px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50";
+
 export interface ArticleEditorsHandle {
   getHTML: (locale: Locale) => string;
   setContent: (locale: Locale, html: string) => void;
@@ -165,10 +172,7 @@ export function ArticleEditors({
       ],
       content: contentZhInitial,
       editorProps: {
-        attributes: {
-          class:
-            "prose prose-invert prose-sm max-w-none min-h-[200px] px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50",
-        },
+        attributes: { class: EDITOR_CLASS },
       },
     }, [editorKey]);
 
@@ -179,10 +183,7 @@ export function ArticleEditors({
       ],
       content: contentEnInitial,
       editorProps: {
-        attributes: {
-          class:
-            "prose prose-invert prose-sm max-w-none min-h-[200px] px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50",
-        },
+        attributes: { class: EDITOR_CLASS },
       },
     }, [editorKey]);
 
@@ -193,10 +194,7 @@ export function ArticleEditors({
       ],
       content: contentMsInitial,
       editorProps: {
-        attributes: {
-          class:
-            "prose prose-invert prose-sm max-w-none min-h-[200px] px-4 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50",
-        },
+        attributes: { class: EDITOR_CLASS },
       },
     }, [editorKey]);
 

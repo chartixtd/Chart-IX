@@ -74,7 +74,12 @@ export function Modal({
                 "lg:max-h-[85vh] lg:rounded-lg lg:pb-0 lg:animate-scale-in",
                 sizeClasses[size],
               ]
-            : ["rounded-lg animate-scale-in", sizeClasses[size]],
+            : [
+                // 内容超出视口时面板自己滚动。少了这条，长内容会从居中位置往
+                // 上下两头同时溢出，而 body 已被锁住滚动，顶部与底部就再也够不着。
+                "max-h-[90dvh] overflow-y-auto rounded-lg animate-scale-in",
+                sizeClasses[size],
+              ],
           className
         )}
       >

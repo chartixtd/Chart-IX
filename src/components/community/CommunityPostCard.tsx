@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useDeleteCommunityPost, useUpdatePost } from "@/hooks/useCommunity";
 import type { CommunityPost } from "@/types";
 import { PostComposerModal } from "./PostComposerModal";
+import { SharePostButton } from "./SharePostButton";
 
 /** Display order for the reaction summary — matches the toggle order on the detail page. */
 const REACTION_EMOJI = ["👍", "❤️", "🚀", "🔥", "😂"];
@@ -118,27 +119,28 @@ export function CommunityPostCard({ post }: { post: CommunityPost }) {
         </div>
       </Link>
 
-      {(isAuthor || isAdmin) && (
-        <div className="flex items-center justify-end gap-3 border-t border-border-default px-4 py-2">
-          {isAuthor && (
-            <button
-              onClick={() => setEditOpen(true)}
-              className="text-xs text-text-muted transition-colors hover:text-gold"
-            >
-              {t("edit")}
-            </button>
-          )}
-          {isAdmin && (
-            <button
-              onClick={() => setConfirmDeleteOpen(true)}
-              disabled={deletePost.isPending}
-              className="text-xs text-text-muted transition-colors hover:text-danger disabled:opacity-50"
-            >
-              {t("delete")}
-            </button>
-          )}
-        </div>
-      )}
+      {/* 这一行始终渲染：分享对所有访客可见，编辑/删除各自按身份显示。
+          原先整行包在 (isAuthor || isAdmin) 里，加分享后不能再那样。 */}
+      <div className="flex items-center justify-end gap-3 border-t border-border-default px-4 py-2">
+        <SharePostButton postId={post.id} title={post.title} className="mr-auto" />
+        {isAuthor && (
+          <button
+            onClick={() => setEditOpen(true)}
+            className="text-xs text-text-muted transition-colors hover:text-gold"
+          >
+            {t("edit")}
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            onClick={() => setConfirmDeleteOpen(true)}
+            disabled={deletePost.isPending}
+            className="text-xs text-text-muted transition-colors hover:text-danger disabled:opacity-50"
+          >
+            {t("delete")}
+          </button>
+        )}
+      </div>
 
       <PostComposerModal
         open={editOpen}

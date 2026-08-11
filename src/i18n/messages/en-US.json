@@ -814,6 +814,8 @@
     "remove_image": "Remove",
     "uploading": "Uploading…",
     "back_to_community": "← Back to Community",
+    "share": "Share",
+    "link_copied": "Link copied",
     "post_not_found": "This post doesn't exist or was removed.",
     "cancel": "Cancel",
     "submit": "Post",

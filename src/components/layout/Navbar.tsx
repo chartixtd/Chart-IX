@@ -21,7 +21,7 @@ const USER_NAV_ITEMS = ["dashboard", "videos", "articles", "news", "trade", "scr
 
 // 导航项默认按 /{locale}/{item} 拼链接；这里放例外。tools 的落地页是具体的
 // 计算器，站内没有 /tools 索引页，直接拼会 404。
-const NAV_HREF_OVERRIDES: Record<string, string> = {
+const NAV_HREF_OVERRIDES: Partial<Record<(typeof USER_NAV_ITEMS)[number], string>> = {
   tools: "/tools/position-size",
 };
 
@@ -44,8 +44,11 @@ export function Navbar() {
     // "home" only makes sense for signed-out visitors.
     const items = auth.userId ? USER_NAV_ITEMS : GUEST_NAV_ITEMS;
     return items.map((item) => {
+      // segments[0] 在每一条 i18n 路由上都等于 locale，用 || 会让首页在所有
+      // 页面上都判定 active——这里要求两个条件同时成立：整条路径只有一段，
+      // 且那一段就是 locale 本身（也就是语言根路径 /{locale}）。
       const active = item === "home"
-        ? segments.length === 1 || segments[0] === locale
+        ? segments.length === 1 && segments[0] === locale
         : segments.includes(item);
       return (
         <Link

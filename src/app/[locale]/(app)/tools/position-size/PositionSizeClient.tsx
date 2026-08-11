@@ -16,7 +16,6 @@ import {
 } from "@/lib/position-size";
 
 const ASSET_CLASSES: AssetClass[] = ["stocks", "crypto", "forex", "futures"];
-const LEVERAGES = [1, 2, 5, 10, 20, 30, 50, 100, 200, 500];
 
 /** 空字符串要保留成空（而不是 0），否则用户清空输入框会立刻变成 0。 */
 function num(v: string): number | undefined {
@@ -92,7 +91,8 @@ export default function PositionSizeClient() {
     stopMode: assetClass === "forex" ? stopMode : "price",
     stopPrice: num(stopPrice),
     stopPips: num(stopPips),
-    leverage: num(leverage) ?? 1,
+    // 清空后不要静默按 1:1 算——那是替用户做了一个他没做的决定，应当报错
+    leverage: num(leverage) ?? 0,
     forexPair: assetClass === "forex" ? forexPair : undefined,
     contractMultiplier: assetClass === "futures" ? num(multiplier) : undefined,
     takeProfitPrice: showAdvanced ? num(takeProfit) ?? null : null,
@@ -239,9 +239,23 @@ export default function PositionSizeClient() {
 
           <div>
             <label className={label} htmlFor="lev">{t("leverage")}</label>
-            <select id="lev" className={field} value={leverage} onChange={(e) => setLeverage(e.target.value)}>
-              {LEVERAGES.map((l) => <option key={l} value={l}>1:{l}</option>)}
-            </select>
+            <div className="relative">
+              {/* 保留 1:N 的读法，用户只填 N 那一半 */}
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-muted">
+                1:
+              </span>
+              <input
+                id="lev"
+                type="number"
+                inputMode="decimal"
+                min={1}
+                step="any"
+                placeholder="1"
+                className={cn(field, "pl-8")}
+                value={leverage}
+                onChange={(e) => setLeverage(e.target.value)}
+              />
+            </div>
           </div>
 
           <button type="button" onClick={toggleAdvanced}

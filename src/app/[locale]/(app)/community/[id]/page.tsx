@@ -1,5 +1,4 @@
 import { cache } from "react";
-import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { SITE_URL } from "@/lib/constants";
@@ -58,9 +57,11 @@ export default async function CommunityPostPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { data: post } = await getPostById(id);
 
-  if (!post) notFound();
-
+  // 帖子不存在时不主动跳裸 404——本项目没有自定义 not-found 页，那样只会
+  // 渲染 Next 自带的黑白默认页。分享链接指向已删帖子是很现实的场景，站内
+  // 那条带样式、带返回链接的「帖子不存在」提示（CommunityPostClient 里
+  // usePost 拿到空结果后自己会显示）体验更好。代价是这种情况返回 200 而
+  // 不是 404，是有意接受的取舍。
   return <CommunityPostClient postId={id} />;
 }

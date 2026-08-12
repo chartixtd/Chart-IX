@@ -11,7 +11,7 @@ export default function VideosLoading() {
       </div>
       <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="overflow-hidden rounded-md border border-border-default bg-bg-secondary">
+          <div key={i} className="overflow-hidden rounded-md panel">
             <Skeleton className="aspect-video w-full rounded-none" />
             <div className="space-y-3 p-4">
               <Skeleton className="h-5 w-3/4" />

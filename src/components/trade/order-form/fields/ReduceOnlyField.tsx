@@ -20,7 +20,7 @@ export function ReduceOnlyField({ value, onChange }: ReduceOnlyFieldProps) {
         onChange={(e) => onChange(e.target.checked)}
       />
       {t("trading.reduce_only")}
-      <span className="text-text-muted/60">({t("trading.reduce_only_hint")})</span>
+      <span className="text-text-muted">({t("trading.reduce_only_hint")})</span>
     </label>
   );
 }

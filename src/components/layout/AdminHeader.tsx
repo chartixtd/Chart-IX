@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { Icon } from "@/components/ui/Icon";
 
 export function AdminHeader({ onMenuClick }: { onMenuClick: () => void }) {
   const router = useRouter();
@@ -50,7 +51,9 @@ export function AdminHeader({ onMenuClick }: { onMenuClick: () => void }) {
           </svg>
         </button>
         <Image src="/logo.png" alt="Chart-IX" width={240} height={160} className="h-8 w-auto" />
-        <span className="rounded-sm border border-gold/30 bg-gold/10 px-2 py-0.5 text-xs font-medium text-gold">
+        {/* 后台标识用实心金箔：它是"你现在在一个有权限的地方"的提示，
+            不该和页面里其它金色描边标签长得一样 */}
+        <span className="foil-sm rounded-sm px-2 py-0.5 text-xs font-semibold tracking-wide">
           Admin
         </span>
       </div>
@@ -58,20 +61,20 @@ export function AdminHeader({ onMenuClick }: { onMenuClick: () => void }) {
       <div className="flex items-center gap-3">
         <Link
           href={`/${locale}/dashboard`}
-          className="hidden items-center gap-1 text-sm text-text-secondary transition-colors hover:text-text-primary lg:flex"
+          className="hidden items-center gap-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary lg:flex"
         >
-          <span>←</span>
+          <Icon name="arrowRight" className="h-4 w-4 rotate-180" />
           <span>{t("back_to_site")}</span>
         </Link>
 
         {user && (
           <>
-            <span className="hidden text-xs text-text-tertiary lg:inline">
+            <span className="hidden text-xs text-text-muted lg:inline">
               {user.email}
             </span>
             <button
               onClick={handleLogout}
-              className="text-sm text-text-secondary hover:text-red-400 transition-colors"
+              className="text-sm text-text-secondary hover:text-danger transition-colors"
             >
               {t("sign_out")}
             </button>

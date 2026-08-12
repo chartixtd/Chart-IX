@@ -66,8 +66,8 @@ export default function AdminLoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <Card className="w-full max-w-sm" padding="lg">
-        <h1 className="text-center text-2xl font-bold">
+      <Card tone="data" className="w-full max-w-sm" padding="lg">
+        <h1 className="text-center text-2xl font-bold font-display tracking-tight">
           <span className="gold-text">Chart</span>
           <span className="text-text-primary">-IX</span>
           <span className="ml-2 text-sm text-text-muted">{t("login.title")}</span>

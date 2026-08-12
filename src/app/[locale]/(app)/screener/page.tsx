@@ -35,7 +35,7 @@ export default function ScreenerPage() {
     <div className="mx-auto max-w-[110rem] px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h1 className="text-xl font-bold text-text-primary">{t("title")}</h1>
+          <h1 className="text-xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
         </div>
         <div className="flex items-center gap-3">
           {/* 报错时不显示倒计时——那会是一个冻在 00:00 的假进度 */}
@@ -58,7 +58,7 @@ export default function ScreenerPage() {
         {tCalc("title")} →
       </Link>
 
-      <details className="mb-4 rounded-lg border border-border-default bg-bg-secondary">
+      <details className="mb-4 rounded-lg panel">
         <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-text-primary">
           {t("guide.title")}
         </summary>
@@ -86,13 +86,13 @@ export default function ScreenerPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <section className="rounded-lg border border-border-default bg-bg-primary overflow-hidden">
-            <h2 className="border-b border-border-default px-3 py-2 text-sm font-semibold text-success">
+            <h2 className="border-b border-border-default px-3 py-2 text-sm font-semibold text-success font-display tracking-tight">
               {t("long_group")}
             </h2>
             <ScreenerTable results={long} isLoading={isLoading} direction="long" />
           </section>
           <section className="rounded-lg border border-border-default bg-bg-primary overflow-hidden">
-            <h2 className="border-b border-border-default px-3 py-2 text-sm font-semibold text-danger">
+            <h2 className="border-b border-border-default px-3 py-2 text-sm font-semibold text-danger font-display tracking-tight">
               {t("short_group")}
             </h2>
             <ScreenerTable results={short} isLoading={isLoading} direction="short" />

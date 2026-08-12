@@ -500,7 +500,7 @@ export function ArticlesManager({ articles, categories }: ArticlesManagerProps) 
                       size="sm"
                       variant="ghost"
                       onClick={() => setConfirmDelete(a.id)}
-                      className="text-red-400 hover:text-red-300"
+                      className="text-danger hover:text-danger"
                       title={t("articles_list.delete_article")}
                     >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

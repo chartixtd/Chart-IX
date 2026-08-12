@@ -13,7 +13,7 @@ import { AdminSidebar } from "./AdminSidebar";
  * 选组件内 state 而不是 zustand：这是纯局部 UI 状态，只有这三个组件关心，
  * 也不需要跨路由持久化——为一个布尔量建全局 store 是过度设计。
  *
- * ⚠️ JSX 顺序有意义：AdminSidebar（含遮罩）必须渲染在 AdminHeader 之后。
+ * 注意：JSX 顺序有意义——AdminSidebar（含遮罩）必须渲染在 AdminHeader 之后。
  * header 是 sticky z-40，遮罩也是 z-40，同级下靠 DOM 顺序决胜；顺序反了
  * 抽屉滑出来会被 header 压住。重排这段 JSX 前先想清楚这一点。
  */

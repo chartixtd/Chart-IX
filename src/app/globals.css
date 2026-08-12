@@ -3,6 +3,78 @@
 @tailwind utilities;
 
 @layer base {
+  /**
+   * 材质配方的单一真源。
+   *
+   * 这些值必须写成 CSS 自定义属性，不能用 tailwind 的 theme() 在 @layer components
+   * 里取——theme() 解析这类含逗号的渐变/多段阴影时会静默返回空，PostCSS 随后把
+   * 整条声明连同规则一起丢掉，编译不报错，页面上金箔直接消失。踩过一次。
+   * tailwind.config.ts 里的 bg-gold-foil / shadow-foil 也引用同一批变量。
+   */
+  :root {
+    /* 9 段金箔。50% 处的 #FFF6DC 高光带是"金属"与"渐变"的全部差别 */
+    --foil: linear-gradient(
+      135deg,
+      #6e5323 0%,
+      #a5813a 12%,
+      #c9a24b 28%,
+      #ebd08a 42%,
+      #fff6dc 50%,
+      #ebd08a 58%,
+      #c9a24b 72%,
+      #a5813a 88%,
+      #6e5323 100%
+    );
+    /* 横向变体：给 background-clip:text 的超大标题配合扫光用 */
+    --foil-x: linear-gradient(
+      100deg,
+      #a5813a 0%,
+      #c9a24b 18%,
+      #ebd08a 34%,
+      #fff6dc 44%,
+      #ebd08a 54%,
+      #c9a24b 70%,
+      #a5813a 88%,
+      #6e5323 100%
+    );
+    /**
+     * 小尺寸金箔的专用色域。
+     *
+     * --foil 两端是 #6E5323，深墨压在那一段上只有 2.75:1。大按钮上无所谓——
+     * 135° 渐变的 0%/100% 落在左上/右下**角**，文字在中间亮带上有 8.25:1。
+     * 但徽记、角标这类只有一两个字的元素，暗角就贴着字。这条把最暗端提到
+     * #A5813A（深墨 5.47:1），保留高光带所以仍读得出是金属。
+     */
+    --foil-compact: linear-gradient(
+      135deg,
+      #a5813a 0%,
+      #c9a24b 22%,
+      #ebd08a 40%,
+      #fff6dc 50%,
+      #ebd08a 60%,
+      #c9a24b 78%,
+      #a5813a 100%
+    );
+    --obsidian: linear-gradient(180deg, rgba(38, 33, 23, 0.72), rgba(11, 10, 8, 0.86));
+    --hairline-gold: linear-gradient(
+      90deg,
+      transparent,
+      rgba(201, 162, 75, 0.5) 20%,
+      rgba(201, 162, 75, 0.5) 80%,
+      transparent
+    );
+    /* 斜面：顶棱受光 + 底棱背光。缺了这两条 inset，金就退回成一块黄色 */
+    --bevel:
+      inset 0 1px 0 rgba(255, 246, 220, 0.5), inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+      0 8px 24px -8px rgba(201, 162, 75, 0.4);
+    --bevel-sm: inset 0 1px 0 rgba(255, 246, 220, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+    /* 玻璃：顶边一条金色高光棱线，比 blur 半径更能决定它像不像玻璃 */
+    --glass-shadow:
+      inset 0 1px 0 rgba(235, 208, 138, 0.14), 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+    --glass-shadow-sm:
+      inset 0 1px 0 rgba(235, 208, 138, 0.1), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  }
+
   /* View Transitions — cross-route fade for supported browsers */
   ::view-transition-old(root) {
     animation: none;
@@ -65,7 +137,16 @@
   h1,
   h2,
   h3 {
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
+  }
+
+  /* 等宽数字：价格、数量、时间戳在刷新时不得让列宽跳动。
+     mono 是整字体切换，这条只改数字字形，可用在 sans 正文里的行内数据上。 */
+  .tnum,
+  table td,
+  table th {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
   }
 
   /* PWA：禁用页面级双指缩放。
@@ -87,17 +168,6 @@
     touch-action: manipulation;
   }
 
-  /* iOS Safari 会在聚焦字号小于 16px 的输入框时自动放大整页。
-     禁用缩放之后用户没有放大这个逃生口，所以这条是硬性下限而不是优化。
-     写成全局规则而非逐组件改——下单表单有十几个字段，逐个改一定会漏。 */
-  @media (max-width: 1023px) {
-    input,
-    select,
-    textarea {
-      font-size: 16px;
-    }
-  }
-
   /* 键盘弹出时收起底部导航：那一刻用户在专注输入，全局导航既没用又碍事 */
   html.keyboard-open nav[aria-label] {
     display: none;
@@ -105,6 +175,25 @@
 }
 
 @layer utilities {
+  /**
+   * iOS Safari 会在聚焦字号小于 16px 的输入框时自动放大整页。本站在 viewport 里
+   * 禁用了缩放（maximumScale: 1），用户没有手动缩回来这个逃生口，所以这是硬性
+   * 下限而不是优化。
+   *
+   * 这条曾经写在 @layer base 里——那等于没写：base 层敌不过工具类，任何带
+   * `text-xs` / `text-sm` 的输入框都会压过它。交易页的品种下拉就是这么一直
+   * 停在 12px 的。放进 utilities 层并加 !important，才真的是一条下限。
+   *
+   * 用全局选择器而非逐组件改：下单表单有十几个字段，逐个改一定会漏。
+   */
+  @media (max-width: 1023px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
   .gpu {
     transform: translateZ(0);
     backface-visibility: hidden;
@@ -119,7 +208,7 @@
   }
 
   .font-display {
-    font-family: var(--font-marcellus), "Noto Serif SC", Georgia, serif;
+    font-family: var(--font-space-grotesk), "Noto Sans SC", system-ui, sans-serif;
   }
 
   /* 触摸命中区补足到 44px（iOS HIG 下限），视觉尺寸不变。
@@ -161,7 +250,9 @@
     }
   }
 
-  /* Reduced motion: honor system preference across authored motion */
+  /* Reduced motion: honor system preference across authored motion.
+     环境光晕、金箔扫光、呼吸这类无限循环动效在这里会被彻底停掉而不只是加速——
+     0.001ms 的无限循环仍然会持续占用合成器。 */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -171,36 +262,196 @@
       transition-duration: 0.001ms !important;
       scroll-behavior: auto !important;
     }
+
+    .aura,
+    .foil-text,
+    .animate-breathe {
+      animation: none !important;
+    }
   }
 }
 
 @layer components {
-  /* Gold foil — reserved for logo/emphasis marks, primary buttons, seals */
-  .gold-gradient {
-    background: linear-gradient(135deg, #a5813a 0%, #c9a24b 45%, #ebd08a 100%);
+  /* ==========================================================================
+   * 材质一：金箔
+   *
+   * 9 段渐变，50% 处是 gold-spec (#FFF6DC) 高光带。3 段渐变读起来是"渐变"，
+   * 带高光带的 9 段才读得出"被烫压上去的金属"。shadow-foil 的两条 inset 是斜面：
+   * 顶棱受光、底棱背光。这两样缺一，金就退回成一块黄色。
+   * ========================================================================== */
+  .foil {
+    background-image: var(--foil);
+    box-shadow: var(--bevel);
+    color: #0b0a08;
   }
 
-  /* Engraved gold text — used sparingly on hero keyword / logo only */
-  .gold-text {
-    background: linear-gradient(120deg, #a5813a 0%, #c9a24b 40%, #ebd08a 70%, #c9a24b 100%);
+  /* 小尺寸金箔：徽记、角标、Badge。用 --foil-compact，暗端提高以保证
+     只有一两个字时文字不会正好落在渐变暗角上（见变量定义处的推导）。 */
+  .foil-sm {
+    background-image: var(--foil-compact);
+    box-shadow: var(--bevel-sm);
+    color: #0b0a08;
+  }
+
+  /**
+   * 金箔文字 —— 严格限定用途。
+   *
+   * 只允许出现在**装饰性徽记**上：首屏水印 IX、大号序号底纹。绝不用于标题、
+   * 正文或任何承载信息的文字：--foil / --foil-x 两端都收在 #6E5323 上，那是
+   * 一个在深底上对比度不足的暗金，跑到句子末尾就是一段读不清的字。
+   * 需要既有金属感又必须读得清的文字，用下面的 .foil-text-bright。
+   */
+  .foil-text {
+    background-image: var(--foil-x);
+    background-size: 200% 100%;
     -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
     background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: foil-sweep 7s ease-in-out infinite;
+  }
+
+  .foil-text-static {
+    background-image: var(--foil-x);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* 可读版金箔文字：色域收在 #C9A24B–#FFF6DC，最暗处对 bg-secondary 仍有
+     6:1 以上。给序号、Pro 徽记这类既要金属感又要看得清的短标记用。 */
+  .foil-text-bright {
+    background-image: linear-gradient(
+      100deg,
+      #c9a24b 0%,
+      #ebd08a 30%,
+      #fff6dc 50%,
+      #ebd08a 70%,
+      #c9a24b 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* 兼容别名——旧代码里的 .gold-gradient / .gold-text 继续可用 */
+  .gold-gradient {
+    background-image: var(--foil);
+  }
+
+  .gold-text {
+    background-image: var(--foil-x);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* ==========================================================================
+   * 材质二：黑曜石玻璃
+   *
+   * 是烟熏黑曜石，不是 iOS 磨砂白。顶边那条 inset 0 1px 0 的金色棱线是
+   * "玻璃边缘挂住光"的全部来源，比 blur 半径重要得多。
+   *
+   * 注意：交易终端一律不用这个类。高频重绘 + backdrop-filter 在低端安卓上
+   * 会把帧率打到 30 以下，那里用 .panel（不含 blur）。
+   * ========================================================================== */
+  .obsidian-glass {
+    background-image: var(--obsidian);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid rgba(201, 162, 75, 0.12);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .obsidian-glass-sm {
+    background-image: var(--obsidian);
+    backdrop-filter: blur(12px) saturate(130%);
+    -webkit-backdrop-filter: blur(12px) saturate(130%);
+    border: 1px solid rgba(201, 162, 75, 0.1);
+    box-shadow: var(--glass-shadow-sm);
+  }
+
+  /* 不透明面板：同样的边缘语言，零 blur。交易终端与后台数据表用这个。 */
+  .panel {
+    @apply border border-border-default bg-bg-secondary;
+    box-shadow: inset 0 1px 0 rgba(235, 208, 138, 0.06);
+  }
+
+  .panel-raised {
+    @apply border border-border-default bg-bg-tertiary;
+    box-shadow:
+      inset 0 1px 0 rgba(235, 208, 138, 0.08),
+      0 4px 20px -6px rgba(0, 0, 0, 0.55);
+  }
+
+  /* 旧类名保留，指向新配方 */
+  .glass {
+    background-image: var(--obsidian);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+  }
+
+  .glass-light {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background-color: rgba(11, 10, 8, 0.62);
+  }
+
+  /* ==========================================================================
+   * 材质三：环境光晕
+   *
+   * 这是本设计里"发光"的全部预算。金色径向光斑，6–9% 不透明度，80px 模糊，
+   * 22–28s 慢速漂移。它替代的是发光边框——氛围里的光，不是描边上的光。
+   * 只用 transform 动画，GPU 安全；父容器必须 overflow-hidden。
+   * ========================================================================== */
+  .aura {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 9999px;
+    filter: blur(80px);
+    will-change: transform;
+  }
+
+  .aura-gold {
+    background: radial-gradient(
+      circle,
+      rgba(201, 162, 75, 0.5) 0%,
+      rgba(201, 162, 75, 0) 70%
+    );
+    opacity: 0.18;
+  }
+
+  .aura-warm {
+    background: radial-gradient(
+      circle,
+      rgba(235, 208, 138, 0.4) 0%,
+      rgba(235, 208, 138, 0) 70%
+    );
+    opacity: 0.12;
   }
 
   /* Hairline gold divider */
   .hairline-gold {
     height: 1px;
+    background-image: var(--hairline-gold);
+  }
+
+  /* 竖向发丝线，用于行情条 / 表头分隔 */
+  .hairline-gold-v {
+    width: 1px;
     background: linear-gradient(
-      90deg,
+      180deg,
       transparent,
-      rgba(201, 162, 75, 0.5) 20%,
-      rgba(201, 162, 75, 0.5) 80%,
+      rgba(201, 162, 75, 0.4) 25%,
+      rgba(201, 162, 75, 0.4) 75%,
       transparent
     );
   }
 
-  /* Fine grain / paper-metal texture, extremely low opacity */
+  /* Fine grain / paper-metal texture — 提到 .045，深色大面积下才摸得到 */
   .grain {
     position: relative;
   }
@@ -210,26 +461,16 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    opacity: 0.035;
+    opacity: 0.045;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
-  /* Vignette + gold aura for hero grounds */
+  /* Vignette for hero grounds — 光晕交给 .aura，这里只留底色与暗角 */
   .hero-ground {
     background:
-      radial-gradient(120% 90% at 50% -10%, rgba(201, 162, 75, 0.1), transparent 55%),
-      radial-gradient(80% 60% at 50% 120%, rgba(201, 162, 75, 0.05), transparent 60%),
+      radial-gradient(120% 90% at 50% -10%, rgba(201, 162, 75, 0.07), transparent 55%),
+      radial-gradient(90% 70% at 50% 120%, rgba(110, 83, 35, 0.16), transparent 62%),
       #0b0a08;
-  }
-
-  .glass {
-    backdrop-filter: blur(18px);
-    background-color: rgba(11, 10, 8, 0.82);
-  }
-
-  .glass-light {
-    backdrop-filter: blur(12px);
-    background-color: rgba(11, 10, 8, 0.62);
   }
 
   /* Foil sheen sweep — applied on hover of primary marks */
@@ -267,6 +508,14 @@
     background-size: 200% 100%;
     animation: shimmer 2s linear infinite;
   }
+
+  /* GSAP 滚动入场的初始态。JS 未加载或被禁用时这些内容必须仍然可见，
+     所以初始态写在 [data-reveal] 上，由脚本在注册 ScrollTrigger 后才加 .is-armed。
+     顺序反过来（默认隐藏 + JS 显示）会让无 JS 环境和爬虫拿到一片空白。 */
+  [data-reveal].is-armed {
+    opacity: 0;
+    transform: translateY(24px);
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -285,11 +534,11 @@
   }
 
   .prose-custom h2 {
-    @apply mt-10 border-b border-border-default pb-2 text-xl font-semibold tracking-tight text-text-primary lg:text-2xl;
+    @apply mt-10 border-b border-border-default pb-2 font-display text-xl font-semibold tracking-tight text-text-primary lg:text-2xl;
   }
 
   .prose-custom h3 {
-    @apply mt-8 text-base font-semibold text-text-primary lg:text-lg;
+    @apply mt-8 font-display text-base font-semibold text-text-primary lg:text-lg;
   }
 
   /* 紧跟小标题的段落/列表不该再叠一层大间距 */
@@ -317,7 +566,7 @@
   }
 
   .prose-custom li::marker {
-    @apply text-text-muted;
+    @apply text-gold/60;
   }
 
   .prose-custom strong {
@@ -337,7 +586,7 @@
   }
 
   .prose-custom pre {
-    @apply overflow-x-auto rounded-sm border border-border-default bg-bg-tertiary p-4;
+    @apply overflow-x-auto rounded-md border border-border-default bg-bg-tertiary p-4;
   }
 
   .prose-custom hr {
@@ -346,7 +595,7 @@
 
   /* 正文配图：不得超出 68ch 的阅读栏宽，也不许拉伸变形 */
   .prose-custom img {
-    @apply my-6 h-auto max-w-full rounded-sm border border-border-default;
+    @apply my-6 h-auto max-w-full rounded-lg border border-border-default;
   }
 
   /* 结尾免责声明：明显弱于正文，但仍可读 */

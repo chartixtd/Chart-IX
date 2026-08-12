@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { sentimentColor } from "@/lib/chart-theme";
 
 interface FearGreedResponse {
   data: {
@@ -18,12 +19,28 @@ async function fetchFearGreed(): Promise<FearGreedResponse> {
   return res.json();
 }
 
-function getColor(value: number): string {
-  if (value <= 25) return "#ef4444";
-  if (value <= 45) return "#f97316";
-  if (value <= 55) return "#eab308";
-  if (value <= 75) return "#84cc16";
-  return "#22c55e";
+// 色带定义在 @/lib/chart-theme——原来那条是 Tailwind 默认色，冷绿冷黄在暖底上发脏
+const getColor = sentimentColor;
+
+/** 情绪表盘图标。这里原本用的是一个 emoji 字符——emoji 跨平台字形不一致、
+ *  无法用设计 token 控制颜色与尺寸，站内一律不作结构性图标使用。 */
+function SentimentIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M3.5 15a8.5 8.5 0 0 1 17 0" />
+      <path d="m12 15 4.5-5" />
+      <circle cx="12" cy="15" r="1.3" />
+    </svg>
+  );
 }
 
 /** SVG semi-circle gauge */
@@ -47,7 +64,7 @@ function Gauge({ value, size = 80 }: { value: number; size?: number }) {
       <path
         d={`M ${strokeWidth} ${cy} A ${radius} ${radius} 0 0 1 ${size - strokeWidth} ${cy}`}
         fill="none"
-        stroke="#2a2a2a"
+        stroke="#2C271C"
         strokeWidth={strokeWidth}
         strokeLinecap="round"
         transform={`rotate(180, ${cx}, ${cy})`}
@@ -65,10 +82,10 @@ function Gauge({ value, size = 80 }: { value: number; size?: number }) {
         className="transition-all duration-700 ease-out"
       />
       {/* Pointer dot */}
-      <circle cx={px} cy={py} r="3" fill="white" />
+      <circle cx={px} cy={py} r="3" fill="#F5F0E6" />
       {/* Pointer line from center */}
-      <line x1={cx} y1={cy} x2={px} y2={py} stroke="white" strokeWidth="1.5" />
-      <circle cx={cx} cy={cy} r="2.5" fill="white" />
+      <line x1={cx} y1={cy} x2={px} y2={py} stroke="#F5F0E6" strokeWidth="1.5" />
+      <circle cx={cx} cy={cy} r="2.5" fill="#F5F0E6" />
     </svg>
   );
 }
@@ -94,7 +111,7 @@ export function FearGreedIndex({ compact = false }: FearGreedIndexProps) {
         className="flex shrink-0 items-center gap-1.5 rounded-xs px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
         title="Fear & Greed Index"
       >
-        <span className="text-sm">&#x1F9D0;</span>
+        <SentimentIcon className="h-4 w-4" />
         {isLoading ? (
           <span className="h-3 w-8 animate-pulse rounded bg-bg-tertiary" />
         ) : isError ? (
@@ -114,7 +131,7 @@ export function FearGreedIndex({ compact = false }: FearGreedIndexProps) {
   return (
     <div className={cn(
       "flex shrink-0 items-center gap-2 rounded-xs border px-2.5 py-1.5 text-xs",
-      "border-border-default bg-bg-secondary/80 backdrop-blur-sm"
+      "border-border-default bg-bg-secondary"
     )}>
       {compact ? (
         <button
@@ -125,7 +142,7 @@ export function FearGreedIndex({ compact = false }: FearGreedIndexProps) {
           ×
         </button>
       ) : (
-        <span className="text-text-muted">🧐</span>
+        <SentimentIcon className="h-4 w-4 text-text-muted" />
       )}
 
       {isLoading ? (

@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { createClient } from "@/lib/supabase/client";
+import { Icon } from "@/components/ui/Icon";
 
 interface ApiKeyRow {
   id: string;
@@ -160,7 +161,7 @@ export default function ApiKeysPage() {
     <div className="mx-auto max-w-3xl px-4 py-6 lg:py-12">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">{t("title")}</h1>
+          <h1 className="text-2xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
           <p className="mt-1 text-sm text-text-secondary">{t("description")}</p>
         </div>
         <Button onClick={() => setShowAddModal(true)} className="w-full sm:w-auto">{t("add_key")}</Button>
@@ -183,16 +184,16 @@ export default function ApiKeysPage() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate text-sm font-semibold text-text-primary">{key.label}</h3>
+                    <h3 className="truncate text-sm font-semibold text-text-primary font-display tracking-tight">{key.label}</h3>
                     {key.is_primary && (
                       <Badge variant="gold" size="sm">{t("primary")}</Badge>
                     )}
                     {/* spot and futures permissions shown separately: a key with only futures enabled shouldn't be lumped in as "invalid" */}
                     <Badge variant={key.spot_ok ? "green" : "red"} size="sm">
-                      {t("spot")} {key.spot_ok ? "✓" : "✗"}
+                      {t("spot")} <Icon name={key.spot_ok ? "check" : "x"} className="ml-1 h-3 w-3" strokeWidth={2.2} />
                     </Badge>
                     <Badge variant={key.futures_ok ? "green" : "red"} size="sm">
-                      {t("futures")} {key.futures_ok ? "✓" : "✗"}
+                      {t("futures")} <Icon name={key.futures_ok ? "check" : "x"} className="ml-1 h-3 w-3" strokeWidth={2.2} />
                     </Badge>
                   </div>
                   <div className="space-y-1">

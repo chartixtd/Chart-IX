@@ -47,7 +47,7 @@ export function CommunityFeed() {
       {isPending && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="overflow-hidden rounded-md border border-border-default bg-bg-secondary">
+            <div key={i} className="overflow-hidden rounded-md panel">
               <Skeleton className="aspect-video w-full rounded-none" />
               <div className="space-y-2 p-4">
                 <Skeleton className="h-3 w-20" />

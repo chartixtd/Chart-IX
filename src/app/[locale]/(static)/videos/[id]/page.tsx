@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { VideoQuiz } from "@/components/video/VideoQuiz";
 import { VideoNotes } from "@/components/video/VideoNotes";
 import type { Video, Locale } from "@/types";
+import { Icon } from "@/components/ui/Icon";
 
 const supabase = createClient();
 
@@ -169,8 +170,10 @@ export default function VideoDetailPage() {
     return (
       <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <span className="text-4xl">⚠️</span>
-          <h2 className="mt-4 text-xl font-semibold text-text-primary">Failed to load video</h2>
+          <span className="flex h-14 w-14 items-center justify-center rounded-full border border-gold/25 bg-gold/[0.06] text-gold">
+            <Icon name="alert" className="h-6 w-6" />
+          </span>
+          <h2 className="mt-5 font-display text-xl font-semibold tracking-tight text-text-primary">Failed to load video</h2>
           <p className="mt-2 text-text-muted">{error}</p>
           <Link href={`/${locale}/videos`}>
             <Button variant="outline" size="md" className="mt-6">
@@ -187,8 +190,10 @@ export default function VideoDetailPage() {
     return (
       <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <span className="text-4xl">🎬</span>
-          <h2 className="mt-4 text-xl font-semibold text-text-primary">Video not found</h2>
+          <span className="flex h-14 w-14 items-center justify-center rounded-full border border-gold/25 bg-gold/[0.06] text-gold">
+            <Icon name="video" className="h-6 w-6" />
+          </span>
+          <h2 className="mt-5 font-display text-xl font-semibold tracking-tight text-text-primary">Video not found</h2>
           <p className="mt-2 text-text-muted">This video may have been removed or is not available.</p>
           <Link href={`/${locale}/videos`}>
             <Button variant="outline" size="md" className="mt-6">
@@ -238,7 +243,7 @@ export default function VideoDetailPage() {
             <div className="rounded-sm border border-gold/30 bg-gold/10 px-4 py-2 text-sm font-medium text-gold mb-4">
               {t("preview_ends")}
             </div>
-            <h3 className="text-xl font-semibold text-white">{t("upgrade_to_watch")}</h3>
+            <h3 className="text-xl font-semibold text-white font-display tracking-tight">{t("upgrade_to_watch")}</h3>
             <Link href={`/${locale}/upgrade`} className="mt-6">
               <Button variant="primary" size="lg">
                 ⚡ Upgrade to Pro
@@ -273,7 +278,7 @@ export default function VideoDetailPage() {
       {/* Video info */}
       <div className="mt-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <h1 className="text-2xl font-bold text-text-primary">
+          <h1 className="text-2xl font-bold text-text-primary font-display tracking-tight">
             {video.title[locale] ?? video.title["en-US"] ?? "Untitled"}
           </h1>
           <Badge variant={video.tier_required === "pro" ? "gold" : "gray"} size="md">
@@ -308,7 +313,7 @@ export default function VideoDetailPage() {
         {video.description && (
           // 阅读宽度收窄到 68ch，正文用 15px 行高 1.75，照顾移动端中文长文阅读
           <div className="mx-auto max-w-[68ch] py-6 lg:py-12">
-            <h2 className="text-lg font-semibold text-text-primary">{t("description")}</h2>
+            <h2 className="text-lg font-semibold text-text-primary font-display tracking-tight">{t("description")}</h2>
             <p className="mt-2 whitespace-pre-wrap text-[15px] leading-[1.75] text-text-secondary lg:text-base">
               {video.description[locale] ?? video.description["en-US"] ?? ""}
             </p>

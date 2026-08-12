@@ -221,14 +221,14 @@ export const FuturesPositionRow = memo(function FuturesPositionRow({
               {formatBySpec(parseFloat(currentTp), spec?.pricePrecision)}
             </span>
           ) : (
-            <span className="text-[11px] text-text-muted/60">—</span>
+            <span className="text-[11px] text-text-muted">—</span>
           )}
           {currentSl ? (
             <span className="rounded-xs bg-danger-bg px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-danger">
               {formatBySpec(parseFloat(currentSl), spec?.pricePrecision)}
             </span>
           ) : (
-            <span className="text-[11px] text-text-muted/60">—</span>
+            <span className="text-[11px] text-text-muted">—</span>
           )}
         </div>
 
@@ -272,7 +272,7 @@ export const FuturesPositionRow = memo(function FuturesPositionRow({
               onChange={(e) => setTpValue(e.target.value)}
               placeholder={mark.toFixed(4)}
               className={cn(
-                "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted/60",
+                "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted",
                 tpValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-tertiary text-text-primary"
               )}
             />
@@ -297,7 +297,7 @@ export const FuturesPositionRow = memo(function FuturesPositionRow({
               onChange={(e) => setSlValue(e.target.value)}
               placeholder={mark.toFixed(4)}
               className={cn(
-                "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted/60",
+                "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted",
                 slValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-tertiary text-text-primary"
               )}
             />

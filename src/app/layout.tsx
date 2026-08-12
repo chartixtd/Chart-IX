@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Marcellus } from "next/font/google";
+import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import { SITE_URL } from "@/lib/constants";
 import "./globals.css";
 
@@ -17,11 +17,15 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
 });
 
-const marcellus = Marcellus({
+// 展示字体：几何无衬线。奢感全部交给材质（金箔/黑曜石玻璃），
+// 字体只负责当代性与超大字号下的体量——这是细笔画衬线做不到的。
+const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
-  weight: ["400"],
+  // 400 必须一起加载：站内有 font-display 但没写字重的标题，缺 400 时浏览器会
+  // 回退到最近的 500，同一页上就会出现两种没人指定过的字重。
+  weight: ["400", "500", "600", "700"],
   display: "swap",
-  variable: "--font-marcellus",
+  variable: "--font-space-grotesk",
 });
 
 export const metadata: Metadata = {
@@ -67,13 +71,17 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${inter.variable} ${jetbrainsMono.variable} ${marcellus.variable}`}
+      className={`dark ${inter.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable}`}
       suppressHydrationWarning
     >
       <head>
-        {/* CJK fonts (Noto Sans/Serif SC) aren't offered as latin-only subsets by next/font,
+        {/* CJK fonts (Noto Sans SC) aren't offered as latin-only subsets by next/font,
             so they stay on Google's CDN to keep full Chinese glyph coverage; Inter/JetBrains
-            Mono/Marcellus are self-hosted above via next/font.
+            Mono/Space Grotesk are self-hosted above via next/font.
+
+            Noto Serif SC was dropped when the display face moved from Marcellus to
+            Space Grotesk — CJK display headings now fall back to Noto Sans SC 700,
+            which removes a second multi-megabyte CJK download outright.
 
             Loaded as non-render-blocking: media="print" makes the browser fetch it at low
             priority without gating First Paint on a round trip to Google's CDN, then the
@@ -86,7 +94,7 @@ export default function RootLayout({
         <link
           id="noto-sc-stylesheet"
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap"
           media="print"
           // The inline script below can flip this to media="all" in the live DOM
           // before React hydrates, which would otherwise read as a hydration
@@ -102,7 +110,7 @@ export default function RootLayout({
         <noscript>
           <link
             rel="stylesheet"
-            href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap"
           />
         </noscript>
         <meta name="view-transition" content="same-origin" />

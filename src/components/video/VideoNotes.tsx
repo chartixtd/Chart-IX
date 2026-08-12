@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
 
 interface VideoNote {
   id: string;
@@ -168,7 +169,10 @@ export function VideoNotes({ videoId, videoRef }: VideoNotesProps) {
         className="flex w-full items-center justify-between text-left"
         onClick={() => setExpanded((v) => !v)}
       >
-        <h2 className="text-lg font-semibold text-text-primary">📝 我的笔记</h2>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight text-text-primary">
+          <Icon name="note" className="h-5 w-5 text-gold" />
+          我的笔记
+        </h2>
         <svg
           className={cn(
             "h-5 w-5 text-text-muted transition-transform",

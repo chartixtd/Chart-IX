@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CommunityFeed } from "@/components/community/CommunityFeed";
 import { cn } from "@/lib/utils";
 import type { Article, ArticleCategory, Locale } from "@/types";
+import { Icon } from "@/components/ui/Icon";
 
 interface ArticlesClientProps {
   articles: Article[];
@@ -55,10 +56,10 @@ export default function ArticlesClient({
   if (fetchError) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-12">
-        <h1 className="text-3xl font-bold text-text-primary">{t("title")}</h1>
+        <h1 className="text-3xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
         <div className="mt-8">
           <EmptyState
-            icon={<span className="text-4xl">⚠️</span>}
+            icon={<Icon name="alert" className="h-6 w-6" />}
             title="Failed to load articles"
             description={fetchError}
           />
@@ -73,7 +74,7 @@ export default function ArticlesClient({
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12">
-      <h1 className="text-3xl font-bold text-text-primary">{t("title")}</h1>
+      <h1 className="text-3xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
 
       {/* Articles vs. user-posted Community — kept as separate tabs rather than
           one merged feed, so curated multi-locale articles don't get buried
@@ -209,7 +210,7 @@ export default function ArticlesClient({
         /* Empty state */
         <div className="mt-8">
           <EmptyState
-            icon={<span className="text-4xl">📰</span>}
+            icon={<Icon name="article" className="h-6 w-6" />}
             title={articles.length > 0 ? t("empty_search") : t("no_articles")}
             description={
               categoryParam && selectedCategory

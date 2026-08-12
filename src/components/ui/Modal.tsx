@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 
 interface ModalProps {
   open: boolean;
@@ -32,6 +32,8 @@ export function Modal({
   size = "md",
   variant = "dialog",
 }: ModalProps) {
+  const titleId = useId();
+
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden";
@@ -62,24 +64,28 @@ export function Modal({
         isSheet ? "items-end justify-center lg:items-center lg:p-4" : "items-center justify-center p-4"
       )}
     >
+      {/* 遮罩：blur 是"背景可被拨走"的语义提示，不是装饰。60% 黑保证前景可读。 */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 animate-fade-in bg-black/65 backdrop-blur-sm"
         onClick={onClose}
       />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
         className={cn(
-          "relative z-10 w-full border border-border-default bg-bg-secondary shadow-modal",
+          "obsidian-glass relative z-10 w-full",
           isSheet
             ? [
                 // 底部 sheet：只有上方两角圆润，底部留出系统安全区
-                "max-h-[88dvh] overflow-y-auto rounded-t-lg pb-safe-b animate-sheet-in",
-                "lg:max-h-[85vh] lg:rounded-lg lg:pb-0 lg:animate-scale-in",
+                "max-h-[88dvh] animate-sheet-in overflow-y-auto rounded-t-2xl pb-safe-b",
+                "lg:max-h-[85vh] lg:animate-scale-in lg:rounded-xl lg:pb-0",
                 sizeClasses[size],
               ]
             : [
                 // 内容超出视口时面板自己滚动。少了这条，长内容会从居中位置往
                 // 上下两头同时溢出，而 body 已被锁住滚动，顶部与底部就再也够不着。
-                "max-h-[90dvh] overflow-y-auto rounded-lg animate-scale-in",
+                "max-h-[90dvh] animate-scale-in overflow-y-auto rounded-xl",
                 sizeClasses[size],
               ],
           className
@@ -93,12 +99,14 @@ export function Modal({
         )}
 
         {title && (
-          <div className="flex items-center justify-between border-b border-border-default px-6 py-4">
-            <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
+          <div className="flex items-center justify-between border-b border-border-default/70 px-6 py-4">
+            <h2 id={titleId} className="font-display text-lg font-semibold tracking-tight text-text-primary">
+              {title}
+            </h2>
             <button
               onClick={onClose}
               aria-label="Close"
-              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-bg-tertiary hover:text-text-primary"
+              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/70"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

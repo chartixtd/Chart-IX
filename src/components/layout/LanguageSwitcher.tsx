@@ -33,7 +33,7 @@ export function LanguageSwitcher() {
     <select
       value={locale}
       onChange={(e) => switchLanguage(e.target.value)}
-      className="rounded-sm border border-border-default bg-bg-tertiary px-2 py-1 text-xs text-text-secondary hover:border-border-hover focus:outline-none focus:ring-1 focus:ring-gold/50 cursor-pointer"
+      className="cursor-pointer rounded-sm border border-border-default bg-bg-tertiary px-2 py-1 text-xs text-text-secondary shadow-[inset_0_1px_0_rgba(0,0,0,0.35)] transition-colors hover:border-border-hover focus:outline-none focus:ring-1 focus:ring-gold/60"
     >
       {options.map((code) => (
         <option key={code} value={code}>

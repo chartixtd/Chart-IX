@@ -71,7 +71,7 @@ export function PriceFields(p: PriceFieldsProps) {
             placeholder="1" inputMode="decimal" value={p.callbackPercent}
             onChange={(e) => p.onCallbackPercentChange(e.target.value)} className="text-sm"
           />
-          <p className="mt-0.5 text-xs text-text-muted/60">
+          <p className="mt-0.5 text-xs text-text-muted">
             {t("trading.callback_rate_hint", { pct: p.callbackPercent || "1" })}
           </p>
         </div>

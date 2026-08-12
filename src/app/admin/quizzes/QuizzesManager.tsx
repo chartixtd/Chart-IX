@@ -9,6 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import type { Quiz, QuizQuestion, Video } from "@/types";
+import { Icon } from "@/components/ui/Icon";
 
 type SlimVideo = Pick<Video, "id" | "title" | "is_deleted">;
 
@@ -193,7 +194,7 @@ export function QuizzesManager({ videos, quizzes, questions }: QuizzesManagerPro
                         {quiz ? "编辑" : "创建小测"}
                       </Button>
                       {quiz && (
-                        <Button size="sm" variant="ghost" className="text-red-500" onClick={() => setConfirmDelete({ quizId: quiz.id })}>
+                        <Button size="sm" variant="ghost" className="text-danger" onClick={() => setConfirmDelete({ quizId: quiz.id })}>
                           删除
                         </Button>
                       )}
@@ -232,7 +233,7 @@ export function QuizzesManager({ videos, quizzes, questions }: QuizzesManagerPro
               <div key={i} className="space-y-2 rounded-sm border border-border-default p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-text-secondary">题目 {i + 1}</span>
-                  <button onClick={() => removeQuestion(i)} className="text-xs text-red-400 hover:text-red-300">删除题目</button>
+                  <button onClick={() => removeQuestion(i)} className="text-xs text-danger hover:text-danger">删除题目</button>
                 </div>
                 <Input placeholder="题干" value={q.text} onChange={(e) => updateQuestionText(i, e.target.value)} />
                 <div className="space-y-1.5">
@@ -251,7 +252,7 @@ export function QuizzesManager({ videos, quizzes, questions }: QuizzesManagerPro
                         className="flex-1"
                       />
                       {q.options.length > 2 && (
-                        <button onClick={() => removeOption(i, oi)} className="text-xs text-red-400 hover:text-red-300" aria-label="删除选项">✕</button>
+                        <button onClick={() => removeOption(i, oi)} className="text-xs text-danger hover:text-danger" aria-label="删除选项"><Icon name="x" className="h-3.5 w-3.5" strokeWidth={2.2} /></button>
                       )}
                     </div>
                   ))}

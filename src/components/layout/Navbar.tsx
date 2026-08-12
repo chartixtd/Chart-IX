@@ -25,6 +25,13 @@ const NAV_HREF_OVERRIDES: Partial<Record<(typeof USER_NAV_ITEMS)[number], string
   tools: "/tools/position-size",
 };
 
+// 导航项的三段样式抽出来共用——upgrade / admin 两个特例链接必须和主导航
+// 长得一模一样，写三份迟早会漂移。
+const NAV_LINK =
+  "relative rounded-sm px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/70";
+const NAV_LINK_ACTIVE = "text-gold";
+const NAV_LINK_IDLE = "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary";
+
 export function Navbar() {
   const t = useTranslations("nav");
   const locale = useLocale();
@@ -56,12 +63,18 @@ export function Navbar() {
           href={`/${locale}${
             item === "home" ? "" : NAV_HREF_OVERRIDES[item] ?? `/${item}`
           }`}
-          className={cn(
-            "px-3 py-1.5 text-sm rounded-sm transition-colors",
-            active ? "text-gold bg-gold/10" : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
-          )}
+          aria-current={active ? "page" : undefined}
+          className={cn(NAV_LINK, active ? NAV_LINK_ACTIVE : NAV_LINK_IDLE)}
         >
           {t(item)}
+          {/* 当前位置用一条金箔下划线标出。只靠背景色块在深色底上太弱，
+              而下划线在三种语言的不同字宽下都能稳定读出"我在这里"。 */}
+          {active && (
+            <span
+              aria-hidden
+              className="foil absolute inset-x-3 -bottom-px h-[2px] rounded-none shadow-none"
+            />
+          )}
         </Link>
       );
     });
@@ -77,7 +90,9 @@ export function Navbar() {
   }, [locale, router]);
 
   return (
-    <header className="sticky top-0 z-40 hidden border-b border-border-default bg-bg-primary/80 backdrop-blur-md gpu lg:block">
+    // 顶栏是站内唯一常驻的玻璃面：它不高频重绘，blur 在这里是安全的。
+    // shadow-nav 那条 1px 金线是把导航从内容里"抬起来"的全部手段。
+    <header className="gpu sticky top-0 z-40 hidden border-b border-border-default bg-bg-primary/80 shadow-nav backdrop-blur-md lg:block">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         {/* Logo */}
         <Link href={auth.userId ? `/${locale}/dashboard` : `/${locale}`} className="flex items-center gap-2 shrink-0">
@@ -90,23 +105,28 @@ export function Navbar() {
           {showUpgrade && (
             <Link
               href={`/${locale}/upgrade`}
+              aria-current={segments.includes("upgrade") ? "page" : undefined}
               className={cn(
-                "px-3 py-1.5 text-sm rounded-sm transition-colors",
-                segments.includes("upgrade") ? "text-gold bg-gold/10" : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
+                NAV_LINK,
+                segments.includes("upgrade") ? NAV_LINK_ACTIVE : NAV_LINK_IDLE
               )}
             >
               {t("upgrade")}
+              {segments.includes("upgrade") && (
+                <span aria-hidden className="foil absolute inset-x-3 -bottom-px h-[2px] rounded-none shadow-none" />
+              )}
             </Link>
           )}
           {isAdmin && (
             <Link
               href="/admin"
-              className={cn(
-                "px-3 py-1.5 text-sm rounded-sm transition-colors",
-                segments[0] === "admin" ? "text-gold bg-gold/10" : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
-              )}
+              aria-current={segments[0] === "admin" ? "page" : undefined}
+              className={cn(NAV_LINK, segments[0] === "admin" ? NAV_LINK_ACTIVE : NAV_LINK_IDLE)}
             >
               {t("admin")}
+              {segments[0] === "admin" && (
+                <span aria-hidden className="foil absolute inset-x-3 -bottom-px h-[2px] rounded-none shadow-none" />
+              )}
             </Link>
           )}
         </nav>

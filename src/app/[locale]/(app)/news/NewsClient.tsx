@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { NewsItem, NewsLang } from "@/types";
+import { Icon } from "@/components/ui/Icon";
 
 interface NewsClientProps {
   initialItems: NewsItem[];
@@ -60,10 +61,10 @@ export default function NewsClient({ initialItems, fetchError: initialError, lan
   if (fetchError && items.length === 0) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-12">
-        <h1 className="text-3xl font-bold text-text-primary">{t("title")}</h1>
+        <h1 className="text-3xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
         <div className="mt-8">
           <EmptyState
-            icon={<span className="text-4xl">⚠️</span>}
+            icon={<Icon name="alert" className="h-6 w-6" />}
             title={t("fetch_error_title")}
             description={fetchError}
           />
@@ -76,7 +77,7 @@ export default function NewsClient({ initialItems, fetchError: initialError, lan
     <div className="mx-auto max-w-7xl px-4 py-12">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-text-primary">{t("title")}</h1>
+          <h1 className="text-3xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
           <p className="mt-1 text-sm text-text-secondary">{t("subtitle")}</p>
         </div>
       </div>
@@ -142,7 +143,7 @@ export default function NewsClient({ initialItems, fetchError: initialError, lan
         </div>
       ) : (
         <div className="mt-8">
-          <EmptyState icon={<span className="text-4xl">📰</span>} title={t("no_news")} />
+          <EmptyState icon={<Icon name="news" className="h-6 w-6" />} title={t("no_news")} />
         </div>
       )}
     </div>

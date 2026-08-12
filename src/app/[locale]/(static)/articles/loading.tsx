@@ -15,7 +15,7 @@ export default function ArticlesLoading() {
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="overflow-hidden rounded-md border border-border-default bg-bg-secondary"
+            className="overflow-hidden rounded-md panel"
           >
             <Skeleton className="aspect-video w-full rounded-none" />
             <div className="space-y-3 p-4">

@@ -82,7 +82,7 @@ function Stat({
   );
 
   const className = cn(
-    "rounded-lg border border-border-default bg-bg-secondary p-4 transition-colors",
+    "rounded-lg panel p-4 transition-colors",
     href && "hover:border-gold/40"
   );
 
@@ -98,7 +98,7 @@ function Stat({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-3">
-      <h2 className="text-sm font-semibold text-text-secondary">{title}</h2>
+      <h2 className="text-sm font-semibold text-text-secondary font-display tracking-tight">{title}</h2>
       {children}
     </section>
   );
@@ -125,7 +125,7 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text-primary">{t("dashboard")}</h1>
+        <h1 className="text-2xl font-bold text-text-primary font-display tracking-tight">{t("dashboard")}</h1>
         <button
           onClick={() => router.refresh()}
           title={t("refresh")}
@@ -147,10 +147,10 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
 
       <Section title={t("dash.users_title")}>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Stat label={t("total_users")} value={users.total} color="text-blue-400" href="/admin/users" />
+          <Stat label={t("total_users")} value={users.total} color="text-info" href="/admin/users" />
           <Stat label={t("free_users")} value={users.free} />
           <Stat label={t("pro_users")} value={users.pro} color="text-gold" />
-          <Stat label={t("new_today")} value={users.today} color="text-green-400" />
+          <Stat label={t("new_today")} value={users.today} color="text-success" />
           <Stat label={t("disabled")} value={users.disabled} color={users.disabled > 0 ? "text-danger" : undefined} />
         </div>
       </Section>
@@ -178,7 +178,7 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
       </Section>
 
       <Section title={t("dash.health_title")}>
-        <div className="rounded-lg border border-border-default bg-bg-secondary p-4">
+        <div className="rounded-lg panel p-4">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <span className="flex items-center gap-2 text-sm">
               <span className={cn("h-2 w-2 rounded-full", pushState.dot)} />
@@ -232,7 +232,7 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
       </Section>
 
       <Section title={t("dash.recent_activity_title")}>
-        <div className="rounded-lg border border-border-default bg-bg-secondary">
+        <div className="rounded-lg panel">
           {recentLogs.length === 0 ? (
             <p className="px-4 py-6 text-center text-xs text-text-muted">{t("logs_list.no_logs")}</p>
           ) : (

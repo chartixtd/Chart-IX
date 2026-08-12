@@ -66,7 +66,7 @@ export function CommunityPostClient({ postId }: { postId: string }) {
           <div className="p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold text-text-primary">{post.title}</h1>
+                <h1 className="text-xl font-semibold text-text-primary font-display tracking-tight">{post.title}</h1>
                 <p className="mt-1 text-xs text-text-muted">
                   {post.author?.display_name ?? t("anonymous")} · {formatRelativeTime(post.created_at, locale, t)}
                   {post.updated_at !== post.created_at && ` · ${t("edited")}`}

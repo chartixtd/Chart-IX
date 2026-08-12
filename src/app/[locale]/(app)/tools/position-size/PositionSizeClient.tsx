@@ -286,7 +286,7 @@ export default function PositionSizeClient() {
 
         {/* ── 结果 ── */}
         <Card className="space-y-4">
-          <h2 className="text-sm font-medium text-text-primary">{t("results")}</h2>
+          <h2 className="text-sm font-medium text-text-primary font-display tracking-tight">{t("results")}</h2>
 
           {!result.ok ? (
             <p className={cn("text-sm", touched ? "text-danger" : "text-text-muted")}>
@@ -296,7 +296,7 @@ export default function PositionSizeClient() {
             <>
               <div className="border-b border-border-default pb-4">
                 <p className="text-xs text-text-muted">{t("position_size")}</p>
-                <p className="mt-1 font-display text-3xl tracking-tighter text-gold">
+                <p className="mt-1 font-display text-3xl tracking-tighter text-gold font-bold">
                   {fmt(result.lots ?? result.units, result.lots !== null ? 3 : 2)}{" "}
                   <span className="text-base text-text-secondary">{unitLabel}</span>
                 </p>

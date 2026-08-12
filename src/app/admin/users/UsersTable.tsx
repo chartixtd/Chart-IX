@@ -195,7 +195,7 @@ export function UsersTable({ users, currentPage, totalPages, search }: UsersTabl
                     size="sm"
                     variant="ghost"
                     onClick={() => updateUser(u.id, { is_disabled: !u.is_disabled })}
-                    className={u.is_disabled ? "text-red-400" : "text-green-400"}
+                    className={u.is_disabled ? "text-danger" : "text-success"}
                   >
                     {u.is_disabled ? t("users_list.yes") : t("users_list.no")}
                   </Button>
@@ -209,7 +209,7 @@ export function UsersTable({ users, currentPage, totalPages, search }: UsersTabl
                       className="rounded border border-border-default bg-bg-tertiary px-2 py-1 text-xs text-text-primary"
                     />
                     {!u.pro_expires_at && (
-                      <span className="inline-flex items-center whitespace-nowrap rounded bg-green-400/10 px-2 py-0.5 text-xs font-medium text-green-400">
+                      <span className="inline-flex items-center whitespace-nowrap rounded bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
                         Permanent
                       </span>
                     )}
@@ -358,5 +358,5 @@ export function UsersTable({ users, currentPage, totalPages, search }: UsersTabl
 
 export function UsersPageHeading() {
   const t = useTranslations("admin");
-  return <h1 className="mb-6 text-2xl font-bold text-text-primary">{t("users_list.title")}</h1>;
+  return <h1 className="mb-6 text-2xl font-bold text-text-primary font-display tracking-tight">{t("users_list.title")}</h1>;
 }

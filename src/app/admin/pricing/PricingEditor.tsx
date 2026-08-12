@@ -164,10 +164,10 @@ export function PricingEditor({ pricing }: { pricing: PricingConfig[] }) {
           const isDirty = editing[item.id] !== undefined;
 
           return (
-            <Card key={item.id} padding="md" hover>
+            <Card tone="data" key={item.id} padding="md" hover>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-text-primary uppercase">
+                  <h3 className="text-sm font-semibold text-text-primary uppercase font-display tracking-tight">
                     {item.plan_type}
                   </h3>
                   <label className="relative inline-flex cursor-pointer items-center">

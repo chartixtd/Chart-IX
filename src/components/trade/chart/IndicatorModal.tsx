@@ -10,6 +10,7 @@ import { useChartStore, resolveDef } from "@/stores/chartStore";
 import { cn } from "@/lib/utils";
 import { ColorPicker } from "./ColorPicker";
 import { LineStyleControl, type DrawingLineStyle } from "./LineStyleControl";
+import { Icon } from "@/components/ui/Icon";
 
 const CATEGORIES: (IndicatorCategory | "all")[] = ["all", "trend", "momentum", "volatility", "volume"];
 
@@ -174,28 +175,31 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                       <button
                         onClick={() => toggleIndicatorVisible(a.instanceId)}
                         title={a.visible ? t("hide") : t("show")}
-                        className="shrink-0 text-xs text-text-muted hover:text-text-primary"
+                        aria-label={a.visible ? t("hide") : t("show")}
+                        className="shrink-0 text-text-muted hover:text-text-primary"
                       >
-                        {a.visible ? "👁" : "🚫"}
+                        <Icon name={a.visible ? "eye" : "eye-off"} className="h-3.5 w-3.5" />
                       </button>
                       {(def.params.length > 0 || def.plots.length > 0) && (
                         <button
                           onClick={() => setEditingId(isEditing ? null : a.instanceId)}
                           title={t("settings")}
+                          aria-label={t("settings")}
                           className={cn(
-                            "shrink-0 text-xs hover:text-text-primary",
+                            "shrink-0 hover:text-text-primary",
                             isEditing ? "text-gold" : "text-text-muted"
                           )}
                         >
-                          ⚙
+                          <Icon name="settings" className="h-3.5 w-3.5" />
                         </button>
                       )}
                       <button
                         onClick={() => removeIndicator(a.instanceId)}
                         title={t("remove")}
-                        className="shrink-0 text-xs text-text-muted hover:text-danger"
+                        aria-label={t("remove")}
+                        className="shrink-0 text-text-muted hover:text-danger"
                       >
-                        ✕
+                        <Icon name="x" className="h-3.5 w-3.5" strokeWidth={2.2} />
                       </button>
                     </div>
 

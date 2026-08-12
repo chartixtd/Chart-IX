@@ -12,7 +12,7 @@ export async function LearnHub({ locale }: { locale: string }) {
 
   return (
     <>
-      <h1 className="font-display text-3xl tracking-tighter text-text-primary">{t("hub_title")}</h1>
+      <h1 className="font-display text-3xl tracking-tighter text-text-primary font-bold">{t("hub_title")}</h1>
       <p className="mt-2 text-sm text-text-secondary">{t("hub_subtitle")}</p>
 
       {/* 三个分区入口用发丝线台账列表，不做卡片堆叠 */}

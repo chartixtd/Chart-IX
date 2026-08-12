@@ -26,7 +26,7 @@ export default async function AdminVideosPage() {
     <div>
       <VideosHeading />
       {error ? (
-        <div className="text-red-400">Failed to load videos. Please try again later.</div>
+        <div className="text-danger">Failed to load videos. Please try again later.</div>
       ) : (
         <VideosManager videos={videos} categories={categories} />
       )}

@@ -24,7 +24,7 @@ export default async function AdminPricingPage() {
     .order("plan_type", { ascending: true });
 
   if (error) {
-    return <div className="text-red-400">Error loading pricing: {error.message}</div>;
+    return <div className="text-danger">Error loading pricing: {error.message}</div>;
   }
 
   return (

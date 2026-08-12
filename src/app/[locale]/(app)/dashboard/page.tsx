@@ -1,13 +1,14 @@
 /**
- * DIRECTION CONTRACT — "我的主页" restructure (surface-level, established world)
- * THESIS: this is a private-bank statement of one account, not a card-grid
- *   dashboard. It refuses the four-tile-plus-emoji-stats pattern the page
- *   shipped with. One account, one ledger, one page — read top to bottom
- *   like a monthly statement, not scanned as a grid of widgets.
- * OWN-WORLD: inherits DESIGN.md as-is — warm charcoal ground, engraved
- *   champagne gold, Marcellus display for the headline figure, hairline-gold
- *   rules dividing sections instead of card borders, JetBrains Mono for every
- *   figure. No emoji, no colored pill stat tiles, no card-grid page structure.
+ * DIRECTION CONTRACT — "我的主页"（Obsidian & Gilt 版）
+ * THESIS: 账户对账单与 Bento 各占一半，按内容性质分工，而不是二选一。
+ *   - 时间序台账（成交 + 成就）**保持台账**：它是按时间读的流水，切成网格
+ *     会强迫读者在格子间跳读，比一条竖排的流水更难扫。
+ *   - 概览类内容（继续学习 / 自选行情 / 最新内容 / 成就墙）改**非对称 Bento**：
+ *     它们彼此独立、没有先后关系，网格反而比上下堆叠更快找到目标。
+ *   早前版本整页拒绝卡片；改版后这条收窄为"只在流水类内容上拒绝"。
+ * OWN-WORLD: 暖黑曜石底、镌刻香槟金、Space Grotesk 展示字承载头部数字、
+ *   发丝金分隔线划分区段、JetBrains Mono 承载所有数值。
+ *   不用 emoji，不用彩色药丸状态块。
  * STORY: visitor understands this is their account statement, not a widget
  *   board; believes their standing (paper equity, real trading activity,
  *   learning progress) is being tracked precisely; acts by continuing to
@@ -17,9 +18,7 @@
  *   unified chronological Ledger merging real trade fills and achievement
  *   unlocks → hairline → Continue Learning / Watchlist two-up → hairline →
  *   Latest Content two-up.
- * FORM: surface-level restructure inside the established world (new-work.md
- *   §3, "create a whole surface inside an established world"); no new tokens,
- *   no DESIGN.md change.
+ * FORM: 在已确立的世界里做表层重构；不新增 token。
  */
 "use client";
 
@@ -46,6 +45,7 @@ import { ShareCardModal } from "@/components/dashboard/ShareCardModal";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { Locale, Order } from "@/types";
+import { Icon } from "@/components/ui/Icon";
 
 type LedgerEntry =
   | { kind: "trade"; id: string; date: string; order: Order }
@@ -228,7 +228,7 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-5xl px-4 py-12 lg:py-16">
       {/* Masthead */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-        <h1 className="font-display text-3xl tracking-tight text-text-primary">
+        <h1 className="font-display text-3xl tracking-tight text-text-primary font-bold">
           {t("welcome")}{displayName ? `, ${displayName}` : ""}
         </h1>
         {statementPeriod && (
@@ -277,7 +277,7 @@ export default function DashboardPage() {
                 <Skeleton className="h-14 w-64" />
               ) : liveNotConnected ? (
                 <div>
-                  <div className="font-display text-3xl tracking-tight text-text-muted md:text-4xl">
+                  <div className="font-display text-3xl tracking-tight text-text-muted md:text-4xl font-bold">
                     {t("not_connected")}
                   </div>
                   <Link href={`/${locale}/settings/api-keys`} className="mt-2 inline-block text-sm font-medium text-gold hover:underline">
@@ -287,7 +287,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="min-w-0">
                   {/* 大额权益（六位数以上）在窄屏上以 5xl 显示会顶到边缘，缩到 4xl 并允许极端情况下断行，避免撑破容器造成横向滚动 */}
-                  <div className="break-words font-display text-4xl tracking-tight text-text-primary tabular-nums sm:text-5xl md:text-6xl">
+                  <div className="break-words font-display text-4xl tracking-tight text-text-primary tabular-nums sm:text-5xl md:text-6xl font-bold">
                     {formatPrice(liveTotalValue)}
                     <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
                   </div>
@@ -349,7 +349,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="min-w-0">
                   {/* 同上：大额权益换算后可能是六位数以上，窄屏先降级到 4xl 并允许断行兜底 */}
-                  <div className="break-words font-display text-4xl tracking-tight text-text-primary tabular-nums sm:text-5xl md:text-6xl">
+                  <div className="break-words font-display text-4xl tracking-tight text-text-primary tabular-nums sm:text-5xl md:text-6xl font-bold">
                     {formatPrice(paperTotalValue)}
                     <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
                   </div>
@@ -407,7 +407,7 @@ export default function DashboardPage() {
       {/* Unified ledger */}
       <section className="mt-10">
         <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-xl tracking-tight text-text-primary">{t("ledger_title")}</h2>
+          <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("ledger_title")}</h2>
           <Link href={`/${locale}/orders`} className="text-xs font-medium text-gold hover:underline">
             {t("view_all_orders_cta")} →
           </Link>
@@ -434,15 +434,15 @@ export default function DashboardPage() {
 
       <div className="hairline-gold mt-10" />
 
-      {/* Continue learning + watchlist */}
-      <section className="mt-10 grid gap-10 lg:grid-cols-2">
-        <div>
+      {/* 继续学习 + 自选行情 —— Bento 起点 */}
+      <section className="mt-10 grid gap-4 sm:grid-cols-2">
+        <div className="obsidian-glass min-w-0 rounded-xl p-5">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-display text-xl tracking-tight text-text-primary">{t("continue_learning_title")}</h2>
+            <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("continue_learning_title")}</h2>
             {/* 纯箭头图标链接，视觉上很小；移动端补足到 44px 触控高度，桌面端不变 */}
             <Link href={`/${locale}/videos`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
-          <div className="mt-4 border-t border-border-default">
+          <div className="mt-4 border-t border-border-default/70">
             {continueWatchingPending ? (
               <Skeleton className="mt-4 h-16" />
             ) : !continueWatching || continueWatching.length === 0 ? (
@@ -480,12 +480,12 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div>
+        <div className="obsidian-glass min-w-0 rounded-xl p-5">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-display text-xl tracking-tight text-text-primary">{t("favorites_title")}</h2>
+            <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("favorites_title")}</h2>
             <Link href={`/${locale}/trade`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
-          <div className="mt-4 border-t border-border-default">
+          <div className="mt-4 border-t border-border-default/70">
             {favorites.length === 0 ? (
               <div className="pt-4">
                 <p className="text-xs text-text-muted">{t("favorites_empty")}</p>
@@ -504,14 +504,14 @@ export default function DashboardPage() {
 
       <div className="hairline-gold mt-10" />
 
-      {/* Latest content */}
-      <section className="mt-10 grid gap-10 lg:grid-cols-2">
-        <div>
+      {/* 最新内容 */}
+      <section className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="obsidian-glass min-w-0 rounded-xl p-5">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-display text-xl tracking-tight text-text-primary">{t("latest_videos_title")}</h2>
+            <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("latest_videos_title")}</h2>
             <Link href={`/${locale}/videos`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
-          <div className="mt-4 border-t border-border-default">
+          <div className="mt-4 border-t border-border-default/70">
             {latestVideosPending ? (
               <Skeleton className="mt-4 h-24" />
             ) : (
@@ -533,7 +533,7 @@ export default function DashboardPage() {
                       />
                     )}
                   </div>
-                  <span className="truncate text-sm text-text-secondary hover:text-gold">
+                  <span className="block min-w-0 flex-1 truncate text-sm text-text-secondary hover:text-gold">
                     {video.title[locale] ?? video.title["en-US"]}
                   </span>
                 </Link>
@@ -542,12 +542,12 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div>
+        <div className="obsidian-glass min-w-0 rounded-xl p-5">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-display text-xl tracking-tight text-text-primary">{t("latest_articles_title")}</h2>
+            <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("latest_articles_title")}</h2>
             <Link href={`/${locale}/articles`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
           </div>
-          <div className="mt-4 border-t border-border-default">
+          <div className="mt-4 border-t border-border-default/70">
             {latestArticlesPending ? (
               <Skeleton className="mt-4 h-24" />
             ) : (
@@ -557,7 +557,7 @@ export default function DashboardPage() {
                   href={`/${locale}/articles/${article.slug}`}
                   className="block border-b border-border-default py-3 first:pt-4"
                 >
-                  <span className="truncate text-sm text-text-secondary hover:text-gold">
+                  <span className="block min-w-0 flex-1 truncate text-sm text-text-secondary hover:text-gold">
                     {article.title[locale] ?? article.title["en-US"]}
                   </span>
                 </Link>
@@ -573,7 +573,7 @@ export default function DashboardPage() {
           <div className="hairline-gold mt-10" />
           <section className="mt-10">
             <div className="flex items-baseline justify-between">
-              <h2 className="font-display text-xl tracking-tight text-text-primary">{t("achievements_title")}</h2>
+              <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("achievements_title")}</h2>
               <span className="font-mono text-xs tabular-nums text-text-muted">
                 {achievements.filter((a) => a.earned).length}/{achievements.length}
               </span>
@@ -629,8 +629,8 @@ function LedgerRow({ entry, locale, t }: { entry: LedgerEntry; locale: string; t
       <div className="flex items-center justify-between gap-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="shrink-0 font-mono text-xs tabular-nums text-text-muted">{date}</span>
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gold/50 bg-gold/10 text-[11px] text-gold">
-            ✓
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gold/50 bg-gold/10 text-gold">
+            <Icon name="check" className="h-3 w-3" strokeWidth={2.4} />
           </span>
           <span className="truncate text-sm text-text-primary">{t("achievement_unlocked_prefix")} · {entry.title}</span>
         </div>

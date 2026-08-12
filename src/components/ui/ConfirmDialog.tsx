@@ -28,7 +28,8 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Modal open={open} onClose={loading ? () => {} : onClose} title={title} size="sm">
-      <p className="text-sm text-text-secondary mb-6">{message}</p>
+      <p className="mb-6 text-sm leading-relaxed text-text-secondary">{message}</p>
+      {/* 破坏性操作与取消之间留出 gap-3：并排按钮的 44px 命中区不能互相压边 */}
       <div className="flex justify-end gap-3">
         <Button variant="ghost" size="sm" onClick={onClose} disabled={loading}>
           {cancelText}

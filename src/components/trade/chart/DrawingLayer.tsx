@@ -14,6 +14,7 @@ import {
   DEFAULT_DRAWING_FONT_SIZE,
 } from "@/stores/chartStore";
 import { timeToLogical, logicalToTime, snapToBar } from "@/lib/chart/coords";
+import { CHART, MONO_FONT } from "@/lib/chart-theme";
 import { DrawingSettingsModal } from "./DrawingSettingsModal";
 
 /** Tools that commit on a single click; the rest need a press-drag-release. */
@@ -29,13 +30,6 @@ const DASH_ARRAY: Record<Drawing["lineStyle"], string | undefined> = {
   dotted: "1.5 3",
 };
 
-/**
- * SVG `<text>` 没法套 Tailwind 的字体类，直接写 "monospace" 会各系统各写各的
- * （macOS 落到 Courier、Linux 落到 DejaVu），标签宽度和粗细完全不一致。
- * 显式给一条覆盖三大系统的等宽栈。
- */
-const MONO_FONT =
-  'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace';
 
 /** 触屏/手写笔没有双击，长按同样时长后打开样式面板。 */
 const LONG_PRESS_MS = 500;
@@ -692,9 +686,9 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
         <g key={d.id}>
           <line x1={x1} y1={y1} x2={x1} y2={y2} {...hit} />
           <rect x={Math.min(x1, x2)} y={Math.min(y1, y2)} width={Math.abs(x2 - x1)} height={Math.abs(y2 - y1)}
-            fill={up ? "#22c55e" : "#ef4444"} fillOpacity={0.1} stroke="transparent" strokeWidth={0} />
+            fill={up ? CHART.up : CHART.down} fillOpacity={0.1} stroke="transparent" strokeWidth={0} />
           <line x1={x1} y1={y1} x2={x1} y2={y2} stroke={stroke} strokeWidth={common.strokeWidth} strokeDasharray={DASH_ARRAY[d.lineStyle]} vectorEffect="non-scaling-stroke" />
-          <text x={Math.min(x1, x2) + 4} y={midY} fill={up ? "#22c55e" : "#ef4444"} fontSize={11} fontFamily={MONO_FONT} fontWeight={600}>
+          <text x={Math.min(x1, x2) + 4} y={midY} fill={up ? CHART.up : CHART.down} fontSize={11} fontFamily={MONO_FONT} fontWeight={600}>
             {deltaPrice >= 0 ? "+" : ""}{deltaPrice.toPrecision(6)} ({deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(2)}%)
           </text>
           {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x1} cy={y2} r={3.5} fill={stroke} /></>}

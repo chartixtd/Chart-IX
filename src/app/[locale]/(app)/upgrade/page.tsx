@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
+import { AuraField } from "@/components/motion/AuraField";
 
 interface PricingPlan {
   id: number;
@@ -66,14 +68,15 @@ export default function UpgradePage() {
   };
 
   return (
-    <div className="hero-ground grain min-h-[calc(100dvh-4rem)]">
-      <div className="mx-auto max-w-5xl px-4 py-20">
+    <div className="hero-ground grain relative min-h-[calc(100dvh-4rem)] overflow-hidden">
+      <AuraField />
+      <div className="relative mx-auto max-w-5xl px-4 py-20">
         {isPro ? (
           <div className="mx-auto max-w-lg text-center">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-gold/30 bg-gold/5">
-              <span className="font-display text-2xl text-gold">★</span>
+              <Icon name="star" filled className="h-7 w-7 text-gold" />
             </div>
-            <h1 className="mt-6 font-display text-4xl tracking-tight text-text-primary">{t("already_pro")}</h1>
+            <h1 className="mt-6 font-display text-4xl font-bold tracking-tight text-text-primary">{t("already_pro")}</h1>
             <div className="hairline-gold mx-auto mt-5 w-16" />
             <p className="mt-5 leading-relaxed text-text-secondary">{t("already_pro_desc")}</p>
           </div>
@@ -85,7 +88,7 @@ export default function UpgradePage() {
                 Chart-IX Pro
                 <span className="h-px w-8 bg-gold/50" />
               </span>
-              <h1 className="mt-6 font-display text-4xl tracking-tight text-text-primary sm:text-5xl">
+              <h1 className="mt-6 font-display text-4xl font-bold tracking-tight text-text-primary sm:text-5xl">
                 {t("banner_title")}
               </h1>
               <p className="mt-5 text-lg leading-relaxed text-text-secondary">{t("banner_subtitle")}</p>
@@ -100,22 +103,25 @@ export default function UpgradePage() {
                     <div
                       key={plan.id}
                       className={cn(
-                        "relative overflow-hidden rounded-lg border p-8 text-center shadow-card transition-all duration-300",
+                        "obsidian-glass relative overflow-hidden rounded-2xl p-8 text-center transition-all duration-300",
                         featured
-                          ? "border-gold/40 bg-bg-secondary shadow-gold"
-                          : "border-border-default bg-bg-secondary hover:border-gold/30"
+                          ? "border-gold/40 md:-translate-y-2"
+                          : "hover:border-gold/30"
                       )}
                     >
+                      {featured && (
+                        <span aria-hidden className="foil absolute inset-x-0 top-0 h-[3px] rounded-none shadow-none" />
+                      )}
                       {d && (
-                        <span className="absolute right-4 top-4 inline-block rounded-full gold-gradient px-3 py-1 text-xs font-semibold text-bg-primary">
+                        <span className="absolute right-4 top-4 inline-block foil-sm rounded-full px-3 py-1 text-xs font-semibold">
                           {t("save_percent", { percent: d })}
                         </span>
                       )}
-                      <h3 className="font-display text-xl tracking-tight text-text-primary">
+                      <h3 className="font-display text-xl font-semibold tracking-tight text-text-primary">
                         {planLabel(plan.plan_type)}
                       </h3>
                       <div className="mt-6 flex items-baseline justify-center gap-1">
-                        <span className="font-display text-5xl tracking-tight text-text-primary tabular-nums">
+                        <span className="font-display text-5xl font-bold tracking-tight text-text-primary tabular-nums">
                           {plan.currency_symbol}{plan.price}
                         </span>
                         <span className="text-sm text-text-muted">{period(plan.plan_type)}</span>
@@ -132,14 +138,14 @@ export default function UpgradePage() {
                 })
               ) : (
                 <>
-                  <div className="rounded-lg border border-border-default bg-bg-secondary p-8 text-center">
-                    <h3 className="font-display text-xl tracking-tight text-text-primary">{t("monthly")}</h3>
-                    <div className="mt-6 font-display text-5xl text-text-muted">—</div>
+                  <div className="obsidian-glass rounded-2xl p-8 text-center">
+                    <h3 className="font-display text-xl font-semibold tracking-tight text-text-primary">{t("monthly")}</h3>
+                    <div className="mt-6 font-display text-5xl text-text-muted font-bold">—</div>
                     <p className="mt-6 text-sm text-text-secondary">{t("loading")}</p>
                   </div>
-                  <div className="rounded-lg border border-border-default bg-bg-secondary p-8 text-center">
-                    <h3 className="font-display text-xl tracking-tight text-text-primary">{t("yearly")}</h3>
-                    <div className="mt-6 font-display text-5xl text-text-muted">—</div>
+                  <div className="obsidian-glass rounded-2xl p-8 text-center">
+                    <h3 className="font-display text-xl font-semibold tracking-tight text-text-primary">{t("yearly")}</h3>
+                    <div className="mt-6 font-display text-5xl text-text-muted font-bold">—</div>
                     <p className="mt-6 text-sm text-text-secondary">{t("loading")}</p>
                   </div>
                 </>

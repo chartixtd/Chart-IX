@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
 import { createClient } from "@/lib/supabase/client";
+import { AuraField } from "@/components/motion/AuraField";
 
 export default function LoginPage() {
   const t = useTranslations("auth.login");
@@ -52,11 +53,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="hero-ground grain flex min-h-[calc(100dvh-4rem)] items-center justify-center px-4 py-16">
-      <Card className="w-full max-w-md shadow-card-lg" padding="lg">
+    <div className="hero-ground grain relative flex min-h-[calc(100dvh-4rem)] items-center justify-center overflow-hidden px-4 py-16">
+      <AuraField />
+      <Card surface="glass" className="relative w-full max-w-md" padding="lg">
         <div className="text-center">
           <Image src="/logo.png" alt="Chart-IX" width={240} height={160} priority className="mx-auto h-11 w-auto" />
-          <h1 className="mt-5 font-display text-3xl tracking-tight">
+          <h1 className="mt-5 font-display text-3xl font-bold tracking-tight">
             <span className="text-text-primary">Chart</span>
             <span className="text-gold">-IX</span>
           </h1>
@@ -68,6 +70,7 @@ export default function LoginPage() {
           <Input
             id="email"
             type="email"
+            autoComplete="email"
             label={t("email_label")}
             placeholder={t("email_placeholder")}
             value={email}
@@ -77,6 +80,7 @@ export default function LoginPage() {
           <Input
             id="password"
             type="password"
+            autoComplete="current-password"
             label={t("password_label")}
             placeholder={t("password_placeholder")}
             value={password}
@@ -85,7 +89,7 @@ export default function LoginPage() {
           />
 
           {error && (
-            <p className="text-sm text-danger">{error}</p>
+            <p role="alert" className="text-sm text-danger">{error}</p>
           )}
 
           <Button type="submit" className="w-full" loading={loading}>

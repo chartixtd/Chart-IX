@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { Video, VideoCategory, Locale } from "@/types";
+import { Icon } from "@/components/ui/Icon";
 
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -36,9 +37,9 @@ export function VideosView({
   if (videosError) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-12">
-        <h1 className="text-3xl font-bold text-text-primary">{t("title")}</h1>
+        <h1 className="text-3xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
         <EmptyState
-          icon={<span className="text-4xl">⚠️</span>}
+          icon={<Icon name="alert" className="h-6 w-6" />}
           title="Failed to load videos"
           description={videosError}
         />
@@ -54,7 +55,7 @@ export function VideosView({
   return (
     <div className="mx-auto max-w-7xl px-4 py-12">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-text-primary">{t("title")}</h1>
+        <h1 className="text-3xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
       </div>
 
       {categories.length > 0 && (
@@ -144,7 +145,7 @@ export function VideosView({
       ) : (
         <div className="mt-8">
           <EmptyState
-            icon={<span className="text-4xl">🎬</span>}
+            icon={<Icon name="video" className="h-6 w-6" />}
             title={videos.length > 0 ? t("empty_search") : t("empty")}
             description={
               categoryParam && selectedCategory

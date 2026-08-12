@@ -307,7 +307,7 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
 
       {/* 多空按钮语义说明：平仓走仓位面板，不用反向下单（缺陷 C2） */}
       {cfg.hasLeverage && (
-        <p className="px-3 pt-2 text-xs text-text-muted/70">{t("trading.direction_hint")}</p>
+        <p className="px-3 pt-2 text-xs text-text-muted">{t("trading.direction_hint")}</p>
       )}
 
       <div className="flex-1 space-y-2.5 p-3">

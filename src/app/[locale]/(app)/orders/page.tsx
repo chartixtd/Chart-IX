@@ -198,7 +198,7 @@ export default function OrdersPage() {
             <Skeleton key={tab} className="h-9 w-20 rounded-sm" />
           ))}
         </div>
-        <div className="rounded-md border border-border-default bg-bg-secondary">
+        <div className="rounded-md panel">
           <div className="border-b border-border-default px-4 py-3">
             <div className="flex gap-4">
               {[...Array(9)].map((_, i) => (
@@ -247,7 +247,7 @@ export default function OrdersPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary">{t("title")}</h1>
+        <h1 className="text-2xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
         <p className="mt-1 text-sm text-text-secondary">{t("no_orders")}</p>
       </div>
 

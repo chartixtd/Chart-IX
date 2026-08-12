@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { usePriceAlertsStore } from "@/stores/priceAlerts";
 import { formatPrice } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
 
 export default function AlertsPage() {
   const t = useTranslations("nav");
@@ -28,7 +29,7 @@ export default function AlertsPage() {
               <p className="text-sm text-text-primary">{alert.symbol}</p>
               <p className="mt-0.5 font-mono text-xs text-text-muted">
                 {alert.direction === "above" ? "≥" : "≤"} {formatPrice(alert.targetPrice)}
-                {alert.triggered && <span className="ml-2 text-gold">✓</span>}
+                {alert.triggered && <Icon name="check" className="ml-2 inline h-3.5 w-3.5 text-gold" strokeWidth={2.2} />}
               </p>
             </div>
             <button

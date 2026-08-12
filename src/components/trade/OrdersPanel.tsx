@@ -23,7 +23,7 @@ type Tab = "orders" | "fills" | "wallet";
 const PRIORITY_ASSETS = ["USDT", "BTC", "ETH"];
 
 const STATUS_COLORS: Record<string, string> = {
-  NEW: "text-blue-400",
+  NEW: "text-info",
   PARTIALLY_FILLED: "text-gold",
   FILLED: "text-success",
   CANCELED: "text-text-muted",

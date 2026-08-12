@@ -335,7 +335,7 @@ export function TelegramPushEditor({
   return (
     <div className="space-y-6">
       {/* ── Status overview ── */}
-      <Card padding="md">
+      <Card tone="data" padding="md">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
@@ -358,7 +358,7 @@ export function TelegramPushEditor({
               />
             </button>
             <div>
-              <h2 className="text-sm font-semibold text-text-primary">
+              <h2 className="text-sm font-semibold text-text-primary font-display tracking-tight">
                 {t("telegram_push_list.enabled")}
               </h2>
               <p className="text-xs text-text-muted">
@@ -414,8 +414,8 @@ export function TelegramPushEditor({
 
       {/* ── Bot config + message content ── */}
       <div className="grid items-start gap-6 lg:grid-cols-5">
-        <Card padding="md" className="lg:col-span-3">
-          <h2 className="mb-1 text-sm font-semibold text-text-primary">
+        <Card tone="data" padding="md" className="lg:col-span-3">
+          <h2 className="mb-1 text-sm font-semibold text-text-primary font-display tracking-tight">
             {t("telegram_push_list.bot_title")}
           </h2>
           <p className="mb-4 text-xs text-text-muted">{t("telegram_push_list.bot_desc")}</p>
@@ -469,8 +469,8 @@ export function TelegramPushEditor({
 
         </Card>
 
-        <Card padding="md" className="lg:col-span-2">
-          <h2 className="mb-1 text-sm font-semibold text-text-primary">
+        <Card tone="data" padding="md" className="lg:col-span-2">
+          <h2 className="mb-1 text-sm font-semibold text-text-primary font-display tracking-tight">
             {t("telegram_push_list.fields_title")}
           </h2>
           <p className="mb-4 text-xs text-text-muted">{t("telegram_push_list.fields_desc")}</p>
@@ -504,8 +504,8 @@ export function TelegramPushEditor({
       </div>
 
       {/* ── Destinations ── */}
-      <Card padding="md">
-        <h2 className="mb-1 text-sm font-semibold text-text-primary">
+      <Card tone="data" padding="md">
+        <h2 className="mb-1 text-sm font-semibold text-text-primary font-display tracking-tight">
           {t("telegram_push_list.targets_title")}
         </h2>
         <p className="mb-4 text-xs text-text-muted">{t("telegram_push_list.targets_desc")}</p>

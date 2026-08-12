@@ -80,7 +80,7 @@ export function ArticleDetailClient({ article, isGated }: Props) {
       )}
 
       {/* Title */}
-      <h1 className="text-3xl font-bold text-text-primary leading-tight">
+      <h1 className="text-3xl font-bold text-text-primary leading-tight font-display tracking-tight">
         {article.title[locale] ?? article.title["en-US"] ?? "Untitled"}
       </h1>
 

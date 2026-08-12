@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CHART } from "@/lib/chart-theme";
 import {
   createChart,
   createSeriesMarkers,
@@ -39,6 +40,7 @@ import { DrawingToolbar } from "./chart/DrawingToolbar";
 import { DrawingLayer } from "./chart/DrawingLayer";
 import { OrderLineOverlay } from "./chart/OrderLineOverlay";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
 
 /** 图表上的进出场箭头标记 */
 export interface ChartTradeMarker {
@@ -98,8 +100,8 @@ const INTERVAL_SECONDS: Record<string, number> = {
   "1w": 604800,
 };
 
-const UP = "#22c55e";
-const DOWN = "#ef4444";
+const UP = CHART.up;
+const DOWN = CHART.down;
 const GUIDE_COLOR = "rgba(120,120,120,0.35)";
 
 /** Per-instance series handles, so data updates don't need to recreate anything. */
@@ -186,7 +188,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
 
   // 等级直接决定，不再经 feature_flags 绕一圈（那张表只有这一个 key 真被读过）。
   // auth.loading 期间 tier 还是 null，canUseAdvancedChart 会返回 false，所以沿用
-  // accessLoading 抑制加载态下的 🔒 闪烁。
+  // accessLoading 抑制加载态下的锁图标闪烁。
   const auth = useAuth();
   const accessLoading = auth.loading;
   const hasAdvancedChart = canUseAdvancedChart(auth.tier);
@@ -243,25 +245,25 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     const chart = createChart(chartRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#666666",
-        panes: { separatorColor: "#2a2a2a", separatorHoverColor: "rgba(201,162,75,0.3)" },
+        textColor: CHART.axisText,
+        panes: { separatorColor: CHART.border, separatorHoverColor: "rgba(201,162,75,0.3)" },
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: "#1a1a1a" },
-        horzLines: { color: "#1a1a1a" },
+        vertLines: { color: CHART.grid },
+        horzLines: { color: CHART.grid },
       },
       crosshair: {
         // lightweight-charts 默认是 Magnet：横线会被吸到最近一根蜡烛的
         // 开/高/低/收上，读数跟着跳，看盘时对不准鼠标实际所在的价位。
         // 这里显式关掉磁力，十字线严格跟随指针。
         mode: CrosshairMode.Normal,
-        vertLine: { color: "#3a3a3a", style: 2, width: 1 },
-        horzLine: { color: "#3a3a3a", style: 2, width: 1 },
+        vertLine: { color: CHART.crosshair, style: 2, width: 1 },
+        horzLine: { color: CHART.crosshair, style: 2, width: 1 },
       },
-      rightPriceScale: { borderColor: "#2a2a2a" },
+      rightPriceScale: { borderColor: CHART.border },
       timeScale: {
-        borderColor: "#2a2a2a",
+        borderColor: CHART.border,
         timeVisible: true,
         secondsVisible: false,
       },
@@ -406,7 +408,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
       if (def.placement === "pane") {
         try {
           chartApi.priceScale("right", paneIndex).applyOptions({
-            borderColor: "#2a2a2a",
+            borderColor: CHART.border,
             scaleMargins: { top: 0.15, bottom: 0.1 },
           });
         } catch { /* ignore */ }
@@ -862,7 +864,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
         )}
 
         {!isLoading && isLoadingMore && (
-          <div className="absolute left-1/2 top-2 z-[7] -translate-x-1/2 rounded-xs border border-border-default bg-bg-secondary/90 px-2 py-0.5 text-[11px] text-text-muted backdrop-blur-sm">
+          <div className="absolute left-1/2 top-2 z-[7] -translate-x-1/2 rounded-xs panel px-2 py-0.5 text-[11px] text-text-muted">
             {t("loading_history")}
           </div>
         )}
@@ -872,19 +874,22 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
           <button
             onClick={() => (hasAdvancedChart ? setIndicatorsOpen(true) : setUpsellOpen((o) => !o))}
             className={cn(
-              "flex items-center gap-1 rounded-xs border px-2 py-1 text-xs backdrop-blur-sm transition-colors",
+              "flex items-center gap-1 rounded-xs border px-2 py-1 text-xs transition-colors",
               hasAdvancedChart
-                ? "border-border-default bg-bg-secondary/80 text-text-secondary hover:text-text-primary"
+                ? "border-border-default bg-bg-secondary text-text-secondary hover:text-text-primary"
                 : "border-gold/30 bg-bg-secondary/80 text-gold"
             )}
           >
-            {t("title")} {!hasAdvancedChart && !accessLoading && "🔒"}
+            {t("title")}
+            {!hasAdvancedChart && !accessLoading && (
+              <Icon name="lock" className="ml-1 inline h-3.5 w-3.5" />
+            )}
           </button>
 
           {upsellOpen && !hasAdvancedChart && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setUpsellOpen(false)} />
-              <div className="absolute left-0 top-9 z-20 w-56 space-y-2 rounded-md border border-border-default bg-bg-secondary p-3 text-center text-xs shadow-modal">
+              <div className="absolute left-0 top-9 z-20 w-56 space-y-2 rounded-md panel p-3 text-center text-xs shadow-modal">
                 <p className="text-text-secondary">
                   {t("pro_upsell")}
                 </p>

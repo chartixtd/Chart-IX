@@ -28,6 +28,8 @@ import {
   type InstrumentCategory,
 } from "@/lib/instruments";
 import type { BingXTicker } from "@/types/bingx";
+import { Icon } from "@/components/ui/Icon";
+import { usePriceFlash } from "@/hooks/usePriceFlash";
 
 const WS_SUBSCRIBE_LIMIT = 30;
 
@@ -86,6 +88,7 @@ const TickerRow = memo(function TickerRow({
   // WS 推来的那一条也要过一遍可用性判据：否则 openPrice=0 的坏数据会绕过
   // 列表侧的过滤，从实时通道重新把 +822096901% 灌回这一行。
   const ticker = hasUsableQuote(live) ? live : fallback;
+  const flash = usePriceFlash(ticker ? Number(ticker.lastPrice) : undefined);
   const isFavorite = useFavoritesStore((s) => s.favorites.includes(symbol));
   const toggleFavorite = useFavoritesStore((s) => s.toggleFavorite);
   const handleClick = useCallback(() => onSelect(symbol), [onSelect, symbol]);
@@ -113,16 +116,26 @@ const TickerRow = memo(function TickerRow({
         onClick={handleStarClick}
         className={cn(
           "shrink-0 text-sm leading-none",
-          isFavorite ? "text-gold" : "text-text-muted/40 hover:text-text-muted"
+          isFavorite ? "text-gold" : "text-text-muted/70 hover:text-text-muted"
         )}
         aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
       >
-        {isFavorite ? "★" : "☆"}
+        <Icon name="star" filled={isFavorite} className="h-4 w-4" />
       </button>
       <span className="truncate text-left font-medium">{label ?? symbol}</span>
       {ticker ? (
         <>
-          <span className="text-right tabular-nums">{formatPrice(Number(ticker.lastPrice))}</span>
+          {/* 价格变动闪烁：行情列表同时刷新十几行时，这是"这一行刚动了"的唯一线索。
+              rounded-xs + 负外边距让高亮块贴着数字而不撑开行高。 */}
+          <span
+            className={cn(
+              "-mx-1 rounded-xs px-1 text-right tabular-nums",
+              flash === "up" && "animate-price-up",
+              flash === "down" && "animate-price-down"
+            )}
+          >
+            {formatPrice(Number(ticker.lastPrice))}
+          </span>
           <span
             className={cn(
               "w-16 text-right tabular-nums font-medium",

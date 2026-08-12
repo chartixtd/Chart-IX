@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { legendLabel } from "@/lib/chart/indicator-registry";
 import { useChartStore, resolveDef } from "@/stores/chartStore";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
 
 /**
  * On-chart legend listing every applied indicator, each with inline
@@ -26,7 +27,7 @@ export function ChartLegend({ onOpenSettings }: { onOpenSettings: () => void }) 
         return (
           <div
             key={a.instanceId}
-            className="pointer-events-auto group flex items-center gap-2 rounded-xs bg-bg-primary/55 px-2.5 py-1.5 backdrop-blur-sm"
+            className="pointer-events-auto group flex items-center gap-2 rounded-xs bg-bg-primary/85 px-2.5 py-1.5"
           >
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -45,23 +46,26 @@ export function ChartLegend({ onOpenSettings }: { onOpenSettings: () => void }) 
               <button
                 onClick={() => toggleVisible(a.instanceId)}
                 title={a.visible ? t("hide") : t("show")}
-                className="text-sm leading-none text-text-muted hover:text-text-primary"
+                aria-label={a.visible ? t("hide") : t("show")}
+                className="leading-none text-text-muted hover:text-text-primary"
               >
-                {a.visible ? "👁" : "🚫"}
+                <Icon name={a.visible ? "eye" : "eye-off"} className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={onOpenSettings}
                 title={t("settings")}
-                className="text-sm leading-none text-text-muted hover:text-gold"
+                aria-label={t("settings")}
+                className="leading-none text-text-muted hover:text-gold"
               >
-                ⚙
+                <Icon name="settings" className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => removeIndicator(a.instanceId)}
                 title={t("remove")}
-                className="text-sm leading-none text-text-muted hover:text-danger"
+                aria-label={t("remove")}
+                className="leading-none text-text-muted hover:text-danger"
               >
-                ✕
+                <Icon name="x" className="h-3.5 w-3.5" strokeWidth={2.2} />
               </button>
             </span>
           </div>

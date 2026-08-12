@@ -458,7 +458,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
                           const ok = await updateVideo(v.id, { is_deleted: false });
                           if (ok) toast(t("videos_list.restored"), "success");
                         }}
-                        className="text-green-400"
+                        className="text-success"
                       >
                         {t("videos_list.restore")}
                       </Button>
@@ -470,7 +470,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
                           const ok = await updateVideo(v.id, { is_deleted: true });
                           if (ok) toast(t("videos_list.deleted"), "success");
                         }}
-                        className="text-red-400"
+                        className="text-danger"
                       >
                         {t("videos_list.delete")}
                       </Button>
@@ -479,7 +479,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
                       size="sm"
                       variant="ghost"
                       onClick={() => setConfirmDelete({ id: v.id })}
-                      className="text-red-500"
+                      className="text-danger"
                     >
                       {t("videos_list.hard_delete")}
                     </Button>
@@ -586,7 +586,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setVideoFile(null); }}
-                  className="mt-1 text-xs text-red-400 hover:text-red-300"
+                  className="mt-1 text-xs text-danger hover:text-danger"
                 >
                   {t("videos_list.remove_file")}
                 </button>
@@ -731,7 +731,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
             onChange={(e) => setDescription(e.target.value)}
           />
 
-          {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
+          {uploadError && <p className="text-sm text-danger">{uploadError}</p>}
 
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="ghost" onClick={closeModal} disabled={uploading}>

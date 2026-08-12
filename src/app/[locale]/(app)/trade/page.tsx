@@ -76,6 +76,7 @@ import { useChartOverlay } from "@/hooks/useChartOverlay";
 import { useTradePrefsStore, type TradeMarketType } from "@/stores/tradePrefs";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
 
 // Mirrors BingX's supported kline intervals minus "1M" (monthly), which
 // KlineChart's live-candle bucketing can't represent as a fixed-duration window.
@@ -191,7 +192,7 @@ const TickerBar = memo(function TickerBar({
         onClick={onPickSymbol}
         className={cn("flex shrink-0 items-center gap-3", onPickSymbol && "lg:pointer-events-none")}
       >
-        <h2 className="font-sans text-lg font-semibold tracking-tight">{displaySymbol}</h2>
+        <h2 className="font-sans text-lg font-semibold tracking-tight font-display tracking-tight">{displaySymbol}</h2>
         {marketClosed && (
           <span className="shrink-0 rounded-xs bg-bg-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-muted">
             {t("market_overview.closed")}
@@ -358,7 +359,7 @@ const IntervalBar = memo(function IntervalBar({
       {moreOpen && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
-          <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-md border border-border-default bg-bg-secondary p-2 shadow-modal">
+          <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-md panel p-2 shadow-modal">
             <p className="mb-1 px-1 text-[11px] text-text-muted">{t("pin_hint")}</p>
             <div className="grid grid-cols-4 gap-1">
               {ALL_INTERVALS.map((int) => {
@@ -385,10 +386,10 @@ const IntervalBar = memo(function IntervalBar({
                       title={pinned ? t("unpin") : t("pin")}
                       className={cn(
                         "shrink-0 px-0.5 transition-colors",
-                        pinned ? "text-gold" : "text-text-muted/50 hover:text-text-muted"
+                        pinned ? "text-gold" : "text-text-muted/70 hover:text-text-muted"
                       )}
                     >
-                      {pinned ? "★" : "☆"}
+                      <Icon name="star" filled={pinned} className="h-4 w-4" />
                     </button>
                   </div>
                 );
@@ -606,7 +607,7 @@ export default function TradePage() {
             {chartBlock}
             {bookOverlayOpen && (
               // 订单簿做成图表上的叠层，而不是抢一个 tab
-              <div className="absolute inset-y-0 right-0 w-[62%] border-l border-border-default bg-bg-primary/95 backdrop-blur-sm">
+              <div className="absolute inset-y-0 right-0 w-[62%] border-l border-border-default bg-bg-primary">
                 <div className="flex border-b border-border-default">
                   <button
                     onClick={() => setMobileBookTab("orderbook")}

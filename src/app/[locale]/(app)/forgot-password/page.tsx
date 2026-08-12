@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
 import { createClient } from "@/lib/supabase/client";
+import { AuraField } from "@/components/motion/AuraField";
 
 export default function ForgotPasswordPage() {
   const t = useTranslations("auth.forgot_password");
@@ -36,15 +37,16 @@ export default function ForgotPasswordPage() {
 
   if (success) {
     return (
-      <div className="hero-ground grain flex min-h-[calc(100dvh-4rem)] items-center justify-center px-4 py-16">
-        <Card className="w-full max-w-md text-center shadow-card-lg" padding="lg">
+      <div className="hero-ground grain relative flex min-h-[calc(100dvh-4rem)] items-center justify-center overflow-hidden px-4 py-16">
+      <AuraField />
+        <Card surface="glass" className="relative w-full max-w-md text-center" padding="lg">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-gold/30 bg-gold/5">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7 text-gold">
               <rect x="3" y="5" width="18" height="14" rx="2" />
               <path d="M3 7l9 6 9-6" />
             </svg>
           </div>
-          <h1 className="mt-5 font-display text-2xl tracking-tight text-text-primary">{t("title")}</h1>
+          <h1 className="mt-5 font-display text-2xl font-bold tracking-tight text-text-primary">{t("title")}</h1>
           <p className="mt-3 text-sm leading-relaxed text-text-secondary">{t("success")}</p>
         </Card>
       </div>
@@ -52,22 +54,24 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="hero-ground grain flex min-h-[calc(100dvh-4rem)] items-center justify-center px-4 py-16">
-      <Card className="w-full max-w-md shadow-card-lg" padding="lg">
-        <h1 className="text-center font-display text-2xl tracking-tight text-text-primary">{t("title")}</h1>
+    <div className="hero-ground grain relative flex min-h-[calc(100dvh-4rem)] items-center justify-center overflow-hidden px-4 py-16">
+      <AuraField />
+      <Card surface="glass" className="relative w-full max-w-md" padding="lg">
+        <h1 className="text-center font-display text-2xl font-bold tracking-tight text-text-primary">{t("title")}</h1>
         <div className="hairline-gold mx-auto mt-4 w-14" />
         <p className="mt-4 text-center text-sm leading-relaxed text-text-secondary">{t("description")}</p>
         <form onSubmit={handleSubmit} className="mt-7 space-y-4">
           <Input
             id="email"
             type="email"
+            autoComplete="email"
             label={t("email_label")}
             placeholder={t("email_placeholder")}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-          {error && <p className="text-sm text-danger">{error}</p>}
+          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
           <Button type="submit" className="w-full" loading={loading}>
             {t("submit")}
           </Button>

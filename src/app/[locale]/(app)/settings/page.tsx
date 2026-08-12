@@ -116,11 +116,11 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 lg:py-12">
-      <h1 className="text-2xl font-bold text-text-primary lg:text-3xl">{t("title")}</h1>
+      <h1 className="text-2xl font-bold text-text-primary lg:text-3xl font-display tracking-tight">{t("title")}</h1>
 
       {/* Profile */}
       <Card className="mt-6 lg:mt-8" padding="lg">
-        <h2 className="text-lg font-semibold text-text-primary">{t("profile")}</h2>
+        <h2 className="text-lg font-semibold text-text-primary font-display tracking-tight">{t("profile")}</h2>
         <div className="mt-4 space-y-4">
           <div>
             <label className="text-sm text-text-muted">{t("email")}</label>
@@ -152,7 +152,7 @@ export default function SettingsPage() {
             />
           </div>
           {message && (
-            <p className={message === t("saved") ? "text-green-400" : "text-red-400"}>
+            <p className={message === t("saved") ? "text-success" : "text-danger"}>
               {message}
             </p>
           )}
@@ -164,7 +164,7 @@ export default function SettingsPage() {
 
       {/* Language */}
       <Card className="mt-6" padding="lg">
-        <h2 className="text-lg font-semibold text-text-primary">{t("language")}</h2>
+        <h2 className="text-lg font-semibold text-text-primary font-display tracking-tight">{t("language")}</h2>
         <div className="mt-4 flex flex-wrap gap-2">
           {PUBLIC_LOCALES.map((l) => (
             <Button
@@ -183,7 +183,7 @@ export default function SettingsPage() {
       <Card className="mt-6" padding="lg">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-text-primary">{t("api_keys")}</h2>
+            <h2 className="text-lg font-semibold text-text-primary font-display tracking-tight">{t("api_keys")}</h2>
             <p className="mt-1 break-words text-sm text-text-secondary">{t("api_keys_desc")}</p>
           </div>
           <Button

@@ -98,7 +98,7 @@ export default async function AdminBriefingPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-text-primary">每日早报</h1>
+      <h1 className="mb-6 text-2xl font-bold text-text-primary font-display tracking-tight">每日早报</h1>
       <BriefingRunner data={data} />
     </div>
   );

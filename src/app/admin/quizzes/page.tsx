@@ -22,9 +22,9 @@ export default async function AdminQuizzesPage() {
 
   return (
     <div>
-      <h1 className="mb-4 text-xl font-semibold text-text-primary">随堂小测管理</h1>
+      <h1 className="mb-4 text-xl font-semibold text-text-primary font-display tracking-tight">随堂小测管理</h1>
       {error ? (
-        <div className="text-red-400">Failed to load quizzes. Please try again later.</div>
+        <div className="text-danger">Failed to load quizzes. Please try again later.</div>
       ) : (
         <QuizzesManager videos={videos} quizzes={quizzes} questions={questions} />
       )}

@@ -32,8 +32,11 @@ export function Footer({ settings }: { settings: SiteSettings }) {
     .filter((s): s is { key: SocialKey; url: string } => Boolean(s.url));
 
   return (
-    <footer className="border-t border-border-default bg-bg-secondary/40">
-      <div className="mx-auto max-w-2xl px-4 py-8">
+    // 页脚是每一页的收束点：暖黑曜石底 + 顶边一条金色发丝，
+    // 与顶栏 shadow-nav 的那条金线上下呼应
+    <footer className="grain relative border-t border-border-default bg-bg-secondary/40">
+      <div className="hairline-gold absolute inset-x-0 top-0 opacity-40" />
+      <div className="mx-auto max-w-2xl px-4 py-10">
         <div className="flex flex-col items-center gap-4 text-center">
           <div className="flex items-center gap-2.5">
             <Image
@@ -43,7 +46,7 @@ export function Footer({ settings }: { settings: SiteSettings }) {
               height={160}
               className="h-8 w-auto opacity-90"
             />
-            <span className="font-display text-lg leading-none tracking-tight text-text-primary">
+            <span className="font-display text-lg font-semibold leading-none tracking-tight text-text-primary">
               {settings.siteName ? (
                 settings.siteName
               ) : (

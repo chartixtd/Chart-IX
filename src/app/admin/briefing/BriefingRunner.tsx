@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
 
 export interface BriefingPageData {
   env: {
@@ -51,7 +52,7 @@ function Reasons({ items }: { items: string[] }) {
     <ol className="mt-2 space-y-1 text-xs text-text-secondary">
       {items.map((r, i) => (
         <li key={i} className="flex gap-2">
-          <span className="shrink-0 text-text-secondary/60">{i + 1}.</span>
+          <span className="shrink-0 text-text-muted">{i + 1}.</span>
           <span className="break-all">{r}</span>
         </li>
       ))}
@@ -97,16 +98,18 @@ function fmt(iso: string | null): string {
 function Check({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <span className={ok ? "text-success" : "text-danger"}>{ok ? "✓" : "✗"}</span>
+      <Icon name={ok ? "check" : "x"} className={cn("inline h-3.5 w-3.5", ok ? "text-success" : "text-danger")} strokeWidth={2.2} />
       <span className={ok ? "text-text-primary" : "text-danger"}>{children}</span>
     </div>
   );
 }
 
+/** 本文件私有的分区容器，与 @/components/ui/Card 不是同一个东西 */
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-sm border border-border-default glass p-4">
-      <h2 className="mb-3 text-sm font-medium text-text-secondary">{title}</h2>
+    // .panel 而非 .glass：后台数据面不做 backdrop-filter
+    <section className="panel rounded-md p-4">
+      <h2 className="mb-3 text-sm font-medium text-text-secondary font-display tracking-tight">{title}</h2>
       {children}
     </section>
   );

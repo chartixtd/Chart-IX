@@ -67,7 +67,7 @@ function PositionRow({ symbol, side, quantity, entryPrice, leverage, margin, liq
           {isProfit ? "+" : ""}{formatPrice(pnl)} ({isProfit ? "+" : ""}{pnlPct.toFixed(2)}%)
         </span>
       </div>
-      <div className="mt-0.5 flex items-center justify-between text-[11px] text-text-muted/70">
+      <div className="mt-0.5 flex items-center justify-between text-[11px] text-text-muted">
         <span>{t("liq_price_label")} {formatPrice(liquidationPrice)}</span>
         <span>{t("margin_label")} {formatPrice(margin)} USDT</span>
       </div>

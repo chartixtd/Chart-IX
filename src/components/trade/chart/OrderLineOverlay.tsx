@@ -3,13 +3,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { IChartApi, ISeriesApi } from "lightweight-charts";
 import type { ChartPriceLine } from "../KlineChart";
-
-/**
- * SVG `<text>` 套不上 Tailwind 字体类，写 "monospace" 会各系统各挑一套
- * （macOS Courier / Linux DejaVu），价格标签宽度都对不上。显式给等宽栈。
- */
-const MONO_FONT =
-  'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace';
+import { CHART, MONO_FONT } from "@/lib/chart-theme";
 
 interface Props {
   chart: IChartApi | null;
@@ -201,7 +195,7 @@ export function OrderLineOverlay({ chart, series, lines, containerRef }: Props) 
             <text
               x={pane.width - 40}
               y={yNum + 4}
-              fill="#0b0a08"
+              fill={CHART.ink}
               fontSize={10}
               fontFamily={MONO_FONT}
               textAnchor="middle"

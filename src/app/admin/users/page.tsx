@@ -29,7 +29,7 @@ export default async function AdminUsersPage({
   const { data: users, error, count } = await query.range(offset, offset + USERS_PER_PAGE - 1);
 
   if (error) {
-    return <div className="text-red-400">Failed to load users. Please try again later.</div>;
+    return <div className="text-danger">Failed to load users. Please try again later.</div>;
   }
 
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / USERS_PER_PAGE));

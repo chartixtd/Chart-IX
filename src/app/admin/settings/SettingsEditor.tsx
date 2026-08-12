@@ -144,7 +144,7 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
     <div>
       <div className="space-y-4">
         {settings.map((setting) => (
-          <Card key={setting.id} padding="md">
+          <Card tone="data" key={setting.id} padding="md">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-2">
@@ -202,8 +202,8 @@ export function SettingsEditor({ settings }: { settings: AdminSetting[] }) {
           </Button>
         </div>
       ) : (
-        <Card padding="md" className="mt-6 border-gold/30">
-          <h3 className="text-sm font-semibold text-text-primary mb-3">
+        <Card tone="data" padding="md" className="mt-6 border-gold/30">
+          <h3 className="text-sm font-semibold text-text-primary mb-3 font-display tracking-tight">
             {t("settings_list.new_setting")}
           </h3>
           <div className="space-y-3">

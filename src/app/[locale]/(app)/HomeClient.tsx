@@ -1,6 +1,9 @@
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
+import { AuraField } from "@/components/motion/AuraField";
+import { MetallicMonogram } from "@/components/motion/MetallicMonogram";
+import { ScrollReveal } from "@/components/motion/ScrollReveal";
 import { HotCoinsRail } from "./HotCoinsRail";
 
 const TRUST_KEYS = ["trust_1", "trust_2", "trust_3", "trust_4"] as const;
@@ -86,29 +89,30 @@ export default async function HomeClient({ locale }: { locale: string }) {
 
   return (
     <div>
-      {/* Hero — headline-led, full-width editorial */}
-      <section className="hero-ground grain relative overflow-hidden">
-        {/* Oversized monogram watermark */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -right-8 top-1/2 -translate-y-1/2 select-none font-display text-[38vw] leading-none text-gold/[0.04] sm:text-[28rem] animate-breathe"
-        >
-          IX
-        </span>
+      {/* GSAP 滚动编排只在营销/阅读面注入；交易终端不会下载这段 */}
+      <ScrollReveal />
 
-        <div className="relative mx-auto max-w-6xl px-4 pb-20 pt-24 sm:pt-28">
+      {/* ── Hero ──────────────────────────────────────────────────────────
+          金属 IX 是第一眼的冲击点：9 段金箔 + 高光横扫 + 指针视差。
+          它压在标题右侧而非居中，让超大标题保持左对齐的编辑式阅读起点。 */}
+      <section className="hero-ground grain relative overflow-hidden">
+        <AuraField />
+
+        <MetallicMonogram className="absolute -right-10 top-1/2 -translate-y-1/2 text-[42vw] opacity-[0.13] sm:text-[30rem]" />
+
+        <div className="relative mx-auto max-w-6xl px-4 pb-20 pt-24 sm:pt-32">
           <div className="max-w-4xl">
-            <span className="inline-flex items-center gap-3 text-xs font-medium uppercase tracking-[0.22em] text-gold animate-rise-in">
+            <span className="inline-flex animate-rise-in items-center gap-3 text-xs font-medium uppercase tracking-[0.24em] text-gold">
               <span className="h-px w-10 bg-gold/50" />
               {t("hero_eyebrow")}
             </span>
-            <h1 className="mt-8 font-display text-[clamp(2.75rem,9vw,6rem)] leading-[0.98] tracking-tightest text-text-primary animate-rise-in [animation-delay:60ms]">
+            <h1 className="mt-8 animate-rise-in font-display text-[clamp(3rem,10vw,7rem)] font-bold leading-[0.94] tracking-tightest text-text-primary [animation-delay:60ms]">
               {t("hero_title")}
             </h1>
-            <p className="mt-8 max-w-2xl text-lg leading-relaxed text-text-secondary animate-rise-in [animation-delay:120ms] sm:text-xl">
+            <p className="mt-8 max-w-2xl animate-rise-in text-lg leading-relaxed text-text-secondary [animation-delay:120ms] sm:text-xl">
               {t("hero_subtitle")}
             </p>
-            <div className="mt-11 flex flex-wrap items-center gap-4 animate-rise-in [animation-delay:180ms]">
+            <div className="mt-11 flex animate-rise-in flex-wrap items-center gap-4 [animation-delay:180ms]">
               <Link href={`/${locale}/register`}>
                 <Button size="lg">{t("hero_cta")}</Button>
               </Link>
@@ -119,7 +123,7 @@ export default async function HomeClient({ locale }: { locale: string }) {
                 </Button>
               </Link>
             </div>
-            <p className="mt-8 max-w-md text-xs leading-relaxed text-text-muted animate-rise-in [animation-delay:220ms]">
+            <p className="mt-8 max-w-md animate-rise-in text-xs leading-relaxed text-text-muted [animation-delay:220ms]">
               {t("risk_caption")}
             </p>
           </div>
@@ -133,49 +137,94 @@ export default async function HomeClient({ locale }: { locale: string }) {
         </div>
       </section>
 
-      {/* Trust signals — editorial two-column ledger */}
-      <section className="border-t border-border-default py-24">
-        <div className="mx-auto grid max-w-6xl gap-x-16 gap-y-10 px-4 lg:grid-cols-[minmax(0,20rem)_1fr]">
-          <div className="lg:sticky lg:top-24 lg:self-start">
-            <h2 className="font-display text-3xl leading-tight tracking-tight text-text-primary sm:text-4xl">
+      {/* ── Trust ─────────────────────────────────────────────────────────
+          非对称 Bento：首条（资金留在交易所）占 4×2 的主格，是整段的论点；
+          其余三条围绕它。玻璃面板在这里是安全的——营销页没有高频重绘。 */}
+      <section className="relative border-t border-border-default py-24">
+        <div className="mx-auto max-w-6xl px-4">
+          <div className="max-w-2xl" data-reveal>
+            <h2 className="font-display text-3xl font-bold leading-tight tracking-tight text-text-primary sm:text-5xl">
               {t("trust_title")}
             </h2>
             <div className="hairline-gold mt-6 w-16" />
           </div>
-          <div className="divide-y divide-border-default">
-            {TRUST_KEYS.map((key, i) => (
-              <div key={key} className="flex gap-6 py-7 first:pt-0">
-                <TrustIcon i={i} className="mt-0.5 h-8 w-8 shrink-0 text-gold" />
-                <div>
-                  <h3 className="text-lg font-semibold text-text-primary">
+
+          <div
+            className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-6 lg:grid-rows-[repeat(3,minmax(0,auto))]"
+            data-reveal-group
+          >
+            {TRUST_KEYS.map((key, i) => {
+              // 0 → 主格（4 列 × 2 行）  1,2 → 右侧窄格  3 → 底部通栏
+              const span = [
+                "lg:col-span-4 lg:row-span-2",
+                "lg:col-span-2",
+                "lg:col-span-2",
+                "sm:col-span-2 lg:col-span-6",
+              ][i];
+              const isLead = i === 0;
+              return (
+                <div
+                  key={key}
+                  className={`obsidian-glass group relative flex flex-col overflow-hidden rounded-xl p-7 transition-colors duration-300 hover:border-gold/30 ${span}`}
+                >
+                  <TrustIcon
+                    i={i}
+                    className={isLead ? "h-10 w-10 text-gold" : "h-8 w-8 text-gold"}
+                  />
+                  <h3
+                    className={`mt-6 font-display font-semibold tracking-tight text-text-primary ${
+                      isLead ? "text-2xl sm:text-3xl" : "text-lg"
+                    }`}
+                  >
                     {t(`${key}_title`)}
                   </h3>
-                  <p className="mt-2 max-w-xl text-sm leading-relaxed text-text-secondary">
+                  <p
+                    className={`mt-3 max-w-xl leading-relaxed text-text-secondary ${
+                      isLead ? "text-base" : "text-sm"
+                    }`}
+                  >
                     {t(`${key}_desc`)}
                   </p>
+                  {isLead && (
+                    <span
+                      aria-hidden
+                      className="foil-text-static pointer-events-none absolute -bottom-8 -right-4 select-none font-display text-[9rem] font-bold leading-none opacity-[0.07]"
+                    >
+                      01
+                    </span>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* How it works — numbered ledger of steps */}
+      {/* ── How it works ──────────────────────────────────────────────────
+          三步保持台账式而非 Bento：连续编号的节奏感需要等宽栅格，
+          紧跟在非对称 Bento 之后也提供了必要的版式对比。 */}
       <section className="border-t border-border-default bg-bg-secondary/30 py-24">
         <div className="mx-auto max-w-6xl px-4">
-          <h2 className="text-center font-display text-3xl tracking-tight text-text-primary sm:text-4xl">
+          <h2
+            className="text-center font-display text-3xl font-bold tracking-tight text-text-primary sm:text-4xl"
+            data-reveal
+          >
             {t("how_title")}
           </h2>
-          <div className="mx-auto mt-16 grid max-w-5xl gap-px overflow-hidden rounded-lg border border-border-default bg-border-default sm:grid-cols-3">
+          <div
+            className="mx-auto mt-16 grid max-w-5xl gap-px overflow-hidden rounded-xl border border-border-default bg-border-default sm:grid-cols-3"
+            data-reveal-group
+          >
             {HOW_KEYS.map((key, i) => (
               <div key={key} className="bg-bg-secondary p-8">
                 <div className="flex items-baseline gap-3">
-                  <span className="font-display text-4xl leading-none text-gold">
+                  {/* 可读版金箔：序号是要看清的，不能用两端收在暗金上的 --foil-x */}
+                  <span className="foil-text-bright font-display text-5xl font-bold leading-none">
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <span className="h-px flex-1 bg-border-hover" />
                 </div>
-                <h3 className="mt-6 text-lg font-semibold text-text-primary">
+                <h3 className="mt-6 font-display text-lg font-semibold tracking-tight text-text-primary">
                   {t(`${key}_title`)}
                 </h3>
                 <p className="mt-2.5 text-sm leading-relaxed text-text-secondary">
@@ -187,34 +236,41 @@ export default async function HomeClient({ locale }: { locale: string }) {
         </div>
       </section>
 
-      {/* Features */}
+      {/* ── Features ──────────────────────────────────────────────────────
+          三块等宽 Bento，中间一块用金箔图标底衬做重心。 */}
       <section id="features" className="py-24">
         <div className="mx-auto max-w-6xl px-4">
-          <h2 className="font-display text-3xl tracking-tight text-text-primary sm:text-4xl">
+          <h2
+            className="font-display text-3xl font-bold tracking-tight text-text-primary sm:text-4xl"
+            data-reveal
+          >
             {t("features_title")}
           </h2>
-          <div className="mt-14 grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
-            {(["feature_learn", "feature_trade", "feature_control"] as const).map(
-              (key, i) => (
-                <div key={key} className="flex gap-5">
-                  <div className="shrink-0">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gold/25 bg-gold/5">
-                      <FeatureIcon i={i} className="h-6 w-6 text-gold" />
-                    </div>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-text-primary">
-                      {t(`${key}_title`)}
-                    </h3>
-                    <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-                      {t(`${key}_desc`)}
-                    </p>
-                  </div>
+          <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-reveal-group>
+            {(["feature_learn", "feature_trade", "feature_control"] as const).map((key, i) => (
+              <div
+                key={key}
+                className="obsidian-glass flex flex-col rounded-xl p-7 transition-colors duration-300 hover:border-gold/30"
+              >
+                <div
+                  className={
+                    i === 1
+                      ? "foil-sm flex h-12 w-12 items-center justify-center rounded-lg"
+                      : "flex h-12 w-12 items-center justify-center rounded-lg border border-gold/25 bg-gold/[0.06] text-gold"
+                  }
+                >
+                  <FeatureIcon i={i} className="h-6 w-6" />
                 </div>
-              )
-            )}
+                <h3 className="mt-6 font-display text-lg font-semibold tracking-tight text-text-primary">
+                  {t(`${key}_title`)}
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                  {t(`${key}_desc`)}
+                </p>
+              </div>
+            ))}
           </div>
-          <div className="mt-14">
+          <div className="mt-14" data-reveal>
             <Link href={`/${locale}/trade`}>
               <Button variant="outline">{t("view_full_trading")}</Button>
             </Link>
@@ -222,20 +278,26 @@ export default async function HomeClient({ locale }: { locale: string }) {
         </div>
       </section>
 
-      {/* Final CTA — engraved plate */}
+      {/* ── Final CTA — engraved plate ────────────────────────────────── */}
       <section className="border-t border-border-default py-24">
-        <div className="hero-ground grain relative mx-auto max-w-4xl overflow-hidden rounded-xl border border-gold/20 px-6 py-20 text-center">
-          <div className="hairline-gold mx-auto mb-8 w-16" />
-          <h2 className="font-display text-4xl tracking-tight text-text-primary sm:text-5xl">
-            {t("final_cta_title")}
-          </h2>
-          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-text-secondary">
-            {t("final_cta_subtitle")}
-          </p>
-          <div className="mt-10">
-            <Link href={`/${locale}/register`}>
-              <Button size="lg">{t("final_cta_button")}</Button>
-            </Link>
+        <div
+          className="hero-ground grain relative mx-auto max-w-4xl overflow-hidden rounded-2xl border border-gold/20 px-6 py-20 text-center"
+          data-reveal
+        >
+          <AuraField />
+          <div className="relative">
+            <div className="hairline-gold mx-auto mb-8 w-16" />
+            <h2 className="font-display text-4xl font-bold tracking-tight text-text-primary sm:text-5xl">
+              {t("final_cta_title")}
+            </h2>
+            <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-text-secondary">
+              {t("final_cta_subtitle")}
+            </p>
+            <div className="mt-10">
+              <Link href={`/${locale}/register`}>
+                <Button size="lg">{t("final_cta_button")}</Button>
+              </Link>
+            </div>
           </div>
         </div>
       </section>
@@ -246,9 +308,7 @@ export default async function HomeClient({ locale }: { locale: string }) {
           <h3 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
             {t("risk_title")}
           </h3>
-          <p className="mt-3 text-xs leading-relaxed text-text-muted">
-            {t("risk_body")}
-          </p>
+          <p className="mt-3 text-xs leading-relaxed text-text-muted">{t("risk_body")}</p>
         </div>
       </section>
     </div>

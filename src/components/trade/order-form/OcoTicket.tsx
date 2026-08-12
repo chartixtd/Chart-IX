@@ -87,7 +87,7 @@ export function OcoTicket({ symbol, direction }: OcoTicketProps) {
 
   return (
     <div className="flex-1 space-y-2.5 p-3">
-      <p className="text-xs text-text-muted/70">{t("trading.oco.hint")}</p>
+      <p className="text-xs text-text-muted">{t("trading.oco.hint")}</p>
 
       <div>
         <div className="mb-1 flex items-center justify-between text-xs text-text-muted">

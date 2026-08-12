@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { usePriceAlertsStore } from "@/stores/priceAlerts";
 import { formatPrice, cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
 
 export function PriceAlertBell() {
   const alerts = usePriceAlertsStore((s) => s.alerts);
@@ -20,9 +21,9 @@ export function PriceAlertBell() {
         className="relative flex h-8 w-8 items-center justify-center rounded-sm text-text-secondary hover:bg-bg-tertiary hover:text-text-primary"
         aria-label="Price alerts"
       >
-        🔔
+        <Icon name="bell" className="h-[18px] w-[18px]" />
         {triggeredCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-text-primary">
             {triggeredCount}
           </span>
         )}
@@ -31,7 +32,7 @@ export function PriceAlertBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-10 z-50 w-72 rounded-md border border-border-default bg-bg-secondary shadow-modal">
+          <div className="absolute right-0 top-10 z-50 w-72 rounded-md panel shadow-modal">
             <div className="border-b border-border-default px-3 py-2 text-xs font-medium text-text-secondary">
               价格提醒
             </div>
@@ -53,7 +54,7 @@ export function PriceAlertBell() {
                     className="text-text-muted hover:text-danger"
                     aria-label="删除提醒"
                   >
-                    ✕
+                    <Icon name="x" className="h-3.5 w-3.5" strokeWidth={2.2} />
                   </button>
                 </div>
               ))}

@@ -20,7 +20,7 @@ export default async function AdminArticlesPage() {
     <div>
       <ArticlesHeading />
       {error ? (
-        <div className="text-red-400">Failed to load articles.</div>
+        <div className="text-danger">Failed to load articles.</div>
       ) : (
         <ArticlesManager articles={articles} categories={categories} />
       )}

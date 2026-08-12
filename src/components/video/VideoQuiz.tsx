@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
 import type { Quiz, QuizQuestion, Locale } from "@/types";
+import { Icon } from "@/components/ui/Icon";
 
 export function VideoQuiz({ videoId }: { videoId: string }) {
   const locale = useLocale() as Locale;
@@ -83,8 +84,9 @@ export function VideoQuiz({ videoId }: { videoId: string }) {
 
   return (
     <Card className="mt-6">
-      <h2 className="text-lg font-semibold text-text-primary">
-        📝 {quiz.title[locale] ?? quiz.title["zh-CN"]}
+      <h2 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight text-text-primary">
+        <Icon name="quiz" className="h-5 w-5 shrink-0 text-gold" />
+        {quiz.title[locale] ?? quiz.title["zh-CN"]}
       </h2>
 
       {submitted && result ? (

@@ -93,9 +93,12 @@ export function MobileTabBar() {
                   aria-label={t("tab_trade")}
                   className={cn(
                     // 凸起圆盘的上沿会侵入内容区，页面内容用 pb-tabbar 让位
-                    "-mt-4 flex h-14 w-14 items-center justify-center rounded-full border transition-colors",
+                    "-mt-4 flex h-14 w-14 items-center justify-center rounded-full border transition-all",
+                    "active:scale-[0.94] active:duration-75",
                     isActive
-                      ? "border-gold bg-gold text-bg-primary"
+                      ? // 选中态是一枚真金箔圆章——底栏中央是全站视觉重心，
+                        // 平涂金在这里撑不住
+                        "foil border-transparent"
                       : "border-gold/40 bg-bg-tertiary text-gold"
                   )}
                 >
@@ -112,10 +115,18 @@ export function MobileTabBar() {
               aria-current={isActive ? "page" : undefined}
               className={cn(
                 // min-h 44px 满足 iOS HIG 的触摸目标下限
-                "flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-colors",
+                "relative flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-colors",
                 isActive ? "text-gold" : "text-text-muted hover:text-text-secondary"
               )}
             >
+              {/* 顶端一小段金箔：图标+文字变色之外再加一层位置指示，
+                  色觉障碍用户不靠颜色也能看出当前在哪一栏 */}
+              {isActive && (
+                <span
+                  aria-hidden
+                  className="foil absolute inset-x-0 top-0 mx-auto h-[2px] w-8 rounded-none shadow-none"
+                />
+              )}
               <TabIcon tab={tab.key} className="h-5 w-5" />
               <span className="text-[11px] leading-none">{t(`tab_${tab.key}`)}</span>
             </Link>

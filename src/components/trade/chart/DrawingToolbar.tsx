@@ -95,7 +95,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
         {colorPopoverOpen && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setColorPopoverOpen(false)} />
-            <div className="absolute left-11 top-0 z-20 rounded-sm border border-border-default bg-bg-secondary p-2 shadow-modal">
+            <div className="absolute left-11 top-0 z-20 rounded-sm panel p-2 shadow-modal">
               <ColorPicker value={drawingColor} onChange={setDrawingColor} />
             </div>
           </>
@@ -105,7 +105,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
       <div className="h-px w-6 shrink-0 bg-border-default" />
 
       {/* Pin tool (keep armed after each drawing).
-          图标用内联 SVG 而不是 📌 emoji：emoji 由系统字体渲染，Windows 是彩色
+          图标用内联 SVG 而不是 emoji：emoji 由系统字体渲染，Windows 是彩色
           方块、macOS 是另一套造型、部分 Linux 干脆是豆腐块，尺寸和基线也和旁边
           几个 SVG 按钮对不齐。 */}
       <button
@@ -134,7 +134,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
           "flex h-11 w-11 lg:h-9 lg:w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
           selectedDrawingId
             ? "text-text-muted hover:bg-bg-tertiary hover:text-danger"
-            : "cursor-not-allowed text-text-muted/30"
+            : "cursor-not-allowed text-text-muted/70"
         )}
       >
         <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -152,7 +152,7 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
           "flex h-11 w-11 lg:h-9 lg:w-9 shrink-0 items-center justify-center rounded-xs text-[11px] font-medium transition-colors",
           count > 0
             ? "text-text-muted hover:bg-bg-tertiary hover:text-danger"
-            : "cursor-not-allowed text-text-muted/30"
+            : "cursor-not-allowed text-text-muted/70"
         )}
       >
         {t("clear")}

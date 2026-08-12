@@ -1,6 +1,6 @@
 "use client";
 
-import { useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -32,6 +32,12 @@ const EXTENSIONS = [
   // HTML 里存进数据库。
   ImageExtension.configure({ inline: false, allowBase64: false }),
 ];
+
+/** 从拖放/剪贴板的 DataTransfer 里挑出图片文件，顺序保持用户给的顺序。 */
+function imageFilesOf(dt: DataTransfer | null): File[] {
+  if (!dt) return [];
+  return Array.from(dt.files ?? []).filter((f) => f.type.startsWith("image/"));
+}
 
 export interface ArticleEditorsHandle {
   getHTML: (locale: Locale) => string;
@@ -92,18 +98,21 @@ function TiptapEditorBlock({
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   /**
-   * 一次可以选多张。两处提速：上传前在浏览器里把图压小（见 image-compress），
-   * 以及多张并发上传而不是排队等——原先 5 张就要串行等 5 次。
+   * 一批图片的完整流程：压缩 → 并发上传 → 按原顺序插入。工具栏选文件、往正文
+   * 里拖、以及粘贴，三个入口共用这一条。
    *
-   * 并发之后仍按选中的先后顺序插入：Promise.allSettled 保序，正文里的图片
+   * 两处提速：上传前在浏览器里把图压小（见 image-compress），以及多张并发
+   * 上传而不是排队等——原先 5 张就要串行等 5 次。
+   *
+   * 并发之后仍按用户给的先后顺序插入：Promise.allSettled 保序，正文里的图片
    * 次序才不会随网络快慢乱掉。
+   *
+   * @param at 插入位置。拖放时是鼠标落点，其余情况传 null 表示插在光标处。
    */
-  const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    // 先清空，否则再次选同一批文件不会触发 change
-    e.target.value = "";
+  const uploadAndInsert = async (files: File[], at: number | null) => {
     if (files.length === 0 || !editor) return;
 
     setUploading(true);
@@ -124,9 +133,21 @@ function TiptapEditorBlock({
     setUploading(false);
 
     let uploaded = 0;
+    // 拖放的落点是上传开始前算的，等上传回来文档可能已经被改短，越界会抛错
+    let pos = at === null ? null : Math.min(at, editor.state.doc.content.size);
     results.forEach((result, i) => {
       if (result.status === "fulfilled") {
-        editor.chain().focus().setImage(result.value).run();
+        if (pos === null) {
+          editor.chain().focus().setImage(result.value).run();
+        } else {
+          editor
+            .chain()
+            .focus()
+            .insertContentAt(pos, { type: "image", attrs: result.value })
+            .run();
+          // 下一张接在刚插入的这张后面，整批才保持选中时的顺序
+          pos = editor.state.selection.to;
+        }
         uploaded += 1;
       } else {
         const reason = result.reason;
@@ -142,10 +163,83 @@ function TiptapEditorBlock({
     }
   };
 
+  // 最新一版的处理函数：下面的 editorProps 只在 editor 变化时装一次，
+  // 直接闭包捕获会永远停在首帧那版。
+  const uploadRef = useRef(uploadAndInsert);
+  uploadRef.current = uploadAndInsert;
+
+  /**
+   * 把「拖进来」和「粘贴」也接到同一条上传流水线上。
+   *
+   * 走 TipTap 的 editorProps 而不是在外层 div 上挂 onDrop：ProseMirror 自己
+   * 也监听 drop/paste，外层监听器排在它后面，等轮到时默认行为已经发生了
+   * （拖进来的图会变成一串文件名文本）。这两个钩子返回 true 即表示已接管。
+   */
+  useEffect(() => {
+    if (!editor) return;
+    editor.setOptions({
+      editorProps: {
+        // setOptions 是整体替换而非合并，attributes 得一并带上，否则编辑器
+        // 会丢掉 EDITOR_CLASS 的排版与滚动约束
+        attributes: { class: EDITOR_CLASS },
+        handleDrop: (view, event) => {
+          const files = imageFilesOf((event as DragEvent).dataTransfer);
+          if (files.length === 0) return false; // 拖的不是图片，交还给默认行为
+          event.preventDefault();
+          const dropEvent = event as DragEvent;
+          const coords = view.posAtCoords({ left: dropEvent.clientX, top: dropEvent.clientY });
+          void uploadRef.current(files, coords?.pos ?? null);
+          return true;
+        },
+        handlePaste: (_view, event) => {
+          const files = imageFilesOf((event as ClipboardEvent).clipboardData);
+          // 从网页复制来的图通常只有 HTML 没有文件，那种仍走默认粘贴
+          if (files.length === 0) return false;
+          event.preventDefault();
+          void uploadRef.current(files, null);
+          return true;
+        },
+      },
+    });
+  }, [editor]);
+
   if (!editor) return null;
 
+  const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    // 先清空，否则再次选同一批文件不会触发 change
+    e.target.value = "";
+    void uploadAndInsert(files, null);
+  };
+
   return (
-    <div className="rounded-sm border border-border-default overflow-hidden">
+    <div
+      className={`rounded-sm border overflow-hidden transition-colors ${
+        dragOver ? "border-gold" : "border-border-default"
+      }`}
+      // dragover 必须 preventDefault，否则浏览器根本不会派发 drop，而是自己
+      // 打开这张图片、把没保存的文章顶掉
+      onDragOver={(e) => {
+        if (imageFilesOf(e.dataTransfer).length > 0 || e.dataTransfer.types.includes("Files")) {
+          e.preventDefault();
+          setDragOver(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        // 只有真正离开整个编辑器才熄灭；在内部元素之间移动会连发 leave/enter
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+      }}
+      onDrop={(e) => {
+        setDragOver(false);
+        // 落在正文里的已被上面的 handleDrop 接管（它调过 preventDefault）；
+        // 这里只兜住落在工具栏等正文之外的那部分，插到光标处。
+        if (e.defaultPrevented) return;
+        const files = imageFilesOf(e.dataTransfer);
+        if (files.length === 0) return;
+        e.preventDefault();
+        void uploadAndInsert(files, null);
+      }}
+    >
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 border-b border-border-default bg-bg-tertiary px-2 py-1.5">
         <ToolbarBtn active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold">
@@ -222,7 +316,7 @@ function TiptapEditorBlock({
           active={false}
           disabled={uploading}
           onClick={() => fileInputRef.current?.click()}
-          title="Insert images (multiple allowed)"
+          title="Insert images — pick several at once, or drag/paste them into the body"
         >
           {uploading ? (
             <span className="text-[10px]">Uploading…</span>

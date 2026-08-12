@@ -961,3 +961,73 @@ describe("checkBriefing — 并列枚举（2026-08-10 真实正文）", () => {
     expect(r.failures.some((f) => f.detail.includes("9999.99"))).toBe(true);
   });
 });
+
+/**
+ * 翻译产物的数字核对以**原稿**为基准。
+ *
+ * 用例取自线上 2026-08-12 的真实失败：中文稿正常发布，英文译文被
+ * hallucinated-number 拦下（$7000000000 与 $20），当天英文降级成零 AI 兜底稿。
+ */
+describe("checkBriefing baseline（翻译产物）", () => {
+  /** 中文原稿写「70亿美元」——不带 $，PRICE_RE 根本碰不到它 */
+  const zhBaseline = validJson({
+    headlines: [
+      { topic: "加密货币", points: ["现货 ETF 单周净流入约 70亿美元", "某链上协议单笔手续费 20美元"] },
+      { topic: "黄金与大宗", points: ["黄金代币续创阶段新高，避险资金持续流入"] },
+      { topic: "宏观金融", points: ["市场等待本周公布的通胀数据"] },
+    ],
+  });
+
+  /** 同一事实译成英文就带上了 $，于是只有英文版会被规则咬到 */
+  const enTranslated = validJsonEn({
+    headlines: [
+      { topic: "Crypto", points: ["Spot ETFs drew about $7 billion of net inflows last week", "One protocol charged a $20 fee on a single transaction"] },
+      { topic: "Gold and commodities", points: ["Gold tokens pushed to fresh highs on steady haven demand"] },
+      { topic: "Macro", points: ["Traders wait on this week's inflation print"] },
+    ],
+  });
+
+  it("中文原稿本身不会被数字核对拦下（规则只查带 $ 的写法）", () => {
+    const r = checkBriefing({
+      json: zhBaseline, facts: FACTS, sources: SOURCES, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(false);
+  });
+
+  it("不传 baseline 时，忠实的英文译文被误判为编造（改版前的线上行为）", () => {
+    const r = checkBriefing({
+      json: enTranslated, facts: EN_FACTS, sources: SOURCES, locale: "en-US", finishReason: "stop",
+    });
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("传 baseline 后，「70亿」↔「$7 billion」与两位数的 $20 都放行", () => {
+    const r = checkBriefing({
+      json: enTranslated, facts: EN_FACTS, sources: SOURCES, locale: "en-US",
+      finishReason: "stop", baseline: zhBaseline,
+    });
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(false);
+  });
+
+  it("baseline 只放行原稿有的数：译文把 70亿 写成 700亿仍然拦下", () => {
+    const inflated = validJsonEn({
+      headlines: [
+        { topic: "Crypto", points: ["Spot ETFs drew about $700 billion of net inflows last week", "Ether tracked the broader market higher"] },
+        { topic: "Gold and commodities", points: ["Gold tokens pushed to fresh highs on steady haven demand"] },
+        { topic: "Macro", points: ["Traders wait on this week's inflation print"] },
+      ],
+    });
+    const r = checkBriefing({
+      json: inflated, facts: EN_FACTS, sources: SOURCES, locale: "en-US",
+      finishReason: "stop", baseline: zhBaseline,
+    });
+    expect(r.failures.some((f) => f.rule === "hallucinated-number")).toBe(true);
+  });
+
+  it("baseline 不影响生成路径：不传时行为与此前完全一致", () => {
+    const clean = checkBriefing({
+      json: validJson(), facts: FACTS, sources: SOURCES, locale: "zh-CN", finishReason: "stop",
+    });
+    expect(clean.ok).toBe(true);
+  });
+});

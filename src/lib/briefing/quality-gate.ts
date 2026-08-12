@@ -609,7 +609,13 @@ function magnitudeAt(text: string, index: number): number {
  * CPI、利率、涨跌数据来自源文而非我们的行情事实集，一并核对会产生大量误报。
  * analysis 中若引用了源文里出现过的数字，同样放行。
  */
-function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: SourceLike[]): GateFailure[] {
+function checkNumbers(
+  b: BriefingJson,
+  facts: MarketFact[],
+  sources: SourceLike[],
+  /** 翻译产物才有：已过门槛的原稿里的数字，见 extractBriefingNumbers */
+  baselineNumbers: number[] = []
+): GateFailure[] {
   const failures: GateFailure[] = [];
   const text = analysisText(b);
   const sourceText = sourceWhitelistText(sources);
@@ -650,6 +656,11 @@ function checkNumbers(b: BriefingJson, facts: MarketFact[], sources: SourceLike[
       continue;
     }
     if (sourcePrices.has(value)) continue;
+    // 原稿里出现过的数字放行。容差与源文侧一致——翻译器会把 $63,877.23
+    // 写成 $63,877 或 $63.9K，都是忠实转述。
+    if (baselineNumbers.some((n) => Math.abs(value - n) <= Math.abs(n) * PRICE_TOLERANCE_RATIO)) {
+      continue;
+    }
     if (!facts.some((f) => priceOk(value, f))) {
       failures.push({ rule: "hallucinated-number", detail: `价格 $${value} 不在行情事实集内` });
     }
@@ -724,6 +735,41 @@ function extractSourceNumbers(sources: SourceLike[]): number[] {
 }
 
 /**
+ * 已过门槛的原稿里出现过的所有数字 —— 翻译产物专用的白名单。
+ *
+ * 存在的理由是一条**结构性单向偏差**：数字核对只查带 `$` 的写法（PRICE_RE
+ * 要求 `$`），而中文写「70亿美元」不带 `$`、英文写 `$7 billion` 带。同一个
+ * 事实，中文稿整条规则碰不到，翻成英文立刻被抓——这条规则实际上只咬英文版。
+ * 线上表现就是「中文正常发布，英文天天降级成兜底稿」。
+ *
+ * 正确的比对基准不是新闻源文，而是原稿本身：原稿已经跑完整套门槛（含对源文
+ * 与行情事实集的数字核对），翻译被允许**搬运**它的数字，不被允许发明新数字。
+ * 拿原稿当白名单既更贴合"翻译"这件事的语义，也绕开了源文抽取那些启发式规则
+ * 的误报——比如 MIN_SOURCE_NUMBER_DIGITS 会丢掉两位数，导致译文里的 `$20`
+ * 在结构上永远匹配不上。
+ *
+ * 这里**不套** MIN_SOURCE_NUMBER_DIGITS：原稿是几百字的成稿，不是几十篇文章
+ * 正文拼成的字符串汤，小整数不会把白名单塞满。
+ *
+ * 收窄了什么：翻译若把 $63,000 写成 $630,000，原稿里没有 630000，照样拦下。
+ * 真正的翻译幻觉仍然被抓，被放行的只有"原稿本来就有"的数。
+ */
+export function extractBriefingNumbers(b: BriefingJson): number[] {
+  const text = fullText(b);
+  const out: number[] = [];
+  for (const m of text.matchAll(BARE_NUMBER_RE)) {
+    const value = parseFloat(m[0].replace(/,/g, ""));
+    if (!Number.isFinite(value)) continue;
+    out.push(value);
+    // 「70亿」要同时收 70 和 7e9：译文可能写 "$7 billion"（→7e9），
+    // 也可能写 "7 billion"（→7e9）或直接照搬 70。两侧口径都归一才谈得上比对。
+    const scale = magnitudeAt(text, (m.index ?? 0) + m[0].length);
+    if (scale > 1) out.push(value * scale);
+  }
+  return out;
+}
+
+/**
  * headlines 的**宽松**价格核对。
  *
  * 把数字核对的作用域限定在 analysis 本身是对的（headlines 是对新闻的转述，
@@ -748,13 +794,15 @@ function extractSourceNumbers(sources: SourceLike[]): number[] {
 function checkHeadlineNumbers(
   b: BriefingJson,
   facts: MarketFact[],
-  sources: SourceLike[]
+  sources: SourceLike[],
+  /** 翻译产物才有：已过门槛的原稿里的数字，见 extractBriefingNumbers */
+  baselineNumbers: number[] = []
 ): GateFailure[] {
   const text = headlinesText(b);
   const hits = extractPriceHits(text);
   if (hits.length === 0) return [];
 
-  const sourceNumbers = extractSourceNumbers(sources);
+  const sourceNumbers = [...extractSourceNumbers(sources), ...baselineNumbers];
   const near = (v: number, ref: number) => Math.abs(v - ref) <= Math.abs(ref) * PRICE_TOLERANCE_RATIO;
 
   // 正文这侧同样要认量级后缀，否则「$1 billion」只会被读成 $1。
@@ -823,6 +871,13 @@ export function checkBriefing(input: {
   sources: SourceLike[];
   locale: BriefingLocale;
   finishReason: string | null;
+  /**
+   * 校验的是**翻译产物**时传入已过门槛的原稿。原稿里出现过的数字会进白名单——
+   * 翻译只被允许搬运数字，不被允许发明数字，拿原稿比对既贴合语义、又避开
+   * 只查 `$` 带来的中英单向偏差（见 extractBriefingNumbers 的说明）。
+   * 生成路径不传，行为与此前完全一致。
+   */
+  baseline?: BriefingJson;
 }): GateResult {
   const failures: GateFailure[] = [];
 
@@ -836,9 +891,11 @@ export function checkBriefing(input: {
   // 结构不完整时后续规则没有可靠的字段可读，直接返回
   if (!briefing) return { ok: false, failures };
 
+  const baselineNumbers = input.baseline ? extractBriefingNumbers(input.baseline) : [];
+
   failures.push(...checkLengths(briefing, input.locale));
-  failures.push(...checkNumbers(briefing, input.facts, input.sources));
-  failures.push(...checkHeadlineNumbers(briefing, input.facts, input.sources));
+  failures.push(...checkNumbers(briefing, input.facts, input.sources, baselineNumbers));
+  failures.push(...checkHeadlineNumbers(briefing, input.facts, input.sources, baselineNumbers));
   failures.push(...checkBannedPhrases(briefing));
   failures.push(...checkLanguage(briefing, input.locale));
 

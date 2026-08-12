@@ -406,6 +406,10 @@ async function runPipeline(
           sources: withBodies,
           locale: badLocale,
           finishReason: null,
+          // 原稿已经跑完整套门槛，它出现过的数字对译文就是可信基准。
+          // 不传的话，中文「70亿美元」译成 "$7 billion" 会被判成编造——
+          // 数字核对只查带 $ 的写法，这条规则结构上只咬英文版。
+          baseline: primary,
         });
         if (!gate.ok) {
           note(

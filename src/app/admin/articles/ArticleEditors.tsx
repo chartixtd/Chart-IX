@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
-import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import ImageExtension from "@tiptap/extension-image";
@@ -132,23 +132,10 @@ function TiptapEditorBlock({
     );
     setUploading(false);
 
-    let uploaded = 0;
-    // 拖放的落点是上传开始前算的，等上传回来文档可能已经被改短，越界会抛错
-    let pos = at === null ? null : Math.min(at, editor.state.doc.content.size);
+    const nodes: JSONContent[] = [];
     results.forEach((result, i) => {
       if (result.status === "fulfilled") {
-        if (pos === null) {
-          editor.chain().focus().setImage(result.value).run();
-        } else {
-          editor
-            .chain()
-            .focus()
-            .insertContentAt(pos, { type: "image", attrs: result.value })
-            .run();
-          // 下一张接在刚插入的这张后面，整批才保持选中时的顺序
-          pos = editor.state.selection.to;
-        }
-        uploaded += 1;
+        nodes.push({ type: "image", attrs: result.value });
       } else {
         const reason = result.reason;
         toast(
@@ -157,10 +144,29 @@ function TiptapEditorBlock({
         );
       }
     });
+    if (nodes.length === 0) return;
 
-    if (uploaded > 0) {
-      toast(uploaded === 1 ? "Image inserted" : `${uploaded} images inserted`, "success");
-    }
+    /*
+     * 整批一次插入，绝对不能一张一张地插。
+     *
+     * TipTap 插完一个块级图片后会把选区落在这张图上（insertContentAt →
+     * selectionToInsertionEnd → Selection.near(bias -1)：图片是 atom 节点，
+     * 它后面没有可放光标的文本位置，最近的合法选区就是这张图自己的
+     * NodeSelection）。于是下一次 insertContent 是"替换选中内容"，把上一张
+     * 顶掉——选两张最后只剩一张，正是这个原因。
+     *
+     * 末尾补一个空段落，同理：不补的话选区停在最后那张图上，作者接着打字
+     * 会直接把图替换掉。
+     */
+    nodes.push({ type: "paragraph" });
+
+    // 拖放的落点是上传开始前算的，等上传回来文档可能已经被改短，越界会抛错
+    const pos = at === null ? null : Math.min(at, editor.state.doc.content.size);
+    if (pos === null) editor.chain().focus().insertContent(nodes).run();
+    else editor.chain().focus().insertContentAt(pos, nodes).run();
+
+    const uploaded = nodes.length - 1;
+    toast(uploaded === 1 ? "Image inserted" : `${uploaded} images inserted`, "success");
   };
 
   // 最新一版的处理函数：下面的 editorProps 只在 editor 变化时装一次，

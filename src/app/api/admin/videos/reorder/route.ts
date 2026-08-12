@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { logAdminAction } from "@/lib/supabase/admin-log";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/supabase/admin-auth";
+import { revalidateVideoLists } from "@/lib/videos-revalidate";
 
 /** 与前台 /videos 页的 .limit(300) 对齐——超过这个量级就该分页而不是拖拽了 */
 const MAX_IDS = 300;
@@ -45,6 +46,10 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // 前台 /videos 是 revalidate=300 的静态页。不主动失效的话，管理员拖完顺序
+    // 刷新前台仍是旧排列，最长 5 分钟——从用户角度那就是"排序没生效"。
+    revalidateVideoLists();
 
     // Audit log (fire-and-forget)
     try {

@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { logAdminAction } from "@/lib/supabase/admin-log";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/supabase/admin-auth";
+import { revalidateVideoLists } from "@/lib/videos-revalidate";
 
 const VALID_LANGUAGES = ["zh-CN", "en-US", "ms-MY"];
 
@@ -63,6 +64,9 @@ export async function POST(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // 前台 /videos 是 revalidate=300 的静态页，写完必须主动失效，否则最长 5 分钟不可见
+    revalidateVideoLists();
 
     // Audit log (fire-and-forget)
     try {
@@ -173,6 +177,9 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // 前台 /videos 是 revalidate=300 的静态页，写完必须主动失效，否则最长 5 分钟不可见
+    revalidateVideoLists();
+
     // Audit log (fire-and-forget)
     try {
       const supabase = await createClient();
@@ -218,6 +225,9 @@ export async function DELETE(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // 前台 /videos 是 revalidate=300 的静态页，写完必须主动失效，否则最长 5 分钟不可见
+    revalidateVideoLists();
 
     // Audit log (fire-and-forget)
     try {

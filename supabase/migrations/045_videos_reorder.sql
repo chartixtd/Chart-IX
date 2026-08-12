@@ -33,8 +33,13 @@ COMMENT ON FUNCTION public.reorder_videos(uuid[]) IS
 
 -- 只经 service_role 调用（src/app/api/admin/videos/reorder/route.ts，
 -- 路由前面有 requireAdmin() 把关）。任何前端角色都不该能直接重排视频。
--- 与 040 收紧其它 RPC 的做法一致。
-REVOKE EXECUTE ON FUNCTION public.reorder_videos(uuid[]) FROM anon, authenticated;
+--
+-- 必须从 PUBLIC 撤销，不能只写 `FROM anon, authenticated`：
+-- CREATE FUNCTION 默认 `GRANT EXECUTE ON ... TO PUBLIC`，anon 与 authenticated
+-- 是**经 PUBLIC 继承**这条权限的，撤具名角色撤不掉它们继承来的那份，
+-- has_function_privilege() 仍然返回 true。040 里那一整段收紧就是栽在这上面。
+-- service_role 有 supabase 预置的显式授权，不受这条 REVOKE 影响。
+REVOKE EXECUTE ON FUNCTION public.reorder_videos(uuid[]) FROM PUBLIC;
 
 -- ── 2. 存量数据落稳定初值 ────────────────────────────────────
 -- 只动仍是 0 的行：如果这条迁移被重复执行，已经排好的顺序不会被冲掉。

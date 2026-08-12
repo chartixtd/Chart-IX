@@ -44,10 +44,11 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
     <div className="flex h-full w-11 shrink-0 flex-col items-center gap-1 border-r border-border-default bg-bg-secondary/40 py-2">
       {/* Cursor / deselect — stays pinned above the scrollable tool list */}
       <button
+        type="button"
         onClick={() => setActiveTool(null)}
         title={t("select_tool")}
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
+          "flex h-11 w-11 lg:h-9 lg:w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
           activeTool === null ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
         )}
       >
@@ -63,10 +64,12 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
         {DRAWING_TOOLS.map(({ tool, label, labelZh }) => (
           <button
             key={tool}
+            type="button"
             onClick={() => setActiveTool(activeTool === tool ? null : tool)}
             title={isZh ? labelZh : label}
+            aria-pressed={activeTool === tool}
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
+              "flex h-11 w-11 lg:h-9 lg:w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
               activeTool === tool ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
             )}
           >
@@ -82,9 +85,10 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
       {/* Colour picker (free colour, not just fixed swatches) */}
       <div className="relative shrink-0">
         <button
+          type="button"
           onClick={() => setColorPopoverOpen((o) => !o)}
           title={t("line_color")}
-          className="flex h-9 w-9 items-center justify-center rounded-xs hover:bg-bg-tertiary"
+          className="flex h-11 w-11 lg:h-9 lg:w-9 items-center justify-center rounded-xs hover:bg-bg-tertiary"
         >
           <span className="h-4 w-4 rounded-full border border-text-primary/40" style={{ background: drawingColor }} />
         </button>
@@ -100,25 +104,34 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
 
       <div className="h-px w-6 shrink-0 bg-border-default" />
 
-      {/* Pin tool (keep armed after each drawing) */}
+      {/* Pin tool (keep armed after each drawing).
+          图标用内联 SVG 而不是 📌 emoji：emoji 由系统字体渲染，Windows 是彩色
+          方块、macOS 是另一套造型、部分 Linux 干脆是豆腐块，尺寸和基线也和旁边
+          几个 SVG 按钮对不齐。 */}
       <button
+        type="button"
         onClick={() => setKeepToolActive(!keepToolActive)}
         title={keepToolActive ? t("keep_tool_on") : t("keep_tool_off")}
+        aria-pressed={keepToolActive}
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs text-base transition-colors",
+          "flex h-11 w-11 lg:h-9 lg:w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
           keepToolActive ? "bg-gold/20 text-gold" : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
         )}
       >
-        📌
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12.5 2.5l5 5-2 .5-3.5 3.5.5 3-5.5-5.5 3-.5L13.5 5z" />
+          <path d="M7 13l-4 4" />
+        </svg>
       </button>
 
       {/* Delete selected */}
       <button
+        type="button"
         onClick={() => selectedDrawingId && removeDrawing(symbol, selectedDrawingId)}
         disabled={!selectedDrawingId}
         title={t("delete_selected")}
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
+          "flex h-11 w-11 lg:h-9 lg:w-9 shrink-0 items-center justify-center rounded-xs transition-colors",
           selectedDrawingId
             ? "text-text-muted hover:bg-bg-tertiary hover:text-danger"
             : "cursor-not-allowed text-text-muted/30"
@@ -131,11 +144,12 @@ export function DrawingToolbar({ symbol }: { symbol: string }) {
 
       {/* Clear all for this symbol */}
       <button
+        type="button"
         onClick={() => { if (count > 0) clearDrawings(symbol); }}
         disabled={count === 0}
         title={t("clear_all_count", { count })}
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xs text-[11px] font-medium transition-colors",
+          "flex h-11 w-11 lg:h-9 lg:w-9 shrink-0 items-center justify-center rounded-xs text-[11px] font-medium transition-colors",
           count > 0
             ? "text-text-muted hover:bg-bg-tertiary hover:text-danger"
             : "cursor-not-allowed text-text-muted/30"

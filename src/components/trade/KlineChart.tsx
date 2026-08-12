@@ -5,6 +5,7 @@ import {
   createChart,
   createSeriesMarkers,
   ColorType,
+  CrosshairMode,
   LineStyle,
   CandlestickSeries,
   HistogramSeries,
@@ -251,6 +252,10 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
         horzLines: { color: "#1a1a1a" },
       },
       crosshair: {
+        // lightweight-charts 默认是 Magnet：横线会被吸到最近一根蜡烛的
+        // 开/高/低/收上，读数跟着跳，看盘时对不准鼠标实际所在的价位。
+        // 这里显式关掉磁力，十字线严格跟随指针。
+        mode: CrosshairMode.Normal,
         vertLine: { color: "#3a3a3a", style: 2, width: 1 },
         horzLine: { color: "#3a3a3a", style: 2, width: 1 },
       },

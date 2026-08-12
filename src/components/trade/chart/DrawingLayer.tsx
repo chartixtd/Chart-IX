@@ -29,6 +29,33 @@ const DASH_ARRAY: Record<Drawing["lineStyle"], string | undefined> = {
   dotted: "1.5 3",
 };
 
+/**
+ * SVG `<text>` 没法套 Tailwind 的字体类，直接写 "monospace" 会各系统各写各的
+ * （macOS 落到 Courier、Linux 落到 DejaVu），标签宽度和粗细完全不一致。
+ * 显式给一条覆盖三大系统的等宽栈。
+ */
+const MONO_FONT =
+  'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace';
+
+/** 触屏/手写笔没有双击，长按同样时长后打开样式面板。 */
+const LONG_PRESS_MS = 500;
+/** 长按判定的手指抖动容差（px）：超过就当成拖动，不再弹面板。 */
+const LONG_PRESS_SLOP = 8;
+
+/**
+ * 只认主指针的主键按下：
+ * - 右键/中键不该开始画图；
+ * - macOS 的 Ctrl+左键是系统右键，同样要放过去；
+ * - 双指缩放时的第二根手指 isPrimary=false，不能被当成第二笔拖动。
+ */
+function isPrimaryPointer(
+  e: Pick<PointerEvent, "button" | "pointerType" | "ctrlKey" | "isPrimary">
+): boolean {
+  if (e.button !== 0) return false;
+  if (e.pointerType === "mouse" && e.ctrlKey) return false;
+  return e.isPrimary !== false;
+}
+
 interface Props {
   symbol: string;
   chart: IChartApi | null;
@@ -63,12 +90,80 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
   // Pending text annotation awaiting input
   const [pendingText, setPendingText] = useState<DrawingPoint | null>(null);
   const [textValue, setTextValue] = useState("");
-  // Drawing whose style settings modal is open, opened via double-click
+  // Drawing whose style settings modal is open (double-click, or long-press on touch)
   const [settingsDrawingId, setSettingsDrawingId] = useState<string | null>(null);
   // Whole-shape drag of an existing drawing
   const dragRef = useRef<{ id: string; origin: DrawingPoint; points: DrawingPoint[] } | null>(null);
+  // Mirror of `draft` for the window-level pointer handlers, which capture the
+  // render they were created in and would otherwise read a stale draft.
+  const draftRef = useRef<{ tool: DrawingTool; a: DrawingPoint; b: DrawingPoint } | null>(null);
+  // Cancels the in-flight pointer drag (see startSession). Null when idle.
+  const sessionRef = useRef<(() => void) | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
+  // Latest-render pointerdown handler for the chart container. The listener
+  // itself is attached once (below) and dispatches through this ref, so it can
+  // read fresh props/state without re-binding on every render.
+  const containerDownRef = useRef<((e: PointerEvent) => void) | null>(null);
+
+  // Abandon any half-finished drag if the chart goes away mid-gesture.
+  useEffect(() => () => sessionRef.current?.(), []);
+
+  /**
+   * 手机上手势的核心一条：工具处于选中状态时，图表本身仍然要能双指缩放。
+   *
+   * 原来的做法是在图表上盖一层全画布的透明 <rect> 吃掉指针事件，桌面端够用，
+   * 手机上是死局——lightweight-charts 的平移/双指缩放全靠 touch 事件，而
+   * touchstart 打在遮罩上就永远到不了它的 canvas，于是只要点开任何一个画线
+   * 工具，K 线就彻底卡住：既不能拖动，也不能双指放大，只能先退出工具再看图。
+   *
+   * 改成关掉图表自己的"单指拖动平移"，遮罩整层撤掉：
+   * - 一根手指 → 图表不再平移，事件照常冒泡到容器，由我们画线；
+   * - 两根手指 → touchstart 直接落在图表 canvas 上，pinch 缩放照常工作；
+   * - 滚轮/价格轴拖动 → 完全没被拦过，桌面端连带修好（以前遮罩把滚轮也吃了）。
+   */
+  useEffect(() => {
+    if (!chart) return;
+    chart.applyOptions({
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: !activeTool,
+        horzTouchDrag: !activeTool,
+        vertTouchDrag: !activeTool,
+      },
+    });
+  }, [chart, activeTool]);
+
+  // 单指拖动交给我们之后，lightweight-charts 不再 preventDefault 触摸移动，
+  // 浏览器会把这一下当成滚页面。touch-action:none 顶掉这个默认行为——双指缩放
+  // 是库在 JS 里自己实现的，不依赖浏览器手势，所以关掉不影响。
+  // 顺带禁掉 iOS 长按弹出的选择放大镜和文字选中。
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const armed = Boolean(activeTool);
+    const props = ["touch-action", "user-select", "-webkit-user-select", "-webkit-touch-callout"];
+    if (armed) {
+      el.style.setProperty("touch-action", "none");
+      el.style.setProperty("user-select", "none");
+      el.style.setProperty("-webkit-user-select", "none");
+      el.style.setProperty("-webkit-touch-callout", "none");
+    }
+    el.style.cursor = armed ? "crosshair" : "";
+    return () => {
+      for (const p of props) el.style.removeProperty(p);
+      el.style.cursor = "";
+    };
+  }, [activeTool, containerRef]);
+
+  // ---- Drawing starts on the chart container, not on an overlay ----
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onDown = (e: PointerEvent) => containerDownRef.current?.(e);
+    el.addEventListener("pointerdown", onDown);
+    return () => el.removeEventListener("pointerdown", onDown);
+  }, [containerRef]);
 
   // ---- Re-render on pan/zoom and on container resize ----
   useEffect(() => {
@@ -88,6 +183,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
   useEffect(() => {
     if (activeTool !== "channel") {
       setPendingChannel(null);
+      draftRef.current = null;
       setDraft(null);
     }
   }, [activeTool]);
@@ -98,6 +194,8 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (e.key === "Escape") {
+        sessionRef.current?.();
+        draftRef.current = null;
         setDraft(null);
         setPendingChannel(null);
         setPendingText(null);
@@ -111,6 +209,11 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, symbol, removeDrawing, setActiveTool, setSelected]);
+
+  // 每次渲染先把容器上的按下处理器摘掉，就绪时再在下面挂回当前这版。
+  // 少了这一步，切换品种、蜡烛短暂为空的那几帧里 listener 还指着上一版闭包，
+  // 按下会用旧的 times 数组换算，图形落到错误的时间上。
+  containerDownRef.current = null;
 
   if (!chart || !series || times.length === 0) return null;
 
@@ -143,12 +246,98 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
     return { time: snapToBar(times, logicalToTime(times, logical as number)), price: price as number };
   };
 
+  /**
+   * 一次指针拖拽 = 一组挂在 window 上的监听，而不是 setPointerCapture。
+   *
+   * 两个原因，都和"换个系统就用不了"直接相关：
+   * 1. WebKit（macOS / iOS Safari）对 SVG 元素的 setPointerCapture 支持不可靠，
+   *    调用可能抛错，也可能静默失败——一旦失败，指针移出图形本身就再也收不到
+   *    move，线只画一半就断了；
+   * 2. 就算捕获成功，指针拖出画布外（Windows 上多显示器之间尤其容易）时的
+   *    up 事件也会丢，图形会一直粘在鼠标上。
+   * 挂 window 在所有系统上行为一致，顺带天然覆盖 pointercancel（触屏被系统
+   * 手势打断、笔离开数位板）。
+   */
+  const startSession = (
+    pointerId: number,
+    onMove: (e: PointerEvent) => void,
+    onEnd: (e: PointerEvent | null) => void
+  ) => {
+    sessionRef.current?.(); // 上一笔没收尾就先收掉，避免两组监听叠在一起
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId === pointerId) onMove(ev);
+    };
+    const detach = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      sessionRef.current = null;
+    };
+    const finish = (ev: PointerEvent | null) => {
+      detach();
+      onEnd(ev);
+    };
+    const up = (ev: PointerEvent) => {
+      if (ev.pointerId === pointerId) finish(ev);
+    };
+    const cancel = (ev: PointerEvent) => {
+      if (ev.pointerId === pointerId) finish(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    sessionRef.current = () => finish(null);
+  };
+
+  const applyDraft = (d: { tool: DrawingTool; a: DrawingPoint; b: DrawingPoint } | null) => {
+    draftRef.current = d;
+    setDraft(d);
+  };
+
   // ---- Draft / creation handlers (capture rect, only while a tool is armed) ----
-  const onCapturePointerDown = (e: ReactPointerEvent<SVGRectElement>) => {
-    if (!activeTool) return;
+  const finishDraft = (end: DrawingPoint | null) => {
+    const d = draftRef.current;
+    applyDraft(null);
+    if (!d) return;
+    const p = end ?? d.b;
+    // Ignore accidental click-without-drag so a stray click leaves no zero-size shape
+    const moved = p.time !== d.a.time || p.price !== d.a.price;
+    if (moved) {
+      if (d.tool === "channel") {
+        setPendingChannel({ a: d.a, b: p });
+        return; // wait for the third click (channel offset) instead of finishing here
+      }
+      addDrawing(symbol, { tool: d.tool, points: [d.a, p], color: drawingColor });
+    }
+    if (!keepToolActive) setActiveTool(null);
+  };
+
+  /** 按下点是否落在价格窗格内——落在价格轴/时间轴上的要留给图表自己缩放。 */
+  const isInsidePane = (e: { clientX: number; clientY: number }): boolean => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return false;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    return x >= 0 && y >= 0 && x <= W && y <= H;
+  };
+
+  const onContainerPointerDown = (e: PointerEvent) => {
+    if (!activeTool) {
+      // 手机上没有"点空白处取消选中"的键盘替代，点图表空白即取消选中。
+      // 图形本身在上层 SVG 里，点它不会走到这儿，所以不会误伤。
+      if (selectedId && isInsidePane(e)) setSelected(null);
+      return;
+    }
+    // 第二根手指落下 = 用户要双指缩放：丢掉这半笔，把手势整个让给图表。
+    // 不能走 finishDraft 的正常收尾，否则会把捏合的起手势提交成一个图形。
+    if (e.isPrimary === false) {
+      draftRef.current = null;
+      sessionRef.current?.();
+      return;
+    }
+    if (!isPrimaryPointer(e) || !isInsidePane(e)) return;
     const p = pointFromEvent(e);
     if (!p) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
 
     if (pendingChannel) {
       addDrawing(symbol, {
@@ -171,57 +360,76 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       if (!keepToolActive) setActiveTool(null);
       return;
     }
-    setDraft({ tool: activeTool, a: p, b: p });
+
+    applyDraft({ tool: activeTool, a: p, b: p });
+    startSession(
+      e.pointerId,
+      (ev) => {
+        const q = pointFromEvent(ev);
+        const d = draftRef.current;
+        if (q && d) applyDraft({ ...d, b: q });
+      },
+      (ev) => finishDraft(ev ? pointFromEvent(ev) : null)
+    );
   };
 
-  const onCapturePointerMove = (e: ReactPointerEvent<SVGRectElement>) => {
-    if (!draft) return;
-    const p = pointFromEvent(e);
-    if (p) setDraft({ ...draft, b: p });
-  };
-
-  const onCapturePointerUp = (e: ReactPointerEvent<SVGRectElement>) => {
-    if (!draft) return;
-    const p = pointFromEvent(e) ?? draft.b;
-    // Ignore accidental click-without-drag so a stray click leaves no zero-size shape
-    const moved = p.time !== draft.a.time || p.price !== draft.a.price;
-    if (moved) {
-      if (draft.tool === "channel") {
-        setPendingChannel({ a: draft.a, b: p });
-        setDraft(null);
-        return; // wait for the third click (channel offset) instead of finishing here
-      }
-      addDrawing(symbol, { tool: draft.tool, points: [draft.a, p], color: drawingColor });
-    }
-    setDraft(null);
-    if (!keepToolActive) setActiveTool(null);
-  };
+  // Publish the current render's handler to the listener attached above.
+  containerDownRef.current = onContainerPointerDown;
 
   // ---- Moving an existing drawing (select tool only) ----
   const onShapePointerDown = (e: ReactPointerEvent<SVGElement>, d: Drawing) => {
     if (activeTool) return; // creating, not selecting
+    if (!isPrimaryPointer(e)) return;
     e.stopPropagation();
     setSelected(d.id);
     const p = pointFromEvent(e);
     if (!p) return;
     dragRef.current = { id: d.id, origin: p, points: d.points };
-    (e.currentTarget as SVGElement).setPointerCapture(e.pointerId);
-  };
 
-  const onShapePointerMove = (e: ReactPointerEvent<SVGElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const p = pointFromEvent(e);
-    if (!p) return;
-    const dt = p.time - drag.origin.time;
-    const dp = p.price - drag.origin.price;
-    updateDrawing(symbol, drag.id, {
-      points: drag.points.map((pt) => ({ time: pt.time + dt, price: pt.price + dp })),
-    });
-  };
+    const startX = e.clientX;
+    const startY = e.clientY;
+    // 触屏/手写笔没有双击事件，用长按代替"双击打开样式面板"
+    let longPress: number | null = null;
+    if (e.pointerType !== "mouse") {
+      longPress = window.setTimeout(() => {
+        longPress = null;
+        dragRef.current = null;
+        sessionRef.current?.();
+        setSettingsDrawingId(d.id);
+      }, LONG_PRESS_MS);
+    }
+    const clearLongPress = () => {
+      if (longPress !== null) {
+        clearTimeout(longPress);
+        longPress = null;
+      }
+    };
 
-  const onShapePointerUp = () => {
-    dragRef.current = null;
+    startSession(
+      e.pointerId,
+      (ev) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        if (longPress !== null) {
+          const slipped =
+            Math.abs(ev.clientX - startX) > LONG_PRESS_SLOP ||
+            Math.abs(ev.clientY - startY) > LONG_PRESS_SLOP;
+          if (!slipped) return; // 还在长按判定里，先别动图形
+          clearLongPress();
+        }
+        const q = pointFromEvent(ev);
+        if (!q) return;
+        const dt = q.time - drag.origin.time;
+        const dp = q.price - drag.origin.price;
+        updateDrawing(symbol, drag.id, {
+          points: drag.points.map((pt) => ({ time: pt.time + dt, price: pt.price + dp })),
+        });
+      },
+      () => {
+        clearLongPress();
+        dragRef.current = null;
+      }
+    );
   };
 
   // ---- Rendering ----
@@ -238,16 +446,28 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       strokeDasharray: isDraft ? "4 3" : DASH_ARRAY[d.lineStyle],
       vectorEffect: "non-scaling-stroke" as const,
     };
+    // 拖拽/双击的公共接线。move 与 up 走 window（见 startSession），这里只留按下。
+    // touchAction:none 是触屏上能拖动的前提——否则浏览器会把这一下判成滚动手势，
+    // 直接发 pointercancel 把拖动掐掉。
+    const grab = {
+      onPointerDown: (e: ReactPointerEvent<SVGElement>) => onShapePointerDown(e, d),
+      onDoubleClick: () => setSettingsDrawingId(d.id),
+    };
+    const grabStyle = (mode: "stroke" | "all") =>
+      ({
+        pointerEvents: (activeTool ? "none" : mode) as "none" | "stroke" | "all",
+        cursor: "move",
+        touchAction: "none",
+      }) as const;
+
     // A fat transparent copy under each shape makes thin lines easy to grab.
     const hit = {
       stroke: "transparent",
-      strokeWidth: 12,
+      // 触屏手指的命中半径远大于鼠标；12px 在手机上基本点不中细线
+      strokeWidth: 16,
       fill: "none",
-      style: { pointerEvents: (activeTool ? "none" : "stroke") as "none" | "stroke", cursor: "move" },
-      onPointerDown: (e: ReactPointerEvent<SVGElement>) => onShapePointerDown(e, d),
-      onPointerMove: onShapePointerMove,
-      onPointerUp: onShapePointerUp,
-      onDoubleClick: () => setSettingsDrawingId(d.id),
+      style: grabStyle("stroke"),
+      ...grab,
     };
 
     const [a, b] = d.points;
@@ -259,7 +479,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
         <g key={d.id}>
           <line x1={0} y1={y} x2={W} y2={y} {...hit} />
           <line x1={0} y1={y} x2={W} y2={y} {...common} />
-          <text x={4} y={y - 4} fill={stroke} fontSize={10} fontFamily="monospace">
+          <text x={4} y={y - 4} fill={stroke} fontSize={10} fontFamily={MONO_FONT}>
             {a.price.toPrecision(6)}
           </text>
           {sel && <circle cx={W / 2} cy={y} r={3} fill={stroke} />}
@@ -291,11 +511,8 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
             y={y}
             fill={stroke}
             fontSize={fontSize}
-            style={{ pointerEvents: activeTool ? "none" : "all", cursor: "move" }}
-            onPointerDown={(e) => onShapePointerDown(e, d)}
-            onPointerMove={onShapePointerMove}
-            onPointerUp={onShapePointerUp}
-            onDoubleClick={() => setSettingsDrawingId(d.id)}
+            style={grabStyle("all")}
+            {...grab}
           >
             {d.text || t("text_placeholder")}
           </text>
@@ -407,15 +624,9 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
             fill={stroke}
             fillOpacity={d.opacity}
             stroke="transparent"
-            strokeWidth={12}
-            style={{
-              pointerEvents: (activeTool ? "none" : "all") as "none" | "all",
-              cursor: "move",
-            }}
-            onPointerDown={(e) => onShapePointerDown(e, d)}
-            onPointerMove={onShapePointerMove}
-            onPointerUp={onShapePointerUp}
-            onDoubleClick={() => setSettingsDrawingId(d.id)}
+            strokeWidth={16}
+            style={grabStyle("all")}
+            {...grab}
           />
           <rect x={rx} y={ry} width={rw} height={rh} {...common} fill={stroke} fillOpacity={d.opacity} />
           {sel && (
@@ -435,10 +646,8 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       const ry = Math.abs(y2 - y1) / 2;
       return (
         <g key={d.id}>
-          <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={stroke} fillOpacity={d.opacity} stroke="transparent" strokeWidth={12}
-            style={{ pointerEvents: (activeTool ? "none" : "all") as "none" | "all", cursor: "move" }}
-            onPointerDown={(e) => onShapePointerDown(e, d)} onPointerMove={onShapePointerMove} onPointerUp={onShapePointerUp}
-            onDoubleClick={() => setSettingsDrawingId(d.id)} />
+          <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={stroke} fillOpacity={d.opacity} stroke="transparent" strokeWidth={16}
+            style={grabStyle("all")} {...grab} />
           <ellipse cx={cx} cy={cy} rx={rx} ry={ry} {...common} fill={stroke} fillOpacity={d.opacity} />
           {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y2} r={3.5} fill={stroke} /></>}
         </g>
@@ -449,10 +658,8 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
       const points = `${(x1 + x2) / 2},${Math.min(y1, y2)} ${x1},${Math.max(y1, y2)} ${x2},${Math.max(y1, y2)}`;
       return (
         <g key={d.id}>
-          <polygon points={points} fill={stroke} fillOpacity={d.opacity} stroke="transparent" strokeWidth={12}
-            style={{ pointerEvents: (activeTool ? "none" : "all") as "none" | "all", cursor: "move" }}
-            onPointerDown={(e) => onShapePointerDown(e, d)} onPointerMove={onShapePointerMove} onPointerUp={onShapePointerUp}
-            onDoubleClick={() => setSettingsDrawingId(d.id)} />
+          <polygon points={points} fill={stroke} fillOpacity={d.opacity} stroke="transparent" strokeWidth={16}
+            style={grabStyle("all")} {...grab} />
           <polygon points={points} {...common} fill={stroke} fillOpacity={d.opacity} />
           {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y2} r={3.5} fill={stroke} /></>}
         </g>
@@ -487,7 +694,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
           <rect x={Math.min(x1, x2)} y={Math.min(y1, y2)} width={Math.abs(x2 - x1)} height={Math.abs(y2 - y1)}
             fill={up ? "#22c55e" : "#ef4444"} fillOpacity={0.1} stroke="transparent" strokeWidth={0} />
           <line x1={x1} y1={y1} x2={x1} y2={y2} stroke={stroke} strokeWidth={common.strokeWidth} strokeDasharray={DASH_ARRAY[d.lineStyle]} vectorEffect="non-scaling-stroke" />
-          <text x={Math.min(x1, x2) + 4} y={midY} fill={up ? "#22c55e" : "#ef4444"} fontSize={11} fontFamily="monospace" fontWeight={600}>
+          <text x={Math.min(x1, x2) + 4} y={midY} fill={up ? "#22c55e" : "#ef4444"} fontSize={11} fontFamily={MONO_FONT} fontWeight={600}>
             {deltaPrice >= 0 ? "+" : ""}{deltaPrice.toPrecision(6)} ({deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(2)}%)
           </text>
           {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x1} cy={y2} r={3.5} fill={stroke} /></>}
@@ -506,7 +713,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
         <g key={d.id}>
           <line x1={x1} y1={y1} x2={x2} y2={y1} {...hit} />
           <line x1={x1} y1={y1} x2={x2} y2={y1} stroke={stroke} strokeWidth={common.strokeWidth} strokeDasharray={DASH_ARRAY[d.lineStyle]} vectorEffect="non-scaling-stroke" />
-          <text x={midX} y={y1 - 6} fill={stroke} fontSize={11} fontFamily="monospace" fontWeight={600} textAnchor="middle">
+          <text x={midX} y={y1 - 6} fill={stroke} fontSize={11} fontFamily={MONO_FONT} fontWeight={600} textAnchor="middle">
             {label}
           </text>
           {sel && <><circle cx={x1} cy={y1} r={3.5} fill={stroke} /><circle cx={x2} cy={y1} r={3.5} fill={stroke} /></>}
@@ -537,7 +744,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
                   strokeOpacity={lvl === 0 || lvl === 1 ? 0.9 : 0.55}
                   strokeDasharray={lvl === 0 || lvl === 1 ? DASH_ARRAY[d.lineStyle] : "3 3"}
                 />
-                <text x={lo + 2} y={y - 3} fill={stroke} fontSize={9} fontFamily="monospace" opacity={0.85}>
+                <text x={lo + 2} y={y - 3} fill={stroke} fontSize={9} fontFamily={MONO_FONT} opacity={0.85}>
                   {(lvl * 100).toFixed(1)}% {price.toPrecision(6)}
                 </text>
               </g>
@@ -582,7 +789,7 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
                   strokeOpacity={lvl === 0 || lvl === 1 ? 0.9 : 0.55}
                   strokeDasharray={lvl === 0 || lvl === 1 ? DASH_ARRAY[d.lineStyle] : "3 3"}
                 />
-                <text x={lo + 2} y={y - 3} fill={stroke} fontSize={9} fontFamily="monospace" opacity={0.85}>
+                <text x={lo + 2} y={y - 3} fill={stroke} fontSize={9} fontFamily={MONO_FONT} opacity={0.85}>
                   {(lvl * 100).toFixed(1)}% {price.toPrecision(6)}
                 </text>
               </g>
@@ -637,23 +844,19 @@ export function DrawingLayer({ symbol, chart, series, times, containerRef }: Pro
         width={W}
         height={H}
         className="absolute left-0 top-0 z-[5]"
-        style={{ pointerEvents: "none", overflow: "hidden" }}
+        style={{
+          pointerEvents: "none",
+          overflow: "hidden",
+          // Safari 对 SVG 子元素上的 touch-action 支持不全，挂在 <svg> 上更稳。
+          // 本身 pointerEvents:none，命中的永远是下面那些子元素，这条只影响它们。
+          touchAction: "none",
+          // 拖动图形时不要顺手把页面文字选中（Firefox / Linux 上最明显）
+          userSelect: "none",
+          WebkitUserSelect: "none",
+        }}
       >
-        {/* Capture layer: only present while a tool is armed, so panning stays free otherwise */}
-        {activeTool && (
-          <rect
-            x={0}
-            y={0}
-            width={W}
-            height={H}
-            fill="transparent"
-            style={{ pointerEvents: "all", cursor: "crosshair" }}
-            onPointerDown={onCapturePointerDown}
-            onPointerMove={onCapturePointerMove}
-            onPointerUp={onCapturePointerUp}
-          />
-        )}
-
+        {/* 这里没有"捕获层"。画线的按下事件挂在图表容器上（见上方 effect），
+            图表的 canvas 因此始终能收到 touch 事件，双指缩放不受影响。 */}
         {(drawings ?? []).map((d) => renderShape(d))}
         {draft &&
           renderShape(

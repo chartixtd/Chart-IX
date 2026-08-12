@@ -727,7 +727,14 @@
       "restored": "视频已恢复",
       "hard_deleted": "视频已永久删除",
       "tier_updated": "等级已更新",
-      "upload_success": "视频上传成功"
+      "upload_success": "视频上传成功",
+      "order_col": "排序",
+      "move_up": "上移",
+      "move_down": "下移",
+      "order_saved": "顺序已保存",
+      "order_failed": "顺序保存失败，已还原",
+      "reorder_hint": "拖动左侧把手（或用上下箭头）调整顺序，前台视频库按此顺序展示。",
+      "reorder_disabled_search": "搜索状态下无法排序——过滤后相邻两行之间可能隔着未显示的视频，拖动位置无法确定。清空搜索后即可拖动。"
     },
     "articles_list": {
       "title": "文章管理",

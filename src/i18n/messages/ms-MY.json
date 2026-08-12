@@ -669,7 +669,14 @@
       "restored": "Video dipulihkan",
       "hard_deleted": "Video dipadam kekal",
       "tier_updated": "Peringkat dikemaskini",
-      "upload_success": "Video berjaya dimuat naik"
+      "upload_success": "Video berjaya dimuat naik",
+      "order_col": "Susunan",
+      "move_up": "Naik",
+      "move_down": "Turun",
+      "order_saved": "Susunan disimpan",
+      "order_failed": "Gagal menyimpan susunan — telah dikembalikan",
+      "reorder_hint": "Seret pemegang (atau guna anak panah) untuk menyusun semula. Pustaka video awam mengikut susunan ini.",
+      "reorder_disabled_search": "Penyusunan dimatikan semasa mencari — baris yang ditapis mungkin ada video tersembunyi di antaranya, jadi kedudukan jatuh hanya tekaan. Kosongkan carian untuk menyusun."
     },
     "articles_list": {
       "title": "Artikel",

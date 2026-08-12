@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
+import { Icon } from "@/components/ui/Icon";
+import { cn } from "@/lib/utils";
 import type { Video, VideoCategory } from "@/types";
 import { needsCompression, compressVideo, COMPRESSION_THRESHOLD_BYTES } from "@/lib/video-compress";
 
@@ -35,6 +37,22 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
   // Search & pagination
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+
+  /**
+   * 拖拽排序的本地副本。videos 由服务端组件传下来，拖动时先动这份、再回写，
+   * 否则每一步都要等一次往返，手感是拖完停半秒才归位。
+   * 服务端数据变化（保存/删除后的 router.refresh()）时重新同步。
+   */
+  const [order, setOrder] = useState<Video[]>(videos);
+  useEffect(() => {
+    setOrder(videos);
+  }, [videos]);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  // 只有按住把手时才把整行标记为 draggable：否则行内的 select 和按钮
+  // 会被拖拽劫持，连下拉都拉不开。
+  const [handleArmedId, setHandleArmedId] = useState<string | null>(null);
 
   // Upload modal state
   const [showUpload, setShowUpload] = useState(false);
@@ -339,13 +357,55 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
 
   // Filter videos by search query (case-insensitive across all title locales)
   const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return videos;
+    if (!searchQuery.trim()) return order;
     const q = searchQuery.toLowerCase();
-    return videos.filter((v) => {
+    return order.filter((v) => {
       const titles = [v.title?.["en-US"], v.title?.["zh-CN"], v.title?.["ms-MY"]];
       return titles.some((t) => t?.toLowerCase().includes(q));
     });
-  }, [videos, searchQuery]);
+  }, [order, searchQuery]);
+
+  /**
+   * 排序只在"看得见全集"时才成立：搜索过滤后，两行之间可能隔着若干条没显示
+   * 的视频，把 A 拖到 B 上面得到的全局位置是猜的。所以搜索状态下关掉拖拽，
+   * 而不是让它做一件用户无法预判的事。
+   */
+  const canReorder = !searchQuery.trim() && !savingOrder;
+
+  /** 整批持久化：乐观更新 + 失败回滚。传完整 id 列表，不是当前页切片。 */
+  const persistOrder = async (next: Video[]) => {
+    const prev = order;
+    setOrder(next);
+    setSavingOrder(true);
+    try {
+      const res = await fetch("/api/admin/videos/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: next.map((v) => v.id) }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "reorder failed");
+      }
+      toast(t("videos_list.order_saved"), "success");
+      router.refresh();
+    } catch {
+      setOrder(prev);
+      toast(t("videos_list.order_failed"), "error");
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+
+  /** 把某条移动到全局第 toIndex 位（0-based） */
+  const moveTo = (id: string, toIndex: number) => {
+    const arr = [...order];
+    const from = arr.findIndex((v) => v.id === id);
+    if (from < 0 || toIndex < 0 || toIndex >= arr.length || from === toIndex) return;
+    const [item] = arr.splice(from, 1);
+    arr.splice(toIndex, 0, item);
+    void persistOrder(arr);
+  };
 
   // Reset page when search query changes
   useEffect(() => {
@@ -402,6 +462,9 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
         <table className="w-full text-sm">
           <thead className="bg-bg-tertiary text-left">
             <tr>
+              <th className="w-[92px] px-3 py-3 text-text-muted">
+                <span className="sr-only">{t("videos_list.order_col")}</span>
+              </th>
               <th className="px-4 py-3 text-text-muted">{t("videos_list.title_col")}</th>
               <th className="px-4 py-3 text-text-muted">{t("videos_list.language")}</th>
               <th className="px-4 py-3 text-text-muted">{t("videos_list.category")}</th>
@@ -413,8 +476,80 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
             </tr>
           </thead>
           <tbody>
-            {paginated.map((v) => (
-              <tr key={v.id} className="border-t border-border-default hover:bg-bg-tertiary/50">
+            {paginated.map((v, i) => {
+              // 分页是连续切片，所以本页第 i 行的全局位置可以直接算出来
+              const globalIndex = (safePage - 1) * PAGE_SIZE + i;
+              const isDragging = dragId === v.id;
+              const isOver = overId === v.id && dragId !== null && dragId !== v.id;
+              return (
+              <tr
+                key={v.id}
+                draggable={canReorder && handleArmedId === v.id}
+                onDragStart={(e) => {
+                  if (!canReorder) return;
+                  setDragId(v.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  // Firefox 不设 data 就不触发 drag
+                  e.dataTransfer.setData("text/plain", v.id);
+                }}
+                onDragEnd={() => { setDragId(null); setOverId(null); setHandleArmedId(null); }}
+                onDragOver={(e) => { if (canReorder && dragId) { e.preventDefault(); setOverId(v.id); } }}
+                onDrop={(e) => {
+                  if (!canReorder || !dragId) return;
+                  e.preventDefault();
+                  moveTo(dragId, globalIndex);
+                  setDragId(null); setOverId(null); setHandleArmedId(null);
+                }}
+                className={cn(
+                  "border-t border-border-default transition-colors hover:bg-bg-tertiary/50",
+                  isDragging && "opacity-40",
+                  // 落点用一条金箔线标出来，而不是整行变色——后者会和 hover 混淆
+                  isOver && "shadow-[inset_0_2px_0_0_#C9A24B]"
+                )}
+              >
+                <td className="px-3 py-3">
+                  <div className="flex items-center gap-0.5">
+                    <span
+                      // onMouseDown 而非 onDragStart：draggable 必须在拖拽开始前
+                      // 就为 true，否则浏览器根本不认这次拖动
+                      onMouseDown={() => canReorder && setHandleArmedId(v.id)}
+                      onMouseUp={() => setHandleArmedId(null)}
+                      aria-hidden
+                      className={cn(
+                        "flex h-7 w-5 items-center justify-center",
+                        canReorder
+                          ? "cursor-grab text-text-muted active:cursor-grabbing"
+                          : "cursor-not-allowed text-text-muted/40"
+                      )}
+                    >
+                      <Icon name="grip" className="h-4 w-4" />
+                    </span>
+                    {/* 拖拽之外的可见控件：触屏没有 HTML5 拖放，键盘用户也够不着 */}
+                    <span className="flex flex-col">
+                      <button
+                        type="button"
+                        disabled={!canReorder || globalIndex === 0}
+                        onClick={() => moveTo(v.id, globalIndex - 1)}
+                        aria-label={t("videos_list.move_up")}
+                        className="flex h-5 w-5 items-center justify-center rounded-xs text-text-muted transition-colors hover:text-gold disabled:opacity-30 disabled:hover:text-text-muted"
+                      >
+                        <Icon name="chevronUp" className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canReorder || globalIndex === order.length - 1}
+                        onClick={() => moveTo(v.id, globalIndex + 1)}
+                        aria-label={t("videos_list.move_down")}
+                        className="flex h-5 w-5 items-center justify-center rounded-xs text-text-muted transition-colors hover:text-gold disabled:opacity-30 disabled:hover:text-text-muted"
+                      >
+                        <Icon name="chevronDown" className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                    </span>
+                    <span className="ml-1 w-5 text-right font-mono text-xs tabular-nums text-text-muted">
+                      {globalIndex + 1}
+                    </span>
+                  </div>
+                </td>
                 <td className="max-w-[240px] truncate px-4 py-3 text-text-primary" title={getTitle(v)}>
                   {getTitle(v)}
                 </td>
@@ -486,10 +621,18 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      {/* 排序状态说明：搜索时拖拽会被关掉，必须讲清楚为什么 */}
+      <p className="mt-2 text-xs text-text-muted">
+        {searchQuery.trim()
+          ? t("videos_list.reorder_disabled_search")
+          : t("videos_list.reorder_hint")}
+      </p>
 
       {/* Empty / no results */}
       {filtered.length === 0 && (

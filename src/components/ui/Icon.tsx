@@ -174,6 +174,19 @@ const PATHS = {
       <path d="m7 9 5-4 5 7" />
     </>
   ),
+  /** 拖拽把手。六点栅格是这个操作的通用记号，用户不需要学 */
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="18" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="18" r="1.1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  chevronUp: <path d="m6 15 6-6 6 6" />,
+  chevronDown: <path d="m6 9 6 6 6-6" />,
 } as const;
 
 export type IconName = keyof typeof PATHS;

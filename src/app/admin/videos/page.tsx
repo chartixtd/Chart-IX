@@ -11,7 +11,9 @@ export default async function AdminVideosPage() {
     client
       .from("videos")
       .select("*, category:video_categories(id, name, slug)")
-      .order("sort_order", { ascending: true }),
+      .order("sort_order", { ascending: true })
+      // 与前台 /videos 用同一套次级排序，后台看到的顺序才等于用户看到的顺序
+      .order("created_at", { ascending: false }),
     client
       .from("video_categories")
       .select("*")

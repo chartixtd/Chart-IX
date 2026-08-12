@@ -44,6 +44,9 @@ export default async function VideosPage({
       .eq("is_deleted", false)
       .eq("language", locale)
       .order("sort_order", { ascending: true })
+      // sort_order 相同时（新上传的视频落在同一序号上）必须有稳定的次级排序，
+      // 否则同分行的先后每次查询都可能不同，用户会看到"顺序自己在变"。
+      .order("created_at", { ascending: false })
       .limit(300),
     supabase
       .from("video_categories")

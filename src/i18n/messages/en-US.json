@@ -727,7 +727,14 @@
       "restored": "Video restored",
       "hard_deleted": "Video permanently deleted",
       "tier_updated": "Tier updated",
-      "upload_success": "Video uploaded successfully"
+      "upload_success": "Video uploaded successfully",
+      "order_col": "Order",
+      "move_up": "Move up",
+      "move_down": "Move down",
+      "order_saved": "Order saved",
+      "order_failed": "Could not save order — reverted",
+      "reorder_hint": "Drag the handle (or use the arrows) to reorder. The public video library follows this order.",
+      "reorder_disabled_search": "Reordering is off while searching — filtered rows can have hidden videos between them, so a drop position would be a guess. Clear the search to reorder."
     },
     "articles_list": {
       "title": "Articles",

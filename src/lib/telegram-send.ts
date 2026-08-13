@@ -25,6 +25,26 @@ export interface TelegramSendResult {
   error?: string;
 }
 
+export interface TelegramSendOptions {
+  maxAttempts?: number;
+  timeoutMs?: number;
+  /**
+   * Forum topic to post into. Omitted/null sends to the chat's General topic,
+   * which is what every send did before topics were supported — so leaving this
+   * unset preserves the old behaviour exactly.
+   *
+   * Telegram derives a topic's id from the message that created it, so this is
+   * the number in a topic link: t.me/c/<chat>/<messageThreadId>/<messageId>.
+   */
+  messageThreadId?: number | null;
+  /**
+   * Screener tables are self-contained, so their links only add noise — hence
+   * the default. An article push is the opposite case: the preview card *is*
+   * the point, so that caller turns it off.
+   */
+  disableWebPagePreview?: boolean;
+}
+
 export class TelegramError extends Error {
   constructor(
     message: string,
@@ -64,19 +84,27 @@ async function attemptSend(
   botToken: string,
   chatId: string,
   text: string,
-  timeoutMs: number
+  timeoutMs: number,
+  messageThreadId: number | null,
+  disableWebPagePreview: boolean
 ): Promise<void> {
+  // message_thread_id is *omitted*, not sent as null, when there is no topic:
+  // Telegram rejects a null with "message thread not found" instead of falling
+  // back to the General topic.
+  const payload: Record<string, unknown> = {
+    chat_id: chatId,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: disableWebPagePreview,
+  };
+  if (messageThreadId !== null) payload.message_thread_id = messageThreadId;
+
   let res: Response;
   try {
     res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }),
+      body: JSON.stringify(payload),
       // The fix for the hang: bound every attempt so a dead connection can
       // never hold the whole function hostage.
       signal: AbortSignal.timeout(timeoutMs),
@@ -132,17 +160,19 @@ export async function sendTelegramMessage(
   botToken: string,
   chatId: string,
   text: string,
-  opts: { maxAttempts?: number; timeoutMs?: number } = {}
+  opts: TelegramSendOptions = {}
 ): Promise<TelegramSendResult> {
   const maxAttempts = opts.maxAttempts ?? TELEGRAM_MAX_ATTEMPTS;
   const timeoutMs = opts.timeoutMs ?? TELEGRAM_TIMEOUT_MS;
+  const messageThreadId = opts.messageThreadId ?? null;
+  const disableWebPagePreview = opts.disableWebPagePreview ?? true;
   const startedAt = Date.now();
 
   let lastError = "unknown error";
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      await attemptSend(botToken, chatId, text, timeoutMs);
+      await attemptSend(botToken, chatId, text, timeoutMs, messageThreadId, disableWebPagePreview);
       return { ok: true, attempts: attempt, durationMs: Date.now() - startedAt };
     } catch (err) {
       const tgErr = err instanceof TelegramError ? err : null;

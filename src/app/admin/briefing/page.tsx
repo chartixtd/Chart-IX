@@ -1,6 +1,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { utcPlus8DateString, utcPlus8Hour, briefingSlug } from "@/lib/briefing/date";
 import { PUBLISH_HOUR_START, PUBLISH_HOUR_END } from "@/lib/briefing/run";
+import { getTelegramPushSettings, listTargetsFor } from "@/lib/telegram-push";
 import { BriefingRunner, type BriefingPageData } from "./BriefingRunner";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,31 @@ export default async function AdminBriefingPage() {
   const todaySlug = briefingSlug(utcPlus8DateString(now));
   const recent = (recentRes.data ?? []) as ArticleRow[];
 
+  // 「早报的链接会发到哪里」是这个页面本来完全答不上来的问题——配置在
+  // /admin/telegram-push，而来这里的人是想确认今天的稿子会不会推出去。
+  // 读失败只让这块显示「读不到」，绝不能把整个巡检页打成 500。
+  let telegram: BriefingPageData["telegram"] = null;
+  try {
+    const [settings, targets] = await Promise.all([
+      getTelegramPushSettings(),
+      listTargetsFor("briefing"),
+    ]);
+    telegram = {
+      // 总开关同样管早报——关着的时候目标列表看着很齐全，却一条都发不出去
+      enabled: settings.enabled,
+      botTokenConfigured: Boolean(settings.botToken),
+      targets: targets.map((x) => ({
+        label: x.label,
+        chatId: x.chatId,
+        messageThreadId: x.messageThreadId,
+        // 目标自带 token 时，全局 token 缺失对它无所谓
+        tokenReady: Boolean(x.botToken || settings.botToken),
+      })),
+    };
+  } catch (err) {
+    console.error("[admin/briefing page] telegram targets", err);
+  }
+
   const data: BriefingPageData = {
     // 只暴露"配没配"，绝不把值送到客户端
     env: {
@@ -83,6 +109,7 @@ export default async function AdminBriefingPage() {
     todaySlug,
     todayPublished: recent.some((a) => a.slug === todaySlug),
     pushEnabled: pushSettingRes.data?.value === true,
+    telegram,
     // 上一次运行的降级原因。cron 在无人值守时段跑，等人发现「今天怎么是兜底稿」
     // 时那次响应早没了，所以它必须能从库里读回来。
     lastRun: (lastRunRes.data?.value as BriefingPageData["lastRun"]) ?? null,

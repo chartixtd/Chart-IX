@@ -22,6 +22,19 @@ function validateLang(v: unknown): "en" | "zh" | null | undefined {
   throw new Error("messageLang must be 'en', 'zh' or null");
 }
 
+/**
+ * Topic ids are positive integers. An empty string means "no topic" (post to
+ * the chat's General topic) — that's what the form sends when the field is left
+ * blank, and it must clear a previously set topic rather than be ignored.
+ */
+function validateThreadId(v: unknown): number | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).trim());
+  if (!Number.isInteger(n) || n <= 0) throw new Error("invalid_thread_id");
+  return n;
+}
+
 export async function GET() {
   try {
     const auth = await requireAdmin();
@@ -50,9 +63,12 @@ export async function POST(request: NextRequest) {
     const target = await createTelegramTarget({
       label,
       chatId,
+      messageThreadId: validateThreadId(body.messageThreadId),
       botToken: typeof body.botToken === "string" ? body.botToken : undefined,
       messageLang: validateLang(body.messageLang),
       enabled: typeof body.enabled === "boolean" ? body.enabled : true,
+      pushScreener: typeof body.pushScreener === "boolean" ? body.pushScreener : undefined,
+      pushBriefing: typeof body.pushBriefing === "boolean" ? body.pushBriefing : undefined,
       sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : 0,
     });
 
@@ -75,6 +91,9 @@ export async function POST(request: NextRequest) {
     if (err instanceof Error && err.message === "duplicate_chat_id") {
       return NextResponse.json({ error: "duplicate_chat_id" }, { status: 409 });
     }
+    if (err instanceof Error && err.message === "invalid_thread_id") {
+      return NextResponse.json({ error: "invalid_thread_id" }, { status: 400 });
+    }
     console.error("[admin/telegram-push/targets POST]", err);
     return NextResponse.json({ error: "Failed to create target" }, { status: 500 });
   }
@@ -92,9 +111,12 @@ export async function PATCH(request: NextRequest) {
     const target = await updateTelegramTarget(id, {
       label: typeof body.label === "string" ? body.label : undefined,
       chatId: typeof body.chatId === "string" ? body.chatId : undefined,
+      messageThreadId: validateThreadId(body.messageThreadId),
       botToken: typeof body.botToken === "string" ? body.botToken : undefined,
       messageLang: validateLang(body.messageLang),
       enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+      pushScreener: typeof body.pushScreener === "boolean" ? body.pushScreener : undefined,
+      pushBriefing: typeof body.pushBriefing === "boolean" ? body.pushBriefing : undefined,
       sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : undefined,
     });
 
@@ -115,6 +137,9 @@ export async function PATCH(request: NextRequest) {
   } catch (err) {
     if (err instanceof Error && err.message === "duplicate_chat_id") {
       return NextResponse.json({ error: "duplicate_chat_id" }, { status: 409 });
+    }
+    if (err instanceof Error && err.message === "invalid_thread_id") {
+      return NextResponse.json({ error: "invalid_thread_id" }, { status: 400 });
     }
     if (err instanceof Error && err.message === "target_not_found") {
       return NextResponse.json({ error: "not_found" }, { status: 404 });

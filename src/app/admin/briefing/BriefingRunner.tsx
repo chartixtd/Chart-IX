@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,17 @@ export interface BriefingPageData {
   todaySlug: string;
   todayPublished: boolean;
   pushEnabled: boolean;
+  /** null = 读取 Telegram 配置时出错，与「没有目标」不是一回事 */
+  telegram: {
+    enabled: boolean;
+    botTokenConfigured: boolean;
+    targets: {
+      label: string;
+      chatId: string;
+      messageThreadId: number | null;
+      tokenReady: boolean;
+    }[];
+  } | null;
   lastRun: {
     at: string;
     status: string;
@@ -173,6 +185,43 @@ export function BriefingRunner({ data }: { data: BriefingPageData }) {
             改完 Vercel 环境变量必须重新部署一次，否则不会生效。
           </p>
         )}
+      </Card>
+
+      <Card title="Telegram 推送目标">
+        {data.telegram === null ? (
+          <p className="text-sm text-danger">
+            读取 Telegram 配置失败，无法确认早报会不会推出去。
+          </p>
+        ) : !data.telegram.enabled ? (
+          <p className="text-sm text-gold">
+            Telegram 推送总开关是关的，早报链接不会发出去（总开关同时管榜单和早报）。
+          </p>
+        ) : data.telegram.targets.length === 0 ? (
+          <p className="text-sm text-text-secondary">
+            没有目标勾选「每日早报」，发布后不会推送任何链接。
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {data.telegram.targets.map((x) => (
+              <li key={`${x.chatId}:${x.messageThreadId ?? "general"}`} className="text-sm">
+                <span className="text-text-primary">{x.label}</span>
+                <span className="ml-2 font-mono text-xs text-text-secondary">
+                  {x.chatId}
+                  {x.messageThreadId !== null ? ` · 话题 ${x.messageThreadId}` : " · 主话题"}
+                </span>
+                {!x.tokenReady && <span className="ml-2 text-xs text-danger">未配置 Bot Token</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-3 text-xs text-text-secondary">
+          发布成功后会把当天文章的网址推给上面这些目标（中文目标发 zh-CN 链接，英文目标发 en-US）。
+          目标、话题与语言在{" "}
+          <Link href="/admin/telegram-push" className="text-gold hover:underline">
+            Telegram 推送
+          </Link>{" "}
+          页面配置——在那里勾上「每日早报」即可。
+        </p>
       </Card>
 
       <Card title="发布窗口与心跳">

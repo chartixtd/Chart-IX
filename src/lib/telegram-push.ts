@@ -1,11 +1,22 @@
 import { encrypt, decrypt } from "@/lib/crypto";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { getScreenerPayload, type ScreenerPayload } from "@/lib/screener-server";
-import { sendTelegramMessage, type TelegramSendResult } from "@/lib/telegram-send";
+import {
+  sendTelegramMessage,
+  type TelegramSendOptions,
+  type TelegramSendResult,
+} from "@/lib/telegram-send";
 import type { ScreenerResult, Direction } from "@/lib/screener-scoring";
 
 export type TelegramMessageLang = "en" | "zh";
-export type PushTrigger = "cron" | "manual" | "test";
+export type PushTrigger = "cron" | "manual" | "test" | "briefing";
+
+/**
+ * What a destination is subscribed to. A destination is a chat *and* an optional
+ * topic, so "screener into 行情播报, briefing into 每日早报" is two rows on the
+ * same chat rather than two parallel configuration systems.
+ */
+export type PushContentKind = "screener" | "briefing";
 
 export interface TelegramPushSettings {
   enabled: boolean;
@@ -36,12 +47,21 @@ export interface TelegramTarget {
   id: string;
   label: string;
   chatId: string;
+  /**
+   * Forum topic inside `chatId`. null posts to the chat's General topic, which
+   * is where every message went before topics were supported.
+   */
+  messageThreadId: number | null;
   /** Decrypted per-target override; null means "use the global bot token". */
   botToken: string | null;
   botTokenConfigured: boolean;
   /** null means "inherit settings.messageLang" */
   messageLang: TelegramMessageLang | null;
   enabled: boolean;
+  /** Receives the scheduled screener list. */
+  pushScreener: boolean;
+  /** Receives the daily briefing's article link. */
+  pushBriefing: boolean;
   lastOkAt: string | null;
   lastErrorAt: string | null;
   lastError: string | null;
@@ -75,9 +95,12 @@ interface TelegramTargetRow {
   id: string;
   label: string;
   chat_id: string;
+  message_thread_id: number | null;
   bot_token_encrypted: string | null;
   message_lang: TelegramMessageLang | null;
   enabled: boolean;
+  push_screener: boolean;
+  push_briefing: boolean;
   last_ok_at: string | null;
   last_error_at: string | null;
   last_error: string | null;
@@ -114,10 +137,17 @@ function rowToTarget(row: TelegramTargetRow): TelegramTarget {
     id: row.id,
     label: row.label,
     chatId: row.chat_id,
+    messageThreadId: row.message_thread_id ?? null,
     botToken: row.bot_token_encrypted ? decrypt(row.bot_token_encrypted) : null,
     botTokenConfigured: Boolean(row.bot_token_encrypted),
     messageLang: row.message_lang,
     enabled: row.enabled,
+    // Defaulted rather than trusted so that a deploy landing before migration 046
+    // degrades to the old behaviour (every target is a screener target) instead
+    // of reading `undefined`, filtering every target out, and silently stopping
+    // the screener push — exactly the failure mode 035 was written to end.
+    pushScreener: row.push_screener ?? true,
+    pushBriefing: row.push_briefing ?? false,
     lastOkAt: row.last_ok_at,
     lastErrorAt: row.last_error_at,
     lastError: row.last_error,
@@ -151,6 +181,17 @@ export async function listTelegramTargets(): Promise<TelegramTarget[]> {
 
   if (error) throw new Error(error.message);
   return ((data ?? []) as TelegramTargetRow[]).map(rowToTarget);
+}
+
+/**
+ * Enabled destinations subscribed to one kind of content.
+ *
+ * Filtering here rather than in SQL keeps a single decrypt/normalise path for
+ * targets; the table holds a handful of rows, so the read is not worth splitting.
+ */
+export async function listTargetsFor(kind: PushContentKind): Promise<TelegramTarget[]> {
+  const all = await listTelegramTargets();
+  return all.filter((t) => t.enabled && (kind === "screener" ? t.pushScreener : t.pushBriefing));
 }
 
 export interface TelegramPushUpdate {
@@ -222,10 +263,14 @@ export async function updateTelegramPushSettings(
 export interface TelegramTargetInput {
   label: string;
   chatId: string;
+  /** null (or omitted on create) posts to the chat's General topic. */
+  messageThreadId?: number | null;
   /** Empty string clears the per-target override (falls back to the global token). */
   botToken?: string;
   messageLang?: TelegramMessageLang | null;
   enabled?: boolean;
+  pushScreener?: boolean;
+  pushBriefing?: boolean;
   sortOrder?: number;
 }
 
@@ -236,16 +281,21 @@ export async function createTelegramTarget(input: TelegramTargetInput): Promise<
     .insert({
       label: input.label.trim(),
       chat_id: input.chatId.trim(),
+      message_thread_id: input.messageThreadId ?? null,
       bot_token_encrypted: input.botToken?.trim() ? encrypt(input.botToken.trim()) : null,
       message_lang: input.messageLang ?? null,
       enabled: input.enabled ?? true,
+      // Defaults mirror the column defaults: a new destination starts on the
+      // screener (what every existing one does) and opts into the briefing.
+      push_screener: input.pushScreener ?? true,
+      push_briefing: input.pushBriefing ?? false,
       sort_order: input.sortOrder ?? 0,
     })
     .select("*")
     .single();
 
   if (error) {
-    // 23505 = the unique index on chat_id; a duplicate would double-send.
+    // 23505 = the unique index on (chat_id, topic); a duplicate would double-send.
     if (error.code === "23505") throw new Error("duplicate_chat_id");
     throw new Error(error.message);
   }
@@ -261,11 +311,14 @@ export async function updateTelegramTarget(
   const patch: Record<string, any> = { updated_at: new Date().toISOString() };
   if (input.label !== undefined) patch.label = input.label.trim();
   if (input.chatId !== undefined) patch.chat_id = input.chatId.trim();
+  if (input.messageThreadId !== undefined) patch.message_thread_id = input.messageThreadId;
   if (input.botToken !== undefined) {
     patch.bot_token_encrypted = input.botToken.trim() ? encrypt(input.botToken.trim()) : null;
   }
   if (input.messageLang !== undefined) patch.message_lang = input.messageLang;
   if (input.enabled !== undefined) patch.enabled = input.enabled;
+  if (input.pushScreener !== undefined) patch.push_screener = input.pushScreener;
+  if (input.pushBriefing !== undefined) patch.push_briefing = input.pushBriefing;
   if (input.sortOrder !== undefined) patch.sort_order = input.sortOrder;
 
   const { data, error } = await client
@@ -301,7 +354,8 @@ function fmtPercent(n: number): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-function escapeHtml(s: string): string {
+/** Telegram's HTML parse_mode only needs these three escaped. */
+export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
@@ -439,6 +493,7 @@ export interface TargetDeliveryResult {
   targetId: string;
   label: string;
   chatId: string;
+  messageThreadId: number | null;
   ok: boolean;
   attempts: number;
   durationMs: number;
@@ -480,6 +535,9 @@ async function recordDelivery(
     target_id: result.targetId,
     target_label: result.label,
     chat_id: result.chatId,
+    // Without this, two topics in the same group are indistinguishable in the
+    // log — "which topic failed" would be guesswork.
+    message_thread_id: result.messageThreadId,
     status: result.ok ? "ok" : "failed",
     error: result.ok ? null : (result.error ?? "unknown").slice(0, 1000),
     attempts: result.attempts,
@@ -499,7 +557,10 @@ export async function deliverToTargets(
   settings: TelegramPushSettings,
   targets: TelegramTarget[],
   buildText: (lang: TelegramMessageLang) => string,
-  trigger: PushTrigger
+  trigger: PushTrigger,
+  /** Transport overrides. The briefing tightens these because it runs on the
+   *  tail end of an already-spent wall-clock budget. */
+  sendOpts: Omit<TelegramSendOptions, "messageThreadId"> = {}
 ): Promise<TargetDeliveryResult[]> {
   const active = targets.filter((t) => t.enabled);
 
@@ -523,6 +584,7 @@ export async function deliverToTargets(
           targetId: target.id,
           label: target.label,
           chatId: target.chatId,
+          messageThreadId: target.messageThreadId,
           ok: false,
           attempts: 0,
           durationMs: 0,
@@ -530,11 +592,15 @@ export async function deliverToTargets(
         };
       }
       const lang = target.messageLang ?? settings.messageLang;
-      const sent: TelegramSendResult = await sendTelegramMessage(token, target.chatId, textFor(lang));
+      const sent: TelegramSendResult = await sendTelegramMessage(token, target.chatId, textFor(lang), {
+        ...sendOpts,
+        messageThreadId: target.messageThreadId,
+      });
       return {
         targetId: target.id,
         label: target.label,
         chatId: target.chatId,
+        messageThreadId: target.messageThreadId,
         ok: sent.ok,
         attempts: sent.attempts,
         durationMs: sent.durationMs,
@@ -595,7 +661,9 @@ export async function pushScreenerToTelegram(
     return { delivered: false, skippedReason: "not_due", results: [], lastPushedAt: settings.lastPushedAt };
   }
 
-  const targets = (await listTelegramTargets()).filter((t) => t.enabled);
+  // Only the destinations subscribed to the screener. A group that exists purely
+  // to receive the daily briefing link must not get a screener table every 4h.
+  const targets = await listTargetsFor("screener");
   if (targets.length === 0) {
     return { delivered: false, skippedReason: "no_targets", results: [], lastPushedAt: settings.lastPushedAt };
   }

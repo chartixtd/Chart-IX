@@ -128,6 +128,55 @@ describe("sendTelegramMessage", () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("omits message_thread_id entirely when no topic is set", async () => {
+    // Sending an explicit null gets rejected with "message thread not found"
+    // instead of falling back to the chat's General topic — every pre-topic
+    // destination would break.
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await sendTelegramMessage("tok", "-100", "hi");
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect("message_thread_id" in body).toBe(false);
+    expect(body.disable_web_page_preview).toBe(true);
+  });
+
+  it("posts into the given forum topic", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await sendTelegramMessage("tok", "-100", "hi", { messageThreadId: 42 });
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.message_thread_id).toBe(42);
+    expect(body.chat_id).toBe("-100");
+  });
+
+  it("keeps the topic across retries so a retried message lands in the same thread", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errResponse(500, { ok: false }))
+      .mockResolvedValueOnce(okResponse());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await sendTelegramMessage("tok", "-100", "hi", { messageThreadId: 7, maxAttempts: 2 });
+
+    for (const call of fetchMock.mock.calls) {
+      expect(JSON.parse((call[1] as RequestInit).body as string).message_thread_id).toBe(7);
+    }
+  });
+
+  it("can enable the link preview — an article push is a link, not a table", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await sendTelegramMessage("tok", "-100", "hi", { disableWebPagePreview: false });
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.disable_web_page_preview).toBe(false);
+  });
+
   it("surfaces a timeout as a failed result rather than hanging", async () => {
     globalThis.fetch = vi.fn().mockImplementation(() => {
       const e = new Error("The operation was aborted due to timeout");

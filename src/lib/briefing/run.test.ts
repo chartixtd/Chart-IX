@@ -49,6 +49,13 @@ const fetchArticleBodies = vi.fn(async (sources: BriefingSource[]) =>
   sources.map((s) => ({ ...s, body: "" }))
 );
 const revalidateArticleLists = vi.fn();
+const pushBriefingToTelegram =
+  vi.fn<
+    (slug: string, titles: Record<string, string>) => Promise<{
+      skippedReason?: string;
+      results: { label: string; ok: boolean; error?: string }[];
+    }>
+  >(async () => ({ skippedReason: "no_targets", results: [] }));
 
 vi.mock("@sentry/nextjs", () => ({
   captureException: vi.fn(),
@@ -83,6 +90,14 @@ vi.mock("@/lib/briefing/market-facts", async (importOriginal) => ({
 vi.mock("@/lib/briefing/extract", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./extract")>()),
   fetchArticleBodies: (sources: BriefingSource[]) => fetchArticleBodies(sources),
+}));
+// 不用 importOriginal：真模块会拉进 telegram-push → screener-server 与加密模块，
+// 而 supabase 替身对 telegram_* 表一律抛 "unexpected table"。预算常量在这里重写
+// 一份，是为了让这条测试完全不依赖那整条栈。
+vi.mock("@/lib/briefing/telegram", () => ({
+  BRIEFING_TELEGRAM_BUDGET_MS: 9_000,
+  pushBriefingToTelegram: (slug: string, titles: Record<string, string>) =>
+    pushBriefingToTelegram(slug, titles),
 }));
 vi.mock("@/lib/translate", () => ({
   translateText: (text: string, from: string, to: string) => translateText(text, from, to),
@@ -286,6 +301,7 @@ beforeEach(() => {
     sources.map((s) => ({ ...s, body: "" }))
   );
   revalidateArticleLists.mockClear();
+  pushBriefingToTelegram.mockReset().mockResolvedValue({ skippedReason: "no_targets", results: [] });
   process.env.DEEPSEEK_API_KEY = "test-key";
   process.env.BRIEFING_AUTHOR_ID = "author-1";
 });
@@ -891,6 +907,61 @@ describe("runDailyBriefing — 永不抛出", () => {
     db.insertError = { code: "23505", message: "duplicate key" };
     const r = await runDailyBriefing(NOW);
     expect(r.status).toBe("skipped");
+  });
+});
+
+describe("runDailyBriefing — Telegram 早报推送", () => {
+  it("发布成功后把当天 slug 与双语标题交给 Telegram 推送", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+
+    await runDailyBriefing(NOW);
+
+    expect(pushBriefingToTelegram).toHaveBeenCalledTimes(1);
+    const [slug, titles] = pushBriefingToTelegram.mock.calls[0];
+    expect(slug).toBe("daily-briefing-2026-08-08");
+    // 传的必须是落库那份标题，否则 Telegram 里的标题和站上那篇对不上
+    expect(titles["zh-CN"]).toBe(db.inserted[0].title["zh-CN"]);
+    expect(titles["en-US"]).toBe(db.inserted[0].title["en-US"]);
+  });
+
+  // 文章此时已经落库、心跳也写完了。一条链接发不出去绝不能把整轮判成失败——
+  // 那会让运维以为今天没出稿，而稿子明明在站上。
+  it("推送抛出时文章照常算发布成功", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+    pushBriefingToTelegram.mockRejectedValue(new Error("telegram down"));
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("published");
+    expect(db.inserted).toHaveLength(1);
+    expect(db.beats).toContain("ok");
+  });
+
+  it("部分目标失败时把失败目标写进诊断，供后台事后排查", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+    pushBriefingToTelegram.mockResolvedValue({
+      results: [
+        { label: "主频道", ok: true },
+        { label: "内部群", ok: false, error: "chat not found" },
+      ],
+    });
+
+    await runDailyBriefing(NOW);
+
+    const reasons = (db.lastRun?.reasons ?? []).join("\n");
+    expect(reasons).toContain("1/2 个目标成功");
+    expect(reasons).toContain("内部群: chat not found");
+  });
+
+  it("今天已有稿而早退时不推送——否则同一条链接每个 tick 发一次", async () => {
+    db.existingArticle = { id: "a1" };
+    await runDailyBriefing(NOW);
+    expect(pushBriefingToTelegram).not.toHaveBeenCalled();
+  });
+
+  it("窗口外的 tick 不推送", async () => {
+    await runDailyBriefing(MIDNIGHT_UTC8);
+    expect(pushBriefingToTelegram).not.toHaveBeenCalled();
   });
 });
 

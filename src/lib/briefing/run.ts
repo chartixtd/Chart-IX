@@ -14,6 +14,7 @@ import { renderBriefingHtml } from "@/lib/briefing/render";
 import { fallbackTitle, renderFallbackHtml } from "@/lib/briefing/fallback";
 import { normalizeBriefingTitle } from "@/lib/briefing/title";
 import { alertBriefing as alert } from "@/lib/briefing/alert";
+import { pushBriefingToTelegram, BRIEFING_TELEGRAM_BUDGET_MS } from "@/lib/briefing/telegram";
 import { revalidateArticleLists } from "@/lib/articles-revalidate";
 import type { SourceWithBody } from "@/lib/briefing/extract";
 import type { BriefingJson, BriefingLocale, MarketFact } from "@/lib/briefing/types";
@@ -513,11 +514,48 @@ async function runPipeline(
   };
   await recordLastRun(result);
 
-  // ⑥ 推送（默认关闭）。剩余预算不足时整体跳过：文章与心跳都已落定，
+  // ⑥ Telegram：把文章网址推给订阅了「早报」的目标（可指定话题）。
+  //
+  // 排在 Web Push **之前**，因为它是两者中唯一耗时有上界的：每次投递都带
+  // AbortSignal.timeout，最坏 BRIEFING_TELEGRAM_BUDGET_MS 就返回；而
+  // sendToSubscriptions 对单个端点没有超时（见下面那段注释），一个慢的 FCM
+  // 端点足以把函数拖到被平台掐断。让无上界的那个跑在后面，它最多饿死自己。
+  //
+  // 没有目标就什么都不发——这个功能默认关闭，要管理员在后台勾选目标才生效。
+  // force 重跑会再推一条：那是操作者显式点了「重新生成」，文章本身也换了。
+  try {
+    const remaining = deadlineMs - Date.now();
+    if (remaining < BRIEFING_TELEGRAM_BUDGET_MS) {
+      trace(diag, `剩余预算 ${Math.max(0, remaining)}ms 不足，跳过 Telegram 早报推送`);
+    } else {
+      const outcome = await pushBriefingToTelegram(slug, title);
+      if (outcome.skippedReason) {
+        // 只记诊断、不告警：没配目标是一种配置状态，不是故障。
+        trace(diag, `Telegram 早报推送跳过（${outcome.skippedReason}）`);
+      } else {
+        const failed = outcome.results.filter((r) => !r.ok);
+        trace(
+          diag,
+          `Telegram 早报推送：${outcome.results.length - failed.length}/${outcome.results.length} 个目标成功` +
+            (failed.length > 0
+              ? `；失败 ${failed.map((r) => `${r.label}: ${r.error ?? "unknown"}`).join("; ")}`
+              : "")
+        );
+        // 逐目标的失败已经写进 telegram_push_log 与目标健康状态（见
+        // deliverToTargets），这里只补一条应用日志，方便和 cron 调用对上时间。
+        if (failed.length > 0) console.error("[daily-briefing] telegram push partial failure", failed);
+      }
+    }
+  } catch (err) {
+    // 与 Web Push 同一条原则：推送失败不该让已经发布成功的文章被判为失败。
+    console.error("[daily-briefing] telegram push failed", err);
+  }
+
+  // ⑦ Web Push（默认关闭）。剩余预算不足时整体跳过：文章与心跳都已落定，
   // 推送是唯一可以无损放弃的步骤，明天的稿子照常触发新的推送。
   try {
     if (deadlineMs - Date.now() < 3_000) {
-      trace(diag, "剩余预算不足 3 秒，跳过推送");
+      trace(diag, "剩余预算不足 3 秒，跳过 Web 推送");
       return result;
     }
     const { data: setting } = await supabase

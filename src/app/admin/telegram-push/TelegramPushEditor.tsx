@@ -35,15 +35,26 @@ interface PublicTarget {
   id: string;
   label: string;
   chatId: string;
+  messageThreadId: number | null;
   botTokenConfigured: boolean;
   messageLang: MessageLang | null;
   enabled: boolean;
+  pushScreener: boolean;
+  pushBriefing: boolean;
   lastOkAt: string | null;
   lastErrorAt: string | null;
   lastError: string | null;
   consecutiveFailures: number;
   sortOrder: number;
 }
+
+/** Which content a destination is subscribed to — toggled per row. */
+const CONTENT_KINDS = [
+  { key: "pushScreener", labelKey: "content_screener" },
+  { key: "pushBriefing", labelKey: "content_briefing" },
+] as const;
+
+type ContentKey = (typeof CONTENT_KINDS)[number]["key"];
 
 const FIELD_TOGGLES = [
   { key: "showPrice", labelKey: "field_price" },
@@ -76,7 +87,17 @@ function fmtTime(iso: string | null): string {
 
 /** Blank draft used by the "add destination" form. */
 function emptyDraft() {
-  return { label: "", chatId: "", botToken: "", messageLang: "" as "" | MessageLang, enabled: true };
+  return {
+    label: "",
+    chatId: "",
+    // Kept as a string so an empty field round-trips as "no topic" instead of 0.
+    messageThreadId: "",
+    botToken: "",
+    messageLang: "" as "" | MessageLang,
+    enabled: true,
+    pushScreener: true,
+    pushBriefing: false,
+  };
 }
 
 export function TelegramPushEditor({
@@ -121,6 +142,7 @@ export function TelegramPushEditor({
 
   const errText = (data: { error?: string } | null, fallback: string) => {
     if (data?.error === "duplicate_chat_id") return t("telegram_push_list.duplicate_chat_id");
+    if (data?.error === "invalid_thread_id") return t("telegram_push_list.invalid_thread_id");
     if (data?.error === "no_targets") return t("telegram_push_list.no_targets");
     return data?.error ?? fallback;
   };
@@ -211,9 +233,12 @@ export function TelegramPushEditor({
         body: JSON.stringify({
           label: draft.label,
           chatId: draft.chatId,
+          messageThreadId: draft.messageThreadId.trim() || null,
           botToken: draft.botToken || undefined,
           messageLang: draft.messageLang || null,
           enabled: draft.enabled,
+          pushScreener: draft.pushScreener,
+          pushBriefing: draft.pushBriefing,
           sortOrder: targets.length,
         }),
       });
@@ -508,7 +533,8 @@ export function TelegramPushEditor({
         <h2 className="mb-1 text-sm font-semibold text-text-primary font-display tracking-tight">
           {t("telegram_push_list.targets_title")}
         </h2>
-        <p className="mb-4 text-xs text-text-muted">{t("telegram_push_list.targets_desc")}</p>
+        <p className="text-xs text-text-muted">{t("telegram_push_list.targets_desc")}</p>
+        <p className="mb-4 mt-1 text-xs text-text-muted">{t("telegram_push_list.briefing_note")}</p>
 
         {targets.length === 0 ? (
           <p className="rounded-sm border border-dashed border-border-default px-3 py-6 text-center text-xs text-text-muted">
@@ -541,7 +567,41 @@ export function TelegramPushEditor({
 
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-text-primary">{target.label}</p>
-                    <p className="truncate font-mono text-xs text-text-muted">{target.chatId}</p>
+                    <p className="truncate font-mono text-xs text-text-muted">
+                      {target.chatId}
+                      {target.messageThreadId !== null && (
+                        <span className="text-gold/80">
+                          {" · "}
+                          {t("telegram_push_list.target_topic_short", { id: target.messageThreadId })}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* 每个目标订阅哪几种内容。「早报发到哪个话题」就是在这里勾一下 */}
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                    {CONTENT_KINDS.map(({ key, labelKey }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        aria-pressed={target[key]}
+                        disabled={busyTargetId === target.id}
+                        onClick={() => patchTarget(target.id, { [key]: !target[key] })}
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-60",
+                          target[key]
+                            ? "border-gold/60 bg-gold/10 text-gold"
+                            : "border-border-default bg-bg-tertiary text-text-muted hover:border-border-hover hover:text-text-primary"
+                        )}
+                      >
+                        {t(`telegram_push_list.${labelKey}`)}
+                      </button>
+                    ))}
+                    {!target.pushScreener && !target.pushBriefing && (
+                      <span className="text-[11px] text-danger">
+                        {t("telegram_push_list.target_no_content")}
+                      </span>
+                    )}
                   </div>
 
                   <div className="text-right text-xs">
@@ -615,6 +675,20 @@ export function TelegramPushEditor({
               <p className="mt-1 text-xs text-text-muted">{t("telegram_push_list.chat_id_hint")}</p>
             </div>
             <div>
+              <label className={LABEL_CLASS}>{t("telegram_push_list.target_topic_id")}</label>
+              <input
+                value={draft.messageThreadId}
+                onChange={(e) =>
+                  // 只留数字：话题 ID 是个整数，粘进来的整条链接会被就地清干净
+                  setDraft((d) => ({ ...d, messageThreadId: e.target.value.replace(/\D/g, "") }))
+                }
+                inputMode="numeric"
+                placeholder={t("telegram_push_list.target_topic_placeholder")}
+                className={cn(INPUT_CLASS, "font-mono")}
+              />
+              <p className="mt-1 text-xs text-text-muted">{t("telegram_push_list.target_topic_hint")}</p>
+            </div>
+            <div>
               <label className={LABEL_CLASS}>{t("telegram_push_list.target_lang")}</label>
               <select
                 value={draft.messageLang}
@@ -642,11 +716,38 @@ export function TelegramPushEditor({
           </div>
 
           <div className="mt-3">
+            <span className={LABEL_CLASS}>{t("telegram_push_list.target_content")}</span>
+            <div className="flex flex-wrap gap-2">
+              {CONTENT_KINDS.map(({ key, labelKey }) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={draft[key]}
+                  onClick={() => setDraft((d) => ({ ...d, [key]: !d[key as ContentKey] }))}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs transition-colors",
+                    draft[key]
+                      ? "border-gold/60 bg-gold/10 text-gold"
+                      : "border-border-default bg-bg-tertiary text-text-secondary hover:border-border-hover hover:text-text-primary"
+                  )}
+                >
+                  {t(`telegram_push_list.${labelKey}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4">
             <Button
               variant="secondary"
               size="sm"
               loading={addingTarget}
-              disabled={!draft.label.trim() || !draft.chatId.trim()}
+              disabled={
+                !draft.label.trim() ||
+                !draft.chatId.trim() ||
+                // 两种内容都不勾等于建一个永远收不到东西的目标
+                (!draft.pushScreener && !draft.pushBriefing)
+              }
               onClick={addTarget}
             >
               {t("telegram_push_list.target_save")}

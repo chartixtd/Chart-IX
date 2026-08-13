@@ -1,5 +1,16 @@
 export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "Chart-IX";
-export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://chart-ix.com";
+/**
+ * 末尾斜杠在这里剥掉，而不是指望每个使用点都小心。
+ *
+ * 这个值被十几处 `${SITE_URL}/...` 拼接消费（canonical、hreflang、sitemap、
+ * robots、社区分享链接、Telegram 早报链接），只要后台配置时手滑多打一个 `/`，
+ * 拼出来的就全是 `https://chart-ix.com//en-US/...`。而那是环境变量输入框里
+ * 最容易多出来的一个字符——浏览器地址栏复制粘贴自带它。
+ */
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://chart-ix.com").replace(
+  /\/+$/,
+  ""
+);
 
 export const BINGX_API_BASE = process.env.BINGX_API_BASE_URL || "https://open-api.bingx.com";
 

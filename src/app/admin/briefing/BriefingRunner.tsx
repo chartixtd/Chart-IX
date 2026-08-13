@@ -132,8 +132,55 @@ export function BriefingRunner({ data }: { data: BriefingPageData }) {
   const { toast } = useToast();
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
+  const [pushingTelegram, setPushingTelegram] = useState(false);
 
   const envReady = data.env.deepseekKey && data.env.authorId;
+
+  /**
+   * 只投递、不生成：把最近一篇已发布早报的链接推给勾了「每日早报」的目标。
+   *
+   * 没有它的话，验证配置的唯一办法是等第二天早上，或者点「删除今天这篇并
+   * 重新生成」——为了确认一条链接付出一次完整的模型调用和一篇被替换的文章。
+   */
+  async function pushTelegram() {
+    setPushingTelegram(true);
+    try {
+      const res = await fetch("/api/admin/briefing/push-telegram", { method: "POST" });
+      const body = (await res.json()) as {
+        success?: boolean;
+        slug?: string;
+        skippedReason?: string;
+        targets?: { label: string; ok: boolean; error?: string }[];
+        error?: string;
+      };
+
+      if (body.error === "no_article") {
+        toast("还没有任何已发布的早报，先生成一篇再推送。", "error");
+      } else if (body.skippedReason) {
+        // 三种跳过各有各的修法，不能糊成一句「推送失败」
+        const why = {
+          disabled: "Telegram 推送总开关是关的",
+          no_targets: "没有目标勾选「每日早报」",
+          no_token: "没有配置 Bot Token",
+        }[body.skippedReason];
+        toast(`没有推送：${why ?? body.skippedReason}`, "error");
+      } else if (body.success) {
+        toast(`已推送 ${body.slug} 的链接`, "success");
+      } else {
+        // 逐目标报错，否则运维不知道是哪个话题挂了（例如 TOPIC_CLOSED）
+        const detail = (body.targets ?? [])
+          .filter((x) => !x.ok)
+          .map((x) => `${x.label}: ${x.error ?? "unknown"}`)
+          .join("; ");
+        toast(detail || body.error || "推送失败", "error");
+      }
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "网络错误", "error");
+    } finally {
+      setPushingTelegram(false);
+    }
+  }
 
   async function run(force = false) {
     if (force && !window.confirm(`将删除 ${data.todaySlug} 后重新生成，确定？`)) return;
@@ -222,6 +269,25 @@ export function BriefingRunner({ data }: { data: BriefingPageData }) {
           </Link>{" "}
           页面配置——在那里勾上「每日早报」即可。
         </p>
+
+        <div className="mt-3">
+          <button
+            onClick={pushTelegram}
+            disabled={pushingTelegram}
+            className={cn(
+              "rounded-sm px-4 py-2 text-sm font-medium transition-colors",
+              pushingTelegram
+                ? "bg-bg-tertiary text-text-secondary cursor-not-allowed"
+                : "bg-gold/10 text-gold hover:bg-gold/20"
+            )}
+          >
+            {pushingTelegram ? "推送中…" : "立即推送最近一篇早报的链接"}
+          </button>
+          <p className="mt-2 text-xs text-text-secondary">
+            只投递、不生成文章。走的是和自动推送完全同一条代码路径，所以这里成功了，明早就一定成功。
+            早上那条没发出去时，它也是补发入口。
+          </p>
+        </div>
       </Card>
 
       <Card title="发布窗口与心跳">

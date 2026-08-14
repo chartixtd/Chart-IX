@@ -50,12 +50,15 @@ const YESTERDAY = "daily-briefing-2026-08-13";
 
 const db = {
   state: null as DeliveryState | null,
+  /** 兜底稿升级重试的状态。null = 没有记录，按「已定稿」处理 */
+  publishState: null as { slug: string; degraded: boolean; attempts: number } | null,
   /** 库里存在的已发布早报，按 slug 索引 */
   articles: {} as Record<string, { slug: string; title: Record<string, string> }>,
   writes: [] as DeliveryState[],
 
   reset() {
     db.state = null;
+    db.publishState = null;
     db.articles = {};
     db.writes = [];
   },
@@ -65,8 +68,17 @@ const db = {
       from(table: string) {
         if (table === "admin_settings") {
           return {
-            select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: db.state ? { value: db.state } : null }) }) }),
-            upsert: async (row: { value: DeliveryState }) => {
+            select: () => ({
+              eq: (_col: string, key: string) => ({
+                maybeSingle: async () => ({
+                  data:
+                    key === "daily_briefing_publish_state"
+                      ? db.publishState && { value: db.publishState }
+                      : db.state && { value: db.state },
+                }),
+              }),
+            }),
+            upsert: async (row: { key: string; value: DeliveryState }) => {
               db.state = row.value;
               db.writes.push(row.value);
               return { error: null };
@@ -179,6 +191,38 @@ describe("retryUndeliveredBriefingLink", () => {
     expect(r.skipped).toBe("not_configured");
     expect(alertBriefing).not.toHaveBeenCalled();
     expect(db.state).toBeNull();
+  });
+
+  // 与升级重试的交接点：兜底稿还能变好时先别推，读者点开的会是待会儿就被
+  // 替换掉的那篇；而链接只能发一次，发早了没有第二次机会。
+  it("兜底稿还在升级重试中时不推送", async () => {
+    db.articles[TODAY] = { slug: TODAY, title: { "zh-CN": "早报" } };
+    db.publishState = { slug: TODAY, degraded: true, attempts: 1 };
+
+    const r = await retryUndeliveredBriefingLink();
+
+    expect(r.skipped).toBe("not_final");
+    expect(deliverToTargets).not.toHaveBeenCalled();
+  });
+
+  // 反面同样重要：升级次数用完就是定稿了，这条链接必须发出去。
+  // 「兜底稿不推」不能演变成「兜底的那天干脆没有链接」。
+  it("升级次数用完后，兜底稿的链接照样推出去", async () => {
+    db.articles[TODAY] = { slug: TODAY, title: { "zh-CN": "早报" } };
+    db.publishState = { slug: TODAY, degraded: true, attempts: 3 };
+
+    const r = await retryUndeliveredBriefingLink();
+
+    expect(r.delivered).toBe(true);
+  });
+
+  it("升级成功之后立刻可推", async () => {
+    db.articles[TODAY] = { slug: TODAY, title: { "zh-CN": "早报" } };
+    db.publishState = { slug: TODAY, degraded: false, attempts: 1 };
+
+    const r = await retryUndeliveredBriefingLink();
+
+    expect(r.delivered).toBe(true);
   });
 
   it("跨天之后重新开始计数，昨天用光的次数不影响今天", async () => {

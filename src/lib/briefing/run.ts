@@ -15,6 +15,13 @@ import { fallbackTitle, renderFallbackHtml } from "@/lib/briefing/fallback";
 import { normalizeBriefingTitle } from "@/lib/briefing/title";
 import { alertBriefing as alert } from "@/lib/briefing/alert";
 import { pushBriefingToTelegram, BRIEFING_TELEGRAM_BUDGET_MS } from "@/lib/briefing/telegram";
+import {
+  readPublishState,
+  writePublishState,
+  canUpgrade,
+  isFinal,
+  MAX_UPGRADE_ATTEMPTS,
+} from "@/lib/briefing/publish-state";
 import { revalidateArticleLists } from "@/lib/articles-revalidate";
 import type { SourceWithBody } from "@/lib/briefing/extract";
 import type { BriefingJson, BriefingLocale, MarketFact } from "@/lib/briefing/types";
@@ -112,6 +119,13 @@ export interface BriefingRunResult {
 export interface BriefingRunOptions {
   /** 后台手动触发用：绕过发布时间窗闸门，否则白天没法调试与补发 */
   ignoreSchedule?: boolean;
+  /**
+   * 今天已有稿但那是零 AI 兜底稿时，重新生成一次试图升级它。
+   *
+   * 只有高频 tick 传这个（见 /api/cron/daily-briefing）。次数上限与
+   * 「什么算定稿」都在 publish-state.ts 里，因为链接推送要看同一份状态。
+   */
+  upgradeFallback?: boolean;
   /**
    * 后台调试用：先删掉今天已有的那篇再重新生成。
    *
@@ -312,6 +326,11 @@ async function runPipeline(
   //    这次查询只是为了让重复 tick 便宜地早退。force 时跳过——旧稿的删除
   //    **推迟到新稿内容就绪之后**（见 ⑤ 前），这样生成中途任何一步失败，
   //    昨天点「重新生成」的人手里至少还留着原来那篇，而不是一篇都没有。
+  //    唯一的例外是「升级重试」：今天那篇是零 AI 兜底稿时，幂等早退等于把
+  //    一次偶发的模型抖动固化成当天的最终结果。既然发布窗口里还有几个小时、
+  //    还有几十次 tick，就该再试。替换同样遵守「内容就绪之后才删」——生成
+  //    没成功时，读者手里那篇兜底稿一个字都不会少。
+  let upgrading = false;
   if (!options.force) {
     const { data: existing } = await supabase
       .from("articles")
@@ -319,9 +338,15 @@ async function runPipeline(
       .eq("slug", slug)
       .maybeSingle();
     if (existing) {
-      // skipped = 今天已经有稿。它和 ok 一样蕴含「早报发出去了」
-      await beat("skipped");
-      return { status: "skipped", slug };
+      const state = await readPublishState();
+      if (options.upgradeFallback && canUpgrade(state, slug)) {
+        upgrading = true;
+        trace(diag, `今天是兜底稿，发起第 ${(state?.attempts ?? 0) + 1} 次升级重生成`);
+      } else {
+        // skipped = 今天已经有稿。它和 ok 一样蕴含「早报发出去了」
+        await beat("skipped");
+        return { status: "skipped", slug };
+      }
     }
   }
 
@@ -472,6 +497,23 @@ async function runPipeline(
     }
   }
 
+  // 升级重试**只在严格变好时才落库**。这一轮又只出得了兜底稿的话，替换毫无
+  // 意义：内容同样没有 AI 判断，却白白多一次删除+插入、一次列表缓存失效，
+  // 还会把 published_at 往后推。读者手里那篇原封不动，只是把次数记一笔，
+  // 让下一个 tick 接着试——直到成功，或者次数用完。
+  if (upgrading && degraded) {
+    const prev = await readPublishState();
+    const attempts = (prev?.slug === slug ? prev.attempts : 0) + 1;
+    await writePublishState({ slug, degraded: true, attempts });
+    trace(diag, `第 ${attempts} 次升级仍只能出兜底稿，保留原稿不替换`);
+    if (attempts >= MAX_UPGRADE_ATTEMPTS) {
+      // 放弃时必须有人知道：此时链接才会被推出去，推的是那篇兜底稿。
+      await noteAwait(diag, `升级重试 ${attempts} 次仍未产出 AI 稿，今天维持兜底稿`);
+    }
+    await beat("skipped");
+    return { status: "skipped", slug, detail: `升级未成功（第 ${attempts} 次）` };
+  }
+
   // ⑤ 落库。分类按 slug 查，不硬编码 id
   const { data: category } = await supabase
     .from("article_categories")
@@ -483,14 +525,16 @@ async function runPipeline(
   // 早删的话，生成中途任何一步失败（RSS 全挂、模型全失败、连兜底稿都渲染不出）
   // 都会让当天从「有一篇稿」变成「一篇都没有」——操作者只是点了个「重新生成」，
   // 却把原有的文章弄丢了。删除失败按 failed 处理，此时旧稿原封不动。
-  if (options.force) {
+  // 升级重试走同一条路：能走到这里说明新稿**不是**兜底稿（上面刚拦掉了那种
+  // 情况），拿它换掉旧的兜底稿是严格的改进。
+  if (options.force || upgrading) {
     const { error: delError } = await supabase.from("articles").delete().eq("slug", slug);
     if (delError) {
-      await noteAwait(diag, `强制重跑时删除旧稿失败: ${delError.message}`);
+      await noteAwait(diag, `重跑时删除旧稿失败: ${delError.message}`);
       await beat("error");
       return { status: "failed", slug, detail: delError.message };
     }
-    note(diag, `强制重跑：已删除既有的 ${slug}`);
+    note(diag, `${upgrading ? "升级重试" : "强制重跑"}：已删除既有的 ${slug}`);
     // 删除已生效——即使后面的 insert 失败，缓存里的旧条目也不能再指向 404
     revalidateArticleLists();
   }
@@ -533,6 +577,16 @@ async function runPipeline(
   };
   await recordLastRun(result);
 
+  // 发布状态要在推送**之前**写：下面那段要用它判断「今天定稿了没」，
+  // 而升级重试的次数也从这里起算。
+  const prevState = upgrading ? await readPublishState() : null;
+  const publishState = {
+    slug,
+    degraded,
+    attempts: upgrading ? (prevState?.slug === slug ? prevState.attempts : 0) + 1 : 0,
+  };
+  await writePublishState(publishState);
+
   // ⑥ Telegram：把文章网址推给订阅了「早报」的目标（可指定话题）。
   //
   // 排在 Web Push **之前**，因为它是两者中唯一耗时有上界的：每次投递都带
@@ -542,9 +596,17 @@ async function runPipeline(
   //
   // 没有目标就什么都不发——这个功能默认关闭，要管理员在后台勾选目标才生效。
   // force 重跑会再推一条：那是操作者显式点了「重新生成」，文章本身也换了。
+  //
+  // **兜底稿先不推。** 后面还有几十个 tick 会试着把它升级成 AI 稿，现在推
+  // 出去等于把读者领到一篇待会儿就要被替换掉的稿子前面；而链接只能发一次，
+  // 发早了就没有第二次机会了。等定稿——升级成功，或者次数用完——再由 10 分钟
+  // 一次的补投把它发出去（见 telegram.ts 的 retryUndeliveredBriefingLink）。
+  // 所以这里跳过不是放弃，是把这条链接交给那套已经在跑的自愈机制。
   try {
     const remaining = deliveryDeadlineMs - Date.now();
-    if (remaining < BRIEFING_TELEGRAM_BUDGET_MS) {
+    if (!isFinal(publishState, slug)) {
+      trace(diag, "本篇是兜底稿、仍可升级，链接暂不推送，等定稿后由补投发出");
+    } else if (remaining < BRIEFING_TELEGRAM_BUDGET_MS) {
       trace(diag, `剩余投递预算 ${Math.max(0, remaining)}ms 不足，跳过 Telegram 早报推送`);
     } else {
       const outcome = await pushBriefingToTelegram(slug, title);

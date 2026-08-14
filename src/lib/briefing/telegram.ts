@@ -10,6 +10,7 @@ import {
 } from "@/lib/telegram-push";
 import { briefingSlug, utcPlus8DateString } from "@/lib/briefing/date";
 import { alertBriefing } from "@/lib/briefing/alert";
+import { isFinal, readPublishState } from "@/lib/briefing/publish-state";
 import type { BriefingLocale } from "@/lib/briefing/types";
 
 /**
@@ -197,7 +198,8 @@ export interface BriefingRetryOutcome {
     | "already_delivered"
     | "no_article_today"
     | "attempts_exhausted"
-    | "not_configured";
+    | "not_configured"
+    | "not_final";
   slug?: string;
   delivered?: boolean;
 }
@@ -223,6 +225,13 @@ export async function retryUndeliveredBriefingLink(): Promise<BriefingRetryOutco
     if (state.attempts >= MAX_RETRY_ATTEMPTS) {
       return { skipped: "attempts_exhausted", slug: todaySlug };
     }
+  }
+
+  // 兜底稿还在升级重试中就先别推：链接只能发一次，推早了读者点开的是那篇
+  // 待会儿就会被替换掉的稿子。定稿（升级成功或次数用完）之后下一个 tick
+  // 自然会把它发出去——这正是补投机制存在的意义。
+  if (!isFinal(await readPublishState(), todaySlug)) {
+    return { skipped: "not_final", slug: todaySlug };
   }
 
   const { data } = await createServiceRoleClient()

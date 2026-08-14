@@ -128,6 +128,7 @@ const db = {
   deletedSlugs: [] as string[],
   deleteError: null as { message: string } | null,
   lastRun: null as { status: string; slug: string; reasons: string[] } | null,
+  publishState: null as { slug: string; degraded: boolean; attempts: number } | null,
 
   reset() {
     db.existingArticle = null;
@@ -139,6 +140,7 @@ const db = {
     db.deletedSlugs = [];
     db.deleteError = null;
     db.lastRun = null;
+    db.publishState = null;
   },
 
   client() {
@@ -176,10 +178,28 @@ const db = {
           case "article_categories":
             return single({ id: "cat-1" });
           case "admin_settings":
+            // 按 key 分派：这张表现在同时存着推送开关、上次运行诊断和发布状态，
+            // 一律返回同一个值的话，readPublishState 永远读不到测试摆好的状态。
             return {
-              ...single({ value: db.pushEnabled }),
-              upsert: async (row: { key: string; value: typeof db.lastRun }) => {
-                if (row.key === "daily_briefing_last_run") db.lastRun = row.value;
+              select: () => ({
+                eq: (_col: string, key: string) => ({
+                  maybeSingle: async () => ({
+                    data:
+                      key === "daily_briefing_push_enabled"
+                        ? { value: db.pushEnabled }
+                        : key === "daily_briefing_publish_state"
+                          ? db.publishState && { value: db.publishState }
+                          : null,
+                  }),
+                }),
+              }),
+              upsert: async (row: { key: string; value: unknown }) => {
+                if (row.key === "daily_briefing_last_run") {
+                  db.lastRun = row.value as typeof db.lastRun;
+                }
+                if (row.key === "daily_briefing_publish_state") {
+                  db.publishState = row.value as typeof db.publishState;
+                }
                 return { error: null };
               },
             };
@@ -973,21 +993,23 @@ describe("runDailyBriefing — Telegram 早报推送", () => {
     expect(pushBriefingToTelegram).toHaveBeenCalledTimes(1);
   });
 
-  it("连投递预算都耗尽时才跳过，且把原因写进诊断", async () => {
-    vi.useFakeTimers();
-    // 50 秒：距投递终点只剩 4s，装不下最坏 9s 的一轮投递
-    callDeepSeek.mockImplementation(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50_000));
-      return ok(ZH_JSON);
-    });
+  // 链接只能发一次。兜底稿发出去等于把读者领到一篇待会儿就要被升级重试
+  // 替换掉的稿子前面，而那时已经没有第二次机会了。
+  it("兜底稿不立即推链接，留给升级重试", async () => {
+    callDeepSeek.mockResolvedValue(FAIL);
 
-    const pending = runDailyBriefing(NOW);
-    await vi.runAllTimersAsync();
-    await pending;
+    const r = await runDailyBriefing(NOW);
 
+    expect(r.status).toBe("fallback");
     expect(pushBriefingToTelegram).not.toHaveBeenCalled();
-    // 跳过必须留痕：没有它，后台只会显示「发布成功」而链接不知去向
-    expect((db.lastRun?.reasons ?? []).join("\n")).toContain("剩余投递预算");
+    // 不是放弃，是交给补投——诊断里必须说清楚，否则看起来就是又丢了一条
+    expect((db.lastRun?.reasons ?? []).join("\n")).toContain("暂不推送");
+  });
+
+  it("正常 AI 稿是定稿，立即推链接", async () => {
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+    await runDailyBriefing(NOW);
+    expect(pushBriefingToTelegram).toHaveBeenCalledTimes(1);
   });
 
   it("今天已有稿而早退时不推送——否则同一条链接每个 tick 发一次", async () => {
@@ -999,6 +1021,73 @@ describe("runDailyBriefing — Telegram 早报推送", () => {
   it("窗口外的 tick 不推送", async () => {
     await runDailyBriefing(MIDNIGHT_UTC8);
     expect(pushBriefingToTelegram).not.toHaveBeenCalled();
+  });
+});
+
+// 一天只跑一次的流水线里，「今天降级了」是个无法挽回的既成事实。发布窗口
+// 还有几小时、还有几十次 tick，就该再试——但每一步都不能让读者手里那篇变少。
+describe("runDailyBriefing — 兜底稿升级重试", () => {
+  const SLUG = "daily-briefing-2026-08-08";
+
+  it("今天是兜底稿时重新生成，成功后替换旧稿", async () => {
+    db.existingArticle = { id: "a1" };
+    db.publishState = { slug: SLUG, degraded: true, attempts: 0 };
+    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+
+    const r = await runDailyBriefing(NOW, { upgradeFallback: true });
+
+    expect(r.status).toBe("published");
+    expect(db.deletedSlugs).toEqual([SLUG]);
+    expect(db.inserted).toHaveLength(1);
+    expect(db.publishState).toMatchObject({ degraded: false, attempts: 1 });
+  });
+
+  // 这一轮又只出得了兜底稿的话，替换没有任何意义：内容同样没有 AI 判断，
+  // 却白白多一次删除+插入、一次缓存失效，还把 published_at 往后推。
+  it("升级又只出兜底稿时不替换，旧稿一个字不动", async () => {
+    db.existingArticle = { id: "a1" };
+    db.publishState = { slug: SLUG, degraded: true, attempts: 0 };
+    callDeepSeek.mockResolvedValue(FAIL);
+
+    const r = await runDailyBriefing(NOW, { upgradeFallback: true });
+
+    expect(r.status).toBe("skipped");
+    expect(db.deletedSlugs).toEqual([]);
+    expect(db.inserted).toHaveLength(0);
+    // 次数要记上，否则永远试不完
+    expect(db.publishState).toMatchObject({ degraded: true, attempts: 1 });
+  });
+
+  // 封顶：连着几轮都只能出兜底稿，说明问题不在偶发抖动，再试也是同样结果——
+  // 而每一次都是真金白银的模型调用
+  it("次数用完后不再重新生成", async () => {
+    db.existingArticle = { id: "a1" };
+    db.publishState = { slug: SLUG, degraded: true, attempts: 3 };
+
+    const r = await runDailyBriefing(NOW, { upgradeFallback: true });
+
+    expect(r.status).toBe("skipped");
+    expect(callDeepSeek).not.toHaveBeenCalled();
+  });
+
+  it("已经是 AI 正常稿时不会被重新生成", async () => {
+    db.existingArticle = { id: "a1" };
+    db.publishState = { slug: SLUG, degraded: false, attempts: 0 };
+
+    const r = await runDailyBriefing(NOW, { upgradeFallback: true });
+
+    expect(r.status).toBe("skipped");
+    expect(callDeepSeek).not.toHaveBeenCalled();
+  });
+
+  it("不传 upgradeFallback 时维持原来的幂等早退", async () => {
+    db.existingArticle = { id: "a1" };
+    db.publishState = { slug: SLUG, degraded: true, attempts: 0 };
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("skipped");
+    expect(callDeepSeek).not.toHaveBeenCalled();
   });
 });
 

@@ -1,4 +1,5 @@
 import { SITE_URL } from "@/lib/constants";
+import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import {
   deliverToTargets,
   escapeHtml,
@@ -7,6 +8,8 @@ import {
   type TargetDeliveryResult,
   type TelegramMessageLang,
 } from "@/lib/telegram-push";
+import { briefingSlug, utcPlus8DateString } from "@/lib/briefing/date";
+import { alertBriefing } from "@/lib/briefing/alert";
 import type { BriefingLocale } from "@/lib/briefing/types";
 
 /**
@@ -38,6 +41,68 @@ export interface BriefingPushOutcome {
   /** 没投递时为什么跳过；正常投递时不存在 */
   skippedReason?: "disabled" | "no_targets" | "no_token";
   results: TargetDeliveryResult[];
+}
+
+// ---------------------------------------------------------------------------
+// 投递状态与补投
+// ---------------------------------------------------------------------------
+
+/**
+ * 「今天这条链接发出去了没」的唯一事实来源。
+ *
+ * 存在的理由是一次真实事故：早报流水线一天只被触发一次（vercel.json 的
+ * `0 1 * * *`），于是链接投递也只有一次机会。那天生成偏慢，投递被预算门槛
+ * 跳过——文章发了、链接没发，而且**没有任何机制会再试一次**，只能等人发现、
+ * 手动补。
+ *
+ * 榜单推送早就没有这个毛病：cron 打得比推送间隔密得多，漏掉的一轮由下一轮
+ * 自动补上（见 telegram-push.ts 的 isPushDue）。这里把同一条原则搬过来——
+ * 记下「哪篇的链接已经发了」，让高频 tick 去补没发成的那些。
+ */
+const DELIVERY_STATE_KEY = "daily_briefing_telegram_delivery";
+
+interface BriefingDeliveryState {
+  slug: string;
+  /** null = 还没发成功过 */
+  deliveredAt: string | null;
+  /** 已经试过几次。用来给补投封顶，见 MAX_RETRY_ATTEMPTS */
+  attempts: number;
+}
+
+/**
+ * 补投次数上限。
+ *
+ * 10 分钟一个 tick，6 次 = 一小时。够覆盖绝大多数瞬时故障（Telegram 抖动、
+ * 冷启动超时、部署窗口），又不会在「话题被关闭」这类改不好就一直错的配置
+ * 问题上，每 10 分钟往 telegram_push_log 里灌一条失败、把目标的连续失败数
+ * 刷到三位数。次数耗尽会告警一次，剩下的交给后台那个手动推送按钮。
+ */
+const MAX_RETRY_ATTEMPTS = 6;
+
+async function readDeliveryState(): Promise<BriefingDeliveryState | null> {
+  const { data } = await createServiceRoleClient()
+    .from("admin_settings")
+    .select("value")
+    .eq("key", DELIVERY_STATE_KEY)
+    .maybeSingle();
+  const v = data?.value as Partial<BriefingDeliveryState> | undefined;
+  if (!v || typeof v.slug !== "string") return null;
+  return {
+    slug: v.slug,
+    deliveredAt: typeof v.deliveredAt === "string" ? v.deliveredAt : null,
+    attempts: typeof v.attempts === "number" ? v.attempts : 0,
+  };
+}
+
+async function writeDeliveryState(state: BriefingDeliveryState): Promise<void> {
+  await createServiceRoleClient().from("admin_settings").upsert(
+    {
+      key: DELIVERY_STATE_KEY,
+      value: state,
+      description: "每日早报链接的 Telegram 投递状态（程序自动写入）",
+    },
+    { onConflict: "key" }
+  );
 }
 
 /** 推送语言 → 文章 URL 用的 locale。早报只出这两种语言 */
@@ -92,7 +157,8 @@ export async function pushBriefingToTelegram(
       const locale = localeFor(lang);
       // 兜底到另一语的标题：单语降级时（AI 中文 + 翻译失败）另一语仍然有稿，
       // 宁可推一条标题语言不对的链接，也不要推一条标题是 "undefined" 的。
-      const title = titles[locale] ?? titles["zh-CN"] ?? titles["en-US"] ?? slug;
+      // 用 || 而不是 ??：空字符串同样得往下兜，否则消息里会空出一行。
+      const title = titles[locale] || titles["zh-CN"] || titles["en-US"] || slug;
       return formatBriefingMessage(lang, title, briefingArticleUrl(slug, lang));
     },
     "briefing",
@@ -103,5 +169,89 @@ export async function pushBriefingToTelegram(
     }
   );
 
+  // 记账放在这里，所有调用方（流水线、后台手动、补投）都自动受益：忘记记账
+  // 的那个调用方会让补投一直重复发同一条链接。
+  //
+  // 「至少一个目标成功」就算发过了，与 pushScreenerToTelegram 的 delivered
+  // 同一套语义。部分失败不再补投是刻意的：补投会给已经收到的那些目标再发
+  // 一遍，而重复消息比某个频道少一条更烦人；那种情况有告警和后台的手动按钮。
+  const delivered = results.some((r) => r.ok);
+  try {
+    const prev = await readDeliveryState();
+    await writeDeliveryState({
+      slug,
+      deliveredAt: delivered ? new Date().toISOString() : null,
+      attempts: (prev?.slug === slug ? prev.attempts : 0) + 1,
+    });
+  } catch (err) {
+    // 记账失败不能把已经发出去的消息说成失败
+    console.error("[daily-briefing] failed to record telegram delivery state", err);
+  }
+
   return { results };
+}
+
+export interface BriefingRetryOutcome {
+  /** 没做事时的原因，便于 cron 日志区分「没必要补」和「补了」 */
+  skipped?:
+    | "already_delivered"
+    | "no_article_today"
+    | "attempts_exhausted"
+    | "not_configured";
+  slug?: string;
+  delivered?: boolean;
+}
+
+/**
+ * 补投今天的早报链接——由高频 tick 调用（见 /api/cron/telegram-push）。
+ *
+ * 流水线一天只跑一次，所以它那次投递失败就是永久失败。这个函数把「漏掉的
+ * 一轮由下一轮补上」这条本项目已有的原则，从榜单推送搬到早报链接上。
+ *
+ * 三重收敛条件，缺一不可：
+ * 1. 只补**今天**那篇。否则首次部署时会把昨天的链接当新消息推出去。
+ * 2. 已经发成功过就不再发。这是不重复的保证。
+ * 3. 次数封顶。改不好的配置问题（比如话题被关闭）不该每 10 分钟重试到天荒地老。
+ */
+export async function retryUndeliveredBriefingLink(): Promise<BriefingRetryOutcome> {
+  const todaySlug = briefingSlug(utcPlus8DateString(Date.now()));
+
+  // 最便宜的检查放最前：正常情况下今天的链接早发完了，一次查询就能返回。
+  const state = await readDeliveryState();
+  if (state?.slug === todaySlug) {
+    if (state.deliveredAt) return { skipped: "already_delivered", slug: todaySlug };
+    if (state.attempts >= MAX_RETRY_ATTEMPTS) {
+      return { skipped: "attempts_exhausted", slug: todaySlug };
+    }
+  }
+
+  const { data } = await createServiceRoleClient()
+    .from("articles")
+    .select("slug, title")
+    .eq("slug", todaySlug)
+    .eq("is_published", true)
+    .maybeSingle();
+
+  // 今天还没出稿：不是要补投的场景，等流水线自己发。
+  if (!data) return { skipped: "no_article_today" };
+
+  const outcome = await pushBriefingToTelegram(todaySlug, (data.title ?? {}) as Record<string, string>);
+  const delivered = outcome.results.some((r) => r.ok);
+
+  // 配置类跳过（总开关关着、没目标、没 token）不该消耗补投次数，也不该告警——
+  // 那是管理员的选择，不是故障。pushBriefingToTelegram 在这几条路径上不写
+  // 记账，所以次数自然不动。
+  if (outcome.skippedReason) return { skipped: "not_configured", slug: todaySlug };
+
+  // 次数刚好耗尽且仍未成功：告警一次，之后彻底安静。静默放弃正是这套补投
+  // 机制要终结的东西。
+  if (!delivered && (state?.attempts ?? 0) + 1 >= MAX_RETRY_ATTEMPTS) {
+    const detail = outcome.results
+      .filter((r) => !r.ok)
+      .map((r) => `${r.label}: ${r.error ?? "unknown"}`)
+      .join("; ");
+    await alertBriefing(`早报链接补投 ${MAX_RETRY_ATTEMPTS} 次仍未成功，已放弃：${detail}`);
+  }
+
+  return { slug: todaySlug, delivered };
 }

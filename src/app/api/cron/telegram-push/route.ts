@@ -7,6 +7,7 @@ import {
 } from "@/lib/telegram-push";
 import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
 import { buildScreenerMessage } from "@/lib/push/messages";
+import { retryUndeliveredBriefingLink } from "@/lib/briefing/telegram";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { authorizeCronTick } from "@/lib/cron-auth";
 
@@ -73,12 +74,29 @@ export async function GET(request: NextRequest) {
     const settings = await getTelegramPushSettings();
     const due = settings.enabled && isPushDue(settings.lastPushedAt, settings.pushIntervalMinutes);
 
+    // 早报链接的补投挂在这个 tick 上，**在 not_due 早退之前**。
+    //
+    // 早报流水线一天只被触发一次（vercel.json 的 `0 1 * * *`），所以它那一次
+    // 投递失败就是永久失败——线上真发生过：生成偏慢，投递被预算门槛跳过，
+    // 文章发了、链接没发，没有任何机制会再试。而这个 tick 每 10 分钟就有一次，
+    // 正是本项目已有的那条原则「漏掉的一轮由下一轮补上」需要的心跳。
+    //
+    // 放在早退之前，是因为绝大多数 tick 都是 not_due；放在后面等于只有
+    // 每 4 小时一次的推送窗口才补，补投就失去了意义。
+    // 收敛条件（只补今天那篇、发成功过就不再发、次数封顶）在函数内部。
+    const briefingRetry = await retryUndeliveredBriefingLink().catch((err) => {
+      // 补投失败绝不能影响榜单推送——它才是这个路由的主职责
+      console.error("[cron/telegram-push] briefing link retry failed", err);
+      return null;
+    });
+
     if (!due) {
       await beat("skipped");
       return NextResponse.json({
         success: true,
         skipped: settings.enabled ? "not_due" : "disabled",
         lastPushedAt: settings.lastPushedAt,
+        briefingRetry,
       });
     }
 
@@ -105,9 +123,16 @@ export async function GET(request: NextRequest) {
 
     // A run where every target failed is a real failure worth surfacing in the
     // heartbeat, even though we return 200 (the job itself ran fine).
-    await beat(outcome.delivered ? "ok" : "error");
+    //
+    // A `skippedReason` is *not* such a failure: since destinations pick which
+    // content they receive, "no target wants the screener" is now a legitimate
+    // setup (a briefing-only install). Reporting that as `error` would park the
+    // heartbeat on a permanent red that nobody can clear — and a heartbeat
+    // that is always red tells you exactly as little as one that is always green.
+    if (outcome.skippedReason) await beat("skipped");
+    else await beat(outcome.delivered ? "ok" : "error");
 
-    if (!outcome.delivered) {
+    if (!outcome.delivered && !outcome.skippedReason) {
       console.error(
         "[cron/telegram-push] no target accepted the message",
         outcome.skippedReason ?? outcome.results.filter((r) => !r.ok).map((r) => `${r.label}: ${r.error}`)
@@ -118,6 +143,7 @@ export async function GET(request: NextRequest) {
       success: true,
       delivered: outcome.delivered,
       skipped: outcome.skippedReason,
+      briefingRetry,
       targets: outcome.results.map((r) => ({
         label: r.label,
         ok: r.ok,

@@ -27,11 +27,18 @@ function validateLang(v: unknown): "en" | "zh" | null | undefined {
  * the chat's General topic) — that's what the form sends when the field is left
  * blank, and it must clear a previously set topic rather than be ignored.
  */
+const MAX_THREAD_ID = 2_147_483_647; // Postgres INTEGER 上限
+
 function validateThreadId(v: unknown): number | null | undefined {
   if (v === undefined) return undefined;
   if (v === null || v === "") return null;
   const n = typeof v === "number" ? v : Number(String(v).trim());
-  if (!Number.isInteger(n) || n <= 0) throw new Error("invalid_thread_id");
+  // 上界必须在这里挡：超出 INTEGER 范围的值会让 Postgres 抛 22003，
+  // 而那条路径返回的是 500「Failed to create target」——管理员只是多粘了
+  // 几位数字，得到的却是一个看不出所以然的服务器错误。
+  if (!Number.isInteger(n) || n <= 0 || n > MAX_THREAD_ID) {
+    throw new Error("invalid_thread_id");
+  }
   return n;
 }
 

@@ -5,6 +5,13 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { pushBriefingToTelegram } from "@/lib/briefing/telegram";
 
 export const dynamic = "force-dynamic";
+/**
+ * 不能用平台默认的 10 秒：一轮投递最坏就要约 8.5 秒（2 次尝试 × 4 秒超时 +
+ * 退避），再加上鉴权与取文章两次查询，默认值下必然偶发超时——而超时发生在
+ * 消息已经发出去之后，管理员看到的是「推送失败」，然后再点一次，于是频道里
+ * 出现两条一样的链接。
+ */
+export const maxDuration = 60;
 
 /**
  * 后台「立即推送早报链接」。

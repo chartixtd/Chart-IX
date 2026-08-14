@@ -953,6 +953,43 @@ describe("runDailyBriefing — Telegram 早报推送", () => {
     expect(reasons).toContain("内部群: chat not found");
   });
 
+  // 线上第一次真跑就撞上的回归：三次生成累计 33 秒（前两次没过质量门槛），
+  // 推送阶段看到「距 48 秒终点只剩 8.4 秒」就跳过了——而那 12 秒的尾巴本来
+  // 就是留给投递的，拿生成阶段的终点去卡它等于把预留扣了两遍。
+  it("生成吃掉大半个流水线预算后，链接照样推得出去", async () => {
+    vi.useFakeTimers();
+    // 40 秒：距 PIPELINE_BUDGET_MS(48s) 终点只剩 8s，低于 9s 的推送门槛；
+    // 而距 DELIVERY_BUDGET_MS(54s) 终点还有 14s，绰绰有余。
+    callDeepSeek.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40_000));
+      return ok(ZH_JSON);
+    });
+
+    const pending = runDailyBriefing(NOW);
+    await vi.runAllTimersAsync();
+    const r = await pending;
+
+    expect(r.status).toBe("published");
+    expect(pushBriefingToTelegram).toHaveBeenCalledTimes(1);
+  });
+
+  it("连投递预算都耗尽时才跳过，且把原因写进诊断", async () => {
+    vi.useFakeTimers();
+    // 50 秒：距投递终点只剩 4s，装不下最坏 9s 的一轮投递
+    callDeepSeek.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50_000));
+      return ok(ZH_JSON);
+    });
+
+    const pending = runDailyBriefing(NOW);
+    await vi.runAllTimersAsync();
+    await pending;
+
+    expect(pushBriefingToTelegram).not.toHaveBeenCalled();
+    // 跳过必须留痕：没有它，后台只会显示「发布成功」而链接不知去向
+    expect((db.lastRun?.reasons ?? []).join("\n")).toContain("剩余投递预算");
+  });
+
   it("今天已有稿而早退时不推送——否则同一条链接每个 tick 发一次", async () => {
     db.existingArticle = { id: "a1" };
     await runDailyBriefing(NOW);

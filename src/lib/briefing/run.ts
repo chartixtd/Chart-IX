@@ -46,6 +46,22 @@ const SECONDARY_LOCALE: BriefingLocale = "en-US";
 export const PIPELINE_BUDGET_MS = 48_000;
 
 /**
+ * 投递阶段（Telegram / Web Push）的墙钟终点，从函数开始算起。
+ *
+ * 这两个步骤**不能**拿 PIPELINE_BUDGET_MS 的终点去卡。上面那段注释写得很清楚：
+ * 48 秒是给生成用的，剩下约 12 秒本来就是「留给冷启动、落库、推送与心跳」的。
+ * 用 48 秒的终点衡量推送，等于把那 12 秒的预留又扣了一遍。
+ *
+ * 线上第一次真跑就撞上了：三次生成累计 33 秒（前两次没过质量门槛），推送阶段
+ * 看到「距 48 秒终点只剩 8.4 秒」，于是跳过了一条最坏只需 8.5 秒、而且此刻还有
+ * 二十多秒可用的投递。文章发了、链接没发，而这恰恰是最需要通知的一天。
+ *
+ * 取 54 秒：距平台 60 秒硬上限留 6 秒给响应返回与收尾。这个阶段被掐断的代价
+ * 也已经降到最低——文章、心跳、诊断都在它之前落定（见 ⑤ 之后那段注释）。
+ */
+export const DELIVERY_BUDGET_MS = 54_000;
+
+/**
  * 剩余预算低于这个数就不再发起新的模型调用，直接落到 L4（兜底稿是纯字符串
  * 拼接 + 一次 insert，几百毫秒就能跑完）。宁可发一篇朴素的稿，也不要被平台
  * 掐死在第三次尝试里、什么都没写。
@@ -266,7 +282,10 @@ async function runPipeline(
 ): Promise<BriefingRunResult> {
   // 墙钟终点用 Date.now() 而不是 nowMs：nowMs 是「逻辑当下」（日期、24h 窗口都
   // 按它算，测试会喂固定值），预算要的是真实流逝时间。
-  const deadlineMs = Date.now() + PIPELINE_BUDGET_MS;
+  const startedAtMs = Date.now();
+  const deadlineMs = startedAtMs + PIPELINE_BUDGET_MS;
+  // 生成阶段与投递阶段是两条独立的预算线，理由见 DELIVERY_BUDGET_MS 的注释
+  const deliveryDeadlineMs = startedAtMs + DELIVERY_BUDGET_MS;
   const dateStr = utcPlus8DateString(nowMs);
   const slug = briefingSlug(dateStr);
 
@@ -524,9 +543,9 @@ async function runPipeline(
   // 没有目标就什么都不发——这个功能默认关闭，要管理员在后台勾选目标才生效。
   // force 重跑会再推一条：那是操作者显式点了「重新生成」，文章本身也换了。
   try {
-    const remaining = deadlineMs - Date.now();
+    const remaining = deliveryDeadlineMs - Date.now();
     if (remaining < BRIEFING_TELEGRAM_BUDGET_MS) {
-      trace(diag, `剩余预算 ${Math.max(0, remaining)}ms 不足，跳过 Telegram 早报推送`);
+      trace(diag, `剩余投递预算 ${Math.max(0, remaining)}ms 不足，跳过 Telegram 早报推送`);
     } else {
       const outcome = await pushBriefingToTelegram(slug, title);
       if (outcome.skippedReason) {
@@ -554,8 +573,10 @@ async function runPipeline(
   // ⑦ Web Push（默认关闭）。剩余预算不足时整体跳过：文章与心跳都已落定，
   // 推送是唯一可以无损放弃的步骤，明天的稿子照常触发新的推送。
   try {
-    if (deadlineMs - Date.now() < 3_000) {
-      trace(diag, "剩余预算不足 3 秒，跳过 Web 推送");
+    // 同样按投递预算算，理由见 DELIVERY_BUDGET_MS：拿生成阶段的终点卡它，
+    // 会在生成偏慢的日子白白放弃一次本来完全来得及的推送。
+    if (deliveryDeadlineMs - Date.now() < 3_000) {
+      trace(diag, "剩余投递预算不足 3 秒，跳过 Web 推送");
       return result;
     }
     const { data: setting } = await supabase

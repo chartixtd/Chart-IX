@@ -1,4 +1,4 @@
-import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/client";
+import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/limits";
 
 export type Direction = "long" | "short";
 

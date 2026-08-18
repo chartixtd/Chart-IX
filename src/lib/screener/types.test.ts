@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/client";
+import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/limits";
 import { DEEP_SCAN_LIMIT } from "./types";
 
 describe("DEEP_SCAN_LIMIT 与 RATE_LIMIT_PER_MIN 的配额不等式", () => {

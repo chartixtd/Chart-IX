@@ -1,4 +1,14 @@
 import type { CoinGlassEnvelope } from "./types";
+import { RATE_LIMIT_PER_MIN, RATE_WINDOW_MS } from "./limits";
+
+/**
+ * 配额常量（`RATE_LIMIT_PER_MIN`/`RATE_WINDOW_MS`）的定义已经搬到零依赖的
+ * `./limits.ts`——这里重新导出只是为了不破坏外部既有的 `from "./client"` 引用，
+ * 不是第二份定义。真正要用这两个值算 DEEP_SCAN_LIMIT 的
+ * `src/lib/screener/types.ts` 直接从 `./limits` 导入，不经过这里，
+ * 详见 limits.ts 顶部注释里那条完整的依赖链说明。
+ */
+export { RATE_LIMIT_PER_MIN, RATE_WINDOW_MS } from "./limits";
 
 const BASE_URL = "https://open-api-v4.coinglass.com";
 const TIMEOUT_MS = 20_000;
@@ -18,13 +28,6 @@ const TIMEOUT_MS = 20_000;
  * 限流器留出观察配额余量的时间，不会一次性把 75 个名额全占满。
  */
 export const COINGLASS_CONCURRENCY = 12;
-
-/**
- * CoinGlass 的真实配额，来自响应头 `API-KEY-MAX-LIMIT: 80`。
- * 留 5 次余量给「cron 刚扫完、用户马上点了刷新」这类重叠调用。
- */
-export const RATE_LIMIT_PER_MIN = 75;
-export const RATE_WINDOW_MS = 60_000;
 
 /**
  * 滚动窗口限流器。撞上配额时**等待**而不是抛错——扫描流水线宁可慢几秒

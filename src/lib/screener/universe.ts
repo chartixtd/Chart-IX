@@ -8,8 +8,14 @@ import type { BingXTicker } from "@/types/bingx";
  * 所以拉动滑块不会改变任何币的分数，也不会改变警报触发。
  */
 export const SERVER_GATE = {
-  /** CoinGlass volume_usd 下限。与滑块最小值取等值即可——两边同源，能精确对齐。 */
-  minVolumeUsd: 5_000_000,
+  /**
+   * T19 之前这里有一个 `minVolumeUsd`（CoinGlass volume_usd 下限），
+   * 用来把池子收到约 150 行。已删掉：那个门槛的存在意义是「控制池子大小」，
+   * 现在池子大小由深度扫描名额（`DEEP_SCAN_LIMIT`）决定，不再需要它；
+   * 而且 CoinGlass 的 volume_usd 现在只对预排序选中的 15 个币才会调用
+   * `pairs-markets` 去拿，选完之后才知道成交额，卡在粗筛阶段根本查不到值。
+   * 真实成交额仍然写进 `ScannerRow.volumeUsd`，交给客户端滑块做真正的流动性过滤。
+   */
   minMarketCap: 20_000_000,
   maxMarketCap: 800_000_000,
   /**
@@ -20,6 +26,17 @@ export const SERVER_GATE = {
    * 真振幅 1.2%、BingX 高低算出 0.95% 的币——而且这种误杀在榜单上完全看不出来。
    */
   minAmplitude: 0.5,
+  /**
+   * BingX ticker 的 quoteVolume（24h 成交额）下限，美元。T19 新增。
+   *
+   * 这**不是**真正的流动性门槛——真流动性判断交给客户端滑块，它用的是
+   * CoinGlass 的真实 volume_usd。这个门槛只用来在粗筛阶段挡掉真正「完全没有
+   * 成交」的币：实测 BingX 长尾的 quoteVolume 在 600–700 万美元这一带
+   * 是被拍平的假数据（516 个永续里有 144 个全挤在 619–691 万这个 0.73M 宽的带里），
+   * 所以这个门槛只能定在那条假带**下方**，绝不能顶着那条假带定、更不能超过它——
+   * 否则会把大量真实有成交量、只是恰好落在假带里的币一起误杀。
+   */
+  minBingxVolumeUsd: 2_000_000,
 } as const;
 
 /** 客户端滑块的取值域。单位：成交量与市值是百万美元，振幅是 %。 */
@@ -85,6 +102,9 @@ export function preselect(
     if (entry.marketCap < SERVER_GATE.minMarketCap) continue;
     if (entry.marketCap > SERVER_GATE.maxMarketCap) continue;
 
+    const quoteVolume = parseFloat(t.quoteVolume);
+    if (!Number.isFinite(quoteVolume) || quoteVolume < SERVER_GATE.minBingxVolumeUsd) continue;
+
     const high = parseFloat(t.highPrice);
     const low = parseFloat(t.lowPrice);
     if (!Number.isFinite(high) || !Number.isFinite(low) || low <= 0) continue;
@@ -101,4 +121,21 @@ export function preselect(
 
   // 排序只是为了让候选池顺序稳定（BingX 返回数组的顺序会抖动），便于比对与排查
   return out.sort((a, b) => a.bingxSymbol.localeCompare(b.bingxSymbol));
+}
+
+/**
+ * BingX ticker 的 24h 高低算出的振幅，%。与上面 preselect 内联判断
+ * `minAmplitude` 用的是同一套公式——粗筛只需要知道「达不达标」，
+ * 预排序（pipeline.ts 的 rankForDeepScan 调用点）需要具体数值去排序，
+ * 所以单独导出一份。
+ *
+ * 输入非法时返回 0 而不是抛错或 null：调用方只在预排序里用它计算百分位，
+ * 0 会被排到振幅这一维的最底部，是合理的保守值——不会像 Infinity 那样
+ * 意外抢占深度扫描名额。
+ */
+export function amplitudeFromTicker(t: BingXTicker): number {
+  const high = parseFloat(t.highPrice);
+  const low = parseFloat(t.lowPrice);
+  if (!Number.isFinite(high) || !Number.isFinite(low) || low <= 0) return 0;
+  return ((high - low) / low) * 100;
 }

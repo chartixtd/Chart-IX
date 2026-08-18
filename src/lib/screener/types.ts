@@ -19,6 +19,18 @@ export const ALERT_CLOSE_SCORE = 75;
 /** 连续多少次扫描低于关闭线才真的关闭警报（约 45 分钟） */
 export const ALERT_CLOSE_STREAK = 3;
 
+/**
+ * 一轮扫描进入明细层（pairs-markets + OI + price + taker + liquidation-history
+ * 共 5 个端点/币）的币数上限。
+ *
+ * 这个数是被 CoinGlass `API-KEY-MAX-LIMIT: 80`（每分钟）反推出来的，不是拍脑袋定的：
+ * 批量层 2 次调用（liquidation/coin-list + funding-rate/exchange-list）
+ * + 明细层 N × 5，要满足 `2 + N × 5 ≤ 80`，N 最大取 15（16 就是 82，超配额）。
+ * 改大这个数会直接把一轮调用量顶穿限流器的滚动窗口——15 不是「先定个整数看着舒服」，
+ * 是这条不等式算出来的硬上限，改之前先重新算一遍这条不等式。
+ */
+export const DEEP_SCAN_LIMIT = 15;
+
 export const FACTOR_MAX = {
   zone: 30,
   sweep: 20,

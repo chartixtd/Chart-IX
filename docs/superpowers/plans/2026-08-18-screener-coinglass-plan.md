@@ -15,11 +15,17 @@
 - CoinGlass base URL：`https://open-api-v4.coinglass.com`，鉴权头 `CG-API-KEY`。
 - 环境变量 `COINGLASS_API_KEY`，**绝不写进仓库**（不进 `.env.example` 之外的任何文件，不进代码常量，不进测试）。
 - CoinGlass Startup 套餐限制（实测，不要试图绕过）：K 线最小粒度 `30m`；`coins-markets`、`rsi/list`、爆仓热力图返回 401 `Upgrade plan`。
-- 上游并发上限 120（实测 120 并发 2.48 秒全部 200）。
+- ~~上游并发上限 120（实测 120 并发 2.48 秒全部 200）。~~ **Task 19 更新：这条结论被证伪。**
+  真实约束是响应头 `API-KEY-MAX-LIMIT: 80`——**每分钟 80 次请求**，不是并发数。
+  那次压测只打了一轮 120 个请求，单次爆发没触发速率限制，流水线一轮真正要打几百次时
+  必然撞穿这条线。并发上限改为 12，见 Task 19 附记与当前 `src/lib/coinglass/client.ts`。
 - Vercel Hobby 函数 `maxDuration` 上限 60 秒 —— 扫描路由必须显式 `export const maxDuration = 60`。
 - 四因子满分：Zone 30、Sweep 20、OI 30、CVD 20，总分恒在 `[0, 100]`。
 - 警报触发线 80、关闭线 75、迟滞 3 次连续低于关闭线。
-- 服务端候选池门槛：BingX 永续 `-USDT` 可交易 ∩ 非合成品 ∩ CoinGecko 排名 > 50 ∩ 市值 20M–800M ∩ BingX 24h 振幅 ≥ 0.5% ∩ CoinGlass `volume_usd` ≥ 5M。
+- ~~服务端候选池门槛：BingX 永续 `-USDT` 可交易 ∩ 非合成品 ∩ CoinGecko 排名 > 50 ∩ 市值 20M–800M ∩ BingX 24h 振幅 ≥ 0.5% ∩ CoinGlass `volume_usd` ≥ 5M。~~
+  **Task 19 更新**：`CoinGlass volume_usd ≥ 5M` 门槛已删除，换成 `BingX quoteVolume ≥ 2M`
+  （只挡真正没有成交的假带，不当真流动性判断）；新增预排序从粗筛池子里选出
+  `DEEP_SCAN_LIMIT = 15` 个才进明细层。详见 Task 19 附记。
 - 客户端滑块范围：成交量 5–25M（默认 15M）、振幅 1–5%（默认 3%）、市值下限 30–500M（默认 30M，上限固定 500M）。
 - i18n 三个 locale 都要补：`src/i18n/messages/zh-CN.json`、`en-US.json`、`ms-MY.json`。漏掉 ms-MY 会让马来语页面缺键。
 - 注释用中文，与现有代码风格一致：解释**为什么**这么写、以及**不能改成什么**，不要复述代码在做什么。
@@ -5659,3 +5665,42 @@ spec 写的是 GitHub Actions `*/5`，并如实记录了它有几分钟到十几
 - `FilterState` / `DEFAULT_FILTERS` 只在 Task 17 的 `filter.ts` 定义一份，Task 16 的组件改成重新导出 —— **Task 16 先写、Task 17 才收口，实施 Task 16 时会临时有一份重复定义，Task 17 的 Step 3 必须把它删掉**
 - `showDirection` / `showFactors`（Task 13）对应 DB 列 `show_oi_ratio` / `show_edge`，三处（类型、读、写）必须一起改
 - `useScannerData`（Task 15）替换 `useScreenerData`，文件名不变、导出名变 —— Task 17 的页面按新名字 import
+
+---
+
+## Task 19 附记（2026-08-18，真实 dryrun 后的返工）
+
+Task 1–18 全部完成、评审通过、1017 个测试全绿之后，用真实 CoinGlass key 跑 dryrun 才发现
+上面「Global Constraints」里「上游并发上限 120，上游不是瓶颈」这条结论是错的——真实约束是
+响应头 `API-KEY-MAX-LIMIT: 80`，**每分钟 80 次请求**，不是并发数。当时的三段式流水线
+（批量层 → 行情层对每个粗筛候选调 pairs-markets → 明细层对存活候选调 4 端点）一轮要打
+450–800 次调用，超配额一个数量级；实测 60 个候选全部退化成同一个分
+`35 = Z15 + S0 + OI15 + CVD5`（四因子全部走缺数据默认值），振幅全 0，直接 probe 单币端点
+返回 `code 429`。
+
+这次返工不改因子文件、警报状态机、缓存层、路由、任何前端文件，只改取数策略，四处：
+
+1. **`src/lib/coinglass/client.ts`**：`COINGLASS_CONCURRENCY` 从 120 降到 12；新增滚动窗口
+   限流器 `RollingWindowLimiter`（75 次/分钟，留 5 次余量），`coinglassGet` 内部 `await` 它；
+   新增对信封 `code: "429"` 的一次性重试（等 2 秒，重试后仍 429 才抛错）。
+2. **`src/lib/screener/universe.ts`**：`SERVER_GATE.minVolumeUsd`（CoinGlass 成交额门槛）删除，
+   新增 `minBingxVolumeUsd = 2_000_000`（BingX quoteVolume 粗粒度门槛，定在长尾假数据带下方）；
+   新增 `amplitudeFromTicker` 导出，供预排序算具体振幅数值。`DEEP_SCAN_LIMIT = 15` 放在
+   `src/lib/screener/types.ts`，由 `2 + N × 5 ≤ 80` 反推。
+3. **新文件 `src/lib/screener/preselect-rank.ts`**：`liquidationAnomaly(liq1h, liq24h)`
+   （除零保护，同 `factors/sweep.ts` 的 `spikeRatio` 一个道理）+ `rankForDeepScan(inputs, limit)`
+   （爆仓异常度与振幅各占一半的百分位排序，绝不用绝对值缩放——长尾分布下绝对值缩放会让
+   振幅那一半的信号被压成 0）。
+4. **`src/lib/screener/pipeline.ts`**：批量层从 3 路加回 `liquidation/coin-list`（4 路，2 次
+   CoinGlass 调用）；新增预排序步骤，从粗筛池子里选出 15 个；`pairs-markets` 从「对每个粗筛
+   候选调用」改成「只对预排序选中的 15 个调用」；`toMarketStage` 删掉 `volumeUsd` 门槛；
+   明细层 `base + 0..3` 的下标算术原样不动，`staged` 现在最多 15 个。
+
+一轮调用量：`2（批量层）+ 15 × 5（明细层：pairs-markets + OI + price + taker + liquidation）
+= 77`，卡在 80 以内。
+
+详细的「为什么」——为什么并发数不是真实约束、为什么是预排序而不是继续三段式、
+为什么用百分位而不是绝对值缩放、预排序会漏掉什么——都写在
+`docs/superpowers/specs/2026-08-18-screener-coinglass-design.md` 对应章节
+（限流 / 数据流 / 候选池与筛选 / 不在本次范围内）与上述四个源文件的行内注释里，
+这里不重复。

@@ -1,9 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { preselect, isSyntheticProduct, coinFromBingXSymbol, SERVER_GATE, CLIENT_SLIDER } from "./universe";
+import {
+  preselect,
+  isSyntheticProduct,
+  coinFromBingXSymbol,
+  amplitudeFromTicker,
+  SERVER_GATE,
+  CLIENT_SLIDER,
+} from "./universe";
 import type { MarketCapMap } from "@/lib/market-cap";
 import type { BingXTicker } from "@/types/bingx";
 
-function ticker(symbol: string, high: number, low: number): BingXTicker {
+function ticker(symbol: string, high: number, low: number, quoteVolume = 10_000_000): BingXTicker {
   return {
     symbol,
     openPrice: String(low),
@@ -11,7 +18,7 @@ function ticker(symbol: string, high: number, low: number): BingXTicker {
     lowPrice: String(low),
     lastPrice: high,
     volume: "1000",
-    quoteVolume: "10000000",
+    quoteVolume: String(quoteVolume),
     priceChange: "0",
     priceChangePercent: "0",
     closeTime: 0,
@@ -28,9 +35,12 @@ const caps: MarketCapMap = {
 
 describe("门槛包含关系", () => {
   it("服务端门槛必须比滑块能拉到的最紧值更宽，否则滑块会滑进空池子", () => {
-    expect(SERVER_GATE.minVolumeUsd).toBeLessThanOrEqual(CLIENT_SLIDER.volume.min * 1_000_000);
     expect(SERVER_GATE.minMarketCap).toBeLessThan(CLIENT_SLIDER.marketCapFloor.min * 1_000_000);
     expect(SERVER_GATE.maxMarketCap).toBeGreaterThan(CLIENT_SLIDER.marketCapCeiling * 1_000_000);
+  });
+
+  it("BingX 成交额粗筛门槛必须定在假带（619万–691万）下方，不能顶到假带里", () => {
+    expect(SERVER_GATE.minBingxVolumeUsd).toBeLessThan(6_190_000);
   });
 
   it("振幅两边不同源，服务端必须留余量而不是取等值", () => {
@@ -96,5 +106,26 @@ describe("preselect", () => {
 
   it("同一个币只出现一次", () => {
     expect(preselect([ticker("TIA-USDT", 1.02, 1), ticker("TIA-USDT", 1.03, 1)], caps)).toHaveLength(1);
+  });
+
+  it("排除 BingX quoteVolume 低于门槛的币（真正没有成交）", () => {
+    expect(preselect([ticker("TIA-USDT", 1.02, 1, 500_000)], caps)).toHaveLength(0);
+  });
+
+  it("quoteVolume 恰好达标时放行", () => {
+    expect(
+      preselect([ticker("TIA-USDT", 1.02, 1, SERVER_GATE.minBingxVolumeUsd)], caps)
+    ).toHaveLength(1);
+  });
+});
+
+describe("amplitudeFromTicker", () => {
+  it("按 24h 高低算出振幅百分比", () => {
+    expect(amplitudeFromTicker(ticker("TIA-USDT", 110, 100))).toBeCloseTo(10);
+  });
+
+  it("高低价非法时返回 0，而不是 NaN 或抛错", () => {
+    expect(amplitudeFromTicker(ticker("TIA-USDT", NaN, 100))).toBe(0);
+    expect(amplitudeFromTicker(ticker("TIA-USDT", 110, 0))).toBe(0);
   });
 });

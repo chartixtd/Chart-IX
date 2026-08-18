@@ -29,31 +29,41 @@ import { DEEP_SCAN_LIMIT } from "./types";
 export const BINGX_EXCHANGE = "BingX";
 
 /**
- * K 线 / CVD / 爆仓时序取哪一家。
+ * 资金流类数据（主动买卖 → CVD、爆仓时序 → Sweep）取哪一家。
  *
- * 取 BingX 而不是 Binance，是为了让整行数据同源：价格、资金费率、K 线、
- * 主动买卖、爆仓全部来自用户真正下单的那个盘口。此前取 Binance 的理由是
- * 「深度最好、数据最干净」，但那会让榜单上的振幅、CVD、Sweep 描述的是
- * 另一个市场的行情，而用户按这些信号在 BingX 上执行。
+ * 这两个因子问的是「**整个市场**的钱往哪边走」，所以要在最深的池子里取样，
+ * 而不是在用户执行的那个池子里。BingX 的成交量普遍比 Binance 薄一个数量级
+ * （实测 VELVET 8.2M vs 108.1M、COMP 2.9M vs 24.6M），薄盘口的爆仓事件
+ * 稀疏得多——同一时刻的实测对比：Binance 源下 14 个币有 3 个 Sweep 非零，
+ * 换成 BingX 源之后 14 个全是 0，spike 倍数够不到 3 倍的起分线，
+ * 满分 20 的 Sweep 因子整体失效。
  *
- * 代价要认：BingX 的成交量普遍比 Binance 薄一个数量级（实测 VELVET
- * 8.2M vs 108.1M、COMP 2.9M vs 24.6M），所以 CVD 与 Sweep 这两个统计
- * 「钱往哪走」的因子取样噪音更大，Sweep 尤其会更频繁地落在 0
- * ——薄盘口的爆仓事件本来就更稀疏。振幅与 Zone 受影响小。
- *
- * 注意 toMarketStage 已经要求 BingX 那一行必须存在（否则整个币跳过），
- * 所以 pickExchangeRow 的回落分支在这里实际不会触发；保留它是为了让
- * 这个常量将来还能改回别家而不用同时改调用点。
+ * 这个币在 Binance 没有合约时由 pickExchangeRow 回落到成交额最大的那家。
  */
-export const PREFERRED_HISTORY_EXCHANGE = "BingX";
+export const FLOW_EXCHANGE = "Binance";
+
+/**
+ * 价格类数据（K 线 → Zone 与真振幅）取哪一家。
+ *
+ * 和资金流相反，这一类必须跟用户下单的盘口同源：Zone 判断的是「现价处在
+ * 筹码分布的什么位置」、振幅判断的是「今天这个盘口真的在动吗」，
+ * 两者都是拿去 BingX 执行的，用别家的 K 线算等于按 A 市场的位置在 B 市场下单。
+ *
+ * toMarketStage 已经要求 BingX 那一行必须存在（否则整个币跳过），
+ * 所以这里的回落分支实际不会触发。
+ */
+export const PRICE_EXCHANGE = "BingX";
 
 interface MarketStage {
   candidate: PreselectCandidate;
   /** BingX 那一行，用于展示价格 */
   bingx: CoinGlassPairMarket;
-  /** 拉 history 用的交易所与合约 id */
-  historyExchange: string;
-  historyInstrumentId: string;
+  /** 拉 K 线用的交易所与合约 id —— 与下单盘口同源 */
+  priceExchange: string;
+  priceInstrumentId: string;
+  /** 拉主动买卖/爆仓时序用的交易所与合约 id —— 取最深的池子 */
+  flowExchange: string;
+  flowInstrumentId: string;
   volumeUsd: number;
   change24h: number | null;
 }
@@ -79,8 +89,9 @@ function toMarketStage(
   // 而这个页面唯一的出口就是跳去 BingX 下单。
   if (!bingx) return null;
 
-  const history = pickExchangeRow(rows, PREFERRED_HISTORY_EXCHANGE);
-  if (!history) return null;
+  const price = pickExchangeRow(rows, PRICE_EXCHANGE);
+  const flow = pickExchangeRow(rows, FLOW_EXCHANGE);
+  if (!price || !flow) return null;
 
   // 成交额用全交易所之和，而不是单家 —— 流动性门槛问的是「这个币好不好进出」，
   // 那是全市场的属性。只用于展示与客户端滑块过滤，不再是服务端硬门槛（见上）。
@@ -89,8 +100,10 @@ function toMarketStage(
   return {
     candidate,
     bingx,
-    historyExchange: history.exchange_name,
-    historyInstrumentId: history.instrument_id,
+    priceExchange: price.exchange_name,
+    priceInstrumentId: price.instrument_id,
+    flowExchange: flow.exchange_name,
+    flowInstrumentId: flow.instrument_id,
     volumeUsd,
     change24h: Number.isFinite(bingx.price_change_percent_24h)
       ? bingx.price_change_percent_24h
@@ -237,9 +250,12 @@ export async function runScan(): Promise<ScannerPayload> {
   const detailTasks: Array<() => Promise<unknown>> = [];
   for (const s of staged) {
     detailTasks.push(() => getOpenInterestExchangeList(s.candidate.coin));
-    detailTasks.push(() => getPriceHistory(s.historyExchange, s.historyInstrumentId));
-    detailTasks.push(() => getTakerVolumeHistory(s.historyExchange, s.historyInstrumentId));
-    detailTasks.push(() => getLiquidationHistory(s.historyExchange, s.historyInstrumentId));
+    // K 线取下单盘口（Zone 与振幅要跟执行同源），资金流取最深的池子
+    // （CVD 与 Sweep 统计的是整个市场的方向，薄盘口取样会让它们失效）。
+    // 调用次数不变，只是 exchange 参数不同。
+    detailTasks.push(() => getPriceHistory(s.priceExchange, s.priceInstrumentId));
+    detailTasks.push(() => getTakerVolumeHistory(s.flowExchange, s.flowInstrumentId));
+    detailTasks.push(() => getLiquidationHistory(s.flowExchange, s.flowInstrumentId));
   }
   const detail = await runWithConcurrency(detailTasks);
 
@@ -278,7 +294,9 @@ export async function runScan(): Promise<ScannerPayload> {
       marketCap: s.candidate.marketCap,
       marketCapRank: s.candidate.marketCapRank,
       fundingRate: pickFundingRate(fundingByCoin.get(s.candidate.coin), BINGX_EXCHANGE),
-      sourceExchange: s.historyExchange,
+      // 展示的是**价格/K 线**的来源（也就是下单盘口），不是资金流的来源。
+      // 表格里这个标签紧挨着 symbol 与价格，标的就是「这一行的价格是哪儿的」。
+      sourceExchange: s.priceExchange,
     });
   }
 

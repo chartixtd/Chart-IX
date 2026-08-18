@@ -62,7 +62,18 @@ export function signedPct(triggerPrice: number, lastPrice: number, direction: Di
 export function planAlerts(rows: ScannerRow[], open: OpenAlert[]): AlertPlan {
   const plan: AlertPlan = { opens: [], updates: [], closes: [] };
   const bySymbol = new Map(rows.map((r) => [r.symbol, r]));
-  const openBySymbol = new Map(open.map((a) => [a.symbol, a]));
+  // 本轮「产生过 update」的 symbol 集合，用来决定第二个循环开不开新警报。
+  //
+  // 不用 Map(symbol -> 警报) 去回查，是因为一个 symbol 理论上应该至多一条
+  // 未平警报，但这个前提在这里既不校验也不强制——一旦落库层出现中间态
+  // （比如方向翻转时「先开后关」失败，留下同一个币两条方向相反的未平
+  // 警报），Map 会静默丢弃其中一条，回查到的可能正好是刚被本函数关掉的
+  // 那条反方向警报，于是又给已经在 update 的同方向警报重复开一条新的。
+  // 用「本轮是否 update 过」是严格更安全的等价判断：有 update 就说明存在
+  // 一条同方向、且本轮没被关掉的未平警报；如果它是因为 belowCount 满 3
+  // 被关掉的，那么 total < 75 < 80，第二个循环本来也进不去。它对同一
+  // symbol 有多条未平警报天然免疫。
+  const updatedSymbols = new Set<string>();
 
   for (const alert of open) {
     const row = bySymbol.get(alert.symbol);
@@ -86,14 +97,14 @@ export function planAlerts(rows: ScannerRow[], open: OpenAlert[]): AlertPlan {
       peakPct: Math.max(alert.peakPct ?? 0, signedPct(alert.triggerPrice, row.price, row.direction)),
       belowCount: nextBelow,
     });
+    updatedSymbols.add(alert.symbol);
   }
 
   for (const row of rows) {
     if (row.total < ALERT_TRIGGER_SCORE) continue;
-    const existing = openBySymbol.get(row.symbol);
-    // 同方向已有未平警报 → 这不是「首次突破」，跳过。
+    // 同方向已有未平警报（本轮已经 update 过）→ 这不是「首次突破」，跳过。
     // 反方向的那条已经在上面被关掉了，这里正好开新的。
-    if (existing && existing.direction === row.direction) continue;
+    if (updatedSymbols.has(row.symbol)) continue;
 
     plan.opens.push({
       symbol: row.symbol,

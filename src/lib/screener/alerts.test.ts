@@ -99,15 +99,21 @@ describe("planAlerts", () => {
     expect(plan.closes).toEqual(["a1"]);
   });
 
-  it("在 80 线上抖动不会反复开关警报", () => {
+  it("回到迟滞区间以上会让 belowCount 归零、重新开始累计", () => {
+    // 74,74 累计到 2；81 把计数归零；再来 74,74,74 才刚好累计到 3 而关闭。
+    // 如果把归零条件误写成 `< 80`（而不是 `< ALERT_CLOSE_SCORE`），
+    // 第 3 轮的 81 不会触发归零，第 6 轮会提前关闭，这条用例就会失败。
     let state = [open({ belowCount: 0 })];
-    // 79 → 81 → 78 → 82，四轮下来既没关闭也没新开
-    for (const total of [79, 81, 78, 82]) {
+    const rounds = [74, 74, 81, 74, 74, 74];
+    const closesByRound: boolean[] = [];
+    for (const total of rounds) {
       const plan = planAlerts([row({ total })], state);
-      expect(plan.closes).toHaveLength(0);
+      closesByRound.push(plan.closes.length > 0);
+      if (plan.closes.length > 0) break;
       expect(plan.opens).toHaveLength(0);
       state = [open({ belowCount: plan.updates[0].belowCount })];
     }
+    expect(closesByRound).toEqual([false, false, false, false, false, true]);
   });
 
   it("方向翻转时关掉旧的、开一条新的", () => {
@@ -129,6 +135,38 @@ describe("planAlerts", () => {
     const plan = planAlerts([], [open()]);
     expect(plan.closes).toHaveLength(0);
     expect(plan.updates).toHaveLength(0);
+    expect(plan.opens).toHaveLength(0);
+  });
+
+  it("多个币互不干扰——一个触发、一个更新、一个关闭", () => {
+    const plan = planAlerts(
+      [
+        row({ symbol: "AAA-USDT", total: 88 }),
+        row({ symbol: "BBB-USDT", total: 90, price: 120 }),
+        row({ symbol: "CCC-USDT", total: 70 }),
+      ],
+      [
+        open({ id: "b", symbol: "BBB-USDT" }),
+        open({ id: "c", symbol: "CCC-USDT", belowCount: ALERT_CLOSE_STREAK - 1 }),
+      ]
+    );
+    expect(plan.opens.map((o) => o.symbol)).toEqual(["AAA-USDT"]);
+    expect(plan.updates.map((u) => u.id)).toEqual(["b"]);
+    expect(plan.closes).toEqual(["c"]);
+  });
+
+  it("同一个币残留了两条方向相反的未平警报时，不会再重复开一条", () => {
+    // 落库层若在方向翻转时留下中间状态就会出现这种输入。
+    // 同方向那条会被 update，反方向那条会被关闭，但绝不能再新开一条。
+    const plan = planAlerts(
+      [row({ direction: "long", total: 88 })],
+      [
+        open({ id: "long-one", direction: "long" }),
+        open({ id: "short-one", direction: "short" }),
+      ]
+    );
+    expect(plan.updates.map((u) => u.id)).toEqual(["long-one"]);
+    expect(plan.closes).toEqual(["short-one"]);
     expect(plan.opens).toHaveLength(0);
   });
 });

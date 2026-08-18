@@ -4179,6 +4179,11 @@ export async function pushNewAlerts(alerts: NewAlert[]): Promise<number> {
   if (worth.length === 0) return 0;
 
   const settings = await getTelegramPushSettings();
+  // 总开关关掉时一条都不发。榜单推送（pushScreenerToTelegram）就是这么做的，
+  // 警报没有理由绕过它——运营关掉 Telegram 推送的意思是「让机器人静音」，
+  // 而不是「只静音榜单、警报继续发」。这两个开关互相独立，关一个不会连带关另一个。
+  if (!settings.enabled) return 0;
+
   const targets = await listTargetsFor("screener");
   if (targets.length === 0) return 0;
   if (!settings.botToken && targets.every((t) => !t.botToken)) return 0;

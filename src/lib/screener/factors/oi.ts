@@ -1,4 +1,5 @@
 import type { CoinGlassOiBar, CoinGlassPriceBar } from "@/lib/coinglass/types";
+import { toFiniteNumber } from "@/lib/coinglass/types";
 import type { Direction } from "@/lib/screener/types";
 import { FACTOR_MAX } from "@/lib/screener/types";
 import { oiDivergence } from "./oi-divergence";
@@ -39,19 +40,24 @@ export const OI_WINDOWS = [
 /**
  * 用收盘价算「barsBack 根之前到现在」的涨跌百分比。K 线不够长返回 null。
  *
- * 参数类型故意只要求 `{ close: string }`，不是具体的 CoinGlassPriceBar——
- * 这样同一个函数既能喂价格序列也能喂 OI 序列（两者形状一样，都是 OHLC
- * 字符串），不用为 OI 侧的窗口变化率再写一份几乎相同的函数。cvd.ts 也在用
- * 这个函数（唯一允许的跨因子依赖），把参数类型收窄成结构类型不影响它——
- * CoinGlassPriceBar 本身就满足 `{ close: string }`。
+ * 参数类型故意只要求 `{ close: string | number }`，不是具体的
+ * CoinGlassPriceBar——这样同一个函数既能喂价格序列（close 恒为字符串）
+ * 也能喂 OI 序列（close 是字符串还是数字看这一根具体是哪个字段，见
+ * CoinGlassOiBar 的类型注释），不用为 OI 侧的窗口变化率再写一份几乎相同
+ * 的函数。cvd.ts 也在用这个函数（唯一允许的跨因子依赖），把参数类型收窄成
+ * 结构类型不影响它——CoinGlassPriceBar 本身就满足 `{ close: string | number }`。
+ *
+ * 用 toFiniteNumber 而不是 parseFloat：OI 序列的 close 字段实测是 string 还是
+ * number 不固定，parseFloat 对 number 能靠隐式 ToString 蒙混过去，但那样
+ * 类型声明就是假的（T20 review F1）。
  */
 export function priceChangeOverBars(
-  bars: Array<{ close: string }>,
+  bars: Array<{ close: string | number }>,
   barsBack: number
 ): number | null {
   if (bars.length <= barsBack) return null;
-  const now = parseFloat(bars[bars.length - 1].close);
-  const then = parseFloat(bars[bars.length - 1 - barsBack].close);
+  const now = toFiniteNumber(bars[bars.length - 1].close);
+  const then = toFiniteNumber(bars[bars.length - 1 - barsBack].close);
   if (!Number.isFinite(now) || !Number.isFinite(then) || then <= 0) return null;
   return ((now - then) / then) * 100;
 }

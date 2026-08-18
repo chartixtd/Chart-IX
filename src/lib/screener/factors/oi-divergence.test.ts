@@ -108,13 +108,22 @@ function priceBarsFrom(highs: number[], lows: number[]): CoinGlassPriceBar[] {
   }));
 }
 
-/** 只在 index 5 与 17 放有意义的 OI 收盘值，其余下标不参与计算，填常数即可 */
+/**
+ * 只在 index 5 与 17 放有意义的 OI 收盘值，其余下标不参与计算，填常数即可。
+ *
+ * open/low 用字符串、high/close 用 number——贴合 T20 review F1 实测的真实
+ * 响应形状（同一根 K 线里字段类型是混的：
+ * `{"open":"45714242","high":45740423.0381,"low":"45714242","close":45740423.0381}`）。
+ * oiDivergence 只读 close 字段，这里把 close 定成 number 就是在验证
+ * `toFiniteNumber` 的 number 分支在真实调用路径上是通的，不是只在
+ * types.test.ts 里单独测过、集成路径上从没跑过。
+ */
 function oiBarsWithAnchors(len: number, valAtPrev: number, valAtCurr: number): CoinGlassOiBar[] {
   return Array.from({ length: len }, (_, i) => {
     let c = 100;
     if (i === ANCHOR_PREV) c = valAtPrev;
     else if (i === ANCHOR_CURR) c = valAtCurr;
-    return { time: i * 1_800_000, open: String(c), high: String(c), low: String(c), close: String(c) };
+    return { time: i * 1_800_000, open: String(c), high: c, low: String(c), close: c };
   });
 }
 
@@ -189,14 +198,67 @@ describe("oiDivergence", () => {
     expect(oiDivergence(priceBars, oiBars)).toBe(0);
   });
 
-  it("高点侧与低点侧同时出现信号时相加再夹到 [-1,1]", () => {
+  it("高点侧与低点侧信号互相抵消：共用同一对 OI 读数时，顶背离与底背离数值相等符号相反", () => {
     // twoPeakHighs 与 twoTroughLows 的摆动点都固定在 (ANCHOR_PREV, ANCHOR_CURR)，
     // 两侧因此共用同一对 OI 读数：OI 下跌 20% 时，高点侧是顶背离（-1，偏空），
-    // 低点侧同时是底背离（+1，偏多）——两者互相抵消，总和应该是 0 而不是分别
-    // 输出后互不影响。这正是 brief 里「结构上没有明确方向」的场景。
+    // 低点侧同时是底背离（+1，偏多）——两者互相抵消，总和是 0。这个用例只
+    // 验证「抵消」这个行为分支，不代表 clamp 被触发过（-1 与 +1 相加恰好落在
+    // [-1,1] 内部，根本不需要夹）；clamp 真正被逼到边界的场景见下一条用例。
     const priceBars = priceBarsFrom(twoPeakHighs(5), twoTroughLows(5));
     const oiBars = oiBarsWithAnchors(SERIES_LEN, 100, 80);
     expect(oiDivergence(priceBars, oiBars)).toBeCloseTo(0);
+  });
+
+  it("高点侧与低点侧信号同号叠加，和超过 1 时真的被 clamp 到边界", () => {
+    // 上一条用例里两侧共用同一对 OI 读数（都在 index 5/17），数学上只能凑出
+    // 恰好互相抵消的 0，从没把 clamp 逼到边界过。这里把低点侧的摆动点位置
+    // 错开一格（6、18），OI 在这两个下标上与高点侧的 5、17 各自独立，才能
+    // 构造出「两侧同号、和超过 1」的场景，真正触发 clamp（而不是巧合对冲）。
+    const LOW_PREV = 6;
+    const LOW_CURR = 18;
+    const LEN = 24;
+
+    // 高点结构复用 twoPeakHighs（峰在 5、17），补一根到 24 根——补的那一根
+    // （index 23）落在有效摆动点区间 [5, 19) 之外（len - PIVOT_N = 19），
+    // 不会长出新摆动点，下面的自检断言会确认这一点。
+    const highs = [...twoPeakHighs(5), twoPeakHighs(5)[SERIES_LEN - 1]];
+
+    // 低点结构：谷在 6、18，两端斜坡跟 buildTwoExtremeSeries 同一个套路，
+    // 只是下标整体后移一格，谷 2 比谷 1 低 5%。
+    const lows = new Array(LEN).fill(0);
+    const lowRamp1 = [112, 110, 108, 106, 104, 102];
+    for (let i = 0; i < lowRamp1.length; i++) lows[i] = lowRamp1[i]; // 0-5，爬向谷 1
+    lows[LOW_PREV] = 100; // 6，谷 1
+    const lowMirror1 = [102, 104, 106, 108, 110];
+    for (let i = 0; i < lowMirror1.length; i++) lows[LOW_PREV + 1 + i] = lowMirror1[i]; // 7-11，镜像回升
+    lows[12] = 110; // 过渡
+    const lowRamp2 = [105, 103, 101, 99, 97];
+    for (let i = 0; i < lowRamp2.length; i++) lows[13 + i] = lowRamp2[i]; // 13-17，爬向谷 2
+    lows[LOW_CURR] = 95; // 18，谷 2，比谷 1 低 5%
+    const lowMirror2 = [97, 99, 101, 103, 105];
+    for (let i = 0; i < lowMirror2.length; i++) lows[LOW_CURR + 1 + i] = lowMirror2[i]; // 19-23，镜像回升
+
+    // 先自检：确认摆动点真的落在预期下标上，不是又数错了地方
+    // （早期草稿犯过这个错，第 17 峰值被搭到了 index16）。
+    expect(findPivots(highs, PIVOT_N, "high")).toEqual([ANCHOR_PREV, ANCHOR_CURR]);
+    expect(findPivots(lows, PIVOT_N, "low")).toEqual([LOW_PREV, LOW_CURR]);
+
+    const priceBars = priceBarsFrom(highs, lows);
+
+    // 高点侧：OI 在 (5,17) 上 -20% → 顶背离，偏空，打满 -1。
+    // 低点侧：OI 在 (6,18) 上 +20% → 下跌延续，偏空打五折，-0.5。
+    // 两者同号相加 = -1.5，超出 [-1,1]，必须被 clamp 到 -1——这才是
+    // 真正的边界触发，不是巧合的互相抵消。
+    const oiBars: CoinGlassOiBar[] = Array.from({ length: LEN }, (_, i) => {
+      let c = 100;
+      if (i === ANCHOR_PREV) c = 100; // 高点侧锚点 1
+      else if (i === ANCHOR_CURR) c = 80; // 高点侧锚点 2，-20%
+      else if (i === LOW_PREV) c = 100; // 低点侧锚点 1
+      else if (i === LOW_CURR) c = 120; // 低点侧锚点 2，+20%
+      return { time: i * 1_800_000, open: String(c), high: c, low: String(c), close: c };
+    });
+
+    expect(oiDivergence(priceBars, oiBars)).toBe(-1);
   });
 
   it("返回值恒在 [-1, 1]", () => {

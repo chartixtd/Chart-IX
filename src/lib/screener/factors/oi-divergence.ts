@@ -1,4 +1,5 @@
 import type { CoinGlassPriceBar, CoinGlassOiBar } from "@/lib/coinglass/types";
+import { toFiniteNumber } from "@/lib/coinglass/types";
 
 /** 摆动点识别的半窗宽度。7 天 336 根 30m 下平均出 21 个高点，确认滞后 2.5 小时。 */
 export const PIVOT_N = 5;
@@ -110,13 +111,17 @@ function pivotPairSignal(
 export function oiDivergence(priceBars: CoinGlassPriceBar[], oiBars: CoinGlassOiBar[]): number {
   // 长度不等时两条序列的下标不再对应同一时刻，硬按下标取值会取到完全不相干
   // 的两个时间点，而且不会报错、只会让信号悄悄全部算错——必须在这里直接
-  // 放弃，不能往下走一步再说。
+  // 放弃，不能往下走一步再说。长度为 0 的情况不用单独判断：下面 findPivots
+  // 在数据不足 2n+1 根时自然返回空数组，pivotPairSignal 对空数组自然返回 0，
+  // 多写一条 `=== 0` 分支只是重复判断，不是新增的安全性。
   if (priceBars.length !== oiBars.length) return 0;
-  if (priceBars.length === 0) return 0;
 
+  // CoinGlassPriceBar 的 high/low 实测是纯字符串（T20 review 已用真实 key 核对
+  // 过三个币），parseFloat 在这里是准的，不要换成 toFiniteNumber——那是留给
+  // CoinGlassOiBar 这种字段类型会混的数据用的，价格序列没有这个问题。
   const highs = priceBars.map((b) => parseFloat(b.high));
   const lows = priceBars.map((b) => parseFloat(b.low));
-  const oiCloses = oiBars.map((b) => parseFloat(b.close));
+  const oiCloses = oiBars.map((b) => toFiniteNumber(b.close));
 
   // 用价格的 high 序列找摆动高点、low 序列找摆动低点，直接读同下标的 OI 收盘值——
   // 不在 OI 序列上单独找 pivot 再配对。三条序列（价格/主动买卖/OI）在 30m 粒度下

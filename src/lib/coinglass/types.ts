@@ -20,17 +20,34 @@ export interface CoinGlassPairMarket {
 }
 
 /**
- * /api/futures/open-interest/aggregated-history 的一根。OHLC 全是字符串，
- * 和 price/history 一样；没有 volume_usd（这个端点不提供成交量）。
- * 已实测：最新一根与 open-interest/exchange-list 里 exchange==="All"
- * 那一行完全一致，是同一份全交易所聚合数据的历史版本。
+ * /api/futures/open-interest/aggregated-history 的一根。
+ *
+ * OHLC **不是**统一字符串（这一点和 price/history 不一样，也是 T20 review
+ * F1 指出的问题）：真实响应里同一根 K 线的字段类型是混的，实测样本
+ * `{"open":"45714242","high":45740423.0381,"low":"45714242","close":45740423.0381}`
+ * ——open/low 是字符串，high/close 是 number。没有理由假设某个字段在所有
+ * 币种、所有时刻上永远是同一种类型，所以四个字段都声明成 `string | number`。
+ * 读取时统一走 `toFiniteNumber`，不要用 `parseFloat` 的隐式 ToString 蒙混过去
+ * （那样能跑通，但 tsc 的「零错误」验证的是一个和生产环境不符的假想类型）。
+ * 没有 volume_usd（这个端点不提供成交量）。
  */
 export interface CoinGlassOiBar {
   time: number;
-  open: string;
-  high: string;
-  low: string;
-  close: string;
+  open: string | number;
+  high: string | number;
+  low: string | number;
+  close: string | number;
+}
+
+/**
+ * CoinGlass 有些端点在同一根 K 线里混用字符串和数字（见 CoinGlassOiBar 顶部
+ * 注释的实测样本）。数字直接用，字符串走 parseFloat，取不到有限值统一返回
+ * NaN，交给调用处已有的 `Number.isFinite` 守卫拦截——不要在这里抛错，
+ * OI 因子对单个坏点的容忍策略是「跳过/给中性分」，不是「整轮扫描炸掉」。
+ */
+export function toFiniteNumber(v: string | number): number {
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : NaN;
 }
 
 /** /api/futures/liquidation/coin-list 的一行（全交易所聚合） */

@@ -9,6 +9,26 @@ export const CVD_WINDOW_BARS = 12;
 /** 背离分打满所需的价格逆行幅度，% */
 export const CVD_DIVERGENCE_FULL_PCT = 3;
 
+/**
+ * 「净买入 ÷ 同期总成交额」这个比值达到多少算满格。
+ *
+ * 这个常数不是拍出来的，是量出来的。2026-08-19 抓了 14 个候选币各 48 根
+ * 30m 主动买卖数据、滑出 518 个 6 小时窗口，`|净买入/总成交额|` 的分布是：
+ *   中位数 0.032 · 90% 分位 0.091 · 95% 分位 0.119 · 99% 分位 0.153 · 最大 0.197
+ *
+ * 而这里原本直接把比值当 [-1,1] 用（等价于饱和点 = 1.0）。后果是这个
+ * 满分 10 分的方向分实际只在 4.84~5.16 之间摆动——量程用掉不到 3%，
+ * 整个 CVD 因子对总分几乎没有贡献。实测榜单上 14 个币的 CVD 全部落在 4~6 分。
+ *
+ * 取 99% 分位当饱和点：中位数量级的资金流拿到约 6.1 分，95% 分位约 9 分，
+ * 满分留给真正异常的情况。
+ *
+ * **注意这个数是一次快照量出来的**（14 个币、24 小时、一种市场状态）。
+ * 换一种行情它可能偏大或偏小 —— dryrun 脚本每轮打印分数分布正是为了
+ * 观察这件事。如果哪天发现一半的币都顶在满分，就是该重新量它了。
+ */
+export const CVD_SATURATION = 0.15;
+
 /** 方向分与背离分各占满分的一半 */
 const TREND_MAX = FACTOR_MAX.cvd / 2;
 const DIVERGENCE_MAX = FACTOR_MAX.cvd / 2;
@@ -58,7 +78,10 @@ export function cvdNorm(bars: CoinGlassTakerBar[], window: number): number | nul
   if (den === 0) return null;
 
   const slope = num / den; // USD / 根
-  return clamp((slope * n) / gross, -1, 1);
+  // 先算出「净买入占同期总成交额的比例」，再除以饱和点映射到 [-1,1]。
+  // 少了除以 CVD_SATURATION 这一步，真实数据只会落在 ±0.15 以内，
+  // 整个因子等于常数 —— 见 CVD_SATURATION 的注释里那组实测分布。
+  return clamp((slope * n) / gross / CVD_SATURATION, -1, 1);
 }
 
 /**

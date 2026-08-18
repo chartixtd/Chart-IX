@@ -51,6 +51,19 @@ describe("cvdNorm", () => {
 });
 
 describe("cvdScore", () => {
+  it("真实量级的资金流就能推动分数，不再永远贴在中性 5 分", () => {
+    // 2026-08-19 实测：14 个币 518 个 6 小时窗口，|净买入/总成交额| 的
+    // 中位数 0.032、95% 分位 0.119。饱和点定在 99% 分位 0.15。
+    // 这条用例钉住的是「这个因子真的在用它的量程」——没有 CVD_SATURATION
+    // 那一步除法时，下面两个值分别只有 5.16 和 5.60，全挤在中性分附近。
+    const median = cvdScore(taker(Array(20).fill(0.032 * 1000)), FLAT_PRICE, "long");
+    const p95 = cvdScore(taker(Array(20).fill(0.119 * 1000)), FLAT_PRICE, "long");
+    expect(median).toBeGreaterThan(5.8);
+    expect(p95).toBeGreaterThan(8.5);
+    // 而且要拉得开：95% 分位的资金流必须明显强过中位数
+    expect(p95 - median).toBeGreaterThan(2);
+  });
+
   it("数据缺失给方向分中性 5、背离分 0，合计 5", () => {
     expect(cvdScore([], FLAT_PRICE, "long")).toBe(5);
     expect(cvdScore(taker(Array(20).fill(100)), [], "long")).toBe(5);
@@ -63,8 +76,9 @@ describe("cvdScore", () => {
     const diverging = cvdScore(flow, FALLING_PRICE, "long");
     const flat = cvdScore(flow, FLAT_PRICE, "long");
     expect(diverging).toBeGreaterThan(flat + 5);
-    // 方向分 9（norm=0.8）+ 背离分 8（priceLeg 封顶 1 × flowLeg 0.8）
-    expect(diverging).toBeCloseTo(17, 5);
+    // delta=800 相对每根 1000 的总成交额是 0.8，远超饱和点 0.15，norm 被夹到 1：
+    // 方向分 10（满）+ 背离分 10（priceLeg 与 flowLeg 都封顶）= 20
+    expect(diverging).toBeCloseTo(20, 5);
   });
 
   it("价格上涨但 CVD 下行 = 拉高出货，做空同样叠上背离分", () => {
@@ -72,7 +86,7 @@ describe("cvdScore", () => {
     const diverging = cvdScore(flow, RISING_PRICE, "short");
     const flat = cvdScore(flow, FLAT_PRICE, "short");
     expect(diverging).toBeGreaterThan(flat + 5);
-    expect(diverging).toBeCloseTo(17, 5);
+    expect(diverging).toBeCloseTo(20, 5);
   });
 
   it("同向时背离分给 0 而不是负分——同向的价值已经在方向分里算过一次", () => {

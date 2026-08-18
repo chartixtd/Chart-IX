@@ -60,8 +60,7 @@ export function ScreenerFilters({
           {t("filters.market_cap")}
         </span>
         <span className="tnum text-xs text-text-secondary">
-          <b className="text-text-primary">{SERVER_GATE.minMarketCap / 1_000_000}</b>M –{" "}
-          {SERVER_GATE.maxMarketCap / 1_000_000}M
+          <b className="text-text-primary">{SERVER_GATE.minMarketCap / 1_000_000}</b>M
         </span>
       </div>
 

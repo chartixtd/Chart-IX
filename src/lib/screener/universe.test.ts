@@ -84,8 +84,10 @@ describe("preselect", () => {
     expect(preselect([ticker("BTC-USDT", 1.02, 1)], caps)).toHaveLength(0);
   });
 
-  it("排除市值超过上限的大盘币", () => {
-    expect(preselect([ticker("HUGE-USDT", 1.02, 1)], caps)).toHaveLength(0);
+  it("市值没有上限——大市值币只要不在前 50 名就照样进候选池", () => {
+    // HUGE-USDT 市值 9 亿、排名 60。早期版本有一条 5 亿的上限会把它挡掉，
+    // 现在挡大币的只剩「前 50 名」这一条规则。
+    expect(preselect([ticker("HUGE-USDT", 1.02, 1)], caps).map((c) => c.coin)).toEqual(["HUGE"]);
   });
 
   it("排除市值低于下限的微型盘", () => {

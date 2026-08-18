@@ -21,15 +21,17 @@ export const SERVER_GATE = {
    */
   minVolumeUsd: 20_000_000,
   /**
-   * 市值区间。下限 3000万以下的盘子太容易被单笔资金推动；
-   * 上限 5亿是这个产品「小市值币筛选器」的核心门槛——超过它的币
-   * 不是这个扫描器要找的东西。
+   * 市值下限。3000万以下的盘子太容易被单笔资金推动，日内进出容易被埋。
    *
-   * 这两条现在直接在粗筛阶段生效（CoinGecko 市值是免费数据，
-   * 不花 CoinGlass 配额），所以深度扫描的名额不会浪费在会被淘汰的币上。
+   * **刻意没有上限。** 早期版本有一条 5 亿的上限，用来把这个产品钉在
+   * 「小市值币扫描器」这个定位上；现在去掉了，大市值币只要不在
+   * CoinGecko 前 50 名（见下面 TOP_MARKET_CAP_EXCLUDED）就能进候选池。
+   * 所以实际的上界是「不是主流大币」，而不是一个具体的市值数字。
+   *
+   * 这条在粗筛阶段生效（CoinGecko 市值是免费数据，不花 CoinGlass 配额），
+   * 所以深度扫描的名额不会浪费在会被淘汰的币上。
    */
   minMarketCap: 30_000_000,
-  maxMarketCap: 500_000_000,
   /**
    * BingX ticker 的 24h 高低算出的振幅下限，单位 %。
    *
@@ -116,9 +118,10 @@ export function preselect(
 
     const entry = marketCapMap[stripContractMultiplier(t.symbol)];
     if (entry === undefined) continue;
+    // 大市值币只由「前 50 名」这一条挡，没有具体的市值上限——
+    // 见 SERVER_GATE.minMarketCap 的注释。
     if (entry.rank <= TOP_MARKET_CAP_EXCLUDED) continue;
     if (entry.marketCap < SERVER_GATE.minMarketCap) continue;
-    if (entry.marketCap > SERVER_GATE.maxMarketCap) continue;
 
     const quoteVolume = parseFloat(t.quoteVolume);
     if (!Number.isFinite(quoteVolume) || quoteVolume < SERVER_GATE.minBingxVolumeUsd) continue;

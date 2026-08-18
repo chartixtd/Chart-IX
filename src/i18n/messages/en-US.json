@@ -936,9 +936,9 @@
     "next_scan": "Next scan",
     "candidate_count": "{count} candidates",
     "filters": {
-      "volume": "24h volume (fixed)",
+      "volume": "24h volume ≥",
       "amplitude": "24h amplitude ≥",
-      "market_cap": "Market cap (fixed)",
+      "market_cap": "Market cap ≥",
       "direction": "Direction",
       "dir_all": "All",
       "dir_long": "Long",

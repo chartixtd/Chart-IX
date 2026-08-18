@@ -42,13 +42,25 @@ export interface ScannerRow {
   /** 0–100，等于 factors 四项之和（已取整） */
   total: number;
   factors: FactorBreakdown;
-  /** BingX 的成交价——用户在哪儿下单就显示哪儿的价 */
+  /**
+   * price / change24h / amplitude / volumeUsd 这四个字段口径故意不同，
+   * 各自回答不同的问题：
+   *   · price 与 change24h 取 CoinGlass pairs-markets 里 BingX 那一行，
+   *     两者必须同源——用户在哪儿下单就该看哪儿的价和涨跌，不能显示的价格
+   *     来自 BingX、涨跌却来自另一个市场。pairs-markets 也没有像
+   *     open-interest/exchange-list 那样的 "All" 聚合行，"全交易所涨跌"
+   *     这个东西本来就拿不到。
+   *   · amplitude 取 history 交易所（默认 Binance）的 30m K 线，
+   *     因为振幅要连续的价格序列，只有拉了 K 线的那一家才有。
+   *   · volumeUsd 是全交易所 volume_usd 求和，因为流动性门槛问的是
+   *     「这个币好不好进出」，那是全市场属性，不该只看下单那一家。
+   */
   price: number;
-  /** CoinGlass 全交易所 24h 涨跌 % */
+  /** BingX 那一行的 24h 涨跌 %，与 price 同源（见上方 price 的注释） */
   change24h: number | null;
-  /** 30m K 线算的真 24h 振幅 % */
+  /** 30m K 线算的真 24h 振幅 %，取自 history 交易所（见上方 price 的注释） */
   amplitude: number;
-  /** CoinGlass volume_usd（真实值，不是 BingX 被拍平的 quoteVolume） */
+  /** CoinGlass 全交易所 volume_usd 之和（见上方 price 的注释） */
   volumeUsd: number;
   marketCap: number;
   marketCapRank: number;

@@ -7,8 +7,6 @@ import type { AlertRecord } from "@/lib/screener/alerts-store";
 import { FactorStack } from "./FactorStack";
 
 const FACTOR_LABELS = [
-  ["zone", "Zone"],
-  ["sweep", "Sweep"],
   ["oi", "OI"],
   ["cvd", "CVD"],
 ] as const;
@@ -52,8 +50,6 @@ export function AlertCard({ alert }: { alert: AlertRecord }) {
       <p className="mb-3 text-[11px] leading-relaxed text-text-secondary">
         {t("alerts.trigger_line", {
           score: alert.triggerScore,
-          zone: alert.factors.zone,
-          sweep: alert.factors.sweep,
           oi: alert.factors.oi,
           cvd: alert.factors.cvd,
         })}

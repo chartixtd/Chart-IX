@@ -1,12 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { pickDirection, scoreDirection, amplitudeFromBars, type ScoreInputs } from "./score";
 import { FACTOR_MAX } from "./types";
-import type {
-  CoinGlassPriceBar,
-  CoinGlassTakerBar,
-  CoinGlassLiquidationBar,
-  CoinGlassOiBar,
-} from "@/lib/coinglass/types";
+import type { CoinGlassPriceBar, CoinGlassTakerBar, CoinGlassOiBar } from "@/lib/coinglass/types";
 
 function priceBars(closes: number[]): CoinGlassPriceBar[] {
   return closes.map((c, i) => ({
@@ -24,14 +19,6 @@ function taker(delta: number, n = 48): CoinGlassTakerBar[] {
     time: i * 1_800_000,
     taker_buy_volume_usd: String((1000 + delta) / 2),
     taker_sell_volume_usd: String((1000 - delta) / 2),
-  }));
-}
-
-function liq(n = 48): CoinGlassLiquidationBar[] {
-  return Array.from({ length: n }, (_, i) => ({
-    time: i * 1_800_000,
-    long_liquidation_usd: "1000",
-    short_liquidation_usd: "1000",
   }));
 }
 
@@ -62,16 +49,13 @@ function oiBars(p30m: number, p1h: number, p4h: number): CoinGlassOiBar[] {
 const bullish: ScoreInputs = {
   price: 100,
   priceBars: priceBars(Array.from({ length: 60 }, (_, i) => 90 + i * 0.2)),
-  liquidation: liq(),
   taker: taker(600),
   oiBars: oiBars(5, 5, 5),
 };
 
 describe("scoreDirection", () => {
-  it("四项都落在各自的上限内", () => {
+  it("两项都落在各自的上限内", () => {
     const f = scoreDirection(bullish, "long");
-    expect(f.zone).toBeLessThanOrEqual(FACTOR_MAX.zone);
-    expect(f.sweep).toBeLessThanOrEqual(FACTOR_MAX.sweep);
     expect(f.oi).toBeLessThanOrEqual(FACTOR_MAX.oi);
     expect(f.cvd).toBeLessThanOrEqual(FACTOR_MAX.cvd);
   });
@@ -87,31 +71,38 @@ describe("pickDirection", () => {
     expect(picked.direction).toBe("long");
   });
 
-  it("total 恒等于取整后四项之和——扫过真的会让两条取整路径分叉的输入", () => {
-    const min = Math.min(...bullish.priceBars.map((b) => parseFloat(b.low)));
-    const max = Math.max(...bullish.priceBars.map((b) => parseFloat(b.high)));
+  it("total 恒等于取整后两项之和——扫过真的会让两条取整路径分叉的输入", () => {
+    // 原来这里是三维网格（price t × taker delta × oiPct），因为 t 会驱动
+    // Zone 因子。Zone 退役之后 scoreDirection 不再消费 inputs.price——
+    // oiScore/cvdScore 只吃 oiBars/priceBars/taker，price 这个字段对两个
+    // 剩下的因子完全是死参数。继续在网格里扫 t 只会让每一轮都算出同一组
+    // 结果，白白跑 11 倍的重复用例，所以改成只保留 delta × oiPct 这两维，
+    // 但把取值密度提高，确保网格依然扫得到能让两条取整路径分叉的输入
+    // （用 2026-08-19 的实现验算过：这组网格里有 25/925 个组合会分叉，
+    // 不是靠运气蒙到一个）。
     let sawDivergence = false;
 
-    for (let t = 0; t <= 1.0001; t += 0.1) {
-      for (const delta of [-870, -300, 200, 600]) {
-        for (const oiPct of [-1.5, -0.4, 0.9, 5]) {
-          const inputs: ScoreInputs = {
-            ...bullish,
-            price: min + (max - min) * t,
-            taker: taker(delta),
-            oiBars: oiBars(oiPct, oiPct, oiPct),
-          };
-          const picked = pickDirection(inputs);
-          const raw = scoreDirection(inputs, picked.direction);
-          const rawSum = raw.zone + raw.sweep + raw.oi + raw.cvd;
-          const sumOfRounded =
-            picked.factors.zone + picked.factors.sweep + picked.factors.oi + picked.factors.cvd;
+    const deltas: number[] = [];
+    for (let d = -900; d <= 900; d += 50) deltas.push(d);
+    const oiPcts: number[] = [];
+    for (let p = -6; p <= 6; p += 0.5) oiPcts.push(p);
 
-          // 这一组输入能不能区分「先求和再取整」与「先取整再求和」
-          if (Math.round(rawSum) !== sumOfRounded) sawDivergence = true;
+    for (const delta of deltas) {
+      for (const oiPct of oiPcts) {
+        const inputs: ScoreInputs = {
+          ...bullish,
+          taker: taker(delta),
+          oiBars: oiBars(oiPct, oiPct, oiPct),
+        };
+        const picked = pickDirection(inputs);
+        const raw = scoreDirection(inputs, picked.direction);
+        const rawSum = raw.oi + raw.cvd;
+        const sumOfRounded = picked.factors.oi + picked.factors.cvd;
 
-          expect(picked.total).toBe(sumOfRounded);
-        }
+        // 这一组输入能不能区分「先求和再取整」与「先取整再求和」
+        if (Math.round(rawSum) !== sumOfRounded) sawDivergence = true;
+
+        expect(picked.total).toBe(sumOfRounded);
       }
     }
 
@@ -131,7 +122,6 @@ describe("pickDirection", () => {
     const empty: ScoreInputs = {
       price: 1,
       priceBars: [],
-      liquidation: [],
       taker: [],
       oiBars: [],
     };

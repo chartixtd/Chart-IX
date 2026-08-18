@@ -928,7 +928,7 @@
   },
   "screener": {
     "title": "Scanner",
-    "subtitle": "OI · CVD · SWEEP · ZONE — 4-factor scan",
+    "subtitle": "OI · CVD — 2-factor scan",
     "no_results": "Nothing matches the current filters. Try loosening the sliders.",
     "error": "Failed to load data",
     "retry": "Retry",
@@ -961,9 +961,9 @@
     "action_short": "Short",
     "alerts": {
       "rail_label": "Latest alerts",
-      "empty": "An alert fires the first time a score crosses from below 80 to 80 or above. It locks the price at that moment and tracks the cumulative move from there.",
+      "empty": "An alert fires the first time a score crosses from below 70 to 70 or above. It locks the price at that moment and tracks the cumulative move from there.",
       "triggered": "fired",
-      "trigger_line": "Fired: score {score}/100 first crossed 80 · Zone {zone}/30 · Sweep {sweep}/20 · OI {oi}/30 · CVD {cvd}/20",
+      "trigger_line": "Fired: score {score}/100 first crossed 70 · OI {oi}/60 · CVD {cvd}/40",
       "first_price": "Alert price",
       "last_price": "Live price",
       "cumulative": "Cumulative move since alert",
@@ -974,12 +974,10 @@
     },
     "source_note": "Data from CoinGlass · price and execution on BingX · candles from {exchange}",
     "guide": {
-      "title": "What are the four factors?",
-      "zone": "Zone (30 pts) — the value area from a 7-day volume profile. A long wants price hugging the lower edge, where the heaviest volume sits underneath as support; a short wants the opposite. Price outside the value area scores only 4 — that is chasing.",
-      "sweep": "Sweep (20 pts) — a liquidation spike plus a price recovery. A long wants long liquidations spiking (stops below have been cleared out) and price already back above the wick; a short wants short liquidations. No liquidation evidence means zero.",
-      "oi": "OI (30 pts) — open interest against price, as four quadrants. OI up with price up means fresh longs, the best case for a long; OI up with price down means fresh shorts. Both falling-OI quadrants score low for either side — no new money is behind the move.",
-      "cvd": "CVD (20 pts) — cumulative taker buy minus sell. Half the points are direction, half are divergence: price falling while CVD rises means someone is absorbing, the strongest long signal; price rising while CVD falls is distribution.",
-      "alert": "An alert fires the first time a score crosses from below 80 to 80 or above, locking the price. It closes only after three consecutive scans below 75 — that buffer is what stops it retriggering around the 80 line."
+      "title": "What are the two factors?",
+      "oi": "OI (60 pts) — open interest against price, as four quadrants. OI up with price up means fresh longs, the best case for a long; OI up with price down means fresh shorts. Both falling-OI quadrants score low for either side — no new money is behind the move.",
+      "cvd": "CVD (40 pts) — cumulative taker buy minus sell. Half the points are direction, half are divergence: price falling while CVD rises means someone is absorbing, the strongest long signal; price rising while CVD falls is distribution.",
+      "alert": "An alert fires the first time a score crosses from below 70 to 70 or above, locking the price. It closes only after three consecutive scans below 65 — that buffer is what stops it retriggering around the 70 line."
     }
   },
   "pwa": {

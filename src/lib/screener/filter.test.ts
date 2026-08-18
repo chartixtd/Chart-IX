@@ -8,7 +8,7 @@ function row(o: Partial<ScannerRow> = {}): ScannerRow {
     coin: "TIA",
     direction: "long",
     total: 85,
-    factors: { zone: 28, sweep: 18, oi: 25, cvd: 14 },
+    factors: { oi: 25, cvd: 14 },
     price: 1,
     change24h: 1,
     amplitude: 4,

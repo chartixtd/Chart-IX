@@ -9,7 +9,7 @@ function row(overrides: Partial<ScannerRow> = {}): ScannerRow {
     coin: "TIA",
     direction: "long",
     total: 85,
-    factors: { zone: 28, sweep: 18, oi: 25, cvd: 14 },
+    factors: { oi: 25, cvd: 14 },
     price: 100,
     change24h: 1,
     amplitude: 4,
@@ -57,7 +57,8 @@ describe("planAlerts", () => {
   });
 
   it("未达触发线不开警报", () => {
-    expect(planAlerts([row({ total: 79 })], []).opens).toHaveLength(0);
+    // 触发线现在是 70（见 types.ts ALERT_TRIGGER_SCORE 的注释），69 刚好差一分不够。
+    expect(planAlerts([row({ total: 69 })], []).opens).toHaveLength(0);
   });
 
   it("已有未平警报时不重复开——这是「首次突破」的全部含义", () => {
@@ -83,36 +84,41 @@ describe("planAlerts", () => {
   });
 
   it("分数落在触发线与关闭线之间时保持未平且不累计——这就是迟滞区间", () => {
-    const plan = planAlerts([row({ total: 77 })], [open({ belowCount: 2 })]);
+    // 迟滞区间现在是 [65, 70)（原 [75, 80)），67 落在里面。
+    const plan = planAlerts([row({ total: 67 })], [open({ belowCount: 2 })]);
     expect(plan.closes).toHaveLength(0);
     expect(plan.updates[0].belowCount).toBe(0);
   });
 
   it("低于关闭线一次只累计，不关闭", () => {
-    const plan = planAlerts([row({ total: 70 })], [open({ belowCount: 0 })]);
+    // 关闭线现在是 65（原 75），64 才是低于关闭线。
+    const plan = planAlerts([row({ total: 64 })], [open({ belowCount: 0 })]);
     expect(plan.closes).toHaveLength(0);
     expect(plan.updates[0].belowCount).toBe(1);
   });
 
   it("连续低于关闭线达到迟滞次数才关闭", () => {
-    const plan = planAlerts([row({ total: 70 })], [open({ belowCount: ALERT_CLOSE_STREAK - 1 })]);
+    const plan = planAlerts([row({ total: 64 })], [open({ belowCount: ALERT_CLOSE_STREAK - 1 })]);
     expect(plan.closes).toEqual(["a1"]);
   });
 
   it("回到迟滞区间以上会让 belowCount 归零、重新开始累计", () => {
-    // 74,74 累计到 2；77 落在迟滞区间 [75,80) 内，把计数归零；
-    // 再来 74,74,74 才刚好在第 6 轮累计到 3 而关闭。
+    // 64,64 累计到 2；67 落在迟滞区间 [65,70) 内，把计数归零；
+    // 再来 64,64,64 才刚好在第 6 轮累计到 3 而关闭。
+    // （原用例是 74/77 配 [75,80) 区间，T21 把触发线/关闭线从 80/75
+    // 降到 70/65 之后按同样的相对位置换成 64/67，保持这条用例本身的
+    // 结构与钉住的不变量不变。）
     //
     // 第 3 轮必须选一个落在 [ALERT_CLOSE_SCORE, ALERT_TRIGGER_SCORE) =
-    // [75, 80) 之间的值（这里用 77），不能用 ≥80 的值：如果用 81 这种
-    // 同时 ≥75 也 ≥80 的值，不管归零条件写成 `< ALERT_CLOSE_SCORE(75)`
-    // 还是被误写成 `< ALERT_TRIGGER_SCORE(80)`，第 3 轮都会归零，两种
+    // [65, 70) 之间的值（这里用 67），不能用 ≥70 的值：如果用 71 这种
+    // 同时 ≥65 也 ≥70 的值，不管归零条件写成 `< ALERT_CLOSE_SCORE(65)`
+    // 还是被误写成 `< ALERT_TRIGGER_SCORE(70)`，第 3 轮都会归零，两种
     // 实现产生完全相同的 close 模式，用例就测不出这类错误——上一版就是
-    // 踩了这个坑。用 77：正确实现里 77 不小于 75 所以归零；误写成 <80
-    // 的实现里 77<80 会继续累计，第 3 轮就提前关闭，与正确实现在第 3
+    // 踩了这个坑。用 67：正确实现里 67 不小于 65 所以归零；误写成 <70
+    // 的实现里 67<70 会继续累计，第 3 轮就提前关闭，与正确实现在第 3
     // 轮就产生分歧。
     let state = [open({ belowCount: 0 })];
-    const rounds = [74, 74, 77, 74, 74, 74];
+    const rounds = [64, 64, 67, 64, 64, 64];
     const closesByRound: boolean[] = [];
     for (const total of rounds) {
       const plan = planAlerts([row({ total })], state);
@@ -151,7 +157,7 @@ describe("planAlerts", () => {
       [
         row({ symbol: "AAA-USDT", total: 88 }),
         row({ symbol: "BBB-USDT", total: 90, price: 120 }),
-        row({ symbol: "CCC-USDT", total: 70 }),
+        row({ symbol: "CCC-USDT", total: 64 }),
       ],
       [
         open({ id: "b", symbol: "BBB-USDT" }),

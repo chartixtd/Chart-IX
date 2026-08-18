@@ -42,8 +42,10 @@ export interface TelegramPushSettings {
   showFunding: boolean;
   showScore: boolean;
   /**
-   * 四因子构成。DB 列仍叫 show_edge，理由同上——edge 这个概念随
-   * 6 维模型一起退役了，这一列改承接"显示 Zone/Sweep/OI/CVD 明细"。
+   * 因子构成。DB 列仍叫 show_edge，理由同上——edge 这个概念随
+   * 6 维模型一起退役了，这一列先后承接过"显示 Zone/Sweep/OI/CVD 明细"
+   * （四因子模型）与现在的"显示 OI/CVD 明细"（T21 退役 Zone/Sweep 后的
+   * 两因子模型），列名本身不再改。
    */
   showFactors: boolean;
   lastPushedAt: string | null;
@@ -429,7 +431,7 @@ function formatScannerRow(
   if (settings.showDirection) parts.push(r.direction === "long" ? s.long : s.short);
   if (settings.showScore) parts.push(`${s.score} ${r.total}`);
   if (settings.showFactors) {
-    parts.push(`Z${r.factors.zone}/S${r.factors.sweep}/OI${r.factors.oi}/CVD${r.factors.cvd}`);
+    parts.push(`OI${r.factors.oi}/CVD${r.factors.cvd}`);
   }
   if (settings.showPrice) parts.push(`${s.price} ${fmtPrice(r.price)}`);
   if (settings.showChange24h && r.change24h !== null) {

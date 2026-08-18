@@ -90,13 +90,13 @@ export const ScannerTable = memo(function ScannerTable({
       header: t("columns.factors"),
       hideOnMobile: true,
       render: (r) => (
-        // FactorStack 本身整个是 aria-hidden（它只是四根装饰柱），
-        // 所以这里补一层文字说明，屏幕阅读器用户才能读到这四个数。
+        // FactorStack 本身整个是 aria-hidden（它只是两根装饰柱），
+        // 所以这里补一层文字说明，屏幕阅读器用户才能读到这两个数。
         // 警报卡不需要这个 —— 它每根柱子旁边已经有文字标签和分数。
-        <span title={`Zone ${r.factors.zone} / Sweep ${r.factors.sweep} / OI ${r.factors.oi} / CVD ${r.factors.cvd}`}>
+        <span title={`OI ${r.factors.oi} / CVD ${r.factors.cvd}`}>
           <FactorStack factors={r.factors} />
           <span className="sr-only">
-            {`Zone ${r.factors.zone} / Sweep ${r.factors.sweep} / OI ${r.factors.oi} / CVD ${r.factors.cvd}`}
+            {`OI ${r.factors.oi} / CVD ${r.factors.cvd}`}
           </span>
         </span>
       ),

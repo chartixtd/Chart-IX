@@ -33,7 +33,7 @@ export function parseAlertPushConfig(value: unknown): AlertPushConfig {
 
   return {
     enabled,
-    // 低于触发线是无意义的设置：低于 80 分的币根本不会产生警报，
+    // 低于触发线是无意义的设置：低于 ALERT_TRIGGER_SCORE 的币根本不会产生警报，
     // 把它抬回触发线，免得后台看着像"我已经调到 50 了怎么还是这么少"。
     minScore: Math.max(ALERT_TRIGGER_SCORE, raw),
   };
@@ -72,7 +72,7 @@ export function formatAlertMessage(alerts: NewAlert[], lang: TelegramMessageLang
     const f = a.factors;
     return (
       `<b>${coin}</b> ${dir} · ${a.triggerScore}/100 · ` +
-      `Z${f.zone}/S${f.sweep}/OI${f.oi}/CVD${f.cvd} · ` +
+      `OI${f.oi}/CVD${f.cvd} · ` +
       `${s.at} ${a.triggerPrice}`
     );
   });

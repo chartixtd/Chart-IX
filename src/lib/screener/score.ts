@@ -1,22 +1,18 @@
 import type {
   CoinGlassPriceBar,
   CoinGlassTakerBar,
-  CoinGlassLiquidationBar,
   CoinGlassOiBar,
 } from "@/lib/coinglass/types";
 import { SERIES_LIMIT } from "@/lib/coinglass/price-history";
 import type { Direction, FactorBreakdown } from "./types";
-import { zoneScore } from "./factors/zone";
-import { sweepScore } from "./factors/sweep";
 import { oiScore } from "./factors/oi";
 import { cvdScore } from "./factors/cvd";
 
 export interface ScoreInputs {
   /** BingX 的成交价 */
   price: number;
-  /** 7 天 30m K 线，同时喂 Zone / Sweep / OI / 振幅 */
+  /** 7 天 30m K 线，同时喂 OI 背离判断与真振幅 */
   priceBars: CoinGlassPriceBar[];
-  liquidation: CoinGlassLiquidationBar[];
   taker: CoinGlassTakerBar[];
   /**
    * 7 天 30m 持仓量序列（全交易所聚合），与 priceBars 逐根对齐——OI 因子的
@@ -28,15 +24,13 @@ export interface ScoreInputs {
 
 export function scoreDirection(inputs: ScoreInputs, direction: Direction): FactorBreakdown {
   return {
-    zone: zoneScore(inputs.price, inputs.priceBars, direction),
-    sweep: sweepScore(inputs.liquidation, inputs.priceBars, direction),
     oi: oiScore(inputs.oiBars, inputs.priceBars, direction),
     cvd: cvdScore(inputs.taker, inputs.priceBars, direction),
   };
 }
 
 function sum(f: FactorBreakdown): number {
-  return f.zone + f.sweep + f.oi + f.cvd;
+  return f.oi + f.cvd;
 }
 
 /**
@@ -46,7 +40,7 @@ function sum(f: FactorBreakdown): number {
  * 但因子构成看着像 SHORT」的矛盾。平局时取 long 只是为了让结果稳定可复现，
  * 不含任何多头偏好——平局意味着两边一样没优势，总分本身也不会高。
  *
- * 取整只在最后做：四条曲线都有平台段，先取整会让排序被浮点末位而不是
+ * 取整只在最后做：两条曲线都有平台段，先取整会让排序被浮点末位而不是
  * 真实差异决定。
  */
 export function pickDirection(inputs: ScoreInputs): {
@@ -62,22 +56,22 @@ export function pickDirection(inputs: ScoreInputs): {
   const isLong = longTotal >= shortTotal;
   const factors = isLong ? long : short;
 
-  // total 必须是「取整后四项之和」，不能是「未取整总和的取整」。
-  // 两条取整路径各自舍入误差最坏累计到 2，会让 total 与 factors 四项之和
-  // 相差超过 1，违反 types.ts 里 ScannerRow.total 的类型注释（「等于 factors
-  // 四项之和（已取整）」——精确相等）。方向判定（isLong）仍然用未取整的
+  // total 必须是「取整后两项之和」，不能是「未取整总和的取整」。
+  // 两条取整路径各自舍入误差最坏累计到 1，会让 total 与 factors 两项之和
+  // 相差超过 0，违反 types.ts 里 ScannerRow.total 的类型注释（「等于 factors
+  // 两项之和（已取整）」——精确相等）。方向判定（isLong）仍然用未取整的
   // longTotal/shortTotal 比较，这里不动：「取整只在最后做」这条原则针对
-  // 的是排序与方向选择，不是总分的自洽性。
+  // 的是排序与方向选择，不是总分的自洽性。这条不变量之前被 score.test.ts
+  // 里一个三维网格 + 变异测试的用例专门钉过，退化两因子之后这条用例
+  // 原样保留，不要图省事把 total 改回 Math.round(未取整总和)。
   const rounded: FactorBreakdown = {
-    zone: Math.round(factors.zone),
-    sweep: Math.round(factors.sweep),
     oi: Math.round(factors.oi),
     cvd: Math.round(factors.cvd),
   };
 
   return {
     direction: isLong ? "long" : "short",
-    total: rounded.zone + rounded.sweep + rounded.oi + rounded.cvd,
+    total: rounded.oi + rounded.cvd,
     factors: rounded,
   };
 }

@@ -98,16 +98,18 @@ describe("quadrantScore", () => {
 describe("oiScore", () => {
   const rising = barsFromCloses(Array.from({ length: 20 }, (_, i) => 100 + i));
 
-  it("拿不到 OI 序列（空数组）给中性 15", () => {
-    expect(oiScore([], rising, "long")).toBe(15);
+  it("拿不到 OI 序列（空数组）给中性 30", () => {
+    // T21 把 FACTOR_MAX.oi 从 30 改成 60 之后，oiScore 的输出整体翻倍
+    // （见 oi.ts oiScore 里 `FACTOR_MAX.oi / 2` 那行），下面这组阈值同步翻倍。
+    expect(oiScore([], rising, "long")).toBe(30);
   });
 
   it("三个窗口 OI 齐涨 + 价格齐涨 → 做多接近满分", () => {
-    expect(oiScore(oiBarsFromWindowPcts(5, 5, 5), rising, "long")).toBeGreaterThan(27);
+    expect(oiScore(oiBarsFromWindowPcts(5, 5, 5), rising, "long")).toBeGreaterThan(54);
   });
 
   it("同样的数据对做空接近 0", () => {
-    expect(oiScore(oiBarsFromWindowPcts(5, 5, 5), rising, "short")).toBeLessThan(3);
+    expect(oiScore(oiBarsFromWindowPcts(5, 5, 5), rising, "short")).toBeLessThan(6);
   });
 
   it("短窗口权重高于长窗口——15 分钟扫描要抓的是刚发生的资金动作", () => {
@@ -116,7 +118,7 @@ describe("oiScore", () => {
     expect(shortWindowBull).toBeGreaterThan(longWindowBull);
   });
 
-  it("分数恒在 [0, 30]", () => {
+  it("分数恒在 [0, 60]", () => {
     for (const bars of [
       oiBarsFromWindowPcts(50, 50, 50),
       oiBarsFromWindowPcts(-50, -50, -50),
@@ -125,7 +127,7 @@ describe("oiScore", () => {
       for (const dir of ["long", "short"] as const) {
         const v = oiScore(bars, rising, dir);
         expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThanOrEqual(30);
+        expect(v).toBeLessThanOrEqual(60);
       }
     }
   });
@@ -239,16 +241,19 @@ describe("象限 + 背离修正的集成", () => {
     const long = oiScore(oiBars, priceBars, "long");
     const short = oiScore(oiBars, priceBars, "short");
 
-    // base=50（象限中性）在因子分上是 15；背离取满（signed=+1）时修正量
-    // 恰好是上限 OI_DIVERGENCE_MAX_ADJUST（20，映射到因子分是 6）——
-    // long 应该被推到 15+6=21，short 被推到 15-6=9，不多不少。
+    // base=50（象限中性）在因子分上是 30（FACTOR_MAX.oi=60 的一半）；
+    // 背离取满（signed=+1）时修正量恰好是上限 OI_DIVERGENCE_MAX_ADJUST
+    // （20，映射到因子分是 12）——long 应该被推到 30+12=42，
+    // short 被推到 30-12=18，不多不少。
+    // （T21 把 FACTOR_MAX.oi 从 30 改成 60 之后，这两个数跟着整体翻倍：
+    // 原来是 15/6 → 21/9，现在是 30/12 → 42/18。）
     const baseFactor = (50 / 100) * FACTOR_MAX.oi;
     const capFactor = (OI_DIVERGENCE_MAX_ADJUST / 100) * FACTOR_MAX.oi;
-    expect(baseFactor).toBe(15);
-    expect(capFactor).toBe(6);
+    expect(baseFactor).toBe(30);
+    expect(capFactor).toBe(12);
 
-    expect(long).toBeCloseTo(baseFactor + capFactor); // 21
-    expect(short).toBeCloseTo(baseFactor - capFactor); // 9
+    expect(long).toBeCloseTo(baseFactor + capFactor); // 42
+    expect(short).toBeCloseTo(baseFactor - capFactor); // 18
     expect(long).toBeGreaterThan(short);
 
     // 修正量确实被 OI_DIVERGENCE_MAX_ADJUST 封顶：这里背离已经取满（±1），
@@ -263,11 +268,12 @@ describe("象限 + 背离修正的集成", () => {
     // 仍然分别是 0 与 100，这条用例会「测什么都无所谓地通过」，测不出接线
     // 是否真的接对。所以这里刻意把 quadrant 的 OI 变化定在 1.6%（介于
     // OI_DEADZONE_PCT=0.5% 与 OI_FULL_STRENGTH_PCT=2% 之间），让
-    // strength=0.8、base(long)=10、base(short)=90——都没有顶格。
-    // 只有背离真的按方向翻号、真的贡献了 ±20，才会把 10 推到 -10、
-    // 90 推到 110，进而触发 clamp 落在 0 与 30（FACTOR_MAX.oi）；如果背离
-    // 接线断了（signed 恒为 0），这条用例会得到 3 与 27，而不是 0 与 30，
-    // 断言会失败——这才是这条用例真正在验证的东西。
+    // strength=0.8、base(long)=10、base(short)=90——都没有顶格（这两个数是
+    // 象限的 0-100 原始分，不受 FACTOR_MAX 缩放影响）。只有背离真的按方向
+    // 翻号、真的贡献了 ±20，才会把 10 推到 -10、90 推到 110，进而触发 clamp
+    // 落在 0 与 FACTOR_MAX.oi（T21 从 30 改成 60）；如果背离接线断了
+    // （signed 恒为 0），这条用例会得到 6 与 54（10/100 与 90/100 乘上 60），
+    // 而不是 0 与 60，断言会失败——这才是这条用例真正在验证的东西。
     const highs = twoPeakHighsWithTail();
     const lows = flatArray(10);
     // quadrant 尾部四个下标（21/27/28/29，即 barsBack=8/2/1 相对末尾 29 读到的
@@ -293,7 +299,7 @@ describe("象限 + 背离修正的集成", () => {
     });
 
     // long 方向：base=10，背离偏空（directional=signed=-1）继续往下推 20，
-    // 10 + (-1)*20 = -10，不 clamp 的话会跌破 [0,30] 的下界。
+    // 10 + (-1)*20 = -10，不 clamp 的话缩放后会跌破 [0,60] 的下界。
     const long = oiScore(oiBars, priceBars, "long");
     expect(long).toBe(0);
 

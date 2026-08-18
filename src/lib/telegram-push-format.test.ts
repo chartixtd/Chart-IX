@@ -31,7 +31,7 @@ function row(o: Partial<ScannerRow> = {}): ScannerRow {
     coin: "TIA",
     direction: "long",
     total: 85,
-    factors: { zone: 28, sweep: 18, oi: 25, cvd: 14 },
+    factors: { oi: 25, cvd: 14 },
     price: 0.296,
     change24h: -1.92,
     amplitude: 4.3,
@@ -78,9 +78,9 @@ describe("formatScannerMessage", () => {
     expect(formatScannerMessage(payload, settings, "zh")).toContain("做多");
   });
 
-  it("因子构成按 Zone/Sweep/OI/CVD 顺序展开", () => {
+  it("因子构成按 OI/CVD 顺序展开", () => {
     const msg = formatScannerMessage(payload, settings, "en");
-    expect(msg).toMatch(/Z28.*S18.*OI25.*CVD14/);
+    expect(msg).toMatch(/OI25.*CVD14/);
   });
 
   it("关掉因子开关就不输出因子构成", () => {

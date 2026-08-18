@@ -4,7 +4,9 @@ import { fetchMarketCapRows } from "@/lib/market-cap-fetch";
 import { runWithConcurrency } from "@/lib/coinglass/client";
 import { getPairsMarkets, getFundingRateList, pickExchangeRow } from "@/lib/coinglass/market";
 import { getOpenInterestHistory } from "@/lib/coinglass/open-interest";
-import { getLiquidationCoinList, getLiquidationHistory } from "@/lib/coinglass/liquidation";
+// getLiquidationCoinList 保留：它服务的是下面 rankForDeepScan 的预排序信号
+// （爆仓异常度），跟已经退役的 Sweep 因子是两回事，不要因为删 Sweep 而连带删掉。
+import { getLiquidationCoinList } from "@/lib/coinglass/liquidation";
 import { getPriceHistory } from "@/lib/coinglass/price-history";
 import { getTakerVolumeHistory } from "@/lib/coinglass/taker-volume";
 import type {
@@ -13,7 +15,6 @@ import type {
   CoinGlassLiquidationCoin,
   CoinGlassPriceBar,
   CoinGlassTakerBar,
-  CoinGlassLiquidationBar,
   CoinGlassOiBar,
 } from "@/lib/coinglass/types";
 import { preselect, amplitudeFromTicker, SERVER_GATE } from "./universe";
@@ -29,25 +30,30 @@ import { DEEP_SCAN_LIMIT } from "./types";
 export const BINGX_EXCHANGE = "BingX";
 
 /**
- * 资金流类数据（主动买卖 → CVD、爆仓时序 → Sweep）取哪一家。
+ * 资金流类数据（主动买卖 → CVD）取哪一家。
  *
- * 这两个因子问的是「**整个市场**的钱往哪边走」，所以要在最深的池子里取样，
+ * CVD 问的是「**整个市场**的钱往哪边走」，所以要在最深的池子里取样，
  * 而不是在用户执行的那个池子里。BingX 的成交量普遍比 Binance 薄一个数量级
- * （实测 VELVET 8.2M vs 108.1M、COMP 2.9M vs 24.6M），薄盘口的爆仓事件
- * 稀疏得多——同一时刻的实测对比：Binance 源下 14 个币有 3 个 Sweep 非零，
- * 换成 BingX 源之后 14 个全是 0，spike 倍数够不到 3 倍的起分线，
- * 满分 20 的 Sweep 因子整体失效。
+ * （实测 VELVET 8.2M vs 108.1M、COMP 2.9M vs 24.6M），薄盘口的主动买卖
+ * 统计噪声也大得多。
+ *
+ * T21 之前这里还给 Sweep 因子取过爆仓时序（同样的理由：薄盘口的爆仓事件
+ * 稀疏，Binance 源下 14 个币有 3 个 Sweep 非零，换成 BingX 源之后 14 个
+ * 全是 0）。Sweep 退役后这条历史证据不再驱动任何在跑的代码，留着只是
+ * 说明 FLOW_EXCHANGE 为什么选 Binance 而不是 BingX——这个选择本身对 CVD
+ * 依然成立，不因为 Sweep 没了就要重新论证。
  *
  * 这个币在 Binance 没有合约时由 pickExchangeRow 回落到成交额最大的那家。
  */
 export const FLOW_EXCHANGE = "Binance";
 
 /**
- * 价格类数据（K 线 → Zone 与真振幅）取哪一家。
+ * 价格类数据（K 线 → OI 背离判断与真振幅）取哪一家。
  *
- * 和资金流相反，这一类必须跟用户下单的盘口同源：Zone 判断的是「现价处在
- * 筹码分布的什么位置」、振幅判断的是「今天这个盘口真的在动吗」，
- * 两者都是拿去 BingX 执行的，用别家的 K 线算等于按 A 市场的位置在 B 市场下单。
+ * 和资金流相反，这一类必须跟用户下单的盘口同源：OI 因子判断的是「持仓量
+ * 变化配合的是不是这个盘口的真实价格走势」、振幅判断的是「今天这个盘口
+ * 真的在动吗」，两者都是拿去 BingX 执行的，用别家的 K 线算等于按 A 市场的
+ * 走势在 B 市场下单。
  *
  * toMarketStage 已经要求 BingX 那一行必须存在（否则整个币跳过），
  * 所以这里的回落分支实际不会触发。
@@ -122,29 +128,33 @@ function toMarketStage(
  * → 行情层（对*每个粗筛候选*调 pairs-markets）→ 明细层（对*每个行情层存活的
  * 候选*调 4 个端点）。粗筛池子常有 100–150 个候选，三段式在真实 key 下
  * 一轮要打 450–800 次 CoinGlass 调用，而 `API-KEY-MAX-LIMIT: 80`——差一个
- * 数量级，dryrun 直接被 429 打回、四因子全部退化成缺数据的默认分
+ * 数量级，dryrun 直接被 429 打回、当时的四因子全部退化成缺数据的默认分
  * （见 client.ts 顶部 `COINGLASS_CONCURRENCY` 的注释）。
  *
- * 现在是四段式，一轮固定 72 次调用（`DEEP_SCAN_LIMIT` 目前推导为 14，见
+ * 现在是四段式，一轮固定 74 次调用（`DEEP_SCAN_LIMIT` 目前推导为 18，见
  * `types.ts` 的注释——**这个数不是拍脑袋定的整数，是从限流器的真实配额
- * `RATE_LIMIT_PER_MIN` 推导出来的，改了限流器配额这里的次数会跟着变**）：
+ * `RATE_LIMIT_PER_MIN` 推导出来的，改了限流器配额这里的次数会跟着变**。
+ * T21 退役 Zone/Sweep 两因子之后每个币少打一次 liquidation/history，
+ * `DEEP_SCAN_LIMIT` 因此从 14 涨到 18——同一条不等式，配额没变，
+ * 单个币变便宜了，能塞进去的币就变多了）：
  *   ① 批量层（4 路，2 次 CoinGlass 调用）：BingX ticker（0 次）+ CoinGecko
- *      市值（0 次）+ `liquidation/coin-list`（1 次，全币爆仓）+
+ *      市值（0 次）+ `liquidation/coin-list`（1 次，全币爆仓，供 ③ 预排序用）+
  *      `funding-rate/exchange-list`（1 次，全币资金费率）。
  *   ② 粗筛：`preselect()`，0 次调用，只用批量层已有的数据。
  *   ③ 预排序：从粗筛池子里选出 `DEEP_SCAN_LIMIT` 个进入明细层，
  *      0 次调用（下面详细说）。
- *   ④ 明细层（`DEEP_SCAN_LIMIT` × 5 次调用）：只对预排序选中的候选依次调
+ *   ④ 明细层（`DEEP_SCAN_LIMIT` × 4 次调用）：只对预排序选中的候选依次调
  *      pairs-markets、open-interest/aggregated-history、price/history、
- *      taker-buy-sell-volume/history、liquidation/history。
+ *      taker-buy-sell-volume/history。
  *
- * `2 + DEEP_SCAN_LIMIT × 5` 必须 `≤ RATE_LIMIT_PER_MIN`（不是 CoinGlass 文档
+ * `2 + DEEP_SCAN_LIMIT × 4` 必须 `≤ RATE_LIMIT_PER_MIN`（不是 CoinGlass 文档
  * 写的 80，是限流器实际生效的 75——两者的差就是限流器给「cron 刚扫完、用户
- * 马上刷新」这类重叠留的余量）。**这条不等式踩过一次真实的坑**：第一版
- * `DEEP_SCAN_LIMIT` 直接写死 15，`2 + 15 × 5 = 77 > 75`，最后两次调用撞上
- * 限流器等待，一轮跑到 60.7 秒，撞破 Vercel Hobby 的 60 秒函数上限——这正是
- * 为什么 `DEEP_SCAN_LIMIT` 现在改成从 `RATE_LIMIT_PER_MIN` 推导，而不是写死
- * 的常量，具体推导式与断言测试见 `types.ts`。
+ * 马上刷新」这类重叠留的余量）。**这条不等式踩过一次真实的坑**：T19 第一版
+ * `DEEP_SCAN_LIMIT` 直接写死 15，当时`DETAIL_CALLS_PER_COIN` 还是 5，
+ * `2 + 15 × 5 = 77 > 75`，最后两次调用撞上限流器等待，一轮跑到 60.7 秒，
+ * 撞破 Vercel Hobby 的 60 秒函数上限——这正是为什么 `DEEP_SCAN_LIMIT`
+ * 现在改成从 `RATE_LIMIT_PER_MIN` 推导，而不是写死的常量，具体推导式与
+ * 断言测试见 `types.ts`。
  *
  * 为什么是预排序而不是直接把 `DEEP_SCAN_LIMIT` 定成粗筛门槛的一部分：粗筛用的
  * 信号（市值、BingX 高低振幅）批量层就有，不花额外调用；但「这个币现在
@@ -153,10 +163,10 @@ function toMarketStage(
  * 用「爆仓异常度 + 振幅」各半的分数从粗筛池子里再挑一轮，把最值得
  * 打分的那些送进明细层，而不是任意选或者按粗筛的自然顺序截断。
  *
- * 预排序的代价（无法避免，不是疏忽）：Zone/OI/CVD 三个因子的数据只有
+ * 预排序的代价（无法避免，不是疏忽）：OI/CVD 两个因子的数据只有
  * 进了明细层才能拿到，预排序阶段完全看不到，只能用爆仓与振幅这两个
- * 粗筛阶段就有的信号做代理。一个「爆仓平淡、振幅也一般，但 Zone/OI/CVD
- * 三项本来会打出高分」的币，在限流器 75/分钟的真实配额下就是进不了这一轮的深度扫描——
+ * 粗筛阶段就有的信号做代理。一个「爆仓平淡、振幅也一般，但 OI/CVD
+ * 两项本来会打出高分」的币，在限流器 75/分钟的真实配额下就是进不了这一轮的深度扫描——
  * 这是配额约束下必然要接受的代价，下一轮扫描（15 分钟后）它仍有机会
  * 凭爆仓或振幅的变化被选中。
  *
@@ -166,7 +176,7 @@ function toMarketStage(
  *   · CoinGecko 市值失败或空 map → 抛错。这与旧的 6 维模型相反：那里
  *     市值只是 25% 权重的打分项，可以降级成中性分；这里市值是硬门槛，
  *     拿不到 = 门槛失效 = BTC/ETH 和查不到的合成品直接涌进小市值筛选器。
- *   · 资金费率整表失败 → 降级，fundingRate 全为 null。它在四因子模型里
+ *   · 资金费率整表失败 → 降级，fundingRate 全为 null。它在两因子模型里
  *     只是展示字段，不参与打分。
  *   · liquidation/coin-list 整表失败 → 降级，不中断。预排序退化成
  *     只按振幅排（爆仓这一半的信号对每个候选都是同一个常数，不再区分
@@ -248,31 +258,39 @@ export async function runScan(): Promise<ScannerPayload> {
     .map((c, i) => toMarketStage(c, pairRows[i]))
     .filter((s): s is MarketStage => s !== null);
 
-  // ④ 明细层：四个端点共用同一个并发池，所以并发上限是对上游的真实总上限。
-  // staged 现在最多 DEEP_SCAN_LIMIT 个，入队顺序与下面取结果的 base + 0..3 下标算术
+  // ④ 明细层：三个端点共用同一个并发池，所以并发上限是对上游的真实总上限。
+  // staged 现在最多 DEEP_SCAN_LIMIT 个，入队顺序与下面取结果的 base + 0..2 下标算术
   // 保持原样不动（评审逐个验算过的对齐关系，见下方注释）。
+  //
+  // T21 退役 Zone/Sweep 之后这里从 4 个端点降到 3 个（去掉了 getLiquidationHistory），
+  // 下标基数因此要跟着从 `i * 4` 改成 `i * 3`——这是这次改动最容易漏改的一处：
+  // 只改入队数量、忘了改下标基数，不会报错，只会让每个币从这里往后的
+  // oiBars/priceBars/taker 全部读到别的币的数据，分数悄悄整体错位。
+  // 手工验算（staged 有 3 个币时，detailTasks 的 9 个元素分别对应谁）：
+  //   detailTasks = [oi0, price0, taker0, oi1, price1, taker1, oi2, price2, taker2]
+  //   i=0 → base=0 → detail[0]=oi0  detail[1]=price0  detail[2]=taker0
+  //   i=1 → base=3 → detail[3]=oi1  detail[4]=price1  detail[5]=taker1
+  //   i=2 → base=6 → detail[6]=oi2  detail[7]=price2  detail[8]=taker2
   const detailTasks: Array<() => Promise<unknown>> = [];
   for (const s of staged) {
     detailTasks.push(() => getOpenInterestHistory(s.candidate.coin));
-    // K 线取下单盘口（Zone 与振幅要跟执行同源），资金流取最深的池子
-    // （CVD 与 Sweep 统计的是整个市场的方向，薄盘口取样会让它们失效）。
+    // K 线取下单盘口（OI 判断与振幅要跟执行同源），资金流取最深的池子
+    // （CVD 统计的是整个市场的方向，薄盘口取样会让它失效）。
     // 调用次数不变，只是 exchange 参数不同。
     detailTasks.push(() => getPriceHistory(s.priceExchange, s.priceInstrumentId));
     detailTasks.push(() => getTakerVolumeHistory(s.flowExchange, s.flowInstrumentId));
-    detailTasks.push(() => getLiquidationHistory(s.flowExchange, s.flowInstrumentId));
   }
   const detail = await runWithConcurrency(detailTasks);
 
   const rows: ScannerRow[] = [];
   for (let i = 0; i < staged.length; i++) {
     const s = staged[i];
-    const base = i * 4;
+    const base = i * 3;
     // 拿不到时传 []，不是 undefined——oiScore 现在吃序列，空数组和「请求失败」
     // 是同一件事，让它自己走中性分支（见 oi.ts oiScore 顶部注释）。
     const oiBars = (detail[base] as CoinGlassOiBar[] | null) ?? [];
     const priceBars = (detail[base + 1] as CoinGlassPriceBar[] | null) ?? [];
     const taker = (detail[base + 2] as CoinGlassTakerBar[] | null) ?? [];
-    const liquidation = (detail[base + 3] as CoinGlassLiquidationBar[] | null) ?? [];
 
     const price = s.bingx.current_price;
     if (!Number.isFinite(price) || price <= 0) continue;
@@ -281,7 +299,6 @@ export async function runScan(): Promise<ScannerPayload> {
       price,
       priceBars,
       taker,
-      liquidation,
       oiBars,
     });
 

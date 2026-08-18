@@ -870,7 +870,7 @@
   },
   "screener": {
     "title": "Pengimbas",
-    "subtitle": "OI · CVD · SWEEP · ZONE — imbasan 4 faktor",
+    "subtitle": "OI · CVD — imbasan 2 faktor",
     "no_results": "Tiada yang sepadan dengan penapis semasa. Cuba longgarkan penggelongsor.",
     "error": "Gagal memuatkan data",
     "retry": "Cuba lagi",
@@ -903,9 +903,9 @@
     "action_short": "Short",
     "alerts": {
       "rail_label": "Amaran terkini",
-      "empty": "Amaran dicetuskan kali pertama skor melepasi 80. Harga pada ketika itu dikunci dan perubahan terkumpul dijejaki dari situ.",
+      "empty": "Amaran dicetuskan kali pertama skor melepasi 70. Harga pada ketika itu dikunci dan perubahan terkumpul dijejaki dari situ.",
       "triggered": "dicetuskan",
-      "trigger_line": "Dicetuskan: skor {score}/100 melepasi 80 · Zone {zone}/30 · Sweep {sweep}/20 · OI {oi}/30 · CVD {cvd}/20",
+      "trigger_line": "Dicetuskan: skor {score}/100 melepasi 70 · OI {oi}/60 · CVD {cvd}/40",
       "first_price": "Harga amaran",
       "last_price": "Harga semasa",
       "cumulative": "Perubahan terkumpul sejak amaran",
@@ -916,12 +916,10 @@
     },
     "source_note": "Data daripada CoinGlass · harga dan dagangan di BingX · lilin daripada {exchange}",
     "guide": {
-      "title": "Apakah empat faktor ini?",
-      "zone": "Zone (30 mata) — kawasan nilai daripada profil volum 7 hari. Long mahukan harga rapat dengan tepi bawah, di mana volum terberat menjadi sokongan; short sebaliknya. Harga di luar kawasan nilai hanya dapat 4 mata — itu mengejar harga.",
-      "sweep": "Sweep (20 mata) — lonjakan pembubaran ditambah pemulihan harga. Long mahukan pembubaran long melonjak (henti rugi di bawah telah disapu) dan harga sudah kembali naik; short sebaliknya. Tiada bukti pembubaran bermakna sifar.",
-      "oi": "OI (30 mata) — faedah terbuka lawan harga, dalam empat kuadran. OI naik dengan harga naik bermakna long baharu, kes terbaik untuk long; OI naik dengan harga turun bermakna short baharu. Kedua-dua kuadran OI menurun mendapat mata rendah — tiada wang baharu di sebalik pergerakan itu.",
-      "cvd": "CVD (20 mata) — beli tolak jual secara terkumpul. Separuh mata untuk arah, separuh untuk divergens: harga jatuh sementara CVD naik bermakna ada yang menyerap, isyarat long terkuat; harga naik sementara CVD jatuh ialah pengagihan.",
-      "alert": "Amaran dicetuskan kali pertama skor melepasi 80 dan mengunci harga. Ia hanya ditutup selepas tiga imbasan berturut-turut di bawah 75 — penimbal itulah yang menghalang pencetusan berulang di sekitar garis 80."
+      "title": "Apakah dua faktor ini?",
+      "oi": "OI (60 mata) — faedah terbuka lawan harga, dalam empat kuadran. OI naik dengan harga naik bermakna long baharu, kes terbaik untuk long; OI naik dengan harga turun bermakna short baharu. Kedua-dua kuadran OI menurun mendapat mata rendah — tiada wang baharu di sebalik pergerakan itu.",
+      "cvd": "CVD (40 mata) — beli tolak jual secara terkumpul. Separuh mata untuk arah, separuh untuk divergens: harga jatuh sementara CVD naik bermakna ada yang menyerap, isyarat long terkuat; harga naik sementara CVD jatuh ialah pengagihan.",
+      "alert": "Amaran dicetuskan kali pertama skor melepasi 70 dan mengunci harga. Ia hanya ditutup selepas tiga imbasan berturut-turut di bawah 65 — penimbal itulah yang menghalang pencetusan berulang di sekitar garis 70."
     }
   },
   "pwa": {

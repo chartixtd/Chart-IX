@@ -109,8 +109,6 @@ export default function ScreenerPage() {
           {t("guide.title")}
         </summary>
         <div className="space-y-2.5 border-t border-border-default px-4 py-3 text-xs leading-relaxed text-text-secondary">
-          <p>{t("guide.zone")}</p>
-          <p>{t("guide.sweep")}</p>
           <p>{t("guide.oi")}</p>
           <p>{t("guide.cvd")}</p>
           <p className="rounded-sm bg-bg-tertiary px-3 py-2">{t("guide.alert")}</p>

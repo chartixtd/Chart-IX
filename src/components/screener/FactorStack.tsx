@@ -2,14 +2,14 @@ import { cn } from "@/lib/utils";
 import { FACTOR_MAX } from "@/lib/screener/types";
 import type { FactorBreakdown } from "@/lib/screener/types";
 
-const ORDER = ["zone", "sweep", "oi", "cvd"] as const;
+const ORDER = ["oi", "cvd"] as const;
 
 /**
- * 四根等高的槽，里面各填一段代表该因子得分占其满分的比例。
+ * 两根等高的槽，里面各填一段代表该因子得分占其满分的比例。
  *
- * 关键是**按各自满分归一**而不是按 30 分统一归一：Sweep 满分 20、
- * OI 满分 30，用同一个分母的话一个拿满 20 分的 Sweep 看起来会比
- * 一个拿 22 分的 OI 更矮，读者会以为它更差。
+ * 关键是**按各自满分归一**而不是按同一个分母统一归一：OI 满分 60、
+ * CVD 满分 40，用同一个分母的话一个拿满 40 分的 CVD 看起来会比
+ * 一个拿 45 分的 OI 更矮，读者会以为它更差。
  */
 export function FactorStack({
   factors,
@@ -18,7 +18,7 @@ export function FactorStack({
 }: {
   factors: FactorBreakdown;
   size?: "sm" | "lg";
-  /** 只画其中一根。警报卡的因子明细是「一根柱配一个标签」，不是四根配一个标签。 */
+  /** 只画其中一根。警报卡的因子明细是「一根柱配一个标签」，不是两根配一个标签。 */
   only?: keyof FactorBreakdown;
 }) {
   const track = size === "lg" ? 30 : 20;

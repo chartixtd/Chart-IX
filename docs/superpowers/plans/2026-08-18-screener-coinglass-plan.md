@@ -2268,19 +2268,16 @@ describe("scoreDirection", () => {
 });
 
 describe("pickDirection", () => {
-  it("方向取两边算分较高的那一侧", () => {
-    const long = scoreDirection(bullish, "long");
-    const short = scoreDirection(bullish, "short");
-    const longTotal = long.zone + long.sweep + long.oi + long.cvd;
-    const shortTotal = short.zone + short.sweep + short.oi + short.cvd;
-    const picked = pickDirection(bullish);
-    expect(picked.direction).toBe(longTotal >= shortTotal ? "long" : "short");
+  it("明显偏多的输入判为 long", () => {
+    // 不在断言里重算总分——那等于断言「实现的公式等于我抄的这条公式」，
+    // 生产代码和测试同时写错时发现不了。直接用一个方向明确的输入
+    // （价格单调上行 + OI 三窗口齐涨 + 主动买压持续为正）断言行为。
+    expect(pickDirection(bullish).direction).toBe("long");
   });
 
-  it("总分等于四项之和（取整后允许 1 分以内的差）", () => {
+  it("total 精确等于取整后的四项之和——两者不能走各自独立的取整路径", () => {
     const p = pickDirection(bullish);
-    const sum = p.factors.zone + p.factors.sweep + p.factors.oi + p.factors.cvd;
-    expect(Math.abs(p.total - sum)).toBeLessThanOrEqual(1);
+    expect(p.total).toBe(p.factors.zone + p.factors.sweep + p.factors.oi + p.factors.cvd);
   });
 
   it("总分恒在 [0, 100]，且是整数", () => {
@@ -2384,17 +2381,24 @@ export function pickDirection(inputs: ScoreInputs): {
   const shortTotal = sum(short);
 
   const isLong = longTotal >= shortTotal;
-  const factors = isLong ? long : short;
+  const raw = isLong ? long : short;
+
+  const factors = {
+    zone: Math.round(raw.zone),
+    sweep: Math.round(raw.sweep),
+    oi: Math.round(raw.oi),
+    cvd: Math.round(raw.cvd),
+  };
 
   return {
     direction: isLong ? "long" : "short",
-    total: Math.round(isLong ? longTotal : shortTotal),
-    factors: {
-      zone: Math.round(factors.zone),
-      sweep: Math.round(factors.sweep),
-      oi: Math.round(factors.oi),
-      cvd: Math.round(factors.cvd),
-    },
+    // total 必须是「取整后四项之和」，不能是 Math.round(未取整总和)。
+    // 后者会让 total 和 factors 走两条独立的取整路径，四个数各自的取整
+    // 误差最坏累计到 2，而 types.ts 承诺这两者精确相等。
+    // 注意这不违反「取整只在最后做」——那条原则针对的是方向选择与排序
+    // （isLong 仍然用未取整的和比较），不是总分自身的自洽性。
+    total: factors.zone + factors.sweep + factors.oi + factors.cvd,
+    factors,
   };
 }
 

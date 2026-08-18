@@ -1,9 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { buildMarketCapMap } from "@/lib/market-cap";
+import { buildMarketCapMap, MARKET_CAP_REFRESH_MS } from "@/lib/market-cap";
 import type { CoinGeckoMarketRow, MarketCapMap } from "@/lib/market-cap";
-import { SCREENER_REFRESH_MS } from "@/lib/screener-scoring";
 
 export function useMarketCap() {
   return useQuery<MarketCapMap>({
@@ -16,8 +15,8 @@ export function useMarketCap() {
       return buildMarketCapMap(json.data as CoinGeckoMarketRow[]);
     },
     // 服务端已按 1 小时缓存，客户端跟着同一个节奏就够了
-    refetchInterval: SCREENER_REFRESH_MS,
-    staleTime: SCREENER_REFRESH_MS,
+    refetchInterval: MARKET_CAP_REFRESH_MS,
+    staleTime: MARKET_CAP_REFRESH_MS,
     retry: 1,
   });
 }

@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMarketStore } from "@/stores/market";
 import { useBingXDepth, useBingXTrades } from "@/hooks/useBingXWebSocket";
 import { trimDepth } from "@/lib/bingx/depth";
-import { SCREENER_REFRESH_MS } from "@/lib/screener-scoring";
+import { MARKET_CAP_REFRESH_MS } from "@/lib/market-cap";
 import type { BingXSymbol, BingXTicker, BingXKline, BingXDepth, BingXTrade, BingXOpenInterest, BingXFundingRate, BingXContract } from "@/types/bingx";
 
 async function fetchApi<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
@@ -81,8 +81,8 @@ export function useFuturesTickers(enabled = true) {
   return useQuery({
     queryKey: ["bingx", "tickers", "futures"],
     queryFn: () => fetchApi<BingXTicker[]>("ticker", { market: "futures" }),
-    refetchInterval: SCREENER_REFRESH_MS,
-    staleTime: SCREENER_REFRESH_MS / 2,
+    refetchInterval: MARKET_CAP_REFRESH_MS,
+    staleTime: MARKET_CAP_REFRESH_MS / 2,
     enabled,
   });
 }

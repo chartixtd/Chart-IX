@@ -68,15 +68,42 @@ describe("pickDirection", () => {
     expect(picked.direction).toBe("long");
   });
 
-  it("总分等于四项之和（取整后允许 1 分以内的差）", () => {
-    const p = pickDirection(bullish);
-    const sum = p.factors.zone + p.factors.sweep + p.factors.oi + p.factors.cvd;
-    expect(Math.abs(p.total - sum)).toBeLessThanOrEqual(1);
-  });
+  it("total 恒等于取整后四项之和——扫过真的会让两条取整路径分叉的输入", () => {
+    const min = Math.min(...bullish.priceBars.map((b) => parseFloat(b.low)));
+    const max = Math.max(...bullish.priceBars.map((b) => parseFloat(b.high)));
+    let sawDivergence = false;
 
-  it("total 精确等于取整后的四项之和——两者不能走各自独立的取整路径", () => {
-    const p = pickDirection(bullish);
-    expect(p.total).toBe(p.factors.zone + p.factors.sweep + p.factors.oi + p.factors.cvd);
+    for (let t = 0; t <= 1.0001; t += 0.1) {
+      for (const delta of [-870, -300, 200, 600]) {
+        for (const oiPct of [-1.5, -0.4, 0.9, 5]) {
+          const inputs: ScoreInputs = {
+            ...bullish,
+            price: min + (max - min) * t,
+            taker: taker(delta),
+            openInterest: {
+              ...bullish.openInterest!,
+              open_interest_change_percent_30m: oiPct,
+              open_interest_change_percent_1h: oiPct,
+              open_interest_change_percent_4h: oiPct,
+            },
+          };
+          const picked = pickDirection(inputs);
+          const raw = scoreDirection(inputs, picked.direction);
+          const rawSum = raw.zone + raw.sweep + raw.oi + raw.cvd;
+          const sumOfRounded =
+            picked.factors.zone + picked.factors.sweep + picked.factors.oi + picked.factors.cvd;
+
+          // 这一组输入能不能区分「先求和再取整」与「先取整再求和」
+          if (Math.round(rawSum) !== sumOfRounded) sawDivergence = true;
+
+          expect(picked.total).toBe(sumOfRounded);
+        }
+      }
+    }
+
+    // 没有任何一组输入让两条取整路径分叉的话，上面那条断言对 bug 版本也成立，
+    // 这个用例就退化成空断言。这一条把「用例失效」本身变成一次测试失败。
+    expect(sawDivergence).toBe(true);
   });
 
   it("总分恒在 [0, 100]，且是整数", () => {

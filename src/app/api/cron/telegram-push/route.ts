@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getScreenerPayload } from "@/lib/screener-server";
+import { getScannerPayload } from "@/lib/screener/cache";
 import {
   getTelegramPushSettings,
   isPushDue,
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const payload = await withTimeout(getScreenerPayload(), SCREENER_BUDGET_MS, "screener");
+    const payload = await withTimeout(getScannerPayload(), SCREENER_BUDGET_MS, "screener");
     const outcome = await pushScreenerToTelegram(payload);
 
     // Same call also fans out Web Push, but only to users who opted in.

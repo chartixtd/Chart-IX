@@ -21,10 +21,10 @@ interface PublicSettings {
   showAmplitude: boolean;
   showMarketCap: boolean;
   showVolume: boolean;
-  showOiRatio: boolean;
+  showDirection: boolean;
   showFunding: boolean;
   showScore: boolean;
-  showEdge: boolean;
+  showFactors: boolean;
   lastPushedAt: string | null;
   lastAttemptAt: string | null;
   lastError: string | null;
@@ -62,10 +62,10 @@ const FIELD_TOGGLES = [
   { key: "showAmplitude", labelKey: "field_amplitude" },
   { key: "showMarketCap", labelKey: "field_market_cap" },
   { key: "showVolume", labelKey: "field_volume" },
-  { key: "showOiRatio", labelKey: "field_oi_ratio" },
+  { key: "showDirection", labelKey: "field_direction" },
   { key: "showFunding", labelKey: "field_funding" },
   { key: "showScore", labelKey: "field_score" },
-  { key: "showEdge", labelKey: "field_edge" },
+  { key: "showFactors", labelKey: "field_factors" },
 ] as const;
 
 type FieldKey = (typeof FIELD_TOGGLES)[number]["key"];

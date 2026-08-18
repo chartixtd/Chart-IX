@@ -1,12 +1,12 @@
 import { encrypt, decrypt } from "@/lib/crypto";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
-import { getScreenerPayload, type ScreenerPayload } from "@/lib/screener-server";
+import { getScannerPayload } from "@/lib/screener/cache";
 import {
   sendTelegramMessage,
   type TelegramSendOptions,
   type TelegramSendResult,
 } from "@/lib/telegram-send";
-import type { ScreenerResult, Direction } from "@/lib/screener-scoring";
+import type { ScannerRow, ScannerPayload } from "@/lib/screener/types";
 
 export type TelegramMessageLang = "en" | "zh";
 export type PushTrigger = "cron" | "manual" | "test" | "briefing";
@@ -32,10 +32,19 @@ export interface TelegramPushSettings {
   showAmplitude: boolean;
   showMarketCap: boolean;
   showVolume: boolean;
-  showOiRatio: boolean;
+  /**
+   * 方向标记。DB 列仍叫 show_oi_ratio —— 四因子模型里没有 OI/量比这个字段了，
+   * 但这一列的语义（"表格里多显示一栏"）可以原样承接，为一个纯展示开关
+   * 加一次迁移不值得。改名只发生在 TS 这一侧，读写映射见 getTelegramPushSettings。
+   */
+  showDirection: boolean;
   showFunding: boolean;
   showScore: boolean;
-  showEdge: boolean;
+  /**
+   * 四因子构成。DB 列仍叫 show_edge，理由同上——edge 这个概念随
+   * 6 维模型一起退役了，这一列改承接"显示 Zone/Sweep/OI/CVD 明细"。
+   */
+  showFactors: boolean;
   lastPushedAt: string | null;
   lastAttemptAt: string | null;
   lastError: string | null;
@@ -120,10 +129,10 @@ function rowToSettings(row: TelegramPushRow): TelegramPushSettings {
     showAmplitude: row.show_amplitude,
     showMarketCap: row.show_market_cap,
     showVolume: row.show_volume,
-    showOiRatio: row.show_oi_ratio,
+    showDirection: row.show_oi_ratio,
     showFunding: row.show_funding,
     showScore: row.show_score,
-    showEdge: row.show_edge,
+    showFactors: row.show_edge,
     lastPushedAt: row.last_pushed_at,
     lastAttemptAt: row.last_attempt_at,
     lastError: row.last_error,
@@ -205,10 +214,10 @@ export interface TelegramPushUpdate {
   showAmplitude?: boolean;
   showMarketCap?: boolean;
   showVolume?: boolean;
-  showOiRatio?: boolean;
+  showDirection?: boolean;
   showFunding?: boolean;
   showScore?: boolean;
-  showEdge?: boolean;
+  showFactors?: boolean;
 }
 
 export const MIN_PUSH_INTERVAL_MINUTES = 15;
@@ -240,10 +249,10 @@ export async function updateTelegramPushSettings(
   if (update.showAmplitude !== undefined) patch.show_amplitude = update.showAmplitude;
   if (update.showMarketCap !== undefined) patch.show_market_cap = update.showMarketCap;
   if (update.showVolume !== undefined) patch.show_volume = update.showVolume;
-  if (update.showOiRatio !== undefined) patch.show_oi_ratio = update.showOiRatio;
+  if (update.showDirection !== undefined) patch.show_oi_ratio = update.showDirection;
   if (update.showFunding !== undefined) patch.show_funding = update.showFunding;
   if (update.showScore !== undefined) patch.show_score = update.showScore;
-  if (update.showEdge !== undefined) patch.show_edge = update.showEdge;
+  if (update.showFactors !== undefined) patch.show_edge = update.showFactors;
 
   const { data, error } = await client
     .from("telegram_push_settings")
@@ -363,103 +372,103 @@ const MESSAGE_STRINGS: Record<
   TelegramMessageLang,
   {
     title: string;
+    empty: string;
     long: string;
     short: string;
-    noCandidates: string;
     price: string;
     change24h: string;
     amplitude: string;
     marketCap: string;
     volume: string;
-    oiRatio: string;
     funding: string;
     score: string;
-    edge: string;
   }
 > = {
   en: {
-    title: "Chart-IX Screener",
-    long: "Long",
-    short: "Short",
-    noCandidates: "(no candidates)",
+    title: "Chart-IX Scanner",
+    empty: "(no candidates right now)",
+    long: "LONG",
+    short: "SHORT",
     price: "Price",
     change24h: "24h",
     amplitude: "Amp",
     marketCap: "MCap",
     volume: "Vol",
-    oiRatio: "OI/Vol",
     funding: "Funding",
     score: "Score",
-    edge: "Edge",
   },
   zh: {
-    title: "Chart-IX 筛选器",
+    title: "Chart-IX 扫描器",
+    empty: "（当前暂无符合条件的品种）",
     long: "做多",
     short: "做空",
-    noCandidates: "（暂无符合条件的品种）",
     price: "价格",
-    change24h: "24h涨跌",
+    change24h: "24h",
     amplitude: "振幅",
     marketCap: "市值",
     volume: "成交量",
-    oiRatio: "OI/量",
     funding: "费率",
-    score: "评分",
-    edge: "优势",
+    score: "总分",
   },
 };
 
-function formatRow(r: ScreenerResult, settings: TelegramPushSettings, lang: TelegramMessageLang): string {
-  const s = MESSAGE_STRINGS[lang];
-  const symbol = escapeHtml(r.symbol.replace("-USDT", ""));
-  const extras: string[] = [];
-  if (settings.showPrice) extras.push(`${s.price} ${fmtPrice(r.lastPrice)}`);
-  if (settings.showChange24h && r.priceChangePercent !== null) {
-    extras.push(`${s.change24h} ${fmtPercent(r.priceChangePercent)}`);
-  }
-  if (settings.showAmplitude) extras.push(`${s.amplitude} ${r.amplitude.toFixed(1)}%`);
-  if (settings.showMarketCap && r.marketCap !== null) {
-    extras.push(`${s.marketCap} $${(r.marketCap / 1_000_000).toFixed(1)}M`);
-  }
-  if (settings.showVolume) extras.push(`${s.volume} $${(r.quoteVolume / 1_000_000).toFixed(1)}M`);
-  if (settings.showOiRatio && r.oiVolumeRatio !== null) {
-    extras.push(`${s.oiRatio} ${r.oiVolumeRatio.toFixed(2)}`);
-  }
-  if (settings.showFunding) extras.push(`${s.funding} ${fmtPercent(r.fundingRate * 100)}`);
-  if (settings.showScore) extras.push(`${s.score} ${r.score.toFixed(0)}`);
-  if (settings.showEdge) extras.push(`${s.edge} ${r.edge.toFixed(0)}`);
+/**
+ * Telegram 单条消息有 4096 字符上限，一条 15 行的表离上限还有余量。
+ * 榜单已按总分降序排好，截断只会丢掉分数最低的那些。
+ */
+const MAX_PUSH_ROWS = 15;
 
-  return extras.length > 0 ? `<b>${symbol}</b> — ${extras.join(" · ")}` : `<b>${symbol}</b>`;
-}
-
-function formatGroup(
-  direction: Direction,
-  rows: ScreenerResult[],
+function formatScannerRow(
+  r: ScannerRow,
   settings: TelegramPushSettings,
   lang: TelegramMessageLang
 ): string {
   const s = MESSAGE_STRINGS[lang];
-  const emoji = direction === "long" ? "🟢" : "🔴";
-  const label = direction === "long" ? s.long : s.short;
-  if (rows.length === 0) return `${emoji} <b>${label}</b>\n${s.noCandidates}`;
-  const lines = rows.map((r, i) => `${i + 1}. ${formatRow(r, settings, lang)}`);
-  return `${emoji} <b>${label}</b>\n${lines.join("\n")}`;
+  const symbol = escapeHtml(r.coin);
+  const parts: string[] = [];
+
+  if (settings.showDirection) parts.push(r.direction === "long" ? s.long : s.short);
+  if (settings.showScore) parts.push(`${s.score} ${r.total}`);
+  if (settings.showFactors) {
+    parts.push(`Z${r.factors.zone}/S${r.factors.sweep}/OI${r.factors.oi}/CVD${r.factors.cvd}`);
+  }
+  if (settings.showPrice) parts.push(`${s.price} ${fmtPrice(r.price)}`);
+  if (settings.showChange24h && r.change24h !== null) {
+    parts.push(`${s.change24h} ${fmtPercent(r.change24h)}`);
+  }
+  if (settings.showAmplitude) parts.push(`${s.amplitude} ${r.amplitude.toFixed(1)}%`);
+  if (settings.showMarketCap) parts.push(`${s.marketCap} $${(r.marketCap / 1_000_000).toFixed(1)}M`);
+  if (settings.showVolume) parts.push(`${s.volume} $${(r.volumeUsd / 1_000_000).toFixed(1)}M`);
+  // null 与 0 必须区分开：0 是一个完全真实的资金费率，
+  // 拿它显示"没数据"会让人以为这个币此刻不收费率。
+  if (settings.showFunding && r.fundingRate !== null) {
+    parts.push(`${s.funding} ${fmtPercent(r.fundingRate * 100)}`);
+  }
+
+  return parts.length > 0 ? `<b>${symbol}</b> — ${parts.join(" · ")}` : `<b>${symbol}</b>`;
 }
 
-export function formatScreenerMessage(
-  payload: ScreenerPayload,
+/**
+ * 单表按总分降序，不再分做多/做空两组。
+ * 四因子模型里每个币只有一个方向判定（象限本身就定方向），
+ * 双榜在这个模型下会把同一批币按同一个分数印两遍。
+ */
+export function formatScannerMessage(
+  payload: ScannerPayload,
   settings: TelegramPushSettings,
   lang: TelegramMessageLang = settings.messageLang
 ): string {
   const s = MESSAGE_STRINGS[lang];
   const timestamp = new Date(payload.computedAt).toISOString().replace("T", " ").slice(0, 16);
-  return [
-    `📊 <b>${s.title}</b> · ${timestamp} UTC`,
-    "",
-    formatGroup("long", payload.long, settings, lang),
-    "",
-    formatGroup("short", payload.short, settings, lang),
-  ].join("\n");
+  const head = `📊 <b>${s.title}</b> · ${timestamp} UTC`;
+
+  if (payload.rows.length === 0) return `${head}\n\n${s.empty}`;
+
+  const lines = payload.rows
+    .slice(0, MAX_PUSH_ROWS)
+    .map((r, i) => `${i + 1}. ${formatScannerRow(r, settings, lang)}`);
+
+  return `${head}\n\n${lines.join("\n")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -648,7 +657,7 @@ async function markAttempt(delivered: boolean, error: string | null): Promise<st
  * and reports why it did nothing so the caller can log something useful.
  */
 export async function pushScreenerToTelegram(
-  payload: ScreenerPayload,
+  payload: ScannerPayload,
   opts: { force?: boolean; trigger?: PushTrigger } = {}
 ): Promise<PushOutcome> {
   const trigger = opts.trigger ?? "cron";
@@ -674,7 +683,7 @@ export async function pushScreenerToTelegram(
   const results = await deliverToTargets(
     settings,
     targets,
-    (lang) => formatScreenerMessage(payload, settings, lang),
+    (lang) => formatScannerMessage(payload, settings, lang),
     trigger
   );
 
@@ -698,7 +707,7 @@ export async function pushScreenerToTelegram(
  * interval, since an explicit click is explicit intent.
  */
 export async function pushScreenerNow(): Promise<PushOutcome> {
-  const payload = await getScreenerPayload();
+  const payload = await getScannerPayload();
   return pushScreenerToTelegram(payload, { force: true, trigger: "manual" });
 }
 

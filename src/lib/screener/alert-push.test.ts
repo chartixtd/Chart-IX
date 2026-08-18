@@ -1,6 +1,32 @@
-import { describe, it, expect } from "vitest";
-import { formatAlertMessage, parseAlertPushConfig } from "./alert-push";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { formatAlertMessage, parseAlertPushConfig, pushNewAlerts } from "./alert-push";
+import { getTelegramPushSettings, listTargetsFor, deliverToTargets } from "@/lib/telegram-push";
 import type { NewAlert } from "./alerts";
+
+// pushNewAlerts 的编排逻辑要靠 mock 掉外部依赖来测——真实实现会打 Supabase
+// 和 Telegram API。这里只 mock 三层：telegram-push（总开关/targets/投递）、
+// alerts-store（落库标记）、supabase/middleware（getAlertPushConfig 读配置用）。
+vi.mock("@/lib/telegram-push", () => ({
+  getTelegramPushSettings: vi.fn(),
+  listTargetsFor: vi.fn(),
+  deliverToTargets: vi.fn(),
+  escapeHtml: (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+}));
+vi.mock("./alerts-store", () => ({ markAlertsPushed: vi.fn() }));
+vi.mock("@/lib/supabase/middleware", () => ({
+  // getAlertPushConfig 走这条链路读 admin_settings.screener_alert_push；
+  // 固定返回「开启，minScore=80」，这样测试的重点——总开关检查——不会被
+  // 这一层配置挡在前面。
+  createServiceRoleClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: { value: { enabled: true, minScore: 80 } } }),
+        }),
+      }),
+    }),
+  }),
+}));
 
 const alert: NewAlert = {
   symbol: "TIA-USDT",
@@ -55,5 +81,35 @@ describe("formatAlertMessage", () => {
 
   it("转义 HTML", () => {
     expect(formatAlertMessage([{ ...alert, symbol: "<i>-USDT" }], "en")).toContain("&lt;i&gt;");
+  });
+});
+
+describe("pushNewAlerts", () => {
+  beforeEach(() => {
+    vi.mocked(getTelegramPushSettings).mockReset();
+    vi.mocked(listTargetsFor).mockReset();
+    vi.mocked(deliverToTargets).mockReset();
+  });
+
+  it("Telegram 推送总开关关闭时一条都不发——运营关的是「机器人静音」，警报不该绕过", async () => {
+    vi.mocked(getTelegramPushSettings).mockResolvedValue({ enabled: false, botToken: "tok" } as never);
+
+    const result = await pushNewAlerts([alert]);
+
+    expect(result).toBe(0);
+    expect(deliverToTargets).not.toHaveBeenCalled();
+  });
+
+  it("总开关打开且有可用 target 时正常推送", async () => {
+    vi.mocked(getTelegramPushSettings).mockResolvedValue({ enabled: true, botToken: "tok" } as never);
+    vi.mocked(listTargetsFor).mockResolvedValue([
+      { id: "t1", enabled: true, botToken: null } as never,
+    ]);
+    vi.mocked(deliverToTargets).mockResolvedValue([{ ok: true } as never]);
+
+    const result = await pushNewAlerts([alert]);
+
+    expect(deliverToTargets).toHaveBeenCalledTimes(1);
+    expect(result).toBe(1);
   });
 });

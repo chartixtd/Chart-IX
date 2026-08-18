@@ -1389,8 +1389,10 @@ describe("spikeRatio", () => {
   });
 
   it("用中位数而不是均值当基线——均值会被峰值自己抬上去", () => {
-    // 均值 ≈ 128，中位数 = 10。用均值算 spike 只有 ~7，用中位数是 90。
-    const { ratio } = spikeRatio([10, 10, 10, 10, 10, 10, 10, 900]);
+    // 中位数 = 10000，均值 ≈ 122500。用中位数算 spike 是 90，用均值只有 7.3。
+    // 数值量级必须高于 SWEEP_BASELINE_FLOOR_USD(1000)，否则基线被下限钳住，
+    // 这条用例什么也测不出来。
+    const { ratio } = spikeRatio([10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 900_000]);
     expect(ratio).toBeGreaterThan(50);
   });
 });
@@ -1502,8 +1504,10 @@ export const SWEEP_RECENT_BARS = 4;
  *
  * 小市值币的 48 根 30m 爆仓序列里超过一半是 0 是常态，中位数因此经常正好为 0，
  * 直接相除会得到 Infinity，让任何一笔几百美元的爆仓拿满分。
- * 实际用的基线取「中位数、总额/根数、这个绝对下限」三者中的最大值：
- * 前两者让门槛随币自身的爆仓体量缩放，最后一个兜住整条序列全 0 的币。
+ * 实际用的基线：中位数非 0 时取中位数，中位数为 0 时才回落到「总额/根数」（均值），
+ * 最后再与这个绝对下限取较大者。**中位数非 0 时绝不能再与均值取 max** ——
+ * 只要序列里有峰值均值就必然大于中位数，那样中位数永远不生效，
+ * 整条曲线会退化成它本来要避免的「用均值当基线」。
  */
 export const SWEEP_BASELINE_FLOOR_USD = 1000;
 
@@ -1532,11 +1536,14 @@ export function spikeRatio(series: number[]): { ratio: number; index: number } {
   if (series.length === 0) return { ratio: 0, index: -1 };
 
   const total = series.reduce((a, b) => a + b, 0);
-  const baseline = Math.max(
-    median(series),
-    total / series.length,
-    SWEEP_BASELINE_FLOOR_USD
-  );
+  const med = median(series);
+  // 中位数为 0 才回落到均值：小市值币的 48 根序列里过半是 0 是常态，
+  // 那种情况下中位数不携带任何信息，用均值让门槛随该币自身的爆仓体量缩放。
+  // 但中位数非 0 时**绝不能**再和均值取 max —— 只要序列里有峰值，
+  // 均值必然大于中位数，max 会永远取到均值，这条曲线就退化成了
+  // 它本来要避免的「用均值当基线」，一次 90 倍的插针会被算成 7 倍。
+  const scale = med > 0 ? med : total / series.length;
+  const baseline = Math.max(scale, SWEEP_BASELINE_FLOOR_USD);
 
   const from = Math.max(0, series.length - SWEEP_RECENT_BARS);
   let index = from;
@@ -1631,9 +1638,10 @@ git commit -m "feat(screener): Sweep 因子——爆仓峰值 + 价格收回
 基线用中位数而不是均值：峰值会把均值自己抬上去，一次 90 倍的插针
 用均值算出来只有 7 倍，正好被起分线挡在门外。
 
-基线还要跟总额/根数和 1000 美元绝对下限取最大值。小市值币的 48 根
+中位数为 0 时才回落到均值，最后与 1000 美元下限取最大。小市值币的 48 根
 爆仓序列里过半是 0 是常态，中位数经常正好为 0，直接相除得到 Infinity，
-会让任何一笔几百美元的爆仓拿满分。
+会让任何一笔几百美元的爆仓拿满分。中位数非 0 时不能再和均值取 max，
+否则均值恒大、中位数永远不生效。
 
 缺数据与真的是 0 在这里语义相同、都给 0 分。Sweep 是事件型因子，
 没发生就是没发生——不要为了跟 Zone/OI/CVD 统一而改成中性分，

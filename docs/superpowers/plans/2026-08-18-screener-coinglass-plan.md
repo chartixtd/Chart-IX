@@ -1997,14 +1997,25 @@ describe("cvdScore", () => {
     expect(cvdScore(taker(Array(20).fill(100)), [], "long")).toBe(5);
   });
 
-  it("价格下跌但 CVD 上行 = 跌中承接，做多拿到背离满分", () => {
-    const score = cvdScore(taker(Array(20).fill(800)), FALLING_PRICE, "long");
-    expect(score).toBeGreaterThan(17);
+  it("价格下跌但 CVD 上行 = 跌中承接，背离分在方向分之上再叠一大块", () => {
+    const flow = taker(Array(20).fill(800));
+    // 同一份资金流，只改价格走势：逆行时才拿得到背离分，走平时拿不到。
+    // 用差值而不是绝对阈值断言，测的才是「背离分真的在加分」这条性质本身。
+    // （原来这条用例叫「背离满分」是错的：flowLeg = |norm| = 0.8，
+    //  背离分实际只有 8/10，要真打满得让主动卖为 0，那是个退化输入。）
+    const diverging = cvdScore(flow, FALLING_PRICE, "long");
+    const flat = cvdScore(flow, FLAT_PRICE, "long");
+    expect(diverging).toBeGreaterThan(flat + 5);
+    // 方向分 9（norm=0.8）+ 背离分 8（priceLeg 封顶 1 × flowLeg 0.8）
+    expect(diverging).toBeCloseTo(17, 5);
   });
 
-  it("价格上涨但 CVD 下行 = 拉高出货，做空拿到背离满分", () => {
-    const score = cvdScore(taker(Array(20).fill(-800)), RISING_PRICE, "short");
-    expect(score).toBeGreaterThan(17);
+  it("价格上涨但 CVD 下行 = 拉高出货，做空同样叠上背离分", () => {
+    const flow = taker(Array(20).fill(-800));
+    const diverging = cvdScore(flow, RISING_PRICE, "short");
+    const flat = cvdScore(flow, FLAT_PRICE, "short");
+    expect(diverging).toBeGreaterThan(flat + 5);
+    expect(diverging).toBeCloseTo(17, 5);
   });
 
   it("同向时背离分给 0 而不是负分——同向的价值已经在方向分里算过一次", () => {

@@ -1,6 +1,7 @@
-import type { CoinGlassOpenInterestRow, CoinGlassPriceBar } from "@/lib/coinglass/types";
+import type { CoinGlassOiBar, CoinGlassPriceBar } from "@/lib/coinglass/types";
 import type { Direction } from "@/lib/screener/types";
 import { FACTOR_MAX } from "@/lib/screener/types";
+import { oiDivergence } from "./oi-divergence";
 
 /** OI 变化小于这个百分比就认为没有方向，该窗口给中性分 */
 export const OI_DEADZONE_PCT = 0.5;
@@ -14,19 +15,38 @@ export const OI_FULL_STRENGTH_PCT = 2;
 /**
  * 三个时间窗口及其权重。
  *
- * 刻意丢掉了端点提供的 5m 与 15m —— 没有对应粒度的价格数据可以配对
+ * T20 之前这里的 key 指向持仓量快照的滚动窗口字段（open_interest_change_percent_30m
+ * 等），现在数据源换成了序列（getOpenInterestHistory），三个窗口都改成用
+ * priceChangeOverBars 在同一条 OI 收盘价序列上按 barsBack 现算——原理和价格侧
+ * 完全一样，所以 key 字段没有存在的必要了，删掉。
+ *
+ * 刻意丢掉了端点原本提供的 5m 与 15m 粒度 —— 没有对应粒度的价格数据可以配对
  * （Startup 套餐 K 线最小 30m），单看 OI 变化无法判断象限。
  * 短窗口权重更高是因为这是个 15 分钟一扫的扫描器，要抓的是刚发生的资金动作。
+ *
+ * 换源顺带修掉了一处口径不一致：快照的变化率是「滚动实时」的（现在 vs 正好
+ * 30/60/240 分钟前的任意时刻），而价格侧一直是「桶到桶」的（当前这根 K 线
+ * vs 上一根）。以前一个滚动、一个分桶，两者的时间基准根本不是同一件事；
+ * 现在统一成分桶、逐根对齐。代价是最短那个窗口会稍钝一点（实测 VELVET
+ * 30m：滚动 2.14% → 分桶 0.30%），最长的窗口几乎不受影响（4h：30.62% → 29.20%）。
  */
 export const OI_WINDOWS = [
-  { key: "open_interest_change_percent_30m", barsBack: 1, weight: 0.4 },
-  { key: "open_interest_change_percent_1h", barsBack: 2, weight: 0.35 },
-  { key: "open_interest_change_percent_4h", barsBack: 8, weight: 0.25 },
+  { barsBack: 1, weight: 0.4 },
+  { barsBack: 2, weight: 0.35 },
+  { barsBack: 8, weight: 0.25 },
 ] as const;
 
-/** 用收盘价算「barsBack 根之前到现在」的涨跌百分比。K 线不够长返回 null。 */
+/**
+ * 用收盘价算「barsBack 根之前到现在」的涨跌百分比。K 线不够长返回 null。
+ *
+ * 参数类型故意只要求 `{ close: string }`，不是具体的 CoinGlassPriceBar——
+ * 这样同一个函数既能喂价格序列也能喂 OI 序列（两者形状一样，都是 OHLC
+ * 字符串），不用为 OI 侧的窗口变化率再写一份几乎相同的函数。cvd.ts 也在用
+ * 这个函数（唯一允许的跨因子依赖），把参数类型收窄成结构类型不影响它——
+ * CoinGlassPriceBar 本身就满足 `{ close: string }`。
+ */
 export function priceChangeOverBars(
-  bars: CoinGlassPriceBar[],
+  bars: Array<{ close: string }>,
   barsBack: number
 ): number | null {
   if (bars.length <= barsBack) return null;
@@ -71,32 +91,54 @@ export function quadrantScore(
 }
 
 /**
- * 拿不到聚合行给中性 15（满分一半）。OI 是「当前杠杆水位在怎么变」的状态型因子，
- * 请求失败不等于杠杆没在动 —— 给 0 会让一次上游抖动直接把这个币踢出榜单。
- * 这与 Sweep 事件型因子的缺失语义相反。
+ * 背离最多能在象限的 0–100 分上加减多少。取 20 = 最多影响 6/30（20% × 30）的因子分。
+ *
+ * 为什么是象限之上的修正项而不是替换掉象限：象限没有参数、样本厚（三个窗口
+ * 加权），是四个因子里最健康的一个（各币分值散布在 4–30 分）——这次改动的
+ * 第一原则是不能把它弄坏。背离引入了摆动点识别的一整套阈值（PIVOT_N /
+ * PRICE_EXTREME_MIN_PCT / OI_DIFF_MIN_PCT / OI_DIFF_FULL_PCT），这些阈值在
+ * 真实回测之前没法判断调得对不对。把象限的基础分完整保留、只让背离在结构上
+ * 确实出现时加减几分，是为了万一背离的参数拍砸了，不会把当前唯一健康的
+ * 因子一起废掉——最坏情况下背离只是给基础分加了一点噪音，而不是让整个
+ * OI 因子失真。
+ */
+export const OI_DIVERGENCE_MAX_ADJUST = 20;
+
+/**
+ * 序列长度为 0（上游请求失败或整段拿不到）给中性 15（满分一半）。OI 是
+ * 「当前杠杆水位在怎么变」的状态型因子，请求失败不等于杠杆没在动 ——
+ * 给 0 会让一次上游抖动直接把这个币踢出榜单。这与 Sweep 事件型因子的
+ * 缺失语义相反。序列长度不为 0 但不够算某个窗口时，该窗口在下面的循环里
+ * 单独跳过、不计权重，不在这里一次性拦掉。
  */
 export function oiScore(
-  oi: CoinGlassOpenInterestRow | undefined,
-  bars: CoinGlassPriceBar[],
+  oiBars: CoinGlassOiBar[],
+  priceBars: CoinGlassPriceBar[],
   direction: Direction
 ): number {
-  if (!oi) return FACTOR_MAX.oi / 2;
-
   let weighted = 0;
   let usedWeight = 0;
 
   for (const w of OI_WINDOWS) {
-    const oiPct = oi[w.key];
-    const pricePct = priceChangeOverBars(bars, w.barsBack);
-    // 价格窗口取不到就跳过这个窗口，而不是当成 0 —— 当成 0 会落进价格死区
+    const oiPct = priceChangeOverBars(oiBars, w.barsBack);
+    const pricePct = priceChangeOverBars(priceBars, w.barsBack);
+    // 任一序列窗口取不到就跳过这个窗口，而不是当成 0 —— 当成 0 会落进死区
     // 拿中性 50，等于用一个假数据稀释掉另外两个真窗口。
-    if (typeof oiPct !== "number" || pricePct === null) continue;
+    if (oiPct === null || pricePct === null) continue;
     weighted += quadrantScore(oiPct, pricePct, direction) * w.weight;
     usedWeight += w.weight;
   }
 
   if (usedWeight === 0) return FACTOR_MAX.oi / 2;
 
-  const normalized = weighted / usedWeight; // 0–100
-  return Math.max(0, Math.min(FACTOR_MAX.oi, (normalized / 100) * FACTOR_MAX.oi));
+  const base = weighted / usedWeight; // 0–100，象限基础分
+
+  // 背离修正项：oiDivergence 自己会在长度不等、极值对不够、幅度没过门槛时
+  // 返回 0（不调整），所以这里不需要额外判断数据够不够——0 调整量本身就是
+  // 正确的「没有可用背离信号」的表达。
+  const signed = oiDivergence(priceBars, oiBars);
+  const directional = direction === "long" ? signed : -signed;
+  const adjusted = Math.max(0, Math.min(100, base + directional * OI_DIVERGENCE_MAX_ADJUST));
+
+  return Math.max(0, Math.min(FACTOR_MAX.oi, (adjusted / 100) * FACTOR_MAX.oi));
 }

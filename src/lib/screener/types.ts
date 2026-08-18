@@ -25,8 +25,10 @@ export const ALERT_CLOSE_STREAK = 3;
 const BATCH_LAYER_CALLS = 2;
 
 /**
- * 明细层每个币要打的调用数：pairs-markets + open-interest/exchange-list +
+ * 明细层每个币要打的调用数：pairs-markets + open-interest/aggregated-history +
  * price/history + taker-buy-sell-volume/history + liquidation/history。
+ * T20 把 open-interest 那一路从快照端点（exchange-list）换成了序列端点
+ * （aggregated-history，OI 因子要在序列上做背离判断），调用次数没变，仍是 1 次。
  */
 const DETAIL_CALLS_PER_COIN = 5;
 

@@ -19,17 +19,18 @@ export interface CoinGlassPairMarket {
   open_interest_volume_radio: number;
 }
 
-/** /api/futures/open-interest/exchange-list 的一行；exchange === "All" 是聚合行 */
-export interface CoinGlassOpenInterestRow {
-  exchange: string;
-  symbol: string;
-  open_interest_usd: number;
-  open_interest_change_percent_5m: number;
-  open_interest_change_percent_15m: number;
-  open_interest_change_percent_30m: number;
-  open_interest_change_percent_1h: number;
-  open_interest_change_percent_4h: number;
-  open_interest_change_percent_24h: number;
+/**
+ * /api/futures/open-interest/aggregated-history 的一根。OHLC 全是字符串，
+ * 和 price/history 一样；没有 volume_usd（这个端点不提供成交量）。
+ * 已实测：最新一根与 open-interest/exchange-list 里 exchange==="All"
+ * 那一行完全一致，是同一份全交易所聚合数据的历史版本。
+ */
+export interface CoinGlassOiBar {
+  time: number;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
 }
 
 /** /api/futures/liquidation/coin-list 的一行（全交易所聚合） */

@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { pickDirection, scoreDirection, amplitudeFromBars, type ScoreInputs } from "./score";
 import { FACTOR_MAX } from "./types";
-import type { CoinGlassPriceBar, CoinGlassTakerBar, CoinGlassLiquidationBar } from "@/lib/coinglass/types";
+import type {
+  CoinGlassPriceBar,
+  CoinGlassTakerBar,
+  CoinGlassLiquidationBar,
+  CoinGlassOiBar,
+} from "@/lib/coinglass/types";
 
 function priceBars(closes: number[]): CoinGlassPriceBar[] {
   return closes.map((c, i) => ({
@@ -30,22 +35,36 @@ function liq(n = 48): CoinGlassLiquidationBar[] {
   }));
 }
 
+/**
+ * 造一段 OI 收盘价序列，使 priceChangeOverBars 在 barsBack=1/2/8（30m/1h/4h）
+ * 分别算出给定百分比——用法与 oi.test.ts 里的 oiBarsFromWindowPcts 相同。
+ * 长度固定 9 根，刻意比下面 bullish.priceBars（60 根）短：两条序列长度不等时
+ * oiDivergence 直接返回 0（见 oi-divergence.ts 的长度校验），这样这个文件里
+ * 测装配逻辑（方向判定、取整、总分范围）的用例不会被背离修正项干扰——
+ * 背离本身有专门的 oi-divergence.test.ts。
+ */
+function oiBars(p30m: number, p1h: number, p4h: number): CoinGlassOiBar[] {
+  const now = 100;
+  const closes = new Array(9).fill(now);
+  closes[7] = now / (1 + p30m / 100);
+  closes[6] = now / (1 + p1h / 100);
+  closes[0] = now / (1 + p4h / 100);
+  closes[8] = now;
+  return closes.map((c, i) => ({
+    time: i * 1_800_000,
+    open: String(c),
+    high: String(c),
+    low: String(c),
+    close: String(c),
+  }));
+}
+
 const bullish: ScoreInputs = {
   price: 100,
   priceBars: priceBars(Array.from({ length: 60 }, (_, i) => 90 + i * 0.2)),
   liquidation: liq(),
   taker: taker(600),
-  openInterest: {
-    exchange: "All",
-    symbol: "X",
-    open_interest_usd: 1_000_000,
-    open_interest_change_percent_5m: 0,
-    open_interest_change_percent_15m: 0,
-    open_interest_change_percent_30m: 5,
-    open_interest_change_percent_1h: 5,
-    open_interest_change_percent_4h: 5,
-    open_interest_change_percent_24h: 5,
-  },
+  oiBars: oiBars(5, 5, 5),
 };
 
 describe("scoreDirection", () => {
@@ -80,12 +99,7 @@ describe("pickDirection", () => {
             ...bullish,
             price: min + (max - min) * t,
             taker: taker(delta),
-            openInterest: {
-              ...bullish.openInterest!,
-              open_interest_change_percent_30m: oiPct,
-              open_interest_change_percent_1h: oiPct,
-              open_interest_change_percent_4h: oiPct,
-            },
+            oiBars: oiBars(oiPct, oiPct, oiPct),
           };
           const picked = pickDirection(inputs);
           const raw = scoreDirection(inputs, picked.direction);
@@ -119,7 +133,7 @@ describe("pickDirection", () => {
       priceBars: [],
       liquidation: [],
       taker: [],
-      openInterest: undefined,
+      oiBars: [],
     };
     const p = pickDirection(empty);
     expect(p.total).toBeGreaterThanOrEqual(0);

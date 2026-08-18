@@ -3,7 +3,7 @@ import { buildMarketCapMap } from "@/lib/market-cap";
 import { fetchMarketCapRows } from "@/lib/market-cap-fetch";
 import { runWithConcurrency } from "@/lib/coinglass/client";
 import { getPairsMarkets, getFundingRateList, pickExchangeRow } from "@/lib/coinglass/market";
-import { getOpenInterestExchangeList, pickAggregatedOi } from "@/lib/coinglass/open-interest";
+import { getOpenInterestHistory } from "@/lib/coinglass/open-interest";
 import { getLiquidationCoinList, getLiquidationHistory } from "@/lib/coinglass/liquidation";
 import { getPriceHistory } from "@/lib/coinglass/price-history";
 import { getTakerVolumeHistory } from "@/lib/coinglass/taker-volume";
@@ -14,7 +14,7 @@ import type {
   CoinGlassPriceBar,
   CoinGlassTakerBar,
   CoinGlassLiquidationBar,
-  CoinGlassOpenInterestRow,
+  CoinGlassOiBar,
 } from "@/lib/coinglass/types";
 import { preselect, amplitudeFromTicker, SERVER_GATE } from "./universe";
 import type { PreselectCandidate } from "./universe";
@@ -135,7 +135,7 @@ function toMarketStage(
  *   ③ 预排序：从粗筛池子里选出 `DEEP_SCAN_LIMIT` 个进入明细层，
  *      0 次调用（下面详细说）。
  *   ④ 明细层（`DEEP_SCAN_LIMIT` × 5 次调用）：只对预排序选中的候选依次调
- *      pairs-markets、open-interest/exchange-list、price/history、
+ *      pairs-markets、open-interest/aggregated-history、price/history、
  *      taker-buy-sell-volume/history、liquidation/history。
  *
  * `2 + DEEP_SCAN_LIMIT × 5` 必须 `≤ RATE_LIMIT_PER_MIN`（不是 CoinGlass 文档
@@ -253,7 +253,7 @@ export async function runScan(): Promise<ScannerPayload> {
   // 保持原样不动（评审逐个验算过的对齐关系，见下方注释）。
   const detailTasks: Array<() => Promise<unknown>> = [];
   for (const s of staged) {
-    detailTasks.push(() => getOpenInterestExchangeList(s.candidate.coin));
+    detailTasks.push(() => getOpenInterestHistory(s.candidate.coin));
     // K 线取下单盘口（Zone 与振幅要跟执行同源），资金流取最深的池子
     // （CVD 与 Sweep 统计的是整个市场的方向，薄盘口取样会让它们失效）。
     // 调用次数不变，只是 exchange 参数不同。
@@ -267,7 +267,9 @@ export async function runScan(): Promise<ScannerPayload> {
   for (let i = 0; i < staged.length; i++) {
     const s = staged[i];
     const base = i * 4;
-    const oiRows = detail[base] as CoinGlassOpenInterestRow[] | null;
+    // 拿不到时传 []，不是 undefined——oiScore 现在吃序列，空数组和「请求失败」
+    // 是同一件事，让它自己走中性分支（见 oi.ts oiScore 顶部注释）。
+    const oiBars = (detail[base] as CoinGlassOiBar[] | null) ?? [];
     const priceBars = (detail[base + 1] as CoinGlassPriceBar[] | null) ?? [];
     const taker = (detail[base + 2] as CoinGlassTakerBar[] | null) ?? [];
     const liquidation = (detail[base + 3] as CoinGlassLiquidationBar[] | null) ?? [];
@@ -280,7 +282,7 @@ export async function runScan(): Promise<ScannerPayload> {
       priceBars,
       taker,
       liquidation,
-      openInterest: oiRows ? pickAggregatedOi(oiRows) : undefined,
+      oiBars,
     });
 
     rows.push({

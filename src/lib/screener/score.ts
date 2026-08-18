@@ -2,7 +2,7 @@ import type {
   CoinGlassPriceBar,
   CoinGlassTakerBar,
   CoinGlassLiquidationBar,
-  CoinGlassOpenInterestRow,
+  CoinGlassOiBar,
 } from "@/lib/coinglass/types";
 import { SERIES_LIMIT } from "@/lib/coinglass/price-history";
 import type { Direction, FactorBreakdown } from "./types";
@@ -18,15 +18,19 @@ export interface ScoreInputs {
   priceBars: CoinGlassPriceBar[];
   liquidation: CoinGlassLiquidationBar[];
   taker: CoinGlassTakerBar[];
-  /** 已经挑好的 All 聚合行 */
-  openInterest: CoinGlassOpenInterestRow | undefined;
+  /**
+   * 7 天 30m 持仓量序列（全交易所聚合），与 priceBars 逐根对齐——OI 因子的
+   * 背离判断依赖「同下标 = 同时刻」，两条序列的粒度和长度必须一致。
+   * 拿不到时传 []，不是 undefined：oiScore 对空数组走中性分支。
+   */
+  oiBars: CoinGlassOiBar[];
 }
 
 export function scoreDirection(inputs: ScoreInputs, direction: Direction): FactorBreakdown {
   return {
     zone: zoneScore(inputs.price, inputs.priceBars, direction),
     sweep: sweepScore(inputs.liquidation, inputs.priceBars, direction),
-    oi: oiScore(inputs.openInterest, inputs.priceBars, direction),
+    oi: oiScore(inputs.oiBars, inputs.priceBars, direction),
     cvd: cvdScore(inputs.taker, inputs.priceBars, direction),
   };
 }

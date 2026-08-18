@@ -29,11 +29,23 @@ import { DEEP_SCAN_LIMIT } from "./types";
 export const BINGX_EXCHANGE = "BingX";
 
 /**
- * K 线 / CVD / 爆仓时序默认取哪一家。
- * Binance 深度最好、数据最干净；这个币 Binance 没有合约时由 pickExchangeRow
- * 回落到成交额最大的那家（BingX 本身也能当 history 的 exchange 参数，实测可用）。
+ * K 线 / CVD / 爆仓时序取哪一家。
+ *
+ * 取 BingX 而不是 Binance，是为了让整行数据同源：价格、资金费率、K 线、
+ * 主动买卖、爆仓全部来自用户真正下单的那个盘口。此前取 Binance 的理由是
+ * 「深度最好、数据最干净」，但那会让榜单上的振幅、CVD、Sweep 描述的是
+ * 另一个市场的行情，而用户按这些信号在 BingX 上执行。
+ *
+ * 代价要认：BingX 的成交量普遍比 Binance 薄一个数量级（实测 VELVET
+ * 8.2M vs 108.1M、COMP 2.9M vs 24.6M），所以 CVD 与 Sweep 这两个统计
+ * 「钱往哪走」的因子取样噪音更大，Sweep 尤其会更频繁地落在 0
+ * ——薄盘口的爆仓事件本来就更稀疏。振幅与 Zone 受影响小。
+ *
+ * 注意 toMarketStage 已经要求 BingX 那一行必须存在（否则整个币跳过），
+ * 所以 pickExchangeRow 的回落分支在这里实际不会触发；保留它是为了让
+ * 这个常量将来还能改回别家而不用同时改调用点。
  */
-export const PREFERRED_HISTORY_EXCHANGE = "Binance";
+export const PREFERRED_HISTORY_EXCHANGE = "BingX";
 
 interface MarketStage {
   candidate: PreselectCandidate;

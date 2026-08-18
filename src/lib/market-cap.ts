@@ -16,6 +16,15 @@ export type MarketCapMap = Record<string, MarketCapEntry>;
 /** 市值排名在这个名次以内的币视为主流大币，排除出候选池 */
 export const TOP_MARKET_CAP_EXCLUDED = 50;
 
+/**
+ * 市值与全量行情的客户端刷新节奏，1 小时。
+ *
+ * 原先这两处借用 screener 的刷新间隔，但 screener 已改成 15 分钟一扫，
+ * 继续共用会让市值和全量 ticker 也变成 15 分钟一拉——市值一小时才变一次，
+ * 那是纯粹多打 3 倍的 CoinGecko 请求（免密钥档限流很凶）。
+ */
+export const MARKET_CAP_REFRESH_MS = 3_600_000;
+
 /** 市值数据整体拿不到时，市值维度统一给的中性分 */
 export const MARKET_CAP_FALLBACK_SCORE = 50;
 

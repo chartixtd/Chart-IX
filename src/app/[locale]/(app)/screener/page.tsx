@@ -1,50 +1,82 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
-import { useScreenerData } from "@/hooks/useScreenerData";
-import { ScreenerTable } from "@/components/screener/ScreenerTable";
+import { useScannerData } from "@/hooks/useScreenerData";
+import { ScannerTable } from "@/components/screener/ScannerTable";
+import { ScreenerFilters } from "@/components/screener/ScreenerFilters";
+import { AlertRail } from "@/components/screener/AlertRail";
+import { ScanCountdown } from "@/components/screener/ScanCountdown";
 import { Button } from "@/components/ui/Button";
-import { SCREENER_REFRESH_MS } from "@/lib/screener-scoring";
+import { applyFilters, sortRows, DEFAULT_FILTERS } from "@/lib/screener/filter";
+import type { FilterState, SortKey } from "@/lib/screener/filter";
+import type { ScannerRow } from "@/lib/screener/types";
 
-function formatCountdown(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
+const FILTER_STORAGE_KEY = "chart-ix:scanner-filters";
+const SORTABLE: SortKey[] = ["symbol", "direction", "total", "volumeUsd", "amplitude", "marketCap"];
 
 export default function ScreenerPage() {
   const t = useTranslations("screener");
   const tCalc = useTranslations("calculator");
   const locale = useLocale();
-  const { long, short, isLoading, marketCapUnavailable, error, isRefreshing, lastUpdated, refetch } =
-    useScreenerData();
+  const { rows, alerts, isLoading, error, isRefreshing, lastUpdated, refetch } = useScannerData();
 
-  const [now, setNow] = useState(() => Date.now());
+  // 初值必须是 DEFAULT_FILTERS 而不是直接读 localStorage：服务端渲染时
+  // 没有 localStorage，两边初值不一致会触发 hydration 不匹配。
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "total", dir: -1 });
+  const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
+    try {
+      const raw = window.localStorage.getItem(FILTER_STORAGE_KEY);
+      if (raw) setFilters({ ...DEFAULT_FILTERS, ...JSON.parse(raw) });
+    } catch {
+      // 存的是坏 JSON 就当没存过，不要让一条脏缓存把整页打崩
+    }
   }, []);
 
-  const remaining = lastUpdated > 0 ? lastUpdated + SCREENER_REFRESH_MS - now : null;
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
+    } catch {
+      // 隐私模式下 localStorage 会抛，滑块照常工作、只是不记忆
+    }
+  }, [filters]);
+
+  const visible = useMemo(
+    () => sortRows(applyFilters(rows, filters), sort.key, sort.dir),
+    [rows, filters, sort]
+  );
+
+  // handleSort 与 handleSelectRow 必须是稳定引用（useCallback），不能是内联箭头函数——
+  // ScannerTable 外面包了 memo，内联箭头函数每次渲染都是新引用，会让 memo 的浅比较
+  // 必然失败，等于白包。倒计时的每秒重渲染已经被隔离进 ScanCountdown，但页面未来
+  // 也可能因为别的原因重渲染，这里稳定引用是让 memo 真正生效的必要条件。
+  const handleSort = useCallback((key: string) => {
+    if (!SORTABLE.includes(key as SortKey)) return;
+    setSort((prev) =>
+      prev.key === key ? { key: prev.key, dir: (prev.dir * -1) as 1 | -1 } : { key: key as SortKey, dir: -1 }
+    );
+  }, []);
+
+  const handleSelectRow = useCallback((r: ScannerRow) => {
+    setSelected(r.symbol);
+  }, []);
 
   return (
     <div className="mx-auto max-w-[110rem] px-4 py-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
+          <h1 className="font-display text-xl font-bold tracking-tight text-text-primary">
+            {t("title")}
+          </h1>
+          <p className="text-[11px] tracking-wider text-text-muted">{t("subtitle")}</p>
         </div>
         <div className="flex items-center gap-3">
           {/* 报错时不显示倒计时——那会是一个冻在 00:00 的假进度 */}
-          {!error && remaining !== null && (
-            <span className="text-xs text-text-secondary tabular-nums">
-              {t("next_refresh")} {formatCountdown(remaining)}
-            </span>
-          )}
-          {/* 现在只是单个 query.refetch()；刷新中仍直接禁用，避免连点排队重复请求 */}
+          {!error && <ScanCountdown lastUpdated={lastUpdated} />}
           <Button variant="ghost" size="sm" onClick={refetch} disabled={isRefreshing}>
             {t("refresh_now")}
           </Button>
@@ -62,19 +94,14 @@ export default function ScreenerPage() {
         <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-text-primary">
           {t("guide.title")}
         </summary>
-        <div className="space-y-3 border-t border-border-default px-4 py-3 text-xs leading-relaxed text-text-secondary">
-          <p><span className="font-semibold text-text-primary">{t("columns.score")}</span> — {t("guide.score")}</p>
-          <p><span className="font-semibold text-text-primary">{t("columns.edge")}</span> — {t("guide.edge")}</p>
-          <p>{t("guide.sorting")}</p>
-          <p className="rounded-sm bg-bg-tertiary px-3 py-2">{t("guide.example")}</p>
+        <div className="space-y-2.5 border-t border-border-default px-4 py-3 text-xs leading-relaxed text-text-secondary">
+          <p>{t("guide.zone")}</p>
+          <p>{t("guide.sweep")}</p>
+          <p>{t("guide.oi")}</p>
+          <p>{t("guide.cvd")}</p>
+          <p className="rounded-sm bg-bg-tertiary px-3 py-2">{t("guide.alert")}</p>
         </div>
       </details>
-
-      {marketCapUnavailable && (
-        <p className="mb-3 rounded-sm border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold">
-          {t("market_cap_unavailable")}
-        </p>
-      )}
 
       {error ? (
         <div className="flex flex-col items-center justify-center gap-2 py-10 text-text-secondary">
@@ -84,19 +111,27 @@ export default function ScreenerPage() {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <section className="rounded-lg border border-border-default bg-bg-primary overflow-hidden">
-            <h2 className="border-b border-border-default px-3 py-2 text-sm font-semibold text-success font-display tracking-tight">
-              {t("long_group")}
-            </h2>
-            <ScreenerTable results={long} isLoading={isLoading} direction="long" />
-          </section>
-          <section className="rounded-lg border border-border-default bg-bg-primary overflow-hidden">
-            <h2 className="border-b border-border-default px-3 py-2 text-sm font-semibold text-danger font-display tracking-tight">
-              {t("short_group")}
-            </h2>
-            <ScreenerTable results={short} isLoading={isLoading} direction="short" />
-          </section>
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <div>
+            <ScreenerFilters value={filters} onChange={setFilters} count={visible.length} />
+            <section className="overflow-hidden rounded-lg border border-border-default bg-bg-primary">
+              <div className="flex items-baseline gap-2 border-b border-border-default px-3 py-2">
+                <h2 className="font-display text-sm font-semibold tracking-tight text-text-primary">
+                  {t("table_title")}
+                </h2>
+                <span className="text-[11px] text-text-muted">{t("table_hint")}</span>
+              </div>
+              <ScannerTable
+                rows={visible}
+                isLoading={isLoading}
+                sort={sort}
+                onSortChange={handleSort}
+                onSelect={handleSelectRow}
+                selectedSymbol={selected}
+              />
+            </section>
+          </div>
+          <AlertRail alerts={alerts} />
         </div>
       )}
     </div>

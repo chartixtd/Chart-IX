@@ -10,6 +10,8 @@ export interface RecordColumn<T> {
   primary?: boolean;
   /** 手机上完全不显示这一列 */
   hideOnMobile?: boolean;
+  /** 设了这个键，表头就可点排序；不设的列（如"因子构成"）表头不可点 */
+  sortable?: boolean;
 }
 
 interface RecordListProps<T> {
@@ -18,9 +20,23 @@ interface RecordListProps<T> {
   rowKey: (row: T) => string;
   empty?: ReactNode;
   onRowClick?: (row: T) => void;
+  /** 当前排序状态。不传就不显示排序箭头，表头也不可点。 */
+  sort?: { key: string; dir: 1 | -1 };
+  onSortChange?: (key: string) => void;
+  /** 逐行追加的类名，用于把达标行高亮出来 */
+  rowClassName?: (row: T) => string;
 }
 
-export function RecordList<T>({ rows, columns, rowKey, empty, onRowClick }: RecordListProps<T>) {
+export function RecordList<T>({
+  rows,
+  columns,
+  rowKey,
+  empty,
+  onRowClick,
+  sort,
+  onSortChange,
+  rowClassName,
+}: RecordListProps<T>) {
   if (rows.length === 0) {
     return <div className="py-12 text-center text-sm text-text-muted">{empty ?? "—"}</div>;
   }
@@ -55,7 +71,8 @@ export function RecordList<T>({ rows, columns, rowKey, empty, onRowClick }: Reco
             className={cn(
               "px-1 py-3.5",
               onRowClick &&
-                "cursor-pointer transition-colors active:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold/60"
+                "cursor-pointer transition-colors active:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold/60",
+              rowClassName?.(row)
             )}
           >
             {primary && (
@@ -90,7 +107,20 @@ export function RecordList<T>({ rows, columns, rowKey, empty, onRowClick }: Reco
                     col.align === "right" ? "text-right" : "text-left"
                   )}
                 >
-                  {col.header}
+                  {col.sortable && onSortChange ? (
+                    <button
+                      type="button"
+                      onClick={() => onSortChange(col.key)}
+                      className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-gold"
+                    >
+                      {col.header}
+                      {sort?.key === col.key && (
+                        <span aria-hidden>{sort.dir === -1 ? "▼" : "▲"}</span>
+                      )}
+                    </button>
+                  ) : (
+                    col.header
+                  )}
                 </th>
               ))}
             </tr>
@@ -103,7 +133,8 @@ export function RecordList<T>({ rows, columns, rowKey, empty, onRowClick }: Reco
                 className={cn(
                   "border-b border-border-default/60",
                   onRowClick &&
-                    "cursor-pointer transition-colors hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-gold/60"
+                    "cursor-pointer transition-colors hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-gold/60",
+                  rowClassName?.(row)
                 )}
               >
                 {columns.map((col) => (

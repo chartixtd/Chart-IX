@@ -3,25 +3,12 @@
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { CLIENT_SLIDER } from "@/lib/screener/universe";
-
-export type DirectionFilter = "all" | "long" | "short";
-
-export interface FilterState {
-  /** 百万美元 */
-  volume: number;
-  /** 百分比 */
-  amplitude: number;
-  /** 百万美元 */
-  marketCapFloor: number;
-  direction: DirectionFilter;
-}
-
-export const DEFAULT_FILTERS: FilterState = {
-  volume: CLIENT_SLIDER.volume.default,
-  amplitude: CLIENT_SLIDER.amplitude.default,
-  marketCapFloor: CLIENT_SLIDER.marketCapFloor.default,
-  direction: "all",
-};
+// FilterState / DEFAULT_FILTERS / DirectionFilter 的唯一定义放在 src/lib/screener/filter.ts
+// （不能在组件里再声明一份 —— 两份定义漂移之后滑块和过滤逻辑会对不上，TS 不会报错；
+// 且 vitest 只收集 src/lib 下的测试文件，筛选逻辑必须住在 src/lib 才测得到）。
+import type { FilterState, DirectionFilter } from "@/lib/screener/filter";
+export type { FilterState, DirectionFilter };
+export { DEFAULT_FILTERS } from "@/lib/screener/filter";
 
 const DIRECTIONS: DirectionFilter[] = ["all", "long", "short"];
 

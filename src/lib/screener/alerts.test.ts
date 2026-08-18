@@ -100,11 +100,19 @@ describe("planAlerts", () => {
   });
 
   it("回到迟滞区间以上会让 belowCount 归零、重新开始累计", () => {
-    // 74,74 累计到 2；81 把计数归零；再来 74,74,74 才刚好累计到 3 而关闭。
-    // 如果把归零条件误写成 `< 80`（而不是 `< ALERT_CLOSE_SCORE`），
-    // 第 3 轮的 81 不会触发归零，第 6 轮会提前关闭，这条用例就会失败。
+    // 74,74 累计到 2；77 落在迟滞区间 [75,80) 内，把计数归零；
+    // 再来 74,74,74 才刚好在第 6 轮累计到 3 而关闭。
+    //
+    // 第 3 轮必须选一个落在 [ALERT_CLOSE_SCORE, ALERT_TRIGGER_SCORE) =
+    // [75, 80) 之间的值（这里用 77），不能用 ≥80 的值：如果用 81 这种
+    // 同时 ≥75 也 ≥80 的值，不管归零条件写成 `< ALERT_CLOSE_SCORE(75)`
+    // 还是被误写成 `< ALERT_TRIGGER_SCORE(80)`，第 3 轮都会归零，两种
+    // 实现产生完全相同的 close 模式，用例就测不出这类错误——上一版就是
+    // 踩了这个坑。用 77：正确实现里 77 不小于 75 所以归零；误写成 <80
+    // 的实现里 77<80 会继续累计，第 3 轮就提前关闭，与正确实现在第 3
+    // 轮就产生分歧。
     let state = [open({ belowCount: 0 })];
-    const rounds = [74, 74, 81, 74, 74, 74];
+    const rounds = [74, 74, 77, 74, 74, 74];
     const closesByRound: boolean[] = [];
     for (const total of rounds) {
       const plan = planAlerts([row({ total })], state);

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { applyFilters, sortRows, DEFAULT_FILTERS } from "@/lib/screener/filter";
 import type { FilterState, SortKey } from "@/lib/screener/filter";
 import type { ScannerRow } from "@/lib/screener/types";
+import { CLIENT_SLIDER } from "@/lib/screener/universe";
 
 const FILTER_STORAGE_KEY = "chart-ix:scanner-filters";
 const SORTABLE: SortKey[] = ["symbol", "direction", "total", "volumeUsd", "change24h", "marketCap"];
@@ -31,7 +32,20 @@ export default function ScreenerPage() {
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(FILTER_STORAGE_KEY);
-      if (raw) setFilters({ ...DEFAULT_FILTERS, ...JSON.parse(raw) });
+      if (!raw) return;
+      const saved = JSON.parse(raw) as Partial<FilterState>;
+      // 只认当前还存在的两个键、并且把振幅夹回当前滑块范围。
+      // 老版本存过 volume / marketCapFloor（现在已固定成服务端门槛），
+      // 也存过 1–5% 那一版范围里的振幅值：直接 spread 进来的话，
+      // 一个存着 5 的旧值会让滑块显示在 3（它的 max）而实际按 5 过滤，
+      // 用户看到的是一张几乎空的表却找不到原因。
+      setFilters({
+        amplitude:
+          typeof saved.amplitude === "number"
+            ? Math.min(CLIENT_SLIDER.amplitude.max, Math.max(CLIENT_SLIDER.amplitude.min, saved.amplitude))
+            : DEFAULT_FILTERS.amplitude,
+        direction: saved.direction ?? DEFAULT_FILTERS.direction,
+      });
     } catch {
       // 存的是坏 JSON 就当没存过，不要让一条脏缓存把整页打崩
     }

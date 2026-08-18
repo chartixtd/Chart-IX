@@ -34,9 +34,13 @@ const caps: MarketCapMap = {
 };
 
 describe("门槛包含关系", () => {
-  it("服务端门槛必须比滑块能拉到的最紧值更宽，否则滑块会滑进空池子", () => {
-    expect(SERVER_GATE.minMarketCap).toBeLessThan(CLIENT_SLIDER.marketCapFloor.min * 1_000_000);
-    expect(SERVER_GATE.maxMarketCap).toBeGreaterThan(CLIENT_SLIDER.marketCapCeiling * 1_000_000);
+  it("成交量与市值已固定成服务端门槛，客户端不该再有对应的滑块", () => {
+    // 固定下来的门槛留在客户端是双重损失：既浪费深度扫描名额（选中的币
+    // 可能一进来就被滤掉），又让用户以为它可调。这条断言防止以后有人
+    // 顺手把它们加回滑块而没有同步去掉服务端那一份。
+    expect(CLIENT_SLIDER).not.toHaveProperty("volume");
+    expect(CLIENT_SLIDER).not.toHaveProperty("marketCapFloor");
+    expect(CLIENT_SLIDER).not.toHaveProperty("marketCapCeiling");
   });
 
   it("BingX 成交额粗筛门槛必须定在假带（619万–691万）下方，不能顶到假带里", () => {

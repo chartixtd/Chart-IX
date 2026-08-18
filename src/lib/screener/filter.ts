@@ -4,19 +4,13 @@ import type { ScannerRow } from "./types";
 export type DirectionFilter = "all" | "long" | "short";
 
 export interface FilterState {
-  /** 百万美元 */
-  volume: number;
-  /** 百分比 */
+  /** 百分比。唯一还可调的门槛，其余（成交量、市值）已固定并下沉到服务端。 */
   amplitude: number;
-  /** 百万美元 */
-  marketCapFloor: number;
   direction: DirectionFilter;
 }
 
 export const DEFAULT_FILTERS: FilterState = {
-  volume: CLIENT_SLIDER.volume.default,
   amplitude: CLIENT_SLIDER.amplitude.default,
-  marketCapFloor: CLIENT_SLIDER.marketCapFloor.default,
   direction: "all",
 };
 
@@ -26,22 +20,14 @@ export type SortKey = "symbol" | "direction" | "total" | "volumeUsd" | "change24
  * 纯客户端过滤。服务端已经对整池算好分，这里只决定哪些行显示 ——
  * 拉动滑块不会改变任何币的分数，也不会改变警报触发。
  *
- * 滑块的单位是百万美元，行数据的单位是美元，比较前必须换算。
- * 这两个单位不统一是刻意的：滑块读数要给人看（"15M"），
- * 行数据要给计算用。
+ * 成交量与市值**不在这里过滤**：它们已经是固定门槛，由服务端在粗筛
+ * （市值）与行情层（成交额）执行完了，能到前端的行必然已经达标。
+ * 固定门槛再放一份在客户端是双重损失——既浪费深度扫描名额，
+ * 又让读者以为它可调。
  */
 export function applyFilters(rows: ScannerRow[], f: FilterState): ScannerRow[] {
-  const minVolume = f.volume * 1_000_000;
-  const minCap = f.marketCapFloor * 1_000_000;
-  const maxCap = CLIENT_SLIDER.marketCapCeiling * 1_000_000;
-
   return rows.filter(
-    (r) =>
-      r.volumeUsd >= minVolume &&
-      r.amplitude >= f.amplitude &&
-      r.marketCap >= minCap &&
-      r.marketCap <= maxCap &&
-      (f.direction === "all" || r.direction === f.direction)
+    (r) => r.amplitude >= f.amplitude && (f.direction === "all" || r.direction === f.direction)
   );
 }
 

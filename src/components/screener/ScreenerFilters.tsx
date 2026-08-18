@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { CLIENT_SLIDER } from "@/lib/screener/universe";
+import { CLIENT_SLIDER, SERVER_GATE } from "@/lib/screener/universe";
 // FilterState / DEFAULT_FILTERS / DirectionFilter 的唯一定义放在 src/lib/screener/filter.ts
 // （不能在组件里再声明一份 —— 两份定义漂移之后滑块和过滤逻辑会对不上，TS 不会报错；
 // 且 vitest 只收集 src/lib 下的测试文件，筛选逻辑必须住在 src/lib 才测得到）。
@@ -25,23 +25,17 @@ export function ScreenerFilters({
 
   return (
     <div className="mb-4 flex flex-wrap items-end gap-5 rounded-lg panel px-4 py-3">
-      <label className="flex min-w-[9rem] flex-1 flex-col gap-1.5">
+      {/* 成交量与市值已固定成服务端门槛，这里只读地标出来。
+          做成静态文字而不是禁用的滑块：禁用滑块仍然长得像「可以调，只是现在不行」，
+          而这两条是产品定死的筛选口径，不该给出可调的暗示。 */}
+      <div className="flex flex-col gap-1.5">
         <span className="text-[11px] uppercase tracking-wider text-text-muted">
           {t("filters.volume")}
         </span>
-        <input
-          type="range"
-          min={CLIENT_SLIDER.volume.min}
-          max={CLIENT_SLIDER.volume.max}
-          step={1}
-          value={value.volume}
-          onChange={(e) => onChange({ ...value, volume: Number(e.target.value) })}
-          className="accent-gold"
-        />
         <span className="tnum text-xs text-text-secondary">
-          <b className="text-text-primary">{value.volume}</b>M USDT
+          <b className="text-text-primary">{SERVER_GATE.minVolumeUsd / 1_000_000}</b>M USDT
         </span>
-      </label>
+      </div>
 
       <label className="flex min-w-[9rem] flex-1 flex-col gap-1.5">
         <span className="text-[11px] uppercase tracking-wider text-text-muted">
@@ -61,23 +55,15 @@ export function ScreenerFilters({
         </span>
       </label>
 
-      <label className="flex min-w-[9rem] flex-1 flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5">
         <span className="text-[11px] uppercase tracking-wider text-text-muted">
           {t("filters.market_cap")}
         </span>
-        <input
-          type="range"
-          min={CLIENT_SLIDER.marketCapFloor.min}
-          max={CLIENT_SLIDER.marketCapFloor.max}
-          step={10}
-          value={value.marketCapFloor}
-          onChange={(e) => onChange({ ...value, marketCapFloor: Number(e.target.value) })}
-          className="accent-gold"
-        />
         <span className="tnum text-xs text-text-secondary">
-          <b className="text-text-primary">{value.marketCapFloor}</b>M – {CLIENT_SLIDER.marketCapCeiling}M
+          <b className="text-text-primary">{SERVER_GATE.minMarketCap / 1_000_000}</b>M –{" "}
+          {SERVER_GATE.maxMarketCap / 1_000_000}M
         </span>
-      </label>
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <span className="text-[11px] uppercase tracking-wider text-text-muted">

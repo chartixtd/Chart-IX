@@ -12,43 +12,58 @@ import type { BingXTicker } from "@/types/bingx";
  */
 export const SERVER_GATE = {
   /**
-   * T19 之前这里有一个 `minVolumeUsd`（CoinGlass volume_usd 下限），
-   * 用来把池子收到约 150 行。已删掉：那个门槛的存在意义是「控制池子大小」，
-   * 现在池子大小由深度扫描名额（`DEEP_SCAN_LIMIT`）决定，不再需要它；
-   * 而且 CoinGlass 的 volume_usd 现在只对预排序选中的 `DEEP_SCAN_LIMIT` 个币
-   * 才会调用 `pairs-markets` 去拿，选完之后才知道成交额，卡在粗筛阶段根本查不到值。
-   * 真实成交额仍然写进 `ScannerRow.volumeUsd`，交给客户端滑块做真正的流动性过滤。
+   * CoinGlass volume_usd（全交易所之和）下限。
+   *
+   * 这条门槛只能在**行情层**生效（拿到 pairs-markets 之后），因为
+   * CoinGlass 的成交额要逐币调用才有；粗筛阶段查不到值。所以会有少数
+   * 深度扫描名额落在这里被淘汰——实测 14 个里约掉 1 个，可以接受。
+   * 想在粗筛就挡住得靠下面的 minBingxVolumeUsd 当粗略代理。
    */
-  minMarketCap: 20_000_000,
-  maxMarketCap: 800_000_000,
+  minVolumeUsd: 20_000_000,
+  /**
+   * 市值区间。下限 3000万以下的盘子太容易被单笔资金推动；
+   * 上限 5亿是这个产品「小市值币筛选器」的核心门槛——超过它的币
+   * 不是这个扫描器要找的东西。
+   *
+   * 这两条现在直接在粗筛阶段生效（CoinGecko 市值是免费数据，
+   * 不花 CoinGlass 配额），所以深度扫描的名额不会浪费在会被淘汰的币上。
+   */
+  minMarketCap: 30_000_000,
+  maxMarketCap: 500_000_000,
   /**
    * BingX ticker 的 24h 高低算出的振幅下限，单位 %。
    *
-   * 必须严格小于滑块最小值（1%）：粗筛发生在拉 K 线之前，只能用 BingX 的高低，
+   * 必须严格小于滑块最小值（1.5%）：粗筛发生在拉 K 线之前，只能用 BingX 的高低，
    * 而客户端滑块用的是 30m K 线算的真振幅。两边不同源却取等值，会误杀一个
-   * 真振幅 1.2%、BingX 高低算出 0.95% 的币——而且这种误杀在榜单上完全看不出来。
+   * 真振幅 1.7%、BingX 高低算出 1.45% 的币——而且这种误杀在榜单上完全看不出来。
    */
   minAmplitude: 0.5,
   /**
-   * BingX ticker 的 quoteVolume（24h 成交额）下限，美元。T19 新增。
+   * BingX ticker 的 quoteVolume（24h 成交额）下限，美元。
    *
-   * 这**不是**真正的流动性门槛——真流动性判断交给客户端滑块，它用的是
-   * CoinGlass 的真实 volume_usd。这个门槛只用来在粗筛阶段挡掉真正「完全没有
-   * 成交」的币：实测 BingX 长尾的 quoteVolume 在 600–700 万美元这一带
-   * 是被拍平的假数据（516 个永续里有 144 个全挤在 619–691 万这个 0.73M 宽的带里），
-   * 所以这个门槛只能定在那条假带**下方**，绝不能顶着那条假带定、更不能超过它——
-   * 否则会把大量真实有成交量、只是恰好落在假带里的币一起误杀。
+   * 这**不是** minVolumeUsd 的等价物，只是它在粗筛阶段的粗略代理：实测 BingX
+   * 长尾的 quoteVolume 在 600–700 万美元这一带是被拍平的假数据（516 个永续里
+   * 有 144 个全挤在 619–691 万这个 0.73M 宽的带里），所以这个门槛只能定在
+   * 那条假带**下方**，绝不能顶着那条假带定、更不能超过它——否则会把大量
+   * 真实有成交量、只是恰好落在假带里的币一起误杀。真正的成交额门槛是
+   * minVolumeUsd，在行情层用 CoinGlass 的真实值执行。
    */
   minBingxVolumeUsd: 2_000_000,
 } as const;
 
 /** 客户端滑块的取值域。单位：成交量与市值是百万美元，振幅是 %。 */
+/**
+ * 界面上还留给用户调的东西。成交量与市值已经固定成 SERVER_GATE 里的常量、
+ * 由服务端执行，不再是滑块——固定下来的门槛放在客户端过滤是双重损失：
+ * 既浪费深度扫描名额（选中的币可能一进来就被滤掉），又让用户以为它可调。
+ */
 export const CLIENT_SLIDER = {
-  volume: { min: 5, max: 25, default: 15 },
-  amplitude: { min: 1, max: 5, default: 3 },
-  marketCapFloor: { min: 30, max: 500, default: 30 },
-  /** 市值上限固定，不做成滑块（demo 的读数就是 "30M – 500M"） */
-  marketCapCeiling: 500,
+  /**
+   * 唯一还可调的一项。范围收窄到 1.5–3%：低于 1.5% 的行情做日内没有操作空间，
+   * 高于 3% 的门槛会把候选池收得太紧（深度扫描本来就只有 14 个名额）。
+   * 默认取最松的一端，让用户先看到全部再自己收紧。
+   */
+  amplitude: { min: 1.5, max: 3, default: 1.5 },
 } as const;
 
 /**
@@ -85,7 +100,7 @@ export interface PreselectCandidate {
  * 用 CoinGlass 的 volume_usd 做，这正是明细层要拆成两段的原因。
  *
  * 查不到市值一律排除：下限是一个「必须证明达标」的条件，
- * 在 CoinGecko 前 1000 名里查不到就无法证明市值 ≥ 2000万，只能当不达标处理。
+ * 在 CoinGecko 前 1000 名里查不到就无法证明市值 ≥ 3000万，只能当不达标处理。
  */
 export function preselect(
   tickers: BingXTicker[],

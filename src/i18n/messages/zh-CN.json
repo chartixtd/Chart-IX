@@ -936,9 +936,9 @@
     "next_scan": "下次扫描",
     "candidate_count": "{count} 个候选标的",
     "filters": {
-      "volume": "24h 成交量 ≥",
-      "amplitude": "24h 振幅 ≥",
-      "market_cap": "市值区间",
+      "volume": "24H 成交量（固定）",
+      "amplitude": "24H 振幅 ≥",
+      "market_cap": "市值区间（固定）",
       "direction": "方向",
       "dir_all": "全部",
       "dir_long": "Long",

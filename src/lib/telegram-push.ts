@@ -6,7 +6,8 @@ import {
   type TelegramSendOptions,
   type TelegramSendResult,
 } from "@/lib/telegram-send";
-import type { ScannerRow, ScannerPayload } from "@/lib/screener/types";
+import type { ScannerRow, ScannerPayload, Direction } from "@/lib/screener/types";
+import { CLIENT_SLIDER } from "@/lib/screener/universe";
 
 export type TelegramMessageLang = "en" | "zh";
 export type PushTrigger = "cron" | "manual" | "test" | "briefing";
@@ -416,8 +417,6 @@ const MESSAGE_STRINGS: Record<
  * Telegram 单条消息有 4096 字符上限，一条 15 行的表离上限还有余量。
  * 榜单已按总分降序排好，截断只会丢掉分数最低的那些。
  */
-const MAX_PUSH_ROWS = 15;
-
 function formatScannerRow(
   r: ScannerRow,
   settings: TelegramPushSettings,
@@ -449,9 +448,46 @@ function formatScannerRow(
 }
 
 /**
- * 单表按总分降序，不再分做多/做空两组。
- * 四因子模型里每个币只有一个方向判定（象限本身就定方向），
- * 双榜在这个模型下会把同一批币按同一个分数印两遍。
+ * 推送用的振幅门槛。与界面滑块的最小值同源（`CLIENT_SLIDER.amplitude.min`）——
+ * 群里收到的榜单必须和用户把滑块拉到最松时看到的是同一批币，
+ * 两边各写一个数字迟早会对不上。
+ *
+ * 成交量与市值不在这里过滤：它们已经是服务端固定门槛，
+ * payload 里的行必然已经达标。
+ */
+const PUSH_MIN_AMPLITUDE = CLIENT_SLIDER.amplitude.min;
+
+/** 每一组最多列几行。两组加起来仍要留在 Telegram 单条消息 4096 字符以内。 */
+const MAX_PUSH_ROWS_PER_GROUP = 8;
+
+function formatScannerGroup(
+  direction: Direction,
+  rows: ScannerRow[],
+  settings: TelegramPushSettings,
+  lang: TelegramMessageLang
+): string {
+  const s = MESSAGE_STRINGS[lang];
+  const emoji = direction === "long" ? "🟢" : "🔴";
+  const label = direction === "long" ? s.long : s.short;
+  if (rows.length === 0) return `${emoji} <b>${label}</b>\n${s.empty}`;
+
+  const lines = rows
+    .slice(0, MAX_PUSH_ROWS_PER_GROUP)
+    .map((r, i) => `${i + 1}. ${formatScannerRow(r, settings, lang)}`);
+  return `${emoji} <b>${label}</b>\n${lines.join("\n")}`;
+}
+
+/**
+ * 做多与做空**分成两组**，不混在一张表里。
+ *
+ * 一份混排的榜单要求读者自己在每一行里找方向标记，而看盘时的问题
+ * 从来都是「现在有什么可以做多的」或「有什么可以做空的」，不是
+ * 「按分数从高到低都有什么」。分组之后每一行的方向由所在分组决定，
+ * 行内那个方向标记就成了冗余——但仍然保留，因为 showDirection
+ * 是用户可关的开关，关掉之后分组标题就是唯一的方向信息。
+ *
+ * 每个币只会出现在一组里（四因子模型给每个币定死一个方向），
+ * 所以分组不会把同一批币印两遍。
  */
 export function formatScannerMessage(
   payload: ScannerPayload,
@@ -462,13 +498,19 @@ export function formatScannerMessage(
   const timestamp = new Date(payload.computedAt).toISOString().replace("T", " ").slice(0, 16);
   const head = `📊 <b>${s.title}</b> · ${timestamp} UTC`;
 
-  if (payload.rows.length === 0) return `${head}\n\n${s.empty}`;
+  const eligible = payload.rows.filter((r) => r.amplitude >= PUSH_MIN_AMPLITUDE);
+  if (eligible.length === 0) return `${head}\n\n${s.empty}`;
 
-  const lines = payload.rows
-    .slice(0, MAX_PUSH_ROWS)
-    .map((r, i) => `${i + 1}. ${formatScannerRow(r, settings, lang)}`);
+  const longs = eligible.filter((r) => r.direction === "long");
+  const shorts = eligible.filter((r) => r.direction === "short");
 
-  return `${head}\n\n${lines.join("\n")}`;
+  return [
+    head,
+    "",
+    formatScannerGroup("long", longs, settings, lang),
+    "",
+    formatScannerGroup("short", shorts, settings, lang),
+  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------

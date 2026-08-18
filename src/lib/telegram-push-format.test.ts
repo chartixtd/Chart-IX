@@ -47,11 +47,31 @@ function row(o: Partial<ScannerRow> = {}): ScannerRow {
 const payload: ScannerPayload = { rows: [row()], computedAt: Date.UTC(2026, 7, 18, 12, 0) };
 
 describe("formatScannerMessage", () => {
-  it("是一张按总分排序的单表，不再分做多/做空两组", () => {
+  it("做多与做空分成两组，各带自己的标题", () => {
+    const p: ScannerPayload = {
+      ...payload,
+      rows: [
+        row({ symbol: "L-USDT", coin: "LONGCOIN", direction: "long" }),
+        row({ symbol: "S-USDT", coin: "SHORTCOIN", direction: "short" }),
+      ],
+    };
+    const msg = formatScannerMessage(p, settings, "zh");
+    expect(msg).toContain("🟢");
+    expect(msg).toContain("🔴");
+    // 做多那一组必须整体排在做空之前，且各自的币落在自己那一组里
+    expect(msg.indexOf("LONGCOIN")).toBeLessThan(msg.indexOf("🔴"));
+    expect(msg.indexOf("SHORTCOIN")).toBeGreaterThan(msg.indexOf("🔴"));
+  });
+
+  it("某个方向一个币都没有时，那一组显示空提示而不是整条消息消失", () => {
     const msg = formatScannerMessage(payload, settings, "zh");
-    expect(msg).not.toContain("做多优势");
-    expect(msg).not.toContain("做空优势");
     expect(msg).toContain("TIA");
+    expect(msg).toContain("🔴");
+  });
+
+  it("振幅低于推送门槛的币不进消息", () => {
+    const p: ScannerPayload = { ...payload, rows: [row({ amplitude: 1.2 })] };
+    expect(formatScannerMessage(p, settings, "zh")).not.toContain("TIA");
   });
 
   it("带上方向标记", () => {
@@ -78,14 +98,14 @@ describe("formatScannerMessage", () => {
     expect(msg).toContain("暂无");
   });
 
-  it("最多只列前 15 行——Telegram 单条消息有长度上限", () => {
+  it("每组最多列 8 行——两组加起来仍要留在 Telegram 单条消息的长度上限内", () => {
     const many: ScannerPayload = {
       rows: Array.from({ length: 40 }, (_, i) => row({ symbol: `C${i}-USDT`, coin: `C${i}` })),
       computedAt: 0,
     };
     const msg = formatScannerMessage(many, settings, "en");
-    expect(msg).toContain("C14");
-    expect(msg).not.toContain("C15");
+    expect(msg).toContain("C7");
+    expect(msg).not.toContain("C8");
   });
 
   it("转义 HTML，防止币名里的尖括号破坏 parse_mode", () => {

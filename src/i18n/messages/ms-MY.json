@@ -878,9 +878,9 @@
     "next_scan": "Imbasan seterusnya",
     "candidate_count": "{count} calon",
     "filters": {
-      "volume": "Volum 24j ≥",
+      "volume": "Volum 24j (tetap)",
       "amplitude": "Amplitud 24j ≥",
-      "market_cap": "Permodalan pasaran",
+      "market_cap": "Permodalan (tetap)",
       "direction": "Arah",
       "dir_all": "Semua",
       "dir_long": "Long",

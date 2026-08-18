@@ -16,7 +16,7 @@ import type {
   CoinGlassLiquidationBar,
   CoinGlassOpenInterestRow,
 } from "@/lib/coinglass/types";
-import { preselect, amplitudeFromTicker } from "./universe";
+import { preselect, amplitudeFromTicker, SERVER_GATE } from "./universe";
 import type { PreselectCandidate } from "./universe";
 import { rankForDeepScan } from "./preselect-rank";
 import type { RankInput } from "./preselect-rank";
@@ -94,8 +94,12 @@ function toMarketStage(
   if (!price || !flow) return null;
 
   // 成交额用全交易所之和，而不是单家 —— 流动性门槛问的是「这个币好不好进出」，
-  // 那是全市场的属性。只用于展示与客户端滑块过滤，不再是服务端硬门槛（见上）。
+  // 那是全市场的属性。
   const volumeUsd = rows.reduce((a, r) => a + (Number.isFinite(r.volume_usd) ? r.volume_usd : 0), 0);
+  // 这条门槛只能在这里执行：CoinGlass 的成交额要逐币调 pairs-markets 才有，
+  // 粗筛阶段查不到值。所以会有少数深度扫描名额落在这里被淘汰（实测 14 个里
+  // 约掉 1 个）。粗筛那边用 SERVER_GATE.minBingxVolumeUsd 当粗略代理先挡一层。
+  if (volumeUsd < SERVER_GATE.minVolumeUsd) return null;
 
   return {
     candidate,

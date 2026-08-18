@@ -26,19 +26,17 @@ describe("applyFilters", () => {
     expect(applyFilters([row()], DEFAULT_FILTERS)).toHaveLength(1);
   });
 
-  it("成交量滑块按百万美元换算后比较", () => {
-    const f = { ...DEFAULT_FILTERS, volume: 25 };
-    expect(applyFilters([row({ volumeUsd: 20_000_000 })], f)).toHaveLength(0);
-    expect(applyFilters([row({ volumeUsd: 26_000_000 })], f)).toHaveLength(1);
-  });
-
   it("振幅滑块过滤", () => {
-    expect(applyFilters([row({ amplitude: 2 })], DEFAULT_FILTERS)).toHaveLength(0);
+    expect(applyFilters([row({ amplitude: 1.2 })], DEFAULT_FILTERS)).toHaveLength(0);
+    expect(applyFilters([row({ amplitude: 2 })], { ...DEFAULT_FILTERS, amplitude: 3 })).toHaveLength(0);
+    expect(applyFilters([row({ amplitude: 3 })], { ...DEFAULT_FILTERS, amplitude: 3 })).toHaveLength(1);
   });
 
-  it("市值下限过滤，上限固定 500M", () => {
-    expect(applyFilters([row({ marketCap: 20_000_000 })], DEFAULT_FILTERS)).toHaveLength(0);
-    expect(applyFilters([row({ marketCap: 600_000_000 })], DEFAULT_FILTERS)).toHaveLength(0);
+  it("不再过滤成交量与市值——它们已是服务端固定门槛，到这里的行必然达标", () => {
+    // 如果哪天有人把这两条又加回客户端，这条用例会立刻失败：
+    // 双份门槛既浪费深度扫描名额，又让读者以为它可调。
+    expect(applyFilters([row({ volumeUsd: 1_000 })], DEFAULT_FILTERS)).toHaveLength(1);
+    expect(applyFilters([row({ marketCap: 900_000_000 })], DEFAULT_FILTERS)).toHaveLength(1);
   });
 
   it("方向筛选", () => {

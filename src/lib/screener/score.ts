@@ -58,15 +58,23 @@ export function pickDirection(inputs: ScoreInputs): {
   const isLong = longTotal >= shortTotal;
   const factors = isLong ? long : short;
 
+  // total 必须是「取整后四项之和」，不能是「未取整总和的取整」。
+  // 两条取整路径各自舍入误差最坏累计到 2，会让 total 与 factors 四项之和
+  // 相差超过 1，违反 types.ts 里 ScannerRow.total 的类型注释（「等于 factors
+  // 四项之和（已取整）」——精确相等）。方向判定（isLong）仍然用未取整的
+  // longTotal/shortTotal 比较，这里不动：「取整只在最后做」这条原则针对
+  // 的是排序与方向选择，不是总分的自洽性。
+  const rounded: FactorBreakdown = {
+    zone: Math.round(factors.zone),
+    sweep: Math.round(factors.sweep),
+    oi: Math.round(factors.oi),
+    cvd: Math.round(factors.cvd),
+  };
+
   return {
     direction: isLong ? "long" : "short",
-    total: Math.round(isLong ? longTotal : shortTotal),
-    factors: {
-      zone: Math.round(factors.zone),
-      sweep: Math.round(factors.sweep),
-      oi: Math.round(factors.oi),
-      cvd: Math.round(factors.cvd),
-    },
+    total: rounded.zone + rounded.sweep + rounded.oi + rounded.cvd,
+    factors: rounded,
   };
 }
 

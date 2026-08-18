@@ -59,19 +59,24 @@ describe("scoreDirection", () => {
 });
 
 describe("pickDirection", () => {
-  it("方向取两边算分较高的那一侧", () => {
-    const long = scoreDirection(bullish, "long");
-    const short = scoreDirection(bullish, "short");
-    const longTotal = long.zone + long.sweep + long.oi + long.cvd;
-    const shortTotal = short.zone + short.sweep + short.oi + short.cvd;
+  it("明显偏多的输入应判定为 long", () => {
+    // bullish 的构造是价格单调上行 + OI 三窗口齐涨 + 主动买压持续为正，
+    // 方向应当稳定为 long。不在测试里重算 longTotal/shortTotal 去比较——
+    // 那等于把被测公式在断言里重新实现一遍，生产代码和测试同时写错时
+    // 发现不了。
     const picked = pickDirection(bullish);
-    expect(picked.direction).toBe(longTotal >= shortTotal ? "long" : "short");
+    expect(picked.direction).toBe("long");
   });
 
   it("总分等于四项之和（取整后允许 1 分以内的差）", () => {
     const p = pickDirection(bullish);
     const sum = p.factors.zone + p.factors.sweep + p.factors.oi + p.factors.cvd;
     expect(Math.abs(p.total - sum)).toBeLessThanOrEqual(1);
+  });
+
+  it("total 精确等于取整后的四项之和——两者不能走各自独立的取整路径", () => {
+    const p = pickDirection(bullish);
+    expect(p.total).toBe(p.factors.zone + p.factors.sweep + p.factors.oi + p.factors.cvd);
   });
 
   it("总分恒在 [0, 100]，且是整数", () => {

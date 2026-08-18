@@ -14,7 +14,7 @@ import type { FilterState, SortKey } from "@/lib/screener/filter";
 import type { ScannerRow } from "@/lib/screener/types";
 
 const FILTER_STORAGE_KEY = "chart-ix:scanner-filters";
-const SORTABLE: SortKey[] = ["symbol", "direction", "total", "volumeUsd", "amplitude", "marketCap"];
+const SORTABLE: SortKey[] = ["symbol", "direction", "total", "volumeUsd", "change24h", "marketCap"];
 
 export default function ScreenerPage() {
   const t = useTranslations("screener");

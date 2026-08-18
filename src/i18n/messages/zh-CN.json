@@ -950,7 +950,7 @@
       "total": "总分",
       "factors": "因子构成",
       "volume": "24h量",
-      "amplitude": "24h振幅",
+      "change": "24h涨跌",
       "market_cap": "市值",
       "updated": "更新",
       "actions": "操作"

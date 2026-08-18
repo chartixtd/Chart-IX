@@ -69,4 +69,30 @@ describe("sortRows", () => {
   it("symbol 按字典序而不是数值比较", () => {
     expect(sortRows(rows, "symbol", 1)[0].symbol).toBe("A-USDT");
   });
+
+  describe("change24h 为 null 时", () => {
+    const withNull = [
+      row({ symbol: "UP-USDT", change24h: 5 }),
+      row({ symbol: "NONE-USDT", change24h: null }),
+      row({ symbol: "DOWN-USDT", change24h: -5 }),
+    ];
+
+    it("降序时沉到最后", () => {
+      expect(sortRows(withNull, "change24h", -1).map((r) => r.symbol)).toEqual([
+        "UP-USDT",
+        "DOWN-USDT",
+        "NONE-USDT",
+      ]);
+    });
+
+    it("升序时同样沉到最后，不冒充涨跌为 0 排到下跌的币前面", () => {
+      // Number(null) === 0，所以「没数据」很容易被当成 0% 混进中间。
+      // 升序是这个 bug 最明显的地方：null 会排在所有下跌的币之前。
+      expect(sortRows(withNull, "change24h", 1).map((r) => r.symbol)).toEqual([
+        "DOWN-USDT",
+        "UP-USDT",
+        "NONE-USDT",
+      ]);
+    });
+  });
 });

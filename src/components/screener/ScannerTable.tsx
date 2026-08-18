@@ -110,8 +110,11 @@ export const ScannerTable = memo(function ScannerTable({
       ),
     },
     {
-      key: "amplitude",
-      header: t("columns.amplitude"),
+      // 只显示 24h 涨跌，不再并排显示振幅。振幅仍然在数据里、也仍然是
+      // 筛选滑块的过滤依据，只是不占表格宽度——两个百分数并排时读者
+      // 每次都要先分辨哪个是哪个，而真正要一眼看的是涨跌方向。
+      key: "change24h",
+      header: t("columns.change"),
       sortable: true,
       render: (r) => (
         <span
@@ -124,10 +127,7 @@ export const ScannerTable = memo(function ScannerTable({
                 : "text-danger"
           )}
         >
-          {r.amplitude.toFixed(1)}%
-          {r.change24h !== null && (
-            <span className="ml-1 text-xs opacity-70">{formatPercent(r.change24h)}</span>
-          )}
+          {r.change24h === null ? "—" : formatPercent(r.change24h)}
         </span>
       ),
     },

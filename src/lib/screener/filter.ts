@@ -20,7 +20,7 @@ export const DEFAULT_FILTERS: FilterState = {
   direction: "all",
 };
 
-export type SortKey = "symbol" | "direction" | "total" | "volumeUsd" | "amplitude" | "marketCap";
+export type SortKey = "symbol" | "direction" | "total" | "volumeUsd" | "change24h" | "marketCap";
 
 /**
  * 纯客户端过滤。服务端已经对整池算好分，这里只决定哪些行显示 ——
@@ -51,6 +51,14 @@ export function sortRows(rows: ScannerRow[], key: SortKey, dir: 1 | -1): Scanner
     const av = a[key];
     const bv = b[key];
     if (typeof av === "string" && typeof bv === "string") return av.localeCompare(bv) * dir;
+
+    // change24h 可能是 null（关联不到现货 24h 涨跌）。null 一律沉底，
+    // 两个方向都是——不能靠 Number(null)=0 混进中间：那会让「没数据」
+    // 冒充「涨跌为 0」，在升序时还会排到所有下跌的币前面。
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+
     return (Number(av) - Number(bv)) * dir;
   });
 }

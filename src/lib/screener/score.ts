@@ -1,0 +1,94 @@
+import type {
+  CoinGlassPriceBar,
+  CoinGlassTakerBar,
+  CoinGlassLiquidationBar,
+  CoinGlassOpenInterestRow,
+} from "@/lib/coinglass/types";
+import { SERIES_LIMIT } from "@/lib/coinglass/price-history";
+import type { Direction, FactorBreakdown } from "./types";
+import { zoneScore } from "./factors/zone";
+import { sweepScore } from "./factors/sweep";
+import { oiScore } from "./factors/oi";
+import { cvdScore } from "./factors/cvd";
+
+export interface ScoreInputs {
+  /** BingX 的成交价 */
+  price: number;
+  /** 7 天 30m K 线，同时喂 Zone / Sweep / OI / 振幅 */
+  priceBars: CoinGlassPriceBar[];
+  liquidation: CoinGlassLiquidationBar[];
+  taker: CoinGlassTakerBar[];
+  /** 已经挑好的 All 聚合行 */
+  openInterest: CoinGlassOpenInterestRow | undefined;
+}
+
+export function scoreDirection(inputs: ScoreInputs, direction: Direction): FactorBreakdown {
+  return {
+    zone: zoneScore(inputs.price, inputs.priceBars, direction),
+    sweep: sweepScore(inputs.liquidation, inputs.priceBars, direction),
+    oi: oiScore(inputs.openInterest, inputs.priceBars, direction),
+    cvd: cvdScore(inputs.taker, inputs.priceBars, direction),
+  };
+}
+
+function sum(f: FactorBreakdown): number {
+  return f.zone + f.sweep + f.oi + f.cvd;
+}
+
+/**
+ * 对每个币把 long 与 short 各算一遍，方向 = 总分高的那一边。
+ *
+ * 方向 pill 与 0–100 总分因此由同一次计算产出，不会出现「方向说 LONG
+ * 但因子构成看着像 SHORT」的矛盾。平局时取 long 只是为了让结果稳定可复现，
+ * 不含任何多头偏好——平局意味着两边一样没优势，总分本身也不会高。
+ *
+ * 取整只在最后做：四条曲线都有平台段，先取整会让排序被浮点末位而不是
+ * 真实差异决定。
+ */
+export function pickDirection(inputs: ScoreInputs): {
+  direction: Direction;
+  total: number;
+  factors: FactorBreakdown;
+} {
+  const long = scoreDirection(inputs, "long");
+  const short = scoreDirection(inputs, "short");
+  const longTotal = sum(long);
+  const shortTotal = sum(short);
+
+  const isLong = longTotal >= shortTotal;
+  const factors = isLong ? long : short;
+
+  return {
+    direction: isLong ? "long" : "short",
+    total: Math.round(isLong ? longTotal : shortTotal),
+    factors: {
+      zone: Math.round(factors.zone),
+      sweep: Math.round(factors.sweep),
+      oi: Math.round(factors.oi),
+      cvd: Math.round(factors.cvd),
+    },
+  };
+}
+
+/**
+ * 真 24h 振幅，用近 48 根 30m K 线算。
+ *
+ * 不用 BingX ticker 的 highPrice/lowPrice：那一份只服务粗筛（粗筛发生在
+ * 拉 K 线之前，没得选），展示与滑块过滤都该用这一份。两者会有出入，
+ * 出入本身是正常的——BingX 单交易所 vs CoinGlass 选定交易所。
+ */
+export function amplitudeFromBars(bars: CoinGlassPriceBar[]): number | null {
+  const slice = bars.slice(-SERIES_LIMIT);
+  if (slice.length === 0) return null;
+
+  let high = -Infinity;
+  let low = Infinity;
+  for (const b of slice) {
+    const h = parseFloat(b.high);
+    const l = parseFloat(b.low);
+    if (Number.isFinite(h) && h > high) high = h;
+    if (Number.isFinite(l) && l < low) low = l;
+  }
+  if (!Number.isFinite(high) || !Number.isFinite(low) || low <= 0) return null;
+  return ((high - low) / low) * 100;
+}

@@ -3,17 +3,20 @@ import type { MarketCapMap } from "@/lib/market-cap";
 import type { BingXTicker } from "@/types/bingx";
 
 /**
- * 服务端门槛：只负责把池子收到约 150 行，不负责表达用户口味。
- * 真正的筛选在客户端滑块上——服务端对整个池子算一次分，滑块只决定哪些行显示，
- * 所以拉动滑块不会改变任何币的分数，也不会改变警报触发。
+ * 服务端门槛：只负责挡掉明显不合格的候选（不可交易、合成品、市值不达标、
+ * 完全没有成交等），不负责表达用户口味，也不再负责把池子收到某个具体行数——
+ * T19 之后真正决定「最终能看到几行」的是预排序从这个池子里选出的
+ * `DEEP_SCAN_LIMIT` 个（见 preselect-rank.ts）。
+ * 真正的筛选口味在客户端滑块上——服务端对选中的这些候选各算一次分，
+ * 滑块只决定哪些行显示，所以拉动滑块不会改变任何币的分数，也不会改变警报触发。
  */
 export const SERVER_GATE = {
   /**
    * T19 之前这里有一个 `minVolumeUsd`（CoinGlass volume_usd 下限），
    * 用来把池子收到约 150 行。已删掉：那个门槛的存在意义是「控制池子大小」，
    * 现在池子大小由深度扫描名额（`DEEP_SCAN_LIMIT`）决定，不再需要它；
-   * 而且 CoinGlass 的 volume_usd 现在只对预排序选中的 15 个币才会调用
-   * `pairs-markets` 去拿，选完之后才知道成交额，卡在粗筛阶段根本查不到值。
+   * 而且 CoinGlass 的 volume_usd 现在只对预排序选中的 `DEEP_SCAN_LIMIT` 个币
+   * 才会调用 `pairs-markets` 去拿，选完之后才知道成交额，卡在粗筛阶段根本查不到值。
    * 真实成交额仍然写进 `ScannerRow.volumeUsd`，交给客户端滑块做真正的流动性过滤。
    */
   minMarketCap: 20_000_000,

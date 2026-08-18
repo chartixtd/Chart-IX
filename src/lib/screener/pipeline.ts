@@ -51,10 +51,10 @@ interface MarketStage {
  * 个候选调用（见 runScan 里预排序那一段的注释）。
  *
  * 这里**不再**用 volume_usd 卡门槛（T19 之前有一个 `< SERVER_GATE.minVolumeUsd`
- * 就 return null 的检查，已删掉）：现在 pairs-markets 只对选中的 15 个调用，
- * 卡这个门槛只会让某几轮不足 15 行，而不会缩小上游调用量——门槛该起的作用
- * 已经被「只选 15 个进明细层」这件事本身取代了。真实成交额仍然写进
- * `ScannerRow.volumeUsd`，交给客户端滑块做流动性过滤。
+ * 就 return null 的检查，已删掉）：现在 pairs-markets 只对选中的
+ * `DEEP_SCAN_LIMIT` 个调用，卡这个门槛只会让某几轮不足 `DEEP_SCAN_LIMIT` 行，
+ * 而不会缩小上游调用量——门槛该起的作用已经被「只选这些进明细层」这件事本身
+ * 取代了。真实成交额仍然写进 `ScannerRow.volumeUsd`，交给客户端滑块做流动性过滤。
  */
 function toMarketStage(
   candidate: PreselectCandidate,
@@ -96,29 +96,38 @@ function toMarketStage(
  * 数量级，dryrun 直接被 429 打回、四因子全部退化成缺数据的默认分
  * （见 client.ts 顶部 `COINGLASS_CONCURRENCY` 的注释）。
  *
- * 现在是四段式，一轮固定 77 次调用：
+ * 现在是四段式，一轮固定 72 次调用（`DEEP_SCAN_LIMIT` 目前推导为 14，见
+ * `types.ts` 的注释——**这个数不是拍脑袋定的整数，是从限流器的真实配额
+ * `RATE_LIMIT_PER_MIN` 推导出来的，改了限流器配额这里的次数会跟着变**）：
  *   ① 批量层（4 路，2 次 CoinGlass 调用）：BingX ticker（0 次）+ CoinGecko
  *      市值（0 次）+ `liquidation/coin-list`（1 次，全币爆仓）+
  *      `funding-rate/exchange-list`（1 次，全币资金费率）。
  *   ② 粗筛：`preselect()`，0 次调用，只用批量层已有的数据。
- *   ③ 预排序：从粗筛池子里选出 `DEEP_SCAN_LIMIT`（15）个进入明细层，
+ *   ③ 预排序：从粗筛池子里选出 `DEEP_SCAN_LIMIT` 个进入明细层，
  *      0 次调用（下面详细说）。
- *   ④ 明细层（15 × 5 = 75 次调用）：只对预排序选中的 15 个依次调
+ *   ④ 明细层（`DEEP_SCAN_LIMIT` × 5 次调用）：只对预排序选中的候选依次调
  *      pairs-markets、open-interest/exchange-list、price/history、
  *      taker-buy-sell-volume/history、liquidation/history。
- *   `2 + 15 × 5 = 77`，卡在 80 以内，留 3 次余量。
  *
- * 为什么是预排序而不是直接把 15 定成粗筛门槛的一部分：粗筛用的信号
- * （市值、BingX 高低振幅）批量层就有，不花额外调用；但「这个币现在
+ * `2 + DEEP_SCAN_LIMIT × 5` 必须 `≤ RATE_LIMIT_PER_MIN`（不是 CoinGlass 文档
+ * 写的 80，是限流器实际生效的 75——两者的差就是限流器给「cron 刚扫完、用户
+ * 马上刷新」这类重叠留的余量）。**这条不等式踩过一次真实的坑**：第一版
+ * `DEEP_SCAN_LIMIT` 直接写死 15，`2 + 15 × 5 = 77 > 75`，最后两次调用撞上
+ * 限流器等待，一轮跑到 60.7 秒，撞破 Vercel Hobby 的 60 秒函数上限——这正是
+ * 为什么 `DEEP_SCAN_LIMIT` 现在改成从 `RATE_LIMIT_PER_MIN` 推导，而不是写死
+ * 的常量，具体推导式与断言测试见 `types.ts`。
+ *
+ * 为什么是预排序而不是直接把 `DEEP_SCAN_LIMIT` 定成粗筛门槛的一部分：粗筛用的
+ * 信号（市值、BingX 高低振幅）批量层就有，不花额外调用；但「这个币现在
  * 是否值得深挖」还需要爆仓异常度这个信号——liquidation/coin-list 同样
  * 是批量层已经拿到的数据，不花额外调用，所以能在明细层开始之前，
  * 用「爆仓异常度 + 振幅」各半的分数从粗筛池子里再挑一轮，把最值得
- * 打分的 15 个送进明细层，而不是任意选 15 个或者按粗筛的自然顺序截断。
+ * 打分的那些送进明细层，而不是任意选或者按粗筛的自然顺序截断。
  *
  * 预排序的代价（无法避免，不是疏忽）：Zone/OI/CVD 三个因子的数据只有
  * 进了明细层才能拿到，预排序阶段完全看不到，只能用爆仓与振幅这两个
  * 粗筛阶段就有的信号做代理。一个「爆仓平淡、振幅也一般，但 Zone/OI/CVD
- * 三项本来会打出高分」的币，在 80/分钟配额下就是进不了这一轮的深度扫描——
+ * 三项本来会打出高分」的币，在限流器 75/分钟的真实配额下就是进不了这一轮的深度扫描——
  * 这是配额约束下必然要接受的代价，下一轮扫描（15 分钟后）它仍有机会
  * 凭爆仓或振幅的变化被选中。
  *
@@ -202,7 +211,7 @@ export async function runScan(): Promise<ScannerPayload> {
   });
   const deepScanTargets = rankForDeepScan(rankInputs, DEEP_SCAN_LIMIT);
 
-  // ③ 行情层：只对预排序选中的 15 个调用 pairs-markets
+  // ③ 行情层：只对预排序选中的 DEEP_SCAN_LIMIT 个调用 pairs-markets
   const pairRows = await runWithConcurrency(
     deepScanTargets.map((c) => () => getPairsMarkets(c.coin))
   );
@@ -211,7 +220,7 @@ export async function runScan(): Promise<ScannerPayload> {
     .filter((s): s is MarketStage => s !== null);
 
   // ④ 明细层：四个端点共用同一个并发池，所以并发上限是对上游的真实总上限。
-  // staged 现在最多 15 个，入队顺序与下面取结果的 base + 0..3 下标算术
+  // staged 现在最多 DEEP_SCAN_LIMIT 个，入队顺序与下面取结果的 base + 0..3 下标算术
   // 保持原样不动（评审逐个验算过的对齐关系，见下方注释）。
   const detailTasks: Array<() => Promise<unknown>> = [];
   for (const s of staged) {

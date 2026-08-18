@@ -1,3 +1,5 @@
+import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/client";
+
 export type Direction = "long" | "short";
 
 /**
@@ -19,17 +21,34 @@ export const ALERT_CLOSE_SCORE = 75;
 /** 连续多少次扫描低于关闭线才真的关闭警报（约 45 分钟） */
 export const ALERT_CLOSE_STREAK = 3;
 
+/** 批量层调用数：liquidation/coin-list + funding-rate/exchange-list，两次固定调用。 */
+const BATCH_LAYER_CALLS = 2;
+
 /**
- * 一轮扫描进入明细层（pairs-markets + OI + price + taker + liquidation-history
- * 共 5 个端点/币）的币数上限。
- *
- * 这个数是被 CoinGlass `API-KEY-MAX-LIMIT: 80`（每分钟）反推出来的，不是拍脑袋定的：
- * 批量层 2 次调用（liquidation/coin-list + funding-rate/exchange-list）
- * + 明细层 N × 5，要满足 `2 + N × 5 ≤ 80`，N 最大取 15（16 就是 82，超配额）。
- * 改大这个数会直接把一轮调用量顶穿限流器的滚动窗口——15 不是「先定个整数看着舒服」，
- * 是这条不等式算出来的硬上限，改之前先重新算一遍这条不等式。
+ * 明细层每个币要打的调用数：pairs-markets + open-interest/exchange-list +
+ * price/history + taker-buy-sell-volume/history + liquidation/history。
  */
-export const DEEP_SCAN_LIMIT = 15;
+const DETAIL_CALLS_PER_COIN = 5;
+
+/**
+ * 一轮扫描进入明细层的币数上限，由 `RATE_LIMIT_PER_MIN` **推导**而不是写死的整数。
+ *
+ * T19 第一版直接写死 15：`2 + 15 × 5 = 77`，看着卡在 CoinGlass 文档写的
+ * `API-KEY-MAX-LIMIT: 80`（每分钟）以内，但忘了限流器自己留了 5 次余量、
+ * 真正生效的窗口是 `RATE_LIMIT_PER_MIN = 75`，`77 > 75`——真实 dryrun 里
+ * 最后两次调用撞上限流器，等了将近一整个滚动窗口才放行，60.7 秒撞破
+ * Vercel Hobby 的 60 秒函数上限。
+ *
+ * `DEEP_SCAN_LIMIT` 与 `RATE_LIMIT_PER_MIN` 是绑死的一对数：必须满足
+ * `BATCH_LAYER_CALLS + DETAIL_CALLS_PER_COIN × DEEP_SCAN_LIMIT ≤ RATE_LIMIT_PER_MIN`，
+ * 改任何一边都要重新满足这条不等式，光靠注释提醒守不住这种「两个常量必须配套」
+ * 的约束（上一次翻车就是注释写对了、数字对不上）。所以这里不再写死数字，
+ * 而是从 `RATE_LIMIT_PER_MIN` 用 `Math.floor` 反推——只要限流器的配额常量改了，
+ * 这个上限会跟着自动重算，不可能再出现两处数字互相矛盾的情况。
+ * `types.test.ts` 用一条断言把这条不等式钉死，防止未来有人绕开这个推导式
+ * 直接把 `DEEP_SCAN_LIMIT` 改回一个写死的数字。
+ */
+export const DEEP_SCAN_LIMIT = Math.floor((RATE_LIMIT_PER_MIN - BATCH_LAYER_CALLS) / DETAIL_CALLS_PER_COIN);
 
 export const FACTOR_MAX = {
   zone: 30,

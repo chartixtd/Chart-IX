@@ -65,8 +65,17 @@ API-KEY-USE-LIMIT: <本分钟已用>
 HTTP 200 + 信封 `code: "429"`。dryrun 实测：60 个候选全部退化成同一个分
 `35 = Z15 + S0 + OI15 + CVD5`（四因子全部走缺数据分支的默认值），振幅全 0。
 
-T19 把数据流重构为「批量层 4 路 + 预排序 15 个 + 明细层 15×5」，一轮固定 77 次调用，
+T19 把数据流重构为「批量层 4 路 + 预排序 `DEEP_SCAN_LIMIT` 个 + 明细层 ×5」，
 详见下面「数据流」一节。
+
+**这个数字本身也踩过一次坑，一并记录**：限流器没有直接按 80 放行，而是留了
+5 次余量（`RATE_LIMIT_PER_MIN = 75`），T19 第一版的 `DEEP_SCAN_LIMIT` 却是按 80
+算出来的 15（`2 + 15 × 5 = 77`）——`77 > 75`，实际调用会撞上限流器等待。
+真实 dryrun 复核出的耗时是 60.7 秒，正好撞破 Vercel Hobby 的 60 秒函数上限。
+修法：`DEEP_SCAN_LIMIT` 从「写死的 15」改成从 `RATE_LIMIT_PER_MIN` **推导**的 14
+（`2 + 14 × 5 = 72 ≤ 75`），代码里用一条测试断言钉住
+`2 + 5 × DEEP_SCAN_LIMIT ≤ RATE_LIMIT_PER_MIN` 这条不等式，防止这两个必须配套的
+常量以后再次各改各的。
 
 ### 部署侧约束
 
@@ -138,9 +147,10 @@ GitHub Actions cron-tick (*/5)
            │
            ├ ③ 预排序｜0 次调用
            │  按「爆仓异常度（用 ① 的 liquidation/coin-list）+ 振幅」各占一半的
-           │  百分位分数，从粗筛池子里选出 DEEP_SCAN_LIMIT = 15 个
+           │  百分位分数，从粗筛池子里选出 DEEP_SCAN_LIMIT 个
+           │  （目前推导为 14，由 RATE_LIMIT_PER_MIN 反推，见下方说明）
            │
-           ├ ④ 明细层｜15 × 5 = 75 次调用，12 并发，约 3–5 秒
+           ├ ④ 明细层｜14 × 5 = 70 次调用，12 并发，约 3–5 秒
            │    pairs-markets（价格 + 展示用成交额）
            │    oi/exchange-list · price/history 30m×336
            │    taker-volume 30m×48 · liquidation/history 30m×48
@@ -149,14 +159,23 @@ GitHub Actions cron-tick (*/5)
            ├ alerts.detect(上次快照, 本次) → 写 screener_alerts + Telegram 推送
            └ 写 screener_cache
 
-浏览器 → GET /api/screener → 读 screener_cache → 返回 15 行（或候选池不足 15 时更少）
+浏览器 → GET /api/screener → 读 screener_cache → 返回 14 行（或候选池不足 14 时更少）
        → 滑块在客户端纯过滤 + 排序，零延迟
 ```
 
-合计 77 次上游调用（`2 + 15 × 5`）、约 3–5 秒，卡在 `API-KEY-MAX-LIMIT: 80`（每分钟）以内，
-远不用挨到 Vercel Hobby 的 60 秒函数上限。
+合计 72 次上游调用（`2 + 14 × 5`）、约 3–5 秒，卡在限流器实际生效的 `RATE_LIMIT_PER_MIN = 75`
+（每分钟，比 CoinGlass 文档写的 `API-KEY-MAX-LIMIT: 80` 少留 5 次余量）以内，
+远不用挨到 Vercel Hobby 的 60 秒函数上限。**`DEEP_SCAN_LIMIT` 与 `RATE_LIMIT_PER_MIN` 是
+绑死的一对数**：必须满足 `2 + 5 × DEEP_SCAN_LIMIT ≤ RATE_LIMIT_PER_MIN`，改任何一边都要
+重新满足这条不等式（`src/lib/screener/types.ts` 里 `DEEP_SCAN_LIMIT` 直接从
+`RATE_LIMIT_PER_MIN` 推导，而不是写死的整数，`types.test.ts` 有一条断言钉住这条不等式）。
+这条不等式本身踩过一次真实的坑：T19 第一版把 `DEEP_SCAN_LIMIT` 写死成 15
+（按 CoinGlass 文档的 80 算的 `2 + 15 × 5 = 77`），却忘了限流器自己留了 5 次余量、
+真正生效的窗口是 75——`77 > 75`，真实 dryrun 里最后两次调用撞上限流器等待，
+一轮跑到 60.7 秒，撞破 Vercel Hobby 的 60 秒函数上限。改成从 75 推导出的 14 之后
+不再有任何一次调用会被限流器挂住。
 
-### 为什么是「预排序选 15 个」而不是「行情层筛成交额、明细层再筛」
+### 为什么是「预排序选 N 个」而不是「行情层筛成交额、明细层再筛」
 
 T19 之前的设计是三段式：批量层 → 行情层（对**每个**粗筛候选调 `pairs-markets`，
 用真实 `volume_usd` 筛成交额）→ 明细层（对行情层存活的候选调 4 个端点）。这是在
@@ -164,15 +183,15 @@ T19 之前的设计是三段式：批量层 → 行情层（对**每个**粗筛�
 仅行情层就要打 100–150 次调用，三段式一轮合计 450–800 次，超过 `API-KEY-MAX-LIMIT: 80`
 （每分钟）一个数量级。
 
-T19 改成两段（粗筛 → 预排序取 15 → 明细层），并把 `pairs-markets` 从行情层挪进明细层，
-只对预排序选中的 15 个调用。代价：粗筛阶段不再有 CoinGlass 真实成交额可用，成交额门槛
-（原来的 `SERVER_GATE.minVolumeUsd`）因此被删掉，改用 BingX `quoteVolume` 的粗粒度门槛
-（`minBingxVolumeUsd = 2M`，定在 BingX 长尾假数据带下方，只挡真正没有成交的币，
+T19 改成两段（粗筛 → 预排序取 `DEEP_SCAN_LIMIT` 个 → 明细层），并把 `pairs-markets`
+从行情层挪进明细层，只对预排序选中的候选调用。代价：粗筛阶段不再有 CoinGlass 真实成交额
+可用，成交额门槛（原来的 `SERVER_GATE.minVolumeUsd`）因此被删掉，改用 BingX `quoteVolume`
+的粗粒度门槛（`minBingxVolumeUsd = 2M`，定在 BingX 长尾假数据带下方，只挡真正没有成交的币，
 不当真正的流动性判断）。真实成交额仍然写进 `ScannerRow.volumeUsd`，交给客户端滑块过滤。
 
 预排序本身的代价：Zone/OI/CVD 三个因子的数据只有进了明细层才能拿到，预排序阶段完全看不到，
 只能用「爆仓异常度 + 振幅」这两个粗筛阶段就有的信号做代理。一个「爆仓平淡、振幅也一般，
-但 Zone/OI/CVD 三项本来会打出高分」的币，在 80/分钟配额下就是进不了这一轮的深度扫描——
+但 Zone/OI/CVD 三项本来会打出高分」的币，在限流器 75/分钟的真实配额下就是进不了这一轮的深度扫描——
 这是配额约束下必须接受的代价，不是实现疏忽。
 
 ### 两个关键性质
@@ -282,8 +301,9 @@ CoinGlass 数据是多交易所的，必须逐项定死，否则不同因子会�
 ## 候选池与筛选：服务端宽、客户端窄
 
 **T19 更新**：服务端粗筛门槛产出的池子大小不再固定（视市场行情而定，可能是几十到一两百行），
-真正决定「最终能看到几行」的是预排序从池子里选出的 `DEEP_SCAN_LIMIT = 15` 个。
-demo 的滑块仍在客户端对这 15 行（或候选池不足 15 行时更少）做二次收窄。
+真正决定「最终能看到几行」的是预排序从池子里选出的 `DEEP_SCAN_LIMIT` 个（目前推导为 14，
+由限流器的 `RATE_LIMIT_PER_MIN` 反推，见上面「数据流」一节）。
+demo 的滑块仍在客户端对这些行（或候选池不足 `DEEP_SCAN_LIMIT` 行时更少）做二次收窄。
 
 服务端门槛（不可调）：
 
@@ -301,8 +321,8 @@ demo 的滑块仍在客户端对这 15 行（或候选池不足 15 行时更少�
 
 - 从粗筛池子里，按「爆仓异常度（`liquidation/coin-list` 的 1h 相对 24h 均摊值的倍数）
   + BingX 24h 振幅」各占一半的**百分位**分数（不是绝对值缩放，理由见
-  `src/lib/screener/preselect-rank.ts` 的注释），选出前 `DEEP_SCAN_LIMIT = 15` 个
-- 这 15 个才会进入明细层（`pairs-markets` + 4 个明细端点），也就是最终榜单的全部内容
+  `src/lib/screener/preselect-rank.ts` 的注释），选出前 `DEEP_SCAN_LIMIT` 个
+- 这些候选才会进入明细层（`pairs-markets` + 4 个明细端点），也就是最终榜单的全部内容
 
 客户端滑块：
 

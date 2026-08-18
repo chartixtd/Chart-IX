@@ -25,7 +25,9 @@
 - ~~服务端候选池门槛：BingX 永续 `-USDT` 可交易 ∩ 非合成品 ∩ CoinGecko 排名 > 50 ∩ 市值 20M–800M ∩ BingX 24h 振幅 ≥ 0.5% ∩ CoinGlass `volume_usd` ≥ 5M。~~
   **Task 19 更新**：`CoinGlass volume_usd ≥ 5M` 门槛已删除，换成 `BingX quoteVolume ≥ 2M`
   （只挡真正没有成交的假带，不当真流动性判断）；新增预排序从粗筛池子里选出
-  `DEEP_SCAN_LIMIT = 15` 个才进明细层。详见 Task 19 附记。
+  `DEEP_SCAN_LIMIT` 个才进明细层——这个数**不是写死的**，从限流器的
+  `RATE_LIMIT_PER_MIN`（75）推导，目前为 14（`2 + 14 × 5 = 72 ≤ 75`）。详见 Task 19 附记
+  （附记里还记录了第一版写死 15 导致撞穿限流窗口、跑到 60.7 秒的返工）。
 - 客户端滑块范围：成交量 5–25M（默认 15M）、振幅 1–5%（默认 3%）、市值下限 30–500M（默认 30M，上限固定 500M）。
 - i18n 三个 locale 都要补：`src/i18n/messages/zh-CN.json`、`en-US.json`、`ms-MY.json`。漏掉 ms-MY 会让马来语页面缺键。
 - 注释用中文，与现有代码风格一致：解释**为什么**这么写、以及**不能改成什么**，不要复述代码在做什么。
@@ -5685,22 +5687,31 @@ Task 1–18 全部完成、评审通过、1017 个测试全绿之后，用真实
    新增对信封 `code: "429"` 的一次性重试（等 2 秒，重试后仍 429 才抛错）。
 2. **`src/lib/screener/universe.ts`**：`SERVER_GATE.minVolumeUsd`（CoinGlass 成交额门槛）删除，
    新增 `minBingxVolumeUsd = 2_000_000`（BingX quoteVolume 粗粒度门槛，定在长尾假数据带下方）；
-   新增 `amplitudeFromTicker` 导出，供预排序算具体振幅数值。`DEEP_SCAN_LIMIT = 15` 放在
-   `src/lib/screener/types.ts`，由 `2 + N × 5 ≤ 80` 反推。
+   新增 `amplitudeFromTicker` 导出，供预排序算具体振幅数值。`DEEP_SCAN_LIMIT` 放在
+   `src/lib/screener/types.ts`。
 3. **新文件 `src/lib/screener/preselect-rank.ts`**：`liquidationAnomaly(liq1h, liq24h)`
    （除零保护，同 `factors/sweep.ts` 的 `spikeRatio` 一个道理）+ `rankForDeepScan(inputs, limit)`
    （爆仓异常度与振幅各占一半的百分位排序，绝不用绝对值缩放——长尾分布下绝对值缩放会让
    振幅那一半的信号被压成 0）。
 4. **`src/lib/screener/pipeline.ts`**：批量层从 3 路加回 `liquidation/coin-list`（4 路，2 次
-   CoinGlass 调用）；新增预排序步骤，从粗筛池子里选出 15 个；`pairs-markets` 从「对每个粗筛
-   候选调用」改成「只对预排序选中的 15 个调用」；`toMarketStage` 删掉 `volumeUsd` 门槛；
-   明细层 `base + 0..3` 的下标算术原样不动，`staged` 现在最多 15 个。
+   CoinGlass 调用）；新增预排序步骤，从粗筛池子里选出 `DEEP_SCAN_LIMIT` 个；
+   `pairs-markets` 从「对每个粗筛候选调用」改成「只对预排序选中的候选调用」；
+   `toMarketStage` 删掉 `volumeUsd` 门槛；明细层 `base + 0..3` 的下标算术原样不动，
+   `staged` 现在最多 `DEEP_SCAN_LIMIT` 个。
 
-一轮调用量：`2（批量层）+ 15 × 5（明细层：pairs-markets + OI + price + taker + liquidation）
-= 77`，卡在 80 以内。
+一轮调用量：`2（批量层）+ DEEP_SCAN_LIMIT × 5（明细层：pairs-markets + OI + price + taker
++ liquidation）`。第一版把 `DEEP_SCAN_LIMIT` 写死成 15（按 CoinGlass 文档的 80 算出
+`2 + 15 × 5 = 77`），但限流器自己留了 5 次余量、真正生效的窗口是
+`RATE_LIMIT_PER_MIN = 75`——`77 > 75`，真实 dryrun 复核时最后两次调用撞上限流器等待，
+一轮跑到 60.7 秒，撞破 Vercel Hobby 的 60 秒函数上限。**修法：`DEEP_SCAN_LIMIT` 不再写死，
+改成从 `RATE_LIMIT_PER_MIN` 用 `Math.floor` 推导**（`src/lib/screener/types.ts`），
+当前配额下推导为 14（`2 + 14 × 5 = 72 ≤ 75`）；`types.test.ts` 用一条断言钉住
+`2 + 5 × DEEP_SCAN_LIMIT ≤ RATE_LIMIT_PER_MIN` 这条不等式，防止这两个绑死的常量以后
+再次各改各的、又踩一次同样的坑。
 
 详细的「为什么」——为什么并发数不是真实约束、为什么是预排序而不是继续三段式、
-为什么用百分位而不是绝对值缩放、预排序会漏掉什么——都写在
+为什么用百分位而不是绝对值缩放、预排序会漏掉什么、为什么 `DEEP_SCAN_LIMIT` 改成推导式
+而不是写死的数字——都写在
 `docs/superpowers/specs/2026-08-18-screener-coinglass-design.md` 对应章节
 （限流 / 数据流 / 候选池与筛选 / 不在本次范围内）与上述四个源文件的行内注释里，
 这里不重复。

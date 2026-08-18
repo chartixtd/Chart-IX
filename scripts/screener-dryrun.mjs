@@ -12,13 +12,14 @@
  *   COINGLASS_API_KEY=... npx tsx scripts/screener-dryrun.mjs
  */
 import { runScan } from "../src/lib/screener/pipeline.ts";
+import { ALERT_TRIGGER_SCORE, FACTOR_MAX } from "../src/lib/screener/types.ts";
 
 const started = Date.now();
 const payload = await runScan();
 const elapsed = ((Date.now() - started) / 1000).toFixed(1);
 
 console.log(`\n候选池 ${payload.rows.length} 个 · 耗时 ${elapsed}s\n`);
-console.log("SYMBOL".padEnd(14), "DIR  ", "TOT", " Z  S  OI CVD", "  VOL(M)", " AMP%", "  CAP(M)", " SRC");
+console.log("SYMBOL".padEnd(14), "DIR  ", "TOT", `  OI/${FACTOR_MAX.oi} CVD/${FACTOR_MAX.cvd}`, "  VOL(M)", " AMP%", "  CAP(M)", " SRC");
 
 for (const r of payload.rows.slice(0, 40)) {
   const f = r.factors;
@@ -26,10 +27,8 @@ for (const r of payload.rows.slice(0, 40)) {
     r.coin.padEnd(14),
     r.direction.toUpperCase().padEnd(6),
     String(r.total).padStart(3),
-    String(f.zone).padStart(3),
-    String(f.sweep).padStart(2),
-    String(f.oi).padStart(3),
-    String(f.cvd).padStart(3),
+    String(f.oi).padStart(5),
+    String(f.cvd).padStart(6),
     (r.volumeUsd / 1e6).toFixed(1).padStart(8),
     r.amplitude.toFixed(1).padStart(6),
     (r.marketCap / 1e6).toFixed(0).padStart(8),
@@ -37,8 +36,8 @@ for (const r of payload.rows.slice(0, 40)) {
   );
 }
 
-const qualified = payload.rows.filter((r) => r.total >= 80);
-console.log(`\n≥80 分（会触发警报）：${qualified.length} 个 —— ${qualified.map((r) => r.coin).join(", ") || "无"}`);
+const qualified = payload.rows.filter((r) => r.total >= ALERT_TRIGGER_SCORE);
+console.log(`\n≥${ALERT_TRIGGER_SCORE} 分（会触发警报）：${qualified.length} 个 —— ${qualified.map((r) => r.coin).join(", ") || "无"}`);
 
 // 分布是判断打分曲线松紧的唯一依据。全挤在 40–60 说明曲线太保守，
 // 一大半 ≥80 说明门槛形同虚设。

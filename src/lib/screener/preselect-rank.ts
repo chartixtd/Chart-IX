@@ -1,7 +1,7 @@
 import type { PreselectCandidate } from "./universe";
 
 /**
- * liquidationAnomaly 的分母下限，美元。与 factors/sweep.ts 的
+ * liquidationAnomaly 的分母下限，美元。与已退役的 Sweep 因子当年的
  * `SWEEP_BASELINE_FLOOR_USD` 踩的是同一个坑：小市值币 24h 爆仓额为 0
  * 是常态，`liq1h / (liq24h / 24)` 在那种情况下会除出 Infinity，
  * 让一笔几百美元的爆仓凭空霸占整个深度扫描名额。

@@ -76,7 +76,9 @@ export function useFuturesTicker(symbol: string) {
 }
 
 // 合约批量行情 —— screener 专用。全市场几百个合约的快照体积不小，
-// 且 screener 本身按小时重筛，所以刷新节奏跟 screener 对齐而不是跟现货列表对齐。
+// 刷新节奏跟的是市值数据自己的 1 小时节奏（MARKET_CAP_REFRESH_MS），不跟现货列表对齐。
+// screener 扫描已改成 15 分钟一次，但这份全量 ticker 快照没必要跟着那么密——
+// 拉快了只是白白多打 CoinGecko/BingX 请求，市值和这份快照本身不会 15 分钟就变。
 export function useFuturesTickers(enabled = true) {
   return useQuery({
     queryKey: ["bingx", "tickers", "futures"],

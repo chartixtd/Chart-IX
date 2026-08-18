@@ -967,7 +967,10 @@
       "first_price": "首次警报价",
       "last_price": "实时价格",
       "cumulative": "首次警报后累计变化",
-      "peak": "最高到过"
+      "peak": "最高到过",
+      "just_now": "刚刚",
+      "minutes_ago": "{n}分钟",
+      "hours_ago": "{n}小时"
     },
     "source_note": "数据源 CoinGlass · 价格与下单 BingX · K线取自 {exchange}",
     "guide": {

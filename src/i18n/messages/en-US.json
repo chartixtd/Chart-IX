@@ -967,7 +967,10 @@
       "first_price": "Alert price",
       "last_price": "Live price",
       "cumulative": "Cumulative move since alert",
-      "peak": "Peak"
+      "peak": "Peak",
+      "just_now": "just now",
+      "minutes_ago": "{n}m",
+      "hours_ago": "{n}h"
     },
     "source_note": "Data from CoinGlass · price and execution on BingX · candles from {exchange}",
     "guide": {

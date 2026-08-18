@@ -1,24 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
 import { useScannerData } from "@/hooks/useScreenerData";
 import { ScannerTable } from "@/components/screener/ScannerTable";
 import { ScreenerFilters } from "@/components/screener/ScreenerFilters";
 import { AlertRail } from "@/components/screener/AlertRail";
+import { ScanCountdown } from "@/components/screener/ScanCountdown";
 import { Button } from "@/components/ui/Button";
-import { SCAN_INTERVAL_MS } from "@/lib/screener/types";
 import { applyFilters, sortRows, DEFAULT_FILTERS } from "@/lib/screener/filter";
 import type { FilterState, SortKey } from "@/lib/screener/filter";
+import type { ScannerRow } from "@/lib/screener/types";
 
 const FILTER_STORAGE_KEY = "chart-ix:scanner-filters";
 const SORTABLE: SortKey[] = ["symbol", "direction", "total", "volumeUsd", "amplitude", "marketCap"];
-
-function formatCountdown(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-}
 
 export default function ScreenerPage() {
   const t = useTranslations("screener");
@@ -31,7 +27,6 @@ export default function ScreenerPage() {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "total", dir: -1 });
   const [selected, setSelected] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     try {
@@ -50,24 +45,25 @@ export default function ScreenerPage() {
     }
   }, [filters]);
 
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
   const visible = useMemo(
     () => sortRows(applyFilters(rows, filters), sort.key, sort.dir),
     [rows, filters, sort]
   );
 
-  const remaining = lastUpdated > 0 ? lastUpdated + SCAN_INTERVAL_MS - now : null;
-
-  const handleSort = (key: string) => {
+  // handleSort 与 handleSelectRow 必须是稳定引用（useCallback），不能是内联箭头函数——
+  // ScannerTable 外面包了 memo，内联箭头函数每次渲染都是新引用，会让 memo 的浅比较
+  // 必然失败，等于白包。倒计时的每秒重渲染已经被隔离进 ScanCountdown，但页面未来
+  // 也可能因为别的原因重渲染，这里稳定引用是让 memo 真正生效的必要条件。
+  const handleSort = useCallback((key: string) => {
     if (!SORTABLE.includes(key as SortKey)) return;
     setSort((prev) =>
       prev.key === key ? { key: prev.key, dir: (prev.dir * -1) as 1 | -1 } : { key: key as SortKey, dir: -1 }
     );
-  };
+  }, []);
+
+  const handleSelectRow = useCallback((r: ScannerRow) => {
+    setSelected(r.symbol);
+  }, []);
 
   return (
     <div className="mx-auto max-w-[110rem] px-4 py-6">
@@ -80,11 +76,7 @@ export default function ScreenerPage() {
         </div>
         <div className="flex items-center gap-3">
           {/* 报错时不显示倒计时——那会是一个冻在 00:00 的假进度 */}
-          {!error && remaining !== null && (
-            <span className="tnum text-xs text-text-secondary">
-              {t("next_scan")} {formatCountdown(remaining)}
-            </span>
-          )}
+          {!error && <ScanCountdown lastUpdated={lastUpdated} />}
           <Button variant="ghost" size="sm" onClick={refetch} disabled={isRefreshing}>
             {t("refresh_now")}
           </Button>
@@ -134,7 +126,7 @@ export default function ScreenerPage() {
                 isLoading={isLoading}
                 sort={sort}
                 onSortChange={handleSort}
-                onSelect={(r) => setSelected(r.symbol)}
+                onSelect={handleSelectRow}
                 selectedSymbol={selected}
               />
             </section>

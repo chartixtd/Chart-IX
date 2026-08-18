@@ -909,7 +909,10 @@
       "first_price": "Harga amaran",
       "last_price": "Harga semasa",
       "cumulative": "Perubahan terkumpul sejak amaran",
-      "peak": "Puncak"
+      "peak": "Puncak",
+      "just_now": "Baru sahaja",
+      "minutes_ago": "{n}m",
+      "hours_ago": "{n}j"
     },
     "source_note": "Data daripada CoinGlass · harga dan dagangan di BingX · lilin daripada {exchange}",
     "guide": {

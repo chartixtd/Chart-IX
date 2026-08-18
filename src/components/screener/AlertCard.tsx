@@ -13,11 +13,15 @@ const FACTOR_LABELS = [
   ["cvd", "CVD"],
 ] as const;
 
-function sinceLabel(iso: string): string {
+// 接收 t 而不是硬编码文案——页面其余文案全部走 i18n，这里也不能例外
+// （英文/马来语环境下直接冒出一个中文"刚刚"是真的会发生的 bug）。
+// t 本身已经在组件里按 render 存在，这里只是把它当参数传进来，
+// 不会额外产生开销大的对象。
+function sinceLabel(iso: string, t: ReturnType<typeof useTranslations>): string {
   const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 1) return "刚刚";
-  if (mins < 60) return `${mins}m`;
-  return `${Math.round(mins / 60)}h`;
+  if (mins < 1) return t("alerts.just_now");
+  if (mins < 60) return t("alerts.minutes_ago", { n: mins });
+  return t("alerts.hours_ago", { n: Math.round(mins / 60) });
 }
 
 export function AlertCard({ alert }: { alert: AlertRecord }) {
@@ -41,7 +45,7 @@ export function AlertCard({ alert }: { alert: AlertRecord }) {
           </span>
         </div>
         <span className="text-[11px] text-text-muted">
-          {sinceLabel(alert.triggeredAt)} {t("alerts.triggered")}
+          {sinceLabel(alert.triggeredAt, t)} {t("alerts.triggered")}
         </span>
       </div>
 

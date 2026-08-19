@@ -972,7 +972,11 @@
       "peak": "Peak",
       "just_now": "just now",
       "minutes_ago": "{n}m",
-      "hours_ago": "{n}h"
+      "hours_ago": "{n}h",
+      "fresh_new": "NEW",
+      "fresh_stale": "STALE",
+      "last_confirmed": "Last confirmed",
+      "never_confirmed": "not yet confirmed"
     },
     "source_note": "Data from CoinGlass · price and execution on BingX · candles from {exchange}",
     "scenarios": {

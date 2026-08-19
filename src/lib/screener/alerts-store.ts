@@ -20,6 +20,14 @@ export interface AlertRecord {
   triggerScore: number;
   factors: FactorBreakdown;
   lastPrice: number | null;
+  /**
+   * 上一次扫描确认这条警报时的时刻。场景驱动的警报只要场景还在就每轮
+   * 刷新它，所以它回答的是「这条警报现在还活着吗」——正常应当在一个
+   * 扫描间隔（15 分钟）以内。明显更旧就意味着扫描断了，或者场景已经
+   * 进入「连续 3 轮消失才关闭」的倒计时里。这跟 triggeredAt（信号多久
+   * 之前诞生）是两个不同的问题，卡片上要分别显示。
+   */
+  lastPriceAt: string | null;
   peakPct: number | null;
   /** 触发价 → 实时价的顺方向涨跌幅，服务端算好省得前端各算各的。符号直接取上面的 direction（单一来源，不再需要从 scenario 另算一遍）。 */
   currentPct: number | null;
@@ -37,6 +45,7 @@ interface AlertRow {
   trigger_score: number;
   factors: FactorBreakdown;
   last_price: number | string | null;
+  last_price_at: string | null;
   peak_pct: number | string | null;
   below_count: number;
   scenario: unknown;
@@ -176,7 +185,7 @@ export async function listAlertRecords(): Promise<AlertRecord[]> {
   const { data, error } = await client
     .from("screener_alerts")
     .select(
-      "id, symbol, direction, triggered_at, trigger_price, trigger_score, factors, last_price, peak_pct, below_count, scenario"
+      "id, symbol, direction, triggered_at, trigger_price, trigger_score, factors, last_price, last_price_at, peak_pct, below_count, scenario"
     )
     .is("closed_at", null)
     .order("triggered_at", { ascending: false })
@@ -202,6 +211,7 @@ export async function listAlertRecords(): Promise<AlertRecord[]> {
       triggerScore: row.trigger_score,
       factors: row.factors,
       lastPrice,
+      lastPriceAt: row.last_price_at,
       peakPct: num(row.peak_pct),
       currentPct: lastPrice === null ? null : signedPct(triggerPrice, lastPrice, row.direction),
       scenario: parseScenario(row.scenario),

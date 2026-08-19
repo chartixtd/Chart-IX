@@ -914,7 +914,11 @@
       "peak": "Puncak",
       "just_now": "Baru sahaja",
       "minutes_ago": "{n}m",
-      "hours_ago": "{n}j"
+      "hours_ago": "{n}j",
+      "fresh_new": "BARU",
+      "fresh_stale": "LAPUK",
+      "last_confirmed": "Disahkan terakhir",
+      "never_confirmed": "belum disahkan"
     },
     "source_note": "Data daripada CoinGlass · harga dan dagangan di BingX · lilin daripada {exchange}",
     "scenarios": {

@@ -972,7 +972,11 @@
       "peak": "最高到过",
       "just_now": "刚刚",
       "minutes_ago": "{n}分钟",
-      "hours_ago": "{n}小时"
+      "hours_ago": "{n}小时",
+      "fresh_new": "NEW",
+      "fresh_stale": "陈旧",
+      "last_confirmed": "最后确认",
+      "never_confirmed": "尚未确认"
     },
     "source_note": "数据源 CoinGlass · 价格与下单 BingX · K线取自 {exchange}",
     "scenarios": {

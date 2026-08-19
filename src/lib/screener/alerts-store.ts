@@ -2,6 +2,7 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import type { AlertPlan, NewAlert, OpenAlert } from "./alerts";
 import { signedPct } from "./alerts";
 import type { Direction, FactorBreakdown } from "./types";
+import type { Scenario, ScenarioKind, ScenarioDirection } from "./factors/scenario";
 
 /** 前端警报栏需要的一行 */
 export interface AlertRecord {
@@ -14,8 +15,10 @@ export interface AlertRecord {
   factors: FactorBreakdown;
   lastPrice: number | null;
   peakPct: number | null;
-  /** 触发价 → 实时价的顺方向涨跌幅，服务端算好省得前端各算各的 */
+  /** 触发价 → 实时价的顺方向涨跌幅，服务端算好省得前端各算各的。符号取 scenario.direction（manage 不翻号），老警报没有 scenario 时退回 direction。 */
   currentPct: number | null;
+  /** 完整场景判定。老警报（T22 之前开的）这一列是 null，前端按「无场景警报」渲染旧样式卡片。 */
+  scenario: Scenario | null;
 }
 
 interface AlertRow {
@@ -29,6 +32,7 @@ interface AlertRow {
   last_price: number | string | null;
   peak_pct: number | string | null;
   below_count: number;
+  scenario: unknown;
 }
 
 function num(v: number | string | null): number | null {
@@ -37,17 +41,50 @@ function num(v: number | string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+const SCENARIO_KINDS: ScenarioKind[] = [
+  "healthy_trend",
+  "inventory_flush",
+  "true_top_div",
+  "true_bottom_div",
+  "false_top_div",
+  "false_bottom_div",
+];
+const SCENARIO_DIRECTIONS: ScenarioDirection[] = ["long", "short", "manage"];
+
+/**
+ * jsonb 列读回来是已经反序列化好的对象（或 null），不是字符串——不需要
+ * JSON.parse。但它来自数据库，不是这次进程自己写的，做一遍最小的形状
+ * 校验（而不是直接 `as Scenario` 断言），防止手工改过库或者字段以后
+ * 演化时读到一个半吊子对象却当成完整 Scenario 用，前端拿着 undefined
+ * 字段拼 UI 崩掉。校验失败按「无场景」处理——这与老警报该列为 null
+ * 时的降级路径完全一致，调用方不需要关心「为什么没有」。
+ */
+function parseScenario(v: unknown): Scenario | null {
+  if (!v || typeof v !== "object") return null;
+  const s = v as Record<string, unknown>;
+  if (typeof s.kind !== "string" || !SCENARIO_KINDS.includes(s.kind as ScenarioKind)) return null;
+  if (typeof s.direction !== "string" || !SCENARIO_DIRECTIONS.includes(s.direction as ScenarioDirection)) return null;
+  if (typeof s.trap !== "boolean") return null;
+  if (typeof s.swingPrev !== "number" || typeof s.swingNow !== "number") return null;
+  if (typeof s.cvdPct !== "number" || typeof s.oiPct !== "number") return null;
+  if (s.side !== "high" && s.side !== "low") return null;
+  return s as unknown as Scenario;
+}
+
 export async function listOpenAlerts(): Promise<OpenAlert[]> {
   const client = createServiceRoleClient();
   const { data, error } = await client
     .from("screener_alerts")
-    .select("id, symbol, direction, trigger_price, peak_pct, below_count")
+    .select("id, symbol, direction, trigger_price, peak_pct, below_count, scenario")
     .is("closed_at", null);
 
   if (error) throw new Error(`Failed to load open alerts: ${error.message}`);
 
   return (data ?? []).map((r) => {
-    const row = r as Pick<AlertRow, "id" | "symbol" | "direction" | "trigger_price" | "peak_pct" | "below_count">;
+    const row = r as Pick<
+      AlertRow,
+      "id" | "symbol" | "direction" | "trigger_price" | "peak_pct" | "below_count" | "scenario"
+    >;
     return {
       id: row.id,
       symbol: row.symbol,
@@ -55,6 +92,7 @@ export async function listOpenAlerts(): Promise<OpenAlert[]> {
       triggerPrice: num(row.trigger_price) ?? 0,
       peakPct: num(row.peak_pct),
       belowCount: row.below_count,
+      scenario: parseScenario(row.scenario),
     };
   });
 }
@@ -62,10 +100,12 @@ export async function listOpenAlerts(): Promise<OpenAlert[]> {
 /**
  * 落库顺序刻意是「先关、再更新、最后开」。
  *
- * 方向翻转会在同一个计划里同时产生一条 close 和一条 open，两者是同一个
- * symbol。先开后关的话，那一瞬间同一个币有两条未平警报，而下一轮的
- * listOpenAlerts 会两条都读回来 —— 状态机的 openBySymbol 是个 Map，
- * 后写的会覆盖前一条，另一条从此永远关不掉。
+ * 场景切换（kind 变了）会在同一个计划里同时产生一条 close 和一条 open，
+ * 两者是同一个 symbol。先开后关的话，那一瞬间同一个币有两条未平警报，
+ * 而下一轮的 listOpenAlerts 会两条都读回来 —— 状态机的 openBySymbol
+ * 逻辑靠「本轮是否 update 过」这个集合判断，两条未平记录会让下一轮
+ * 的 kind 比较错配到其中一条，顺序颠倒过的坑 T22 之前就踩过一次，
+ * 这里原样不动。
  *
  * 返回真正新建成功的那些，供调用方推送。新建失败（比如 DB 抖动）时
  * 绝不能推送——推了却没落库，下一轮会当成「还没触发过」再推一次。
@@ -89,6 +129,7 @@ export async function applyAlertPlan(plan: AlertPlan): Promise<NewAlert[]> {
         last_price_at: new Date().toISOString(),
         peak_pct: u.peakPct,
         below_count: u.belowCount,
+        scenario: u.scenario,
       })
       .eq("id", u.id);
     if (error) console.error("[screener] failed to update alert", u.id, error);
@@ -108,6 +149,7 @@ export async function applyAlertPlan(plan: AlertPlan): Promise<NewAlert[]> {
         last_price: o.triggerPrice,
         last_price_at: new Date().toISOString(),
         peak_pct: 0,
+        scenario: o.scenario,
       }))
     )
     .select("symbol");
@@ -126,7 +168,9 @@ export async function listAlertRecords(): Promise<AlertRecord[]> {
   const client = createServiceRoleClient();
   const { data, error } = await client
     .from("screener_alerts")
-    .select("id, symbol, direction, triggered_at, trigger_price, trigger_score, factors, last_price, peak_pct, below_count")
+    .select(
+      "id, symbol, direction, triggered_at, trigger_price, trigger_score, factors, last_price, peak_pct, below_count, scenario"
+    )
     .is("closed_at", null)
     .order("triggered_at", { ascending: false })
     .limit(20);
@@ -140,6 +184,11 @@ export async function listAlertRecords(): Promise<AlertRecord[]> {
     const row = r as AlertRow;
     const triggerPrice = num(row.trigger_price) ?? 0;
     const lastPrice = num(row.last_price);
+    const scenario = parseScenario(row.scenario);
+    // currentPct 的符号取 scenario.direction（manage 不翻号）；老警报没有
+    // scenario 时退回落库的 long/short 方向——这与 alerts.ts 的
+    // effectiveDirection 是同一条规则，这里不能引入第二套判断逻辑。
+    const direction = scenario?.direction ?? row.direction;
     return {
       id: row.id,
       symbol: row.symbol,
@@ -150,7 +199,8 @@ export async function listAlertRecords(): Promise<AlertRecord[]> {
       factors: row.factors,
       lastPrice,
       peakPct: num(row.peak_pct),
-      currentPct: lastPrice === null ? null : signedPct(triggerPrice, lastPrice, row.direction),
+      currentPct: lastPrice === null ? null : signedPct(triggerPrice, lastPrice, direction),
+      scenario,
     };
   });
 }

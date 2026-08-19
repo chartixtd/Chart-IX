@@ -9,6 +9,7 @@ function row(o: Partial<ScannerRow> = {}): ScannerRow {
     direction: "long",
     total: 85,
     factors: { oi: 25, cvd: 14 },
+    scenario: null,
     price: 1,
     change24h: 1,
     amplitude: 4,

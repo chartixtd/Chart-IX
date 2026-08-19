@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/Button";
 import { RecordList, type RecordColumn } from "@/components/ui/RecordList";
 import { formatPercent, cn } from "@/lib/utils";
 import { formatCompactUsd } from "@/lib/market-cap";
-import { ALERT_TRIGGER_SCORE } from "@/lib/screener/types";
 import type { ScannerRow } from "@/lib/screener/types";
 import type { SortKey } from "@/lib/screener/filter";
 import { FactorStack } from "./FactorStack";
@@ -78,7 +77,11 @@ export const ScannerTable = memo(function ScannerTable({
         <span
           className={cn(
             "tnum text-sm font-bold",
-            r.total >= ALERT_TRIGGER_SCORE ? "text-gold" : "text-text-primary"
+            // T22 把警报从「总分达标」改成「场景驱动」：达标行的判据
+            // 跟着从 total >= ALERT_TRIGGER_SCORE（已删除）换成
+            // scenario !== null——这是这一步在前端唯一允许的最小改动，
+            // 完整的场景展示（场景名/操作文案/陷阱标注）留给 UI 任务。
+            r.scenario !== null ? "text-gold" : "text-text-primary"
           )}
         >
           {r.total}
@@ -169,8 +172,8 @@ export const ScannerTable = memo(function ScannerTable({
       rowClassName={(r) =>
         cn(
           // 达标行用金色左边框而不是整行底色：整行染色会和 hover / selected
-          // 三种状态叠在一起，最后哪个都读不出来
-          r.total >= ALERT_TRIGGER_SCORE && "border-l-2 border-l-gold",
+          // 三种状态叠在一起，最后哪个都读不出来。判据同上，见 total 列注释。
+          r.scenario !== null && "border-l-2 border-l-gold",
           r.symbol === selectedSymbol && "bg-bg-tertiary"
         )
       }

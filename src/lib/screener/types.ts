@@ -1,4 +1,5 @@
 import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/limits";
+import type { Scenario } from "./factors/scenario";
 
 export type Direction = "long" | "short";
 
@@ -10,28 +11,16 @@ export type Direction = "long" | "short";
 export const SCAN_INTERVAL_MS = 900_000;
 
 /**
- * 总分达到这个数触发警报。
+ * T22 之前，警报触发/关闭靠总分（OI60+CVD40）越过 ALERT_TRIGGER_SCORE(70)/
+ * ALERT_CLOSE_SCORE(65) 两条线判断，这两个常量已删除——警报现在改成场景
+ * 驱动（见 factors/scenario.ts 与 alerts.ts）：触发条件是「检测到场景」，
+ * 不再是「总分首次达标」。总分（ScannerRow.total）仍然存在，仍然管表格
+ * 排序，只是不再是警报状态机的判据。
  *
- * T21 从四因子（Zone30/Sweep20/OI30/CVD20）退役到两因子（OI60/CVD40）之后
- * 从 80 降到 70——这不是放松，是被实测逼出来的：CVD 满分 20 里方向分 10、
- * 背离分 10，背离只在「价格逆着资金流走」时触发，那本来就罕见；资金流
- * 单边强劲时方向分拿满、背离分为 0，CVD 常态上限就是 10/20（用掉自己
- * 量程的 50%）。14 个真实候选币在 OI60/CVD40 权重下最高只打到 74 分，
- * 中位数 42，没有一个到 80——80 分在两因子模型下基本不可达。硬压到
- * OI80/CVD20 才勉强出一个 ≥80 的样本，但那样 CVD 权重形同摆设，
- * 违反「保持 OI:CVD = 30:20 相对轻重不变」的决定。70 分配 60/40 权重
- * 会让最上面 1–2 个币触发——够罕见，又不是永不发生。
+ * ALERT_CLOSE_STREAK 保留，但语义变了：原来是「连续多少次扫描低于关闭线
+ * 才关」，现在是「场景连续消失多少轮才关」（约 45 分钟）——摆动点确认
+ * 本身有滞后，场景短暂消失是常态抖动，不该立刻关警报。
  */
-export const ALERT_TRIGGER_SCORE = 70;
-
-/**
- * 警报关闭线。刻意低于触发线：70 分线上的抖动会让一个币在几十分钟内
- * 反复开关警报、反复推送。这段迟滞区间是必需的，不是可选优化。
- * 与触发线一样保持 5 分的迟滞区间（原 80/75，现 70/65）。
- */
-export const ALERT_CLOSE_SCORE = 65;
-
-/** 连续多少次扫描低于关闭线才真的关闭警报（约 45 分钟） */
 export const ALERT_CLOSE_STREAK = 3;
 
 /** 批量层调用数：liquidation/coin-list + funding-rate/exchange-list，两次固定调用。 */
@@ -93,10 +82,21 @@ export interface ScannerRow {
   symbol: string;
   /** CoinGlass 币种名，如 "TIA"。剥掉了 -USDT 与合约乘数前缀。 */
   coin: string;
+  /**
+   * 这一行的最终方向。有场景时取 scenario.direction（manage 除外——manage
+   * 表示「不是新趋势、该观望/止盈」，不是一个可以下单的方向，此时这个
+   * 字段维持分数方向，供操作按钮使用；表格 pill 是否显示「观望」由前端
+   * 单独判断 scenario.direction === "manage"）；无场景时维持分数方向
+   * （OI60+CVD40 打分更高的一侧）。分数与排序的口径完全不受这条优先级
+   * 影响：total/factors 永远是两个方向各打一遍分之后取更高的那侧，
+   * 场景只覆盖「这一行该显示成哪个方向」，不覆盖打分本身。
+   */
   direction: Direction;
-  /** 0–100，等于 factors 两项之和（已取整） */
+  /** 0–100，等于 factors 两项之和（已取整）。打分口径不因 scenario 改变。 */
   total: number;
   factors: FactorBreakdown;
+  /** 六场景判定结果（factors/scenario.ts），无场景为 null。警报改成场景驱动之后，这是警报状态机的判据。 */
+  scenario: Scenario | null;
   /**
    * price / change24h / amplitude / volumeUsd 这四个字段口径故意不同，
    * 各自回答不同的问题：

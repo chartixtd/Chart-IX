@@ -23,7 +23,8 @@ import { rankForDeepScan } from "./preselect-rank";
 import type { RankInput } from "./preselect-rank";
 import { pickDirection, amplitudeFromBars } from "./score";
 import { pickFundingRate } from "./funding";
-import type { ScannerRow, ScannerPayload } from "./types";
+import { classifyScenario } from "./factors/scenario";
+import type { Direction, ScannerRow, ScannerPayload } from "./types";
 import { DEEP_SCAN_LIMIT } from "./types";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
@@ -302,12 +303,26 @@ export async function runScan(): Promise<ScannerPayload> {
       oiBars,
     });
 
+    // 六场景判定用的正是这三条序列——调用次数不变，明细层本来就都拉了。
+    // scenario 为 null 是绝大多数币的预期行为（大多数币此刻没有摆动点对
+    // 命中任何一格），不是 bug。
+    const scenario = classifyScenario(priceBars, oiBars, taker);
+
+    // 行的最终方向：有场景时用 scenario.direction（manage 除外，manage
+    // 不是可下单方向，维持分数方向）；无场景时维持分数方向。完整优先级
+    // 说明见 types.ts ScannerRow.direction 的字段注释——打分（total/
+    // factors）永远只看 OI60+CVD40，不受这条优先级影响，场景只覆盖
+    // 「显示成哪个方向」。
+    const rowDirection: Direction =
+      scenario && scenario.direction !== "manage" ? scenario.direction : direction;
+
     rows.push({
       symbol: s.candidate.bingxSymbol,
       coin: s.candidate.coin,
-      direction,
+      direction: rowDirection,
       total,
       factors,
+      scenario,
       price,
       change24h: s.change24h,
       // K 线拿不到时退回 0：振幅只用于展示与客户端滑块过滤，

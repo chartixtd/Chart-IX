@@ -947,6 +947,7 @@
     "columns": {
       "symbol": "Symbol",
       "direction": "方向",
+      "scenario": "场景",
       "total": "总分",
       "factors": "因子构成",
       "volume": "24h量",
@@ -959,11 +960,12 @@
     "table_hint": "按总分排序 · 点击行查看详情",
     "action_long": "做多",
     "action_short": "做空",
+    "action_view": "查看",
     "alerts": {
       "rail_label": "最新警报",
-      "empty": "警报在总分从 <70 首次突破 ≥70 分时触发，锁定当时价格并持续追踪累计涨跌幅。",
+      "empty": "警报在检测到六场景之一（健康趋势 / 存量清算 / 真假顶底背离）时触发，锁定当时价格并持续追踪累计涨跌幅。",
       "triggered": "触发",
-      "trigger_line": "触发：总分 {score}/100 首次突破 70 分 · OI {oi}/60 · CVD {cvd}/40",
+      "trigger_line": "触发时总分 {score}/100 · OI {oi}/60 · CVD {cvd}/40",
       "first_price": "首次警报价",
       "last_price": "实时价格",
       "cumulative": "首次警报后累计变化",
@@ -973,11 +975,66 @@
       "hours_ago": "{n}小时"
     },
     "source_note": "数据源 CoinGlass · 价格与下单 BingX · K线取自 {exchange}",
+    "scenarios": {
+      "trap_label": "陷阱信号",
+      "pill_manage": "观望",
+      "healthy_trend": {
+        "name": "健康趋势",
+        "action": "顺势，回调进场"
+      },
+      "inventory_flush": {
+        "name": "存量清算",
+        "action": "分批止盈，等反手"
+      },
+      "true_top_div": {
+        "name": "真顶背离",
+        "action": "反手做空"
+      },
+      "true_bottom_div": {
+        "name": "真底背离",
+        "action": "反手做多"
+      },
+      "false_top_div": {
+        "name": "假顶背离",
+        "action": "禁止做空，顺势做多"
+      },
+      "false_bottom_div": {
+        "name": "假底背离",
+        "action": "禁止做多，顺势做空"
+      },
+      "cvd_tag": {
+        "healthy_trend": "同向走强",
+        "inventory_flush": "同向",
+        "true_top_div": "走弱",
+        "true_bottom_div": "走强",
+        "false_top_div": "剧烈走弱",
+        "false_bottom_div": "剧烈走强"
+      },
+      "oi_tag": {
+        "healthy_trend": "增加",
+        "inventory_flush": "减少",
+        "true_top_div": "减少",
+        "true_bottom_div": "减少",
+        "false_top_div": "暴增",
+        "false_bottom_div": "暴增"
+      },
+      "reading": {
+        "healthy_trend_high": "顺势创新高至 {price}（较前一摆动点 {pricePct}），CVD 同向 {cvdPct}，OI 增加 {oiPct}",
+        "healthy_trend_low": "顺势创新低至 {price}（较前一摆动点 {pricePct}），CVD 同向 {cvdPct}，OI 增加 {oiPct}",
+        "inventory_flush_high": "顺势创新高至 {price}（较前一摆动点 {pricePct}），CVD 同向 {cvdPct}，OI 减少 {oiPct}",
+        "inventory_flush_low": "顺势创新低至 {price}（较前一摆动点 {pricePct}），CVD 同向 {cvdPct}，OI 减少 {oiPct}",
+        "true_top_div": "创新高扫 BSL 至 {price}（较前一摆动点 {pricePct}），CVD 走弱 {cvdPct}，OI 减少 {oiPct}",
+        "true_bottom_div": "创新低扫 SSL 至 {price}（较前一摆动点 {pricePct}），CVD 走强 {cvdPct}，OI 减少 {oiPct}",
+        "false_top_div": "新高后高位盘整（{price}（较前一摆动点 {pricePct}）），CVD 剧烈走弱 {cvdPct}，OI 暴增 {oiPct}",
+        "false_bottom_div": "新低后低位盘整（{price}（较前一摆动点 {pricePct}）），CVD 剧烈走强 {cvdPct}，OI 暴增 {oiPct}"
+      }
+    },
     "guide": {
       "title": "这两个因子是什么？",
       "oi": "OI（60分）— 持仓量与价格的四象限。持仓涨且价格涨 = 新多头进场，对做多最有利；持仓涨价格跌 = 新空头进场。持仓下降的两种情况说明这一波没有新资金，两边都只给中低分。",
       "cvd": "CVD（40分）— 主动买卖的累积差额。一半分看方向，一半分看背离：价格跌但主动买在涨 = 有人承接，这是做多最强的信号；价格涨但主动卖在涨 = 拉高出货。",
-      "alert": "总分从 70 分以下首次突破 70 分时触发警报，锁定当时价格。分数掉回 65 分以下并连续三轮才关闭——中间这段缓冲是为了避免在 70 分线上反复触发。"
+      "alert": "总分从 70 分以下首次突破 70 分时触发警报，锁定当时价格。分数掉回 65 分以下并连续三轮才关闭——中间这段缓冲是为了避免在 70 分线上反复触发。",
+      "scenarios_title": "六场景速查"
     }
   },
   "pwa": {

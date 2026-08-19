@@ -8,6 +8,7 @@ import {
 } from "@/lib/telegram-send";
 import type { ScannerRow, ScannerPayload, Direction } from "@/lib/screener/types";
 import { CLIENT_SLIDER } from "@/lib/screener/universe";
+import type { ScenarioKind } from "@/lib/screener/factors/scenario";
 
 export type TelegramMessageLang = "en" | "zh";
 export type PushTrigger = "cron" | "manual" | "test" | "briefing";
@@ -416,6 +417,30 @@ const MESSAGE_STRINGS: Record<
 };
 
 /**
+ * 场景中文/英文名，跟 alert-push.ts 里给警报推送用的同一份名称保持一致。
+ * 不能反过来从 alert-push.ts import——那边已经 import 了 telegram-push.ts
+ * 的 deliverToTargets 等，import 反过来会成环，所以这里维护第二份定义。
+ */
+const SCANNER_SCENARIO_LABELS: Record<TelegramMessageLang, Record<ScenarioKind, string>> = {
+  zh: {
+    healthy_trend: "健康趋势",
+    inventory_flush: "存量清算",
+    true_top_div: "真顶背离",
+    true_bottom_div: "真底背离",
+    false_top_div: "假顶背离",
+    false_bottom_div: "假底背离",
+  },
+  en: {
+    healthy_trend: "Healthy Trend",
+    inventory_flush: "Inventory Flush",
+    true_top_div: "True Top Divergence",
+    true_bottom_div: "True Bottom Divergence",
+    false_top_div: "False Top Divergence",
+    false_bottom_div: "False Bottom Divergence",
+  },
+};
+
+/**
  * Telegram 单条消息有 4096 字符上限，一条 15 行的表离上限还有余量。
  * 榜单已按总分降序排好，截断只会丢掉分数最低的那些。
  */
@@ -429,6 +454,14 @@ function formatScannerRow(
   const parts: string[] = [];
 
   if (settings.showDirection) parts.push(r.direction === "long" ? s.long : s.short);
+  // 场景名不受任何 show* 开关控制——它不是一个可关的展示字段，是这一行
+  // 为什么会出现在榜单里的判据本身（跟警报推送 formatAlertMessage 同一
+  // 个原则）。陷阱场景加 ⚠ 前缀，理由同 alert-push.ts：陷阱场景的操作
+  // 方向跟直觉相反，不提醒容易被看错成普通背离。
+  if (r.scenario) {
+    const label = SCANNER_SCENARIO_LABELS[lang][r.scenario.kind];
+    parts.push(`${r.scenario.trap ? "⚠ " : ""}${label}`);
+  }
   if (settings.showScore) parts.push(`${s.score} ${r.total}`);
   if (settings.showFactors) {
     parts.push(`OI${r.factors.oi}/CVD${r.factors.cvd}`);

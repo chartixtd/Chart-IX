@@ -889,6 +889,7 @@
     "columns": {
       "symbol": "Simbol",
       "direction": "Arah",
+      "scenario": "Senario",
       "total": "Skor",
       "factors": "Faktor",
       "volume": "Vol 24j",
@@ -901,11 +902,12 @@
     "table_hint": "Disusun mengikut skor · klik baris untuk butiran",
     "action_long": "Long",
     "action_short": "Short",
+    "action_view": "Lihat",
     "alerts": {
       "rail_label": "Amaran terkini",
-      "empty": "Amaran dicetuskan kali pertama skor melepasi 70. Harga pada ketika itu dikunci dan perubahan terkumpul dijejaki dari situ.",
+      "empty": "Amaran dicetuskan apabila salah satu daripada enam senario dikesan (trend sihat / pembubaran inventori / divergens benar atau palsu). Harga pada ketika itu dikunci dan perubahan terkumpul dijejaki.",
       "triggered": "dicetuskan",
-      "trigger_line": "Dicetuskan: skor {score}/100 melepasi 70 · OI {oi}/60 · CVD {cvd}/40",
+      "trigger_line": "Semasa cetusan: skor {score}/100 · OI {oi}/60 · CVD {cvd}/40",
       "first_price": "Harga amaran",
       "last_price": "Harga semasa",
       "cumulative": "Perubahan terkumpul sejak amaran",
@@ -915,11 +917,66 @@
       "hours_ago": "{n}j"
     },
     "source_note": "Data daripada CoinGlass · harga dan dagangan di BingX · lilin daripada {exchange}",
+    "scenarios": {
+      "trap_label": "Isyarat perangkap",
+      "pill_manage": "Manage",
+      "healthy_trend": {
+        "name": "Trend Sihat",
+        "action": "Ikut trend, masuk semasa susulan"
+      },
+      "inventory_flush": {
+        "name": "Pelupusan Inventori",
+        "action": "Ambil untung berperingkat, tunggu pembalikan"
+      },
+      "true_top_div": {
+        "name": "Divergens Puncak Benar",
+        "action": "Berbalik ke short"
+      },
+      "true_bottom_div": {
+        "name": "Divergens Dasar Benar",
+        "action": "Berbalik ke long"
+      },
+      "false_top_div": {
+        "name": "Divergens Puncak Palsu",
+        "action": "Jangan short — ikut trend, pergi long"
+      },
+      "false_bottom_div": {
+        "name": "Divergens Dasar Palsu",
+        "action": "Jangan long — ikut trend, pergi short"
+      },
+      "cvd_tag": {
+        "healthy_trend": "selari, menguat",
+        "inventory_flush": "selari",
+        "true_top_div": "melemah",
+        "true_bottom_div": "menguat",
+        "false_top_div": "melemah drastik",
+        "false_bottom_div": "menguat drastik"
+      },
+      "oi_tag": {
+        "healthy_trend": "meningkat",
+        "inventory_flush": "menurun",
+        "true_top_div": "menurun",
+        "true_bottom_div": "menurun",
+        "false_top_div": "melonjak",
+        "false_bottom_div": "melonjak"
+      },
+      "reading": {
+        "healthy_trend_high": "Paras tinggi baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD selari {cvdPct}, OI naik {oiPct}",
+        "healthy_trend_low": "Paras rendah baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD selari {cvdPct}, OI naik {oiPct}",
+        "inventory_flush_high": "Paras tinggi baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD selari {cvdPct}, OI turun {oiPct}",
+        "inventory_flush_low": "Paras rendah baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD selari {cvdPct}, OI turun {oiPct}",
+        "true_top_div": "Menyapu BSL ke paras tinggi baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD melemah {cvdPct}, OI turun {oiPct}",
+        "true_bottom_div": "Menyapu SSL ke paras rendah baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD menguat {cvdPct}, OI turun {oiPct}",
+        "false_top_div": "Tersekat berhampiran paras tinggi ({price} ({pricePct} berbanding ayunan sebelum ini)), CVD melemah drastik {cvdPct}, OI melonjak {oiPct}",
+        "false_bottom_div": "Tersekat berhampiran paras rendah ({price} ({pricePct} berbanding ayunan sebelum ini)), CVD menguat drastik {cvdPct}, OI melonjak {oiPct}"
+      }
+    },
     "guide": {
       "title": "Apakah dua faktor ini?",
       "oi": "OI (60 mata) — faedah terbuka lawan harga, dalam empat kuadran. OI naik dengan harga naik bermakna long baharu, kes terbaik untuk long; OI naik dengan harga turun bermakna short baharu. Kedua-dua kuadran OI menurun mendapat mata rendah — tiada wang baharu di sebalik pergerakan itu.",
       "cvd": "CVD (40 mata) — beli tolak jual secara terkumpul. Separuh mata untuk arah, separuh untuk divergens: harga jatuh sementara CVD naik bermakna ada yang menyerap, isyarat long terkuat; harga naik sementara CVD jatuh ialah pengagihan.",
-      "alert": "Amaran dicetuskan kali pertama skor melepasi 70 dan mengunci harga. Ia hanya ditutup selepas tiga imbasan berturut-turut di bawah 65 — penimbal itulah yang menghalang pencetusan berulang di sekitar garis 70."
+      "alert": "Amaran dicetuskan kali pertama skor melepasi 70 dan mengunci harga. Ia hanya ditutup selepas tiga imbasan berturut-turut di bawah 65 — penimbal itulah yang menghalang pencetusan berulang di sekitar garis 70.",
+      "scenarios_title": "Rujukan pantas enam senario"
     }
   },
   "pwa": {

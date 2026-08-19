@@ -947,6 +947,7 @@
     "columns": {
       "symbol": "Symbol",
       "direction": "Side",
+      "scenario": "Scenario",
       "total": "Score",
       "factors": "Factors",
       "volume": "24h Vol",
@@ -959,11 +960,12 @@
     "table_hint": "Ranked by score · click a row for details",
     "action_long": "Long",
     "action_short": "Short",
+    "action_view": "View",
     "alerts": {
       "rail_label": "Latest alerts",
-      "empty": "An alert fires the first time a score crosses from below 70 to 70 or above. It locks the price at that moment and tracks the cumulative move from there.",
+      "empty": "An alert fires when one of the six scenarios (healthy trend / inventory flush / true or false divergence) is detected. It locks the price at that moment and tracks the cumulative move from there.",
       "triggered": "fired",
-      "trigger_line": "Fired: score {score}/100 first crossed 70 · OI {oi}/60 · CVD {cvd}/40",
+      "trigger_line": "At trigger: score {score}/100 · OI {oi}/60 · CVD {cvd}/40",
       "first_price": "Alert price",
       "last_price": "Live price",
       "cumulative": "Cumulative move since alert",
@@ -973,11 +975,66 @@
       "hours_ago": "{n}h"
     },
     "source_note": "Data from CoinGlass · price and execution on BingX · candles from {exchange}",
+    "scenarios": {
+      "trap_label": "Trap signal",
+      "pill_manage": "Manage",
+      "healthy_trend": {
+        "name": "Healthy Trend",
+        "action": "Follow the trend, enter on pullback"
+      },
+      "inventory_flush": {
+        "name": "Inventory Flush",
+        "action": "Scale out, wait for reversal"
+      },
+      "true_top_div": {
+        "name": "True Top Divergence",
+        "action": "Reverse to short"
+      },
+      "true_bottom_div": {
+        "name": "True Bottom Divergence",
+        "action": "Reverse to long"
+      },
+      "false_top_div": {
+        "name": "False Top Divergence",
+        "action": "Do not short — follow trend, go long"
+      },
+      "false_bottom_div": {
+        "name": "False Bottom Divergence",
+        "action": "Do not long — follow trend, go short"
+      },
+      "cvd_tag": {
+        "healthy_trend": "aligned, strengthening",
+        "inventory_flush": "aligned",
+        "true_top_div": "weakening",
+        "true_bottom_div": "strengthening",
+        "false_top_div": "sharply weakening",
+        "false_bottom_div": "sharply strengthening"
+      },
+      "oi_tag": {
+        "healthy_trend": "rising",
+        "inventory_flush": "falling",
+        "true_top_div": "falling",
+        "true_bottom_div": "falling",
+        "false_top_div": "surging",
+        "false_bottom_div": "surging"
+      },
+      "reading": {
+        "healthy_trend_high": "Fresh high at {price} ({pricePct} vs. prior swing), CVD aligned {cvdPct}, OI up {oiPct}",
+        "healthy_trend_low": "Fresh low at {price} ({pricePct} vs. prior swing), CVD aligned {cvdPct}, OI up {oiPct}",
+        "inventory_flush_high": "Fresh high at {price} ({pricePct} vs. prior swing), CVD aligned {cvdPct}, OI down {oiPct}",
+        "inventory_flush_low": "Fresh low at {price} ({pricePct} vs. prior swing), CVD aligned {cvdPct}, OI down {oiPct}",
+        "true_top_div": "Swept BSL to a new high at {price} ({pricePct} vs. prior swing), CVD weakening {cvdPct}, OI down {oiPct}",
+        "true_bottom_div": "Swept SSL to a new low at {price} ({pricePct} vs. prior swing), CVD strengthening {cvdPct}, OI down {oiPct}",
+        "false_top_div": "Stalling near the high ({price} ({pricePct} vs. prior swing)), CVD sharply weakening {cvdPct}, OI surging {oiPct}",
+        "false_bottom_div": "Stalling near the low ({price} ({pricePct} vs. prior swing)), CVD sharply strengthening {cvdPct}, OI surging {oiPct}"
+      }
+    },
     "guide": {
       "title": "What are the two factors?",
       "oi": "OI (60 pts) — open interest against price, as four quadrants. OI up with price up means fresh longs, the best case for a long; OI up with price down means fresh shorts. Both falling-OI quadrants score low for either side — no new money is behind the move.",
       "cvd": "CVD (40 pts) — cumulative taker buy minus sell. Half the points are direction, half are divergence: price falling while CVD rises means someone is absorbing, the strongest long signal; price rising while CVD falls is distribution.",
-      "alert": "An alert fires the first time a score crosses from below 70 to 70 or above, locking the price. It closes only after three consecutive scans below 65 — that buffer is what stops it retriggering around the 70 line."
+      "alert": "An alert fires the first time a score crosses from below 70 to 70 or above, locking the price. It closes only after three consecutive scans below 65 — that buffer is what stops it retriggering around the 70 line.",
+      "scenarios_title": "Six-scenario cheat sheet"
     }
   },
   "pwa": {

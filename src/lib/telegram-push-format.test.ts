@@ -2,6 +2,21 @@ import { describe, it, expect } from "vitest";
 import { formatScannerMessage } from "./telegram-push";
 import type { TelegramPushSettings } from "./telegram-push";
 import type { ScannerPayload, ScannerRow } from "./screener/types";
+import type { Scenario } from "./screener/factors/scenario";
+
+function scenario(overrides: Partial<Scenario> = {}): Scenario {
+  return {
+    kind: "healthy_trend",
+    direction: "long",
+    trap: false,
+    swingPrev: 0.28,
+    swingNow: 0.2961,
+    cvdPct: 3.1,
+    oiPct: 2.4,
+    side: "high",
+    ...overrides,
+  };
+}
 
 const settings: TelegramPushSettings = {
   enabled: true,
@@ -112,5 +127,28 @@ describe("formatScannerMessage", () => {
   it("转义 HTML，防止币名里的尖括号破坏 parse_mode", () => {
     const p: ScannerPayload = { ...payload, rows: [row({ symbol: "<b>-USDT", coin: "<b>" })] };
     expect(formatScannerMessage(p, settings, "en")).toContain("&lt;b&gt;");
+  });
+
+  it("有场景判定的行带上场景名", () => {
+    const p: ScannerPayload = { ...payload, rows: [row({ scenario: scenario() })] };
+    expect(formatScannerMessage(p, settings, "zh")).toContain("健康趋势");
+  });
+
+  it("陷阱场景加 ⚠ 前缀，非陷阱场景不加", () => {
+    const trapRow = row({ scenario: scenario({ kind: "false_top_div", trap: true }) });
+    const normalRow = row({ scenario: scenario() });
+    expect(
+      formatScannerMessage({ ...payload, rows: [trapRow] }, settings, "zh")
+    ).toContain("⚠");
+    expect(
+      formatScannerMessage({ ...payload, rows: [normalRow] }, settings, "zh")
+    ).not.toContain("⚠");
+  });
+
+  it("无场景判定的行不带场景名——不能因为加了这个字段就让老样式的行凭空多出文字", () => {
+    const p: ScannerPayload = { ...payload, rows: [row({ scenario: null })] };
+    const msg = formatScannerMessage(p, settings, "zh");
+    expect(msg).not.toContain("健康趋势");
+    expect(msg).not.toContain("存量清算");
   });
 });

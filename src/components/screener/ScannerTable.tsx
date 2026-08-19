@@ -11,6 +11,7 @@ import { formatCompactUsd } from "@/lib/market-cap";
 import type { ScannerRow } from "@/lib/screener/types";
 import type { SortKey } from "@/lib/screener/filter";
 import { FactorStack } from "./FactorStack";
+import { scenarioTone, TONE_CLASSES } from "./scenario-ui";
 
 export const ScannerTable = memo(function ScannerTable({
   rows,
@@ -58,16 +59,55 @@ export const ScannerTable = memo(function ScannerTable({
       key: "direction",
       header: t("columns.direction"),
       sortable: true,
-      render: (r) => (
-        <span
-          className={cn(
-            "inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
-            r.direction === "long" ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
-          )}
-        >
-          {r.direction === "long" ? "LONG" : "SHORT"}
-        </span>
-      ),
+      render: (r) => {
+        // 表格 pill 显示的是"有效方向"：场景判成 manage 时（存量清算）
+        // 不是一个可下单方向，灰色「观望」——r.direction 本身在这种情况下
+        // 仍是分数兜底方向（用于排序与操作按钮），两者语义不同，
+        // 完整说明见 types.ts ScannerRow.direction 的字段注释。
+        const isManage = r.scenario?.direction === "manage";
+        return (
+          <span
+            className={cn(
+              "inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
+              isManage
+                ? "bg-text-secondary/15 text-text-secondary"
+                : r.direction === "long"
+                  ? "bg-success/15 text-success"
+                  : "bg-danger/15 text-danger"
+            )}
+          >
+            {isManage ? t("scenarios.pill_manage") : r.direction === "long" ? "LONG" : "SHORT"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "scenario",
+      header: t("columns.scenario"),
+      render: (r) => {
+        if (!r.scenario) return <span className="text-text-muted">—</span>;
+        const cls = TONE_CLASSES[scenarioTone(r.scenario.kind)];
+        const name = t(`scenarios.${r.scenario.kind}.name`);
+        return (
+          <span
+            className={cn(
+              "inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
+              cls.badgeBg,
+              cls.text
+            )}
+          >
+            {/* 视觉上的 ⚠+名称对屏幕阅读器隐藏，换成一句连贯的 sr-only
+                文案（陷阱信号+场景名），避免"⚠"被单独读成一个孤立符号。 */}
+            <span aria-hidden>
+              {r.scenario.trap ? "⚠ " : ""}
+              {name}
+            </span>
+            <span className="sr-only">
+              {r.scenario.trap ? `${t("scenarios.trap_label")} ${name}` : name}
+            </span>
+          </span>
+        );
+      },
     },
     {
       key: "total",
@@ -146,17 +186,33 @@ export const ScannerTable = memo(function ScannerTable({
     {
       key: "actions",
       header: t("columns.actions"),
-      render: (r) => (
-        <Link href={`/trade?symbol=${r.symbol}&side=${r.direction}&market=futures`}>
-          <Button
-            variant={r.direction === "long" ? "green" : "red"}
-            size="sm"
-            className="min-h-[44px] px-2 text-xs lg:h-6"
-          >
-            {r.direction === "long" ? t("action_long") : t("action_short")}
-          </Button>
-        </Link>
-      ),
+      render: (r) => {
+        // manage 场景（存量清算）不是一个下单方向：ScannerRow.direction 在
+        // 这种情况下仍是分数兜底的 long/short（见 types.ts 字段注释），
+        // 但把它当成下单方向塞进链接会让按钮跳去一个场景刚判定为"该观望"
+        // 的方向——按钮改成中性「查看」、链接不带 side，交易页自己决定
+        // 默认方向。
+        if (r.scenario?.direction === "manage") {
+          return (
+            <Link href={`/trade?symbol=${r.symbol}&market=futures`}>
+              <Button variant="secondary" size="sm" className="min-h-[44px] px-2 text-xs lg:h-6">
+                {t("action_view")}
+              </Button>
+            </Link>
+          );
+        }
+        return (
+          <Link href={`/trade?symbol=${r.symbol}&side=${r.direction}&market=futures`}>
+            <Button
+              variant={r.direction === "long" ? "green" : "red"}
+              size="sm"
+              className="min-h-[44px] px-2 text-xs lg:h-6"
+            >
+              {r.direction === "long" ? t("action_long") : t("action_short")}
+            </Button>
+          </Link>
+        );
+      },
     },
   ];
 
@@ -171,9 +227,12 @@ export const ScannerTable = memo(function ScannerTable({
       empty={t("no_results")}
       rowClassName={(r) =>
         cn(
-          // 达标行用金色左边框而不是整行底色：整行染色会和 hover / selected
-          // 三种状态叠在一起，最后哪个都读不出来。判据同上，见 total 列注释。
-          r.scenario !== null && "border-l-2 border-l-gold",
+          // 达标行用左边框而不是整行底色：整行染色会和 hover / selected
+          // 三种状态叠在一起，最后哪个都读不出来。颜色跟着场景基调走
+          // （四色系统，见 scenario-ui.ts）而不是统一金色——假背离陷阱
+          // 用金色边框会跟真背离撞色，读者会把陷阱误当成可反手的真信号。
+          r.scenario !== null && "border-l-2",
+          r.scenario !== null && TONE_CLASSES[scenarioTone(r.scenario.kind)].border,
           r.symbol === selectedSymbol && "bg-bg-tertiary"
         )
       }

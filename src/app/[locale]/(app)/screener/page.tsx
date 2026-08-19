@@ -13,6 +13,8 @@ import { applyFilters, sortRows, DEFAULT_FILTERS } from "@/lib/screener/filter";
 import type { FilterState, SortKey } from "@/lib/screener/filter";
 import type { ScannerRow } from "@/lib/screener/types";
 import { CLIENT_SLIDER } from "@/lib/screener/universe";
+import { cn } from "@/lib/utils";
+import { SCENARIO_KINDS, TRAP_KINDS, scenarioTone, TONE_CLASSES } from "@/components/screener/scenario-ui";
 
 const FILTER_STORAGE_KEY = "chart-ix:scanner-filters";
 const SORTABLE: SortKey[] = ["symbol", "direction", "total", "volumeUsd", "change24h", "marketCap"];
@@ -112,6 +114,22 @@ export default function ScreenerPage() {
           <p>{t("guide.oi")}</p>
           <p>{t("guide.cvd")}</p>
           <p className="rounded-sm bg-bg-tertiary px-3 py-2">{t("guide.alert")}</p>
+          <div>
+            <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+              {t("guide.scenarios_title")}
+            </p>
+            <ul className="space-y-1">
+              {SCENARIO_KINDS.map((kind) => (
+                <li key={kind} className="flex items-baseline gap-1.5">
+                  <span className={cn("font-medium", TONE_CLASSES[scenarioTone(kind)].text)}>
+                    {TRAP_KINDS.has(kind) && <span aria-hidden>⚠ </span>}
+                    {t(`scenarios.${kind}.name`)}
+                  </span>
+                  <span>— {t(`scenarios.${kind}.action`)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </details>
 

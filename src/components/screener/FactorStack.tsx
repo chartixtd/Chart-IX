@@ -15,11 +15,17 @@ export function FactorStack({
   factors,
   size = "sm",
   only,
+  fillClassName,
 }: {
   factors: FactorBreakdown;
   size?: "sm" | "lg";
   /** 只画其中一根。警报卡的因子明细是「一根柱配一个标签」，不是两根配一个标签。 */
   only?: keyof FactorBreakdown;
+  /**
+   * 填充色覆盖，默认 bg-gold（原样保留旧行为——表格因子列、警报卡的
+   * 无场景兜底样式都不传这个 prop）。六场景警报卡按场景基调换色时传入。
+   */
+  fillClassName?: string;
 }) {
   const track = size === "lg" ? 30 : 20;
   const keys = only ? ([only] as const) : ORDER;
@@ -36,7 +42,8 @@ export function FactorStack({
           >
             <b
               className={cn(
-                "absolute bottom-0 left-0 block w-full rounded-[1px] bg-gold",
+                "absolute bottom-0 left-0 block w-full rounded-[1px]",
+                fillClassName ?? "bg-gold",
                 // 最矮也留 3px：0 分和"没渲染出来"在视觉上必须能区分
                 "min-h-[3px]"
               )}

@@ -33,10 +33,19 @@ export function AlertCard({ alert }: { alert: AlertRecord }) {
           <span
             className={cn(
               "rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
-              alert.direction === "long" ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
+              // 评审 F2 修复：alert.direction 现在可能是 manage（存量清算），
+              // 之前的二选一三元表达式会把它默认渲染成 SHORT——徽章说“做空”，
+              // 但 currentPct 早就按 manage 不翻号在算，两者语义打架。这里只
+              // 做最小改动挡住这个错误（灰色「观望」pill），完整的六场景卡片
+              // 样式留给下一个 UI 任务。
+              alert.direction === "long"
+                ? "bg-success/15 text-success"
+                : alert.direction === "short"
+                  ? "bg-danger/15 text-danger"
+                  : "bg-text-secondary/15 text-text-secondary"
             )}
           >
-            {alert.direction === "long" ? "LONG" : "SHORT"}
+            {alert.direction === "long" ? "LONG" : alert.direction === "short" ? "SHORT" : "观望"}
           </span>
           <span className="font-display text-sm font-semibold text-text-primary">
             {alert.symbol.replace(/-USDT$/, "")}

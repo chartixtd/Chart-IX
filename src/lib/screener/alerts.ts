@@ -1,4 +1,4 @@
-import type { Direction, FactorBreakdown, ScannerRow } from "./types";
+import type { EffectiveDirection, FactorBreakdown, ScannerRow } from "./types";
 import { ALERT_CLOSE_STREAK } from "./types";
 import type { Scenario, ScenarioDirection } from "./factors/scenario";
 
@@ -6,16 +6,14 @@ export interface OpenAlert {
   id: string;
   symbol: string;
   /**
-   * 落库的方向，永远是 long/short——这是 screener_alerts 表 `direction`
-   * 列的 check 约束（迁移 048），T22 没有改这条约束（迁移 049 只加了
-   * scenario 一列）。它来自触发那一刻 ScannerRow.direction（已经在
-   * pipeline.ts 里把 manage 场景兜底成分数方向），供下单链接、"同方向"
-   * 这类需要一个确定 long/short 的地方使用。
+   * 落库的**有效方向**，可以是 manage——迁移 049 已把 `direction` 列的
+   * check 约束放宽到 ('long','short','manage')。有场景时它就是
+   * scenario.direction，无场景（老警报）时是当年的分数方向。
    *
-   * 它**不是**算 peakPct/累计涨跌该用哪个符号的依据——那个要看
-   * scenario.direction（可能是 manage），见 effectiveDirection。
+   * 单一来源：peakPct/累计涨跌的符号、警报卡的方向徽章都从这一个字段读，
+   * 不再存在「列里一个方向、jsonb 里另一个方向」的双轨（评审 F2）。
    */
-  direction: Direction;
+  direction: EffectiveDirection;
   triggerPrice: number;
   peakPct: number | null;
   belowCount: number;
@@ -25,7 +23,8 @@ export interface OpenAlert {
 
 export interface NewAlert {
   symbol: string;
-  direction: Direction;
+  /** 有效方向（含 manage），落进放宽后的 direction 列。 */
+  direction: EffectiveDirection;
   triggerPrice: number;
   /** 触发当时的总分，仅供复盘参考——触发条件已经不是总分达标，见下方 planAlerts 顶部注释。 */
   triggerScore: number;
@@ -40,12 +39,13 @@ export interface AlertUpdate {
   peakPct: number;
   belowCount: number;
   /**
-   * 本轮要落库的场景。场景仍在（kind 相同）时是这一轮最新的判定结果；
-   * 场景暂时消失（null，尚未到 ALERT_CLOSE_STREAK 轮）时保留上一次的
-   * 已知场景，不清空——警报卡不该在抖动的这几轮里突然变成"无场景"样式
-   * 又变回来，而且 effectiveDirection 也需要这份数据算 peakPct 的符号。
+   * 本轮要落库的场景。场景仍在时是这一轮最新的判定结果；场景暂时消失
+   * （尚未到 ALERT_CLOSE_STREAK 轮）时**诚实写 null**（评审 F3）——
+   * 不保留上一次的场景假装它还在：老警报（T22 前开的）本来就没有场景，
+   * 假装机制会把 null 断言成非 null，类型在撒谎。峰值符号不受影响，
+   * effectiveDirection 用的是 OpenAlert.direction，那是开警报时定死的。
    */
-  scenario: Scenario;
+  scenario: Scenario | null;
 }
 
 export interface AlertPlan {
@@ -78,7 +78,18 @@ export function signedPct(triggerPrice: number, lastPrice: number, direction: Sc
  * 见 AlertUpdate.scenario 的注释）时才退回落库的 long/short 方向。
  */
 function effectiveDirection(alert: Pick<OpenAlert, "direction" | "scenario">): ScenarioDirection {
-  return alert.scenario?.direction ?? alert.direction;
+  // direction 列在 F2 之后就是有效方向（含 manage）的唯一来源，直接用。
+  // 保留这个函数而不是到处写 alert.direction，是给未来需要回落逻辑留位置。
+  return alert.direction;
+}
+
+/**
+ * 「同一个场景」的判据：kind + direction + side 三元组全同（评审 F1）。
+ * 见 planAlerts 顶部注释第 2 条——只比 kind 会让 healthy_trend 翻侧时
+ * peakPct 混合两套符号约定。
+ */
+function sameScenario(a: Scenario, b: Scenario): boolean {
+  return a.kind === b.kind && a.direction === b.direction && a.side === b.side;
 }
 
 /**
@@ -92,12 +103,13 @@ function effectiveDirection(alert: Pick<OpenAlert, "direction" | "scenario">): S
  *    全部条件。ALERT_TRIGGER_SCORE/ALERT_CLOSE_SCORE 两个常量已经删除，
  *    total 仍然算、仍然管表格排序，只是不再是警报的判据。
  *
- * 2. **同一场景 = kind 相同，不重复推。** 只要这一轮的场景种类
- *    （healthy_trend/inventory_flush/…）跟警报开的时候或者上一次刷新时
- *    记的一样，就只更新 last_price/peak_pct，不当成新事件。这里只比较
- *    kind，不比较 side/direction——同一个 kind 理论上不会无缘无故从
- *    高点侧跳到低点侧，真出现这种边界情况也只是方向号跟着
- *    effectiveDirection 的最新值走，不会导致状态机分裂出两条警报。
+ * 2. **同一场景 = kind + direction + side 三元组全同，不重复推。**
+ *    只比 kind 是不够的：healthy_trend 在高点侧是 long、低点侧是 short，
+ *    同一个 kind 翻侧后如果继续走"更新"分支，peakPct 会把旧方向不翻号
+ *    累积的值和新方向翻号的值混进同一个 Math.max，符号约定从此错乱，
+ *    锁定价也还是旧方向的（评审 F1）。inventory_flush 两侧都是 manage、
+ *    数值上不受影响，但 triggerPrice 的判定语境同样会被静默替换，
+ *    所以 side 也要比。三者任一变了 = 新事件 = 关旧开新。
  *
  * 3. **场景变了立即换，场景消失要等 3 轮。** kind 变成另一个非 null 的
  *    kind → 立刻关旧开新，不设缓冲——这本身就是一个新事件，没有"迟疑"
@@ -124,10 +136,11 @@ export function planAlerts(rows: ScannerRow[], open: OpenAlert[]): AlertPlan {
     const row = bySymbol.get(alert.symbol);
     if (!row) continue; // 规则 4：缺席保留
 
-    const sameKind = row.scenario !== null && alert.scenario !== null && row.scenario.kind === alert.scenario.kind;
+    const isSame =
+      row.scenario !== null && alert.scenario !== null && sameScenario(row.scenario, alert.scenario);
 
-    if (sameKind) {
-      // row.scenario 非空（sameKind 已经保证），直接用这一轮最新的方向算符号。
+    if (isSame) {
+      // row.scenario 非空（isSame 已经保证），直接用这一轮最新的方向算符号。
       const dir = row.scenario!.direction;
       plan.updates.push({
         id: alert.id,
@@ -154,11 +167,10 @@ export function planAlerts(rows: ScannerRow[], open: OpenAlert[]): AlertPlan {
         lastPrice: row.price,
         peakPct: Math.max(alert.peakPct ?? 0, signedPct(alert.triggerPrice, row.price, dir)),
         belowCount: nextBelow,
-        // 保留上一次已知场景，不清空——见 AlertUpdate.scenario 的注释。
-        // sameKind 分支之外走到这里，alert.scenario 不可能是 null：
-        // 开警报的条件就是场景非空，之后要么被 sameKind 刷新，要么在这里
-        // 原样保留，从没有一条路径会把它写成 null。
-        scenario: alert.scenario!,
+        // 诚实写 null（评审 F3）：场景这一轮就是不存在，不假装还有
+        // 上一次的。老警报（T22 前开的）scenario 本来就是 null，
+        // 「保留上一次」的写法会在这里把 null 断言成非 null。
+        scenario: null,
       });
       updatedSymbols.add(alert.symbol);
       continue;
@@ -178,7 +190,10 @@ export function planAlerts(rows: ScannerRow[], open: OpenAlert[]): AlertPlan {
 
     plan.opens.push({
       symbol: row.symbol,
-      direction: row.direction,
+      // 有效方向：开警报的条件就是有场景，direction 列直接存
+      // scenario.direction（可能是 manage，049 已放宽约束）。
+      // row.direction 是表格排序用的兜底方向，不进警报。
+      direction: row.scenario.direction,
       triggerPrice: row.price,
       triggerScore: row.total,
       factors: row.factors,

@@ -1,7 +1,21 @@
 import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/limits";
-import type { Scenario } from "./factors/scenario";
+import type { Scenario, ScenarioDirection } from "./factors/scenario";
 
 export type Direction = "long" | "short";
+
+/**
+ * 警报表 `direction` 列 / `AlertRecord.direction` 用的类型（评审 F2 修复）。
+ * 存的是"有效方向"：有场景时是 scenario.direction（可能是 manage），
+ * 无场景（老警报）时是分数兜底方向（long/short）——direction 列与
+ * currentPct/peakPct 的符号从此同源，不再存在"列面板显示 SHORT、
+ * 涨跌却不翻号"这种自相矛盾。
+ *
+ * 跟 `ScannerRow.direction`（永远是 long/short，服务表格 pill 与下单
+ * 按钮，manage 场景在 pipeline.ts 里已经兜底成分数方向）是两个不同的
+ * 概念，一个管"警报卡该显示成什么"，一个管"这一行该跳到哪个下单方向"，
+ * 不要混用。
+ */
+export type EffectiveDirection = ScenarioDirection;
 
 /**
  * 扫描间隔 15 分钟。触发器（pg_cron / GitHub Actions）打得比这更密，

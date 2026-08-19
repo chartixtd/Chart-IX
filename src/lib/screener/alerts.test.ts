@@ -94,7 +94,7 @@ describe("planAlerts · 触发 = 检测到场景", () => {
   });
 });
 
-describe("planAlerts · 同一场景（kind 相同）只更新，不重复开", () => {
+describe("planAlerts · 同一场景（kind+direction+side 三者都相同）只更新，不重复开", () => {
   it("已有未平警报时不重复开", () => {
     const plan = planAlerts([row({ scenario: scenario() })], [open()]);
     expect(plan.opens).toHaveLength(0);
@@ -133,12 +133,15 @@ describe("planAlerts · 同一场景（kind 相同）只更新，不重复开", 
   it("把这一轮最新的场景判定写回去（cvdPct/oiPct 等字段会刷新）", () => {
     const fresh = scenario({ cvdPct: 5.5, oiPct: 3.3 });
     const plan = planAlerts([row({ scenario: fresh })], [open({ scenario: scenario({ cvdPct: 3, oiPct: 2 }) })]);
-    expect(plan.updates[0].scenario.cvdPct).toBeCloseTo(5.5);
-    expect(plan.updates[0].scenario.oiPct).toBeCloseTo(3.3);
+    // 同一场景分支写回去的是非空 Scenario（AlertUpdate.scenario 的类型是
+    // Scenario | null 是为了老实反映"场景消失"那条分支，这里不是那条分支）。
+    expect(plan.updates[0].scenario).not.toBeNull();
+    expect(plan.updates[0].scenario?.cvdPct).toBeCloseTo(5.5);
+    expect(plan.updates[0].scenario?.oiPct).toBeCloseTo(3.3);
   });
 });
 
-describe("planAlerts · 场景变了（kind 不同）立即换", () => {
+describe("planAlerts · 场景变了（不是同一个场景）立即换", () => {
   it("kind 变了立即关掉旧的、开一条新的", () => {
     const plan = planAlerts(
       [row({ scenario: scenario({ kind: "true_top_div", direction: "short", side: "high" }), direction: "short" })],
@@ -158,16 +161,63 @@ describe("planAlerts · 场景变了（kind 不同）立即换", () => {
     expect(plan.closes).toEqual(["a1"]);
     expect(plan.opens).toHaveLength(1);
   });
+
+  // 评审 F1：只比 kind 会漏掉"同一个 kind、方向/侧翻了"这种实质上的方向
+  // 反转——healthy_trend 高点侧是 long，低点侧是 short，两者 kind 相同但
+  // 方向相反；如果只比 kind，这种翻侧会被误判成"同一场景"走 update 分支，
+  // 把翻侧前后两套不可比较的符号混进同一个 peakPct 的 Math.max 里。
+  it("同一个 kind 但从高点侧翻到低点侧（方向也跟着反转）：必须当成不同场景，立即关旧开新", () => {
+    const highLong = scenario({ kind: "healthy_trend", direction: "long", side: "high" });
+    const lowShort = scenario({ kind: "healthy_trend", direction: "short", side: "low" });
+    const plan = planAlerts(
+      [row({ scenario: lowShort, direction: "short" })],
+      [open({ scenario: highLong, direction: "long" })]
+    );
+    expect(plan.closes).toEqual(["a1"]);
+    expect(plan.opens).toHaveLength(1);
+    expect(plan.opens[0].scenario.side).toBe("low");
+    expect(plan.opens[0].direction).toBe("short");
+    // 新开的警报要用这一轮的实时价重新锁价，不能延用旧警报的 triggerPrice。
+    expect(plan.opens[0].triggerPrice).toBe(row().price);
+  });
+
+  // kind 相同、direction 也相同（两侧的 inventory_flush 都是 manage）时，
+  // 光比 kind+direction 还是分不开侧——这正是评审意见里点名的第二类漏洞，
+  // 所以判据必须再加上 side。
+  it("同一个 kind、同一个 direction（都是 manage）但 side 不同：仍然当成不同场景", () => {
+    const highManage = scenario({ kind: "inventory_flush", direction: "manage", side: "high" });
+    const lowManage = scenario({ kind: "inventory_flush", direction: "manage", side: "low" });
+    const plan = planAlerts(
+      [row({ scenario: lowManage, direction: "long" })],
+      [open({ scenario: highManage, direction: "long" })]
+    );
+    expect(plan.closes).toEqual(["a1"]);
+    expect(plan.opens).toHaveLength(1);
+    expect(plan.opens[0].scenario.side).toBe("low");
+  });
 });
 
 describe("planAlerts · 场景消失（变成 null）要连续 3 轮才关", () => {
-  it("场景消失一次只累计 belowCount，不关闭，也不清空已记录的场景", () => {
+  it("场景消失一次只累计 belowCount，不关闭；scenario 诚实写成 null（评审 F3：不假装还有上一次的场景）", () => {
     const plan = planAlerts([row({ scenario: null })], [open({ belowCount: 0 })]);
     expect(plan.closes).toHaveLength(0);
     expect(plan.updates).toHaveLength(1);
     expect(plan.updates[0].belowCount).toBe(1);
-    // 场景消失这一轮拿不到新场景，保留上一次已知的（不清空）。
-    expect(plan.updates[0].scenario.kind).toBe("healthy_trend");
+    // 这一轮确实没有场景，AlertUpdate.scenario 就应该老实是 null——
+    // listOpenAlerts 对迁移前的老警报本来就会返回 scenario:null，
+    // 状态机不能假装"上一次已知场景"还成立，那是在骗类型系统。
+    expect(plan.updates[0].scenario).toBeNull();
+  });
+
+  it("连续两轮场景缺席，belowCount 正确累计到 2，两轮都诚实写 null", () => {
+    let state = [open({ belowCount: 0 })];
+    for (let i = 0; i < 2; i++) {
+      const plan = planAlerts([row({ scenario: null })], state);
+      expect(plan.closes).toHaveLength(0);
+      expect(plan.updates[0].scenario).toBeNull();
+      state = [{ ...state[0], belowCount: plan.updates[0].belowCount, scenario: plan.updates[0].scenario }];
+    }
+    expect(state[0].belowCount).toBe(2);
   });
 
   it("连续达到 ALERT_CLOSE_STREAK 轮场景缺席才真的关闭", () => {
@@ -178,25 +228,20 @@ describe("planAlerts · 场景消失（变成 null）要连续 3 轮才关", () 
     expect(plan.closes).toEqual(["a1"]);
   });
 
-  it("场景消失又在窗口内恢复：belowCount 归零重新开始累计", () => {
-    // 消失、消失、恢复（归零）、消失、消失、消失 —— 第 6 轮才刚好累计到 3 而关闭。
-    let state = [open({ belowCount: 0 })];
-    const scenarios: (Scenario | null)[] = [null, null, scenario(), null, null, null];
-    const closesByRound: boolean[] = [];
-    for (const sc of scenarios) {
-      const plan = planAlerts([row({ scenario: sc })], state);
-      closesByRound.push(plan.closes.length > 0);
-      if (plan.closes.length > 0) break;
-      expect(plan.opens).toHaveLength(0);
-      state = [
-        {
-          ...state[0],
-          belowCount: plan.updates[0].belowCount,
-          scenario: plan.updates[0].scenario,
-        },
-      ];
-    }
-    expect(closesByRound).toEqual([false, false, false, false, false, true]);
+  // 评审 F3 的直接后果：诚实传 null 之后，状态机不再有"上一次已知场景"可比较，
+  // 场景消失哪怕只隔一轮又重新出现（即使 kind/direction/side 完全相同），
+  // 也无法被判定为"同一场景"（isSame 要求两边都非空）——会被当成新事件立即
+  // 关旧开新，而不是像旧实现那样静默延续 triggerPrice/peakPct。这是诚实
+  // 换来的代价，不是遗漏：状态机确实"不知道"消失的这一轮之后它会不会回来，
+  // 装作知道才是真正的 bug。
+  it("场景消失一轮后又重新出现（即使完全同一个 kind/direction/side）：当成新事件立即关旧开新，不延续旧的 triggerPrice", () => {
+    const afterOneMiss: OpenAlert = { ...open(), belowCount: 1, scenario: null };
+    const plan = planAlerts([row({ scenario: scenario(), price: 105 })], [afterOneMiss]);
+    expect(plan.closes).toEqual(["a1"]);
+    expect(plan.opens).toHaveLength(1);
+    expect(plan.opens[0].scenario.kind).toBe("healthy_trend");
+    // 新警报用这一轮的实时价重新锁价（105），不是旧警报的 triggerPrice（100）。
+    expect(plan.opens[0].triggerPrice).toBe(105);
   });
 
   it("这一轮扫描里整个消失的币，警报保持原样不动", () => {

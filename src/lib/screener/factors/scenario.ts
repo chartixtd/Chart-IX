@@ -49,7 +49,7 @@ export const SCENARIO_CVD_EXTREME_MIN = 10;
 export const SCENARIO_OI_CHANGE_MIN = 1;
 export const SCENARIO_OI_SURGE_MIN = 7;
 
-function clamp01Check(n: number): boolean {
+function isFiniteNumber(n: number): boolean {
   return Number.isFinite(n);
 }
 
@@ -150,20 +150,20 @@ function classifySide(
 
   const prevPrice = priceValues[i1];
   const currPrice = priceValues[i2];
-  if (!clamp01Check(prevPrice) || !clamp01Check(currPrice) || prevPrice <= 0) return null;
+  if (!isFiniteNumber(prevPrice) || !isFiniteNumber(currPrice) || prevPrice <= 0) return null;
 
   // 高点侧要求 curr > prev 才算创新高；低点侧要求 curr < prev 才算创新低。
   const isNewExtreme = side === "high" ? currPrice > prevPrice : currPrice < prevPrice;
   if (!isNewExtreme) return null;
 
   const priceChangePct = (Math.abs(currPrice - prevPrice) / prevPrice) * 100;
-  if (!clamp01Check(priceChangePct) || priceChangePct < PRICE_EXTREME_MIN_PCT) return null;
+  if (!isFiniteNumber(priceChangePct) || priceChangePct < PRICE_EXTREME_MIN_PCT) return null;
 
   const prevOi = oiCloses[i1];
   const currOi = oiCloses[i2];
-  if (!clamp01Check(prevOi) || !clamp01Check(currOi) || prevOi <= 0) return null;
+  if (!isFiniteNumber(prevOi) || !isFiniteNumber(currOi) || prevOi <= 0) return null;
   const oiPct = ((currOi - prevOi) / prevOi) * 100;
-  if (!clamp01Check(oiPct)) return null;
+  if (!isFiniteNumber(oiPct)) return null;
 
   // cvdPct：区间 (i1, i2]——从 i1 的下一根开始累加到 i2（含），不含 i1 本身。
   // i1 是「上一个」摆动点，它自己那一根的买卖量属于更早一段行情，
@@ -173,13 +173,13 @@ function classifySide(
   for (let k = i1 + 1; k <= i2; k++) {
     const buy = buys[k];
     const sell = sells[k];
-    if (!clamp01Check(buy) || !clamp01Check(sell)) return null;
+    if (!isFiniteNumber(buy) || !isFiniteNumber(sell)) return null;
     netBuy += buy - sell;
     gross += buy + sell;
   }
   if (gross <= 0) return null;
   const cvdPct = (netBuy / gross) * 100;
-  if (!clamp01Check(cvdPct)) return null;
+  if (!isFiniteNumber(cvdPct)) return null;
 
   const cell = classifyCell(side, cvdPct, oiPct);
   if (!cell) return null;

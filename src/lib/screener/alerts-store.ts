@@ -1,21 +1,27 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import type { AlertPlan, NewAlert, OpenAlert } from "./alerts";
 import { signedPct } from "./alerts";
-import type { Direction, FactorBreakdown } from "./types";
+import type { EffectiveDirection, FactorBreakdown } from "./types";
 import type { Scenario, ScenarioKind, ScenarioDirection } from "./factors/scenario";
 
 /** 前端警报栏需要的一行 */
 export interface AlertRecord {
   id: string;
   symbol: string;
-  direction: Direction;
+  /**
+   * 有效方向（评审 F2 修复）：有场景时是 scenario.direction（可能是
+   * manage），无场景（老警报）时是分数兜底方向。这一列与 currentPct 的
+   * 符号同源——不会再出现"徽章显示 SHORT、涨跌却按 manage 不翻号"这种
+   * 自相矛盾的卡片。
+   */
+  direction: EffectiveDirection;
   triggeredAt: string;
   triggerPrice: number;
   triggerScore: number;
   factors: FactorBreakdown;
   lastPrice: number | null;
   peakPct: number | null;
-  /** 触发价 → 实时价的顺方向涨跌幅，服务端算好省得前端各算各的。符号取 scenario.direction（manage 不翻号），老警报没有 scenario 时退回 direction。 */
+  /** 触发价 → 实时价的顺方向涨跌幅，服务端算好省得前端各算各的。符号直接取上面的 direction（单一来源，不再需要从 scenario 另算一遍）。 */
   currentPct: number | null;
   /** 完整场景判定。老警报（T22 之前开的）这一列是 null，前端按「无场景警报」渲染旧样式卡片。 */
   scenario: Scenario | null;
@@ -24,7 +30,8 @@ export interface AlertRecord {
 interface AlertRow {
   id: string;
   symbol: string;
-  direction: Direction;
+  /** DB 列，迁移 049 已把 check 约束放宽成 'long'/'short'/'manage'（评审 F2）。 */
+  direction: EffectiveDirection;
   triggered_at: string;
   trigger_price: number | string;
   trigger_score: number;
@@ -184,11 +191,8 @@ export async function listAlertRecords(): Promise<AlertRecord[]> {
     const row = r as AlertRow;
     const triggerPrice = num(row.trigger_price) ?? 0;
     const lastPrice = num(row.last_price);
-    const scenario = parseScenario(row.scenario);
-    // currentPct 的符号取 scenario.direction（manage 不翻号）；老警报没有
-    // scenario 时退回落库的 long/short 方向——这与 alerts.ts 的
-    // effectiveDirection 是同一条规则，这里不能引入第二套判断逻辑。
-    const direction = scenario?.direction ?? row.direction;
+    // direction 列本身就是"有效方向"（评审 F2：单一来源），currentPct 直接
+    // 用它算符号，不再需要从 scenario 里另外派生一遍——两者天然同源。
     return {
       id: row.id,
       symbol: row.symbol,
@@ -199,8 +203,8 @@ export async function listAlertRecords(): Promise<AlertRecord[]> {
       factors: row.factors,
       lastPrice,
       peakPct: num(row.peak_pct),
-      currentPct: lastPrice === null ? null : signedPct(triggerPrice, lastPrice, direction),
-      scenario,
+      currentPct: lastPrice === null ? null : signedPct(triggerPrice, lastPrice, row.direction),
+      scenario: parseScenario(row.scenario),
     };
   });
 }

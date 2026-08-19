@@ -6,8 +6,8 @@ function taker(deltas: number[], gross = 1000): CoinGlassTakerBar[] {
   // 每根总成交额固定为 gross，买卖按 delta 拆开
   return deltas.map((d, i) => ({
     time: i * 1_800_000,
-    taker_buy_volume_usd: String((gross + d) / 2),
-    taker_sell_volume_usd: String((gross - d) / 2),
+    aggregated_buy_volume_usd: (gross + d) / 2,
+    aggregated_sell_volume_usd: (gross - d) / 2,
   }));
 }
 
@@ -32,6 +32,30 @@ describe("cvdNorm", () => {
     expect(cvdNorm(taker(Array(20).fill(-200)), CVD_WINDOW_BARS)!).toBeLessThan(0);
   });
 
+  it("字段逐根在 string / number 之间摇摆时，结果与全 number 完全一致", () => {
+    // CoinGlassTakerBar 把两个金额字段声明成 string | number 是防御性的
+    // （实测 4704 根全是 number，但同系列的 OI 端点确实会逐根摇摆）。
+    // 这条测试是那个声明唯一的验证：把奇数根改成字符串，结果必须不变。
+    // 换回 parseFloat 会让 number 那半变成 NaN，换成 Number() 也能过——
+    // 真正要挡的是「直接读字段当数字用」这类改动。
+    const deltas = Array.from({ length: 20 }, (_, i) => (i % 3) * 150 - 150);
+    const clean = taker(deltas);
+    const mixed: CoinGlassTakerBar[] = clean.map((b, i) =>
+      i % 2 === 1
+        ? {
+            time: b.time,
+            aggregated_buy_volume_usd: String(b.aggregated_buy_volume_usd),
+            aggregated_sell_volume_usd: String(b.aggregated_sell_volume_usd),
+          }
+        : b
+    );
+    const expected = cvdNorm(clean, CVD_WINDOW_BARS);
+    expect(expected).not.toBeNull();
+    // 不是 0 才有判别力——恒等于 0 的话任何实现都能通过
+    expect(Math.abs(expected!)).toBeGreaterThan(0.01);
+    expect(cvdNorm(mixed, CVD_WINDOW_BARS)).toBe(expected);
+  });
+
   it("买卖持平时接近 0", () => {
     expect(Math.abs(cvdNorm(taker(Array(20).fill(0)), CVD_WINDOW_BARS)!)).toBeLessThan(0.05);
   });
@@ -51,19 +75,26 @@ describe("cvdNorm", () => {
 });
 
 describe("cvdScore", () => {
-  it("真实量级的资金流就能推动分数，不再永远贴在中性 10 分", () => {
-    // 2026-08-19 实测：14 个币 518 个 6 小时窗口，|净买入/总成交额| 的
-    // 中位数 0.032、95% 分位 0.119。饱和点定在 99% 分位 0.15。
-    // 这条用例钉住的是「这个因子真的在用它的量程」——没有 CVD_SATURATION
-    // 那一步除法时，下面两个值会全挤在中性分附近。
-    // T21 把 FACTOR_MAX.cvd 从 20 改成 40 之后，cvdScore 的输出跟着整体
-    // 翻倍（TREND_MAX/DIVERGENCE_MAX 都是 FACTOR_MAX.cvd/2），下面的阈值
-    // 同步翻倍，测的仍然是同一条性质。
-    const median = cvdScore(taker(Array(20).fill(0.032 * 1000)), FLAT_PRICE, "long");
-    const p95 = cvdScore(taker(Array(20).fill(0.119 * 1000)), FLAT_PRICE, "long");
-    expect(median).toBeGreaterThan(11.6);
-    expect(p95).toBeGreaterThan(17);
-    // 而且要拉得开：95% 分位的资金流必须明显强过中位数
+  it("真实量级的资金流落在量程中段——既不贴中性分，也不提前顶满", () => {
+    // 输入取 2026-08-19 复测的真实分布（14 币 × 336 根 × 两组独立样本）：
+    // |净买入/总成交额| 中位 ≈0.05、95% 分位 ≈0.20、99% 分位 ≈0.32。
+    // taker() 每根 delta 恒定时，cvdRawRatio 恰好等于 delta/gross，
+    // 所以下面三个输入就是这三个分位数本身。
+    //
+    // **两侧都要断言，缺一侧这条用例就形同虚设。**
+    // 只断言下限（原来的写法）挡不住饱和点定得过低：0.15 时 95% 分位的
+    // 输入会被 clamp 到满分，`> 17` 照样通过，而那正是要防的失效模式
+    // ——量程上半段被压平，强弱资金流打出同一个分。
+    const median = cvdScore(taker(Array(20).fill(0.05 * 1000)), FLAT_PRICE, "long");
+    const p95 = cvdScore(taker(Array(20).fill(0.2 * 1000)), FLAT_PRICE, "long");
+    const p99 = cvdScore(taker(Array(20).fill(0.32 * 1000)), FLAT_PRICE, "long");
+
+    // 下限：中位量级的资金流要推得动分数，不能贴在中性 10 分
+    expect(median).toBeGreaterThan(11);
+    // 上限：95% 分位还没到顶，量程留得住 95→99 这一段的区分度
+    expect(p95).toBeLessThan(19);
+    expect(p99 - p95).toBeGreaterThan(2);
+    // 而且要拉得开：95% 分位必须明显强过中位数
     expect(p95 - median).toBeGreaterThan(4);
   });
 

@@ -1,4 +1,5 @@
 import type { CoinGlassTakerBar, CoinGlassPriceBar } from "@/lib/coinglass/types";
+import { toFiniteNumber } from "@/lib/coinglass/types";
 import type { Direction } from "@/lib/screener/types";
 import { FACTOR_MAX } from "@/lib/screener/types";
 import { priceChangeOverBars } from "./oi";
@@ -10,24 +11,30 @@ export const CVD_WINDOW_BARS = 12;
 export const CVD_DIVERGENCE_FULL_PCT = 3;
 
 /**
- * 「净买入 ÷ 同期总成交额」这个比值达到多少算满格。
+ * 「净买入 ÷ 同期总成交额」这个比值达到多少算满格。取实测分布的 99% 分位：
+ * 中位数量级的资金流拿到约 6 分，95% 分位约 8 分，满分留给真正异常的情况。
  *
- * 这个常数不是拍出来的，是量出来的。2026-08-19 抓了 14 个候选币各 48 根
- * 30m 主动买卖数据、滑出 518 个 6 小时窗口，`|净买入/总成交额|` 的分布是：
- *   中位数 0.032 · 90% 分位 0.091 · 95% 分位 0.119 · 99% 分位 0.153 · 最大 0.197
+ * 原本直接把比值当 [-1,1] 用（等价于饱和点 = 1.0），后果是满分 20 的方向分
+ * 只在 9.7~10.3 之间摆动——量程用掉不到 3%，整个 CVD 因子等于常数。
+ * 所以必须有这个饱和点；它定在哪则要靠量。
  *
- * 而这里原本直接把比值当 [-1,1] 用（等价于饱和点 = 1.0）。后果是这个
- * 满分 10 分的方向分实际只在 4.84~5.16 之间摆动——量程用掉不到 3%，
- * 整个 CVD 因子对总分几乎没有贡献。实测榜单上 14 个币的 CVD 全部落在 4~6 分。
+ * **量的时候有个坑，踩过一次：样本太薄会系统性低估。**
+ * 第一次标定用的是 14 币 × 48 根 = 518 个窗口的单日快照，量出 99% 分位 0.153，
+ * 于是定了 0.15。换成 7 天样本重量，两组各 14 币 × 336 根 = 4550 个窗口的
+ * 独立样本给出 99% 分位 0.302 和 0.347——真实分布宽了一倍多，0.15 实际落在
+ * 93~95% 分位，有 6.7~9.8% 的窗口顶在满分，量程上半段被压平。
+ * 现在取两组的中间值 0.32。
  *
- * 取 99% 分位当饱和点：中位数量级的资金流拿到约 6.1 分，95% 分位约 9 分，
- * 满分留给真正异常的情况。
+ * 顺带排除过一个误判：这次重标定和「CVD 数据源从 Binance 单家换成四家聚合」
+ * 是同一次改动，容易以为是换源导致分布变了。实测不是——同样 13 个币、同样
+ * 336 根，Binance 单家与四家聚合的分布几乎重合（中位 0.0594 vs 0.0563、
+ * 99% 分位 0.3067 vs 0.3018）。是原来那次测量太薄，跟数据源无关。
  *
- * **注意这个数是一次快照量出来的**（14 个币、24 小时、一种市场状态）。
- * 换一种行情它可能偏大或偏小 —— dryrun 脚本每轮打印分数分布正是为了
- * 观察这件事。如果哪天发现一半的币都顶在满分，就是该重新量它了。
+ * 重量的工具是 scripts/screener-calibrate.mjs（它测的是 cvdRawRatio，
+ * 拿 cvdNorm 反推是行不通的，见那个函数的注释）。dryrun 每轮打印的分数分布
+ * 是哨兵：如果哪天发现一半的币都顶在满分，就是该重新跑标定了。
  */
-export const CVD_SATURATION = 0.15;
+export const CVD_SATURATION = 0.32;
 
 /** 方向分与背离分各占满分的一半 */
 const TREND_MAX = FACTOR_MAX.cvd / 2;
@@ -48,6 +55,24 @@ function clamp(v: number, lo: number, hi: number): number {
  * 和一个 5 亿的大币可以用同一条曲线打分。
  */
 export function cvdNorm(bars: CoinGlassTakerBar[], window: number): number | null {
+  const raw = cvdRawRatio(bars, window);
+  if (raw === null) return null;
+  // 先算出「净买入占同期总成交额的比例」，再除以饱和点映射到 [-1,1]。
+  // 少了除以 CVD_SATURATION 这一步，真实数据只会落在 ±0.3 以内，
+  // 整个因子等于常数 —— 见 CVD_SATURATION 的注释里那组实测分布。
+  return clamp(raw / CVD_SATURATION, -1, 1);
+}
+
+/**
+ * cvdNorm 的原始比值——**没有**除以饱和点、**没有**截断。
+ *
+ * 单独导出是为了标定：scripts/screener-calibrate.mjs 要测量的正是这个量的
+ * 真实分布，好反推饱和点该定在哪。拿 cvdNorm 的输出去反推是行不通的，
+ * 它已经被除过又被 clamp 过，99% 分位恒等于 1，乘回饱和点必然得到原值——
+ * 那是个永远说「仍然合适」的自证检查。这个函数存在的唯一理由就是把那条
+ * 反推路径变成真的。
+ */
+export function cvdRawRatio(bars: CoinGlassTakerBar[], window: number): number | null {
   if (bars.length < window) return null;
 
   const slice = bars.slice(-window);
@@ -56,8 +81,8 @@ export function cvdNorm(bars: CoinGlassTakerBar[], window: number): number | nul
   let gross = 0;
 
   for (const b of slice) {
-    const buy = parseFloat(b.taker_buy_volume_usd);
-    const sell = parseFloat(b.taker_sell_volume_usd);
+    const buy = toFiniteNumber(b.aggregated_buy_volume_usd);
+    const sell = toFiniteNumber(b.aggregated_sell_volume_usd);
     if (!Number.isFinite(buy) || !Number.isFinite(sell)) return null;
     running += buy - sell;
     gross += buy + sell;
@@ -78,10 +103,7 @@ export function cvdNorm(bars: CoinGlassTakerBar[], window: number): number | nul
   if (den === 0) return null;
 
   const slope = num / den; // USD / 根
-  // 先算出「净买入占同期总成交额的比例」，再除以饱和点映射到 [-1,1]。
-  // 少了除以 CVD_SATURATION 这一步，真实数据只会落在 ±0.15 以内，
-  // 整个因子等于常数 —— 见 CVD_SATURATION 的注释里那组实测分布。
-  return clamp((slope * n) / gross / CVD_SATURATION, -1, 1);
+  return (slope * n) / gross;
 }
 
 /**

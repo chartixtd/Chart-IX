@@ -17,8 +17,8 @@ function priceBars(closes: number[]): CoinGlassPriceBar[] {
 function taker(delta: number, n = 48): CoinGlassTakerBar[] {
   return Array.from({ length: n }, (_, i) => ({
     time: i * 1_800_000,
-    taker_buy_volume_usd: String((1000 + delta) / 2),
-    taker_sell_volume_usd: String((1000 - delta) / 2),
+    aggregated_buy_volume_usd: (1000 + delta) / 2,
+    aggregated_sell_volume_usd: (1000 - delta) / 2,
   }));
 }
 

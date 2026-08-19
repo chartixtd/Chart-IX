@@ -30,23 +30,20 @@ import { DEEP_SCAN_LIMIT } from "./types";
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
 
-/**
- * 资金流类数据（主动买卖 → CVD）取哪一家。
+/*
+ * 资金流类数据（主动买卖 → CVD）不再在这里选交易所。
  *
- * CVD 问的是「**整个市场**的钱往哪边走」，所以要在最深的池子里取样，
- * 而不是在用户执行的那个池子里。BingX 的成交量普遍比 Binance 薄一个数量级
- * （实测 VELVET 8.2M vs 108.1M、COMP 2.9M vs 24.6M），薄盘口的主动买卖
- * 统计噪声也大得多。
+ * 曾经这里有一个 `FLOW_EXCHANGE = "Binance"`，理由是 CVD 问的是「**整个市场**
+ * 的钱往哪边走」，要在最深的池子里取样而不是在用户执行的那个池子里
+ * （BingX 成交量普遍比 Binance 薄一个数量级：实测 VELVET 8.2M vs 108.1M、
+ * COMP 2.9M vs 24.6M）。这个理由今天依然成立，只是**实现方式变了**：
+ * CoinGlass 有一个多交易所聚合的主动买卖端点，直接按币名取四家之和，
+ * 比「挑一家最深的」更贴近「整个市场」这个原意，也不再需要先解析出
+ * 某家交易所的 instrument_id。选哪四家与为什么，见 taker-volume.ts 的
+ * CVD_EXCHANGES。
  *
- * T21 之前这里还给 Sweep 因子取过爆仓时序（同样的理由：薄盘口的爆仓事件
- * 稀疏，Binance 源下 14 个币有 3 个 Sweep 非零，换成 BingX 源之后 14 个
- * 全是 0）。Sweep 退役后这条历史证据不再驱动任何在跑的代码，留着只是
- * 说明 FLOW_EXCHANGE 为什么选 Binance 而不是 BingX——这个选择本身对 CVD
- * 依然成立，不因为 Sweep 没了就要重新论证。
- *
- * 这个币在 Binance 没有合约时由 pickExchangeRow 回落到成交额最大的那家。
+ * 价格那一侧的取舍与这里相反，见下面 PRICE_EXCHANGE。
  */
-export const FLOW_EXCHANGE = "Binance";
 
 /**
  * 价格类数据（K 线 → OI 背离判断与真振幅）取哪一家。
@@ -68,9 +65,6 @@ interface MarketStage {
   /** 拉 K 线用的交易所与合约 id —— 与下单盘口同源 */
   priceExchange: string;
   priceInstrumentId: string;
-  /** 拉主动买卖/爆仓时序用的交易所与合约 id —— 取最深的池子 */
-  flowExchange: string;
-  flowInstrumentId: string;
   volumeUsd: number;
   change24h: number | null;
 }
@@ -97,8 +91,7 @@ function toMarketStage(
   if (!bingx) return null;
 
   const price = pickExchangeRow(rows, PRICE_EXCHANGE);
-  const flow = pickExchangeRow(rows, FLOW_EXCHANGE);
-  if (!price || !flow) return null;
+  if (!price) return null;
 
   // 成交额用全交易所之和，而不是单家 —— 流动性门槛问的是「这个币好不好进出」，
   // 那是全市场的属性。
@@ -113,8 +106,6 @@ function toMarketStage(
     bingx,
     priceExchange: price.exchange_name,
     priceInstrumentId: price.instrument_id,
-    flowExchange: flow.exchange_name,
-    flowInstrumentId: flow.instrument_id,
     volumeUsd,
     change24h: Number.isFinite(bingx.price_change_percent_24h)
       ? bingx.price_change_percent_24h
@@ -279,7 +270,7 @@ export async function runScan(): Promise<ScannerPayload> {
     // （CVD 统计的是整个市场的方向，薄盘口取样会让它失效）。
     // 调用次数不变，只是 exchange 参数不同。
     detailTasks.push(() => getPriceHistory(s.priceExchange, s.priceInstrumentId));
-    detailTasks.push(() => getTakerVolumeHistory(s.flowExchange, s.flowInstrumentId));
+    detailTasks.push(() => getTakerVolumeHistory(s.candidate.coin));
   }
   const detail = await runWithConcurrency(detailTasks);
 

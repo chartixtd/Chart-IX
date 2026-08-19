@@ -78,11 +78,25 @@ export interface CoinGlassPriceBar {
   volume_usd: string;
 }
 
-/** /api/futures/taker-buy-sell-volume/history 的一根 */
+/**
+ * /api/futures/aggregated-taker-buy-sell-volume/history 的一根。
+ *
+ * 这里的金额是**真美元**。曾经用的单交易所端点
+ * （taker-buy-sell-volume/history）字段虽然也叫 `_usd`，值却是**币的数量**——
+ * 实测两端同时间戳比值恒定：BTC 恒为 ~82000（当时 BTC 价 70038）、
+ * ARB 恒为 0.09（= ARB 单价）。那个错标没有造成过错误结果，因为 CVD
+ * 的两个消费方（cvdNorm、classifyScenario）算的都是净流÷总量的比值，
+ * 单位在分子分母里约掉了。换成这个端点之后单位名副其实。
+ *
+ * 类型写成 string | number 是防御性的：实测 14 币 × 336 根 = 4704 根全是
+ * number，一根字符串都没有；但同系列的 CoinGlassOiBar 实测有约 0.3% 的根
+ * 会把某个字段返回成 number（见上面的注释），所以这一族端点的字段类型
+ * 不能假定稳定。走 toFiniteNumber 的代价是零，赌它稳定的代价是静默的 NaN。
+ */
 export interface CoinGlassTakerBar {
   time: number;
-  taker_buy_volume_usd: string;
-  taker_sell_volume_usd: string;
+  aggregated_buy_volume_usd: string | number;
+  aggregated_sell_volume_usd: string | number;
 }
 
 /** /api/futures/funding-rate/exchange-list 的一行 */

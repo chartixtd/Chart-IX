@@ -979,7 +979,7 @@
       "title": "Apakah dua faktor ini?",
       "oi": "OI (60 mata) — faedah terbuka lawan harga, dalam empat kuadran. OI naik dengan harga naik bermakna long baharu, kes terbaik untuk long; OI naik dengan harga turun bermakna short baharu. Kedua-dua kuadran OI menurun mendapat mata rendah — tiada wang baharu di sebalik pergerakan itu.",
       "cvd": "CVD (40 mata) — beli tolak jual secara terkumpul. Separuh mata untuk arah, separuh untuk divergens: harga jatuh sementara CVD naik bermakna ada yang menyerap, isyarat long terkuat; harga naik sementara CVD jatuh ialah pengagihan.",
-      "alert": "Amaran dicetuskan kali pertama skor melepasi 70 dan mengunci harga. Ia hanya ditutup selepas tiga imbasan berturut-turut di bawah 65 — penimbal itulah yang menghalang pencetusan berulang di sekitar garis 70.",
+      "alert": "Amaran dicetuskan apabila salah satu daripada enam senario dikesan, mengunci harga ketika itu. Senario yang berubah menggantikannya serta-merta; senario yang hilang hanya ditutup selepas tiga imbasan berturut-turut tanpanya — penimbal itulah yang menghalang pencetusan berulang semasa titik ayun disahkan. Skor hanya menyusun jadual, ia tidak mencetuskan amaran.",
       "scenarios_title": "Rujukan pantas enam senario"
     }
   },

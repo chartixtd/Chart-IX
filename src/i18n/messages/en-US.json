@@ -1037,7 +1037,7 @@
       "title": "What are the two factors?",
       "oi": "OI (60 pts) — open interest against price, as four quadrants. OI up with price up means fresh longs, the best case for a long; OI up with price down means fresh shorts. Both falling-OI quadrants score low for either side — no new money is behind the move.",
       "cvd": "CVD (40 pts) — cumulative taker buy minus sell. Half the points are direction, half are divergence: price falling while CVD rises means someone is absorbing, the strongest long signal; price rising while CVD falls is distribution.",
-      "alert": "An alert fires the first time a score crosses from below 70 to 70 or above, locking the price. It closes only after three consecutive scans below 65 — that buffer is what stops it retriggering around the 70 line.",
+      "alert": "An alert fires when one of the six scenarios is detected, locking the price at that moment. A changed scenario replaces it immediately; a scenario that disappears closes only after three consecutive scans without it — that buffer is what stops it retriggering as pivots confirm. The score only sorts the table; it never triggers an alert.",
       "scenarios_title": "Six-scenario cheat sheet"
     }
   },

@@ -43,6 +43,22 @@ export interface Scenario {
  * （CVD ±10、OI +7）。这组阈值下高点侧/低点侧各自的四个格子数学上互斥：
  * OI 的符号分开真背离（OI 收缩，≤-1）与假背离陷阱（OI 暴增，≥+7）；
  * CVD 的符号分开健康趋势/存量清算（同向，≥+2）与背离（逆向，≤-2）。
+ *
+ * **端到端出现率基线**（2026-08-19 复测，14 币 × 7 天滑动前缀 = 658 轮
+ * 模拟扫描，scripts/screener-calibrate.mjs）：
+ *   无场景 73.6% · 存量清算 15.7% · 健康趋势 9.9% · 真底背离 0.9%
+ *   真顶背离 0% · 假顶背离 0% · 假底背离 0%
+ *   命中时 |cvdPct| 中位 7.5% / 90% 17.9%，|oiPct| 中位 3.7% / 90% 10.9%
+ *
+ * 两种陷阱场景 0/658 **不是判定坏了**——scenario.test.ts 里
+ * false_top_div / false_bottom_div 都有直接断言覆盖，构造出条件就能判出来。
+ * 是这七天里「CVD 剧烈逆行 + OI 同时暴增」这个组合真的没出现过。
+ *
+ * 不要因为它不触发就去调低阈值。这两格的输出是「禁止反手」——调低意味着
+ * 更频繁地叫停一个方向，判错的代价是实打实的。要改就该等真实行情里出现过
+ * 几次已知的假背离，拿那几次的实际数值去定，而不是为了让它有动静而定。
+ * 单看边际分布会误导：|cvdPct| ≥ 2% 覆盖了 78% 的摆动点对，像是形同虚设，
+ * 但叠加 OI 与「价格创新极值」之后的端到端出现率完全是另一回事（见上）。
  */
 export const SCENARIO_CVD_ALIGN_MIN = 2;
 export const SCENARIO_CVD_EXTREME_MIN = 10;
@@ -214,13 +230,13 @@ export function classifyScenario(
   if (priceBars.length !== oiBars.length || priceBars.length !== takerBars.length) return null;
 
   // CoinGlassPriceBar 的 high/low 是纯字符串，parseFloat 准确（同
-  // oiDivergence 里的注释）；CoinGlassOiBar.close 字段类型逐根不稳定，
-  // 必须走 toFiniteNumber；taker bar 的买卖额也是纯字符串。
+  // oiDivergence 里的注释）；OI 与聚合 taker 两族端点的字段类型逐根不稳定，
+  // 必须走 toFiniteNumber（见 CoinGlassOiBar / CoinGlassTakerBar 的注释）。
   const highs = priceBars.map((b) => parseFloat(b.high));
   const lows = priceBars.map((b) => parseFloat(b.low));
   const oiCloses = oiBars.map((b) => toFiniteNumber(b.close));
-  const buys = takerBars.map((b) => parseFloat(b.taker_buy_volume_usd));
-  const sells = takerBars.map((b) => parseFloat(b.taker_sell_volume_usd));
+  const buys = takerBars.map((b) => toFiniteNumber(b.aggregated_buy_volume_usd));
+  const sells = takerBars.map((b) => toFiniteNumber(b.aggregated_sell_volume_usd));
 
   const highResult = classifySide("high", highs, oiCloses, buys, sells);
   const lowResult = classifySide("low", lows, oiCloses, buys, sells);

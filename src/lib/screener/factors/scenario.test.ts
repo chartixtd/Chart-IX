@@ -88,8 +88,8 @@ function takerBarsUniform(len: number, cvdPct: number): CoinGlassTakerBar[] {
   const sell = (gross - net) / 2;
   return Array.from({ length: len }, (_, i) => ({
     time: i * 1_800_000,
-    taker_buy_volume_usd: String(buy),
-    taker_sell_volume_usd: String(sell),
+    aggregated_buy_volume_usd: buy,
+    aggregated_sell_volume_usd: sell,
   }));
 }
 

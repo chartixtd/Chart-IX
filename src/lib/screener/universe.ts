@@ -62,7 +62,7 @@ export const SERVER_GATE = {
 export const CLIENT_SLIDER = {
   /**
    * 唯一还可调的一项。范围收窄到 1.5–3%：低于 1.5% 的行情做日内没有操作空间，
-   * 高于 3% 的门槛会把候选池收得太紧（深度扫描本来就只有 14 个名额）。
+   * 高于 3% 的门槛会把候选池收得太紧（深度扫描名额本来就有限，见 DEEP_SCAN_LIMIT）。
    * 默认取最松的一端，让用户先看到全部再自己收紧。
    */
   amplitude: { min: 1.5, max: 3, default: 1.5 },

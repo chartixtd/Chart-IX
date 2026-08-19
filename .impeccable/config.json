@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/components/screener/AlertCard.tsx"
+        ],
+        "createdAt": "2026-08-19T14:28:55.096Z",
+        "reason": "用户手做的 alert_templates_6scenarios.html 模板明确以 border-left:3px + 四档 tone 色作为六场景分类的核心视觉语言（.card.trend/.manage/.divTrue/.divFalse 全靠左边框换色区分），组件是该模板的忠实实现"
+      }
+    ]
+  }
+}

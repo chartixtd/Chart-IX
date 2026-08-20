@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { SERVER_GATE } from "@/lib/screener/universe";
 import { AMPLITUDE_RANK_TAKE } from "@/lib/screener/types";
 // FilterState / DEFAULT_FILTERS / DirectionFilter 的唯一定义放在 src/lib/screener/filter.ts
-// （不能在组件里再声明一份 —— 两份定义漂移之后滑块和过滤逻辑会对不上，TS 不会报错；
+// （不能在组件里再声明一份 —— 两份定义漂移之后控件和过滤逻辑会对不上，TS 不会报错；
 // 且 vitest 只收集 src/lib 下的测试文件，筛选逻辑必须住在 src/lib 才测得到）。
 import type { FilterState, DirectionFilter } from "@/lib/screener/filter";
 export type { FilterState, DirectionFilter };
@@ -26,9 +26,9 @@ export function ScreenerFilters({
 
   return (
     <div className="mb-4 flex flex-wrap items-end gap-5 rounded-lg panel px-4 py-3">
-      {/* 成交量与市值已固定成服务端门槛，这里只读地标出来。
-          做成静态文字而不是禁用的滑块：禁用滑块仍然长得像「可以调，只是现在不行」，
-          而这两条是产品定死的筛选口径，不该给出可调的暗示。 */}
+      {/* 成交量、振幅、市值三条门槛全部由服务端执行，这里只读地标出来。
+          做成静态文字而不是禁用的控件：禁用的控件仍然长得像「可以调，只是
+          现在不行」，而这三条是产品定死的筛选口径，不该给出可调的暗示。 */}
       <div className="flex flex-col gap-1.5">
         <span className="text-[11px] uppercase tracking-wider text-text-muted">
           {t("filters.volume")}

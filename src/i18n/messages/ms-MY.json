@@ -871,7 +871,7 @@
   "screener": {
     "title": "Pengimbas",
     "subtitle": "OI · CVD — imbasan 2 faktor",
-    "no_results": "Tiada yang sepadan dengan penapis semasa. Cuba longgarkan penggelongsor.",
+    "no_results": "Tiada simbol yang layak pusingan ini. Sebaik selepas deploy atau mula semula, cache volum perlu kira-kira setengah jam putaran untuk penuh.",
     "error": "Gagal memuatkan data",
     "retry": "Cuba lagi",
     "refresh_now": "Muat semula",

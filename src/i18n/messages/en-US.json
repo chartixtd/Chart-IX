@@ -929,7 +929,7 @@
   "screener": {
     "title": "Scanner",
     "subtitle": "OI · CVD — 2-factor scan",
-    "no_results": "Nothing matches the current filters. Try loosening the sliders.",
+    "no_results": "No symbols qualified this round. Right after a deploy or restart, the volume cache needs about half an hour of rotation to fill up.",
     "error": "Failed to load data",
     "retry": "Retry",
     "refresh_now": "Refresh now",

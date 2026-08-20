@@ -49,7 +49,7 @@ export default function ScreenerPage() {
     try {
       window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
     } catch {
-      // 隐私模式下 localStorage 会抛，滑块照常工作、只是不记忆
+      // 隐私模式下 localStorage 会抛，方向切换照常工作、只是不记忆
     }
   }, [filters]);
 

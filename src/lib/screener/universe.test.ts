@@ -5,8 +5,8 @@ import {
   coinFromBingXSymbol,
   amplitudeFromTicker,
   SERVER_GATE,
-  CLIENT_SLIDER,
 } from "./universe";
+import { DEFAULT_FILTERS } from "./filter";
 import type { MarketCapMap } from "@/lib/market-cap";
 import type { BingXTicker } from "@/types/bingx";
 
@@ -34,13 +34,13 @@ const caps: MarketCapMap = {
 };
 
 describe("门槛包含关系", () => {
-  it("成交量与市值已固定成服务端门槛，客户端不该再有对应的滑块", () => {
+  it("客户端只剩方向可调，三条门槛全部在服务端执行", () => {
     // 固定下来的门槛留在客户端是双重损失：既浪费深度扫描名额（选中的币
-    // 可能一进来就被滤掉），又让用户以为它可调。这条断言防止以后有人
-    // 顺手把它们加回滑块而没有同步去掉服务端那一份。
-    expect(CLIENT_SLIDER).not.toHaveProperty("volume");
-    expect(CLIENT_SLIDER).not.toHaveProperty("marketCapFloor");
-    expect(CLIENT_SLIDER).not.toHaveProperty("marketCapCeiling");
+    // 可能一进来就被滤掉），又让用户以为它可调。
+    // T24 之后连振幅那个滑块也删了（选币已经按振幅排名，客户端再筛一次
+    // 是空操作）。FilterState 只剩 direction 一个键，这条断言防止以后
+    // 有人顺手把任何一条门槛加回客户端。
+    expect(Object.keys(DEFAULT_FILTERS)).toEqual(["direction"]);
   });
 
   it("服务端不该再有振幅门槛或 BingX 成交额代理门槛", () => {

@@ -6,7 +6,7 @@ import type { BingXTicker } from "@/types/bingx";
  * 服务端门槛：只负责挡掉明显不合格的候选（不可交易、合成品、市值不达标、
  * 完全没有成交等），不负责表达用户口味，也不再负责把池子收到某个具体行数——
  * T19 之后真正决定「最终能看到几行」的是预排序从这个池子里选出的
- * `DEEP_SCAN_LIMIT` 个（见 preselect-rank.ts）。
+ * `AMPLITUDE_RANK_TAKE` 个（见 pipeline.ts 的 buildScanTargets）。
  * 真正的筛选口味在客户端滑块上——服务端对选中的这些候选各算一次分，
  * 滑块只决定哪些行显示，所以拉动滑块不会改变任何币的分数，也不会改变警报触发。
  */
@@ -59,20 +59,12 @@ export const SERVER_GATE = {
  *   代理不再需要。
  */
 
-/** 客户端滑块的取值域。单位：成交量与市值是百万美元，振幅是 %。 */
-/**
- * 界面上还留给用户调的东西。成交量与市值已经固定成 SERVER_GATE 里的常量、
- * 由服务端执行，不再是滑块——固定下来的门槛放在客户端过滤是双重损失：
- * 既浪费深度扫描名额（选中的币可能一进来就被滤掉），又让用户以为它可调。
+/*
+ * 这里曾经有一个 `CLIENT_SLIDER`，唯一的成员是振幅滑块（1.5–3%）。
+ * T24 删除：选币改成「按振幅排名取前 AMPLITUDE_RANK_TAKE 个」之后，
+ * 能进榜的行振幅实测都在 14% 以上，滑块拉到头也筛不掉任何一行。
+ * 界面上现在只剩方向切换是可调的，成交量/市值/振幅三条都是只读说明。
  */
-export const CLIENT_SLIDER = {
-  /**
-   * 唯一还可调的一项。范围收窄到 1.5–3%：低于 1.5% 的行情做日内没有操作空间，
-   * 高于 3% 的门槛会把候选池收得太紧（深度扫描名额本来就有限，见 DEEP_SCAN_LIMIT）。
-   * 默认取最松的一端，让用户先看到全部再自己收紧。
-   */
-  amplitude: { min: 1.5, max: 3, default: 1.5 },
-} as const;
 
 /**
  * BingX 在永续里混了一批代币化的股票/商品/指数/外汇（NCSK=股票、NCCO=商品、
@@ -145,12 +137,12 @@ export function preselect(
 /**
  * BingX ticker 的 24h 高低算出的振幅，%。与上面 preselect 内联判断
  * `minAmplitude` 用的是同一套公式——粗筛只需要知道「达不达标」，
- * 预排序（pipeline.ts 的 rankForDeepScan 调用点）需要具体数值去排序，
- * 所以单独导出一份。
+ * T24 之后它是**选币的唯一排序依据**（pipeline.ts 的 buildScanTargets），
+ * 不再只是一个门槛判断，所以要单独导出具体数值。
  *
- * 输入非法时返回 0 而不是抛错或 null：调用方只在预排序里用它计算百分位，
- * 0 会被排到振幅这一维的最底部，是合理的保守值——不会像 Infinity 那样
- * 意外抢占深度扫描名额。
+ * 输入非法时返回 0 而不是抛错或 null：0 会被排到振幅排名的最底部，
+ * 是合理的保守值——不会像 Infinity 那样让一个数据有问题的币直接
+ * 抢占榜首。
  */
 export function amplitudeFromTicker(t: BingXTicker): number {
   const high = parseFloat(t.highPrice);

@@ -86,9 +86,12 @@ describe("formatScannerMessage", () => {
     expect(msg).toContain("🔴");
   });
 
-  it("振幅低于推送门槛的币不进消息", () => {
+  it("推送不再自己过滤振幅——三条门槛全部在服务端执行，推送与界面看同一批币", () => {
+    // 曾经这里有个 PUSH_MIN_AMPLITUDE（= 界面滑块最小值 1.5%）。选币改成
+    // 「按振幅排名取前 N 个」之后，payload 里的行振幅实测都在 14% 以上，
+    // 这道门槛筛不掉任何东西；而两边各写一个数字迟早会漂。
     const p: ScannerPayload = { ...payload, rows: [row({ amplitude: 1.2 })] };
-    expect(formatScannerMessage(p, settings, "zh")).not.toContain("TIA");
+    expect(formatScannerMessage(p, settings, "zh")).toContain("TIA");
   });
 
   it("带上方向标记", () => {

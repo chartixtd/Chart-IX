@@ -7,7 +7,6 @@ import {
   type TelegramSendResult,
 } from "@/lib/telegram-send";
 import type { ScannerRow, ScannerPayload, Direction } from "@/lib/screener/types";
-import { CLIENT_SLIDER } from "@/lib/screener/universe";
 import type { ScenarioKind } from "@/lib/screener/factors/scenario";
 
 export type TelegramMessageLang = "en" | "zh";
@@ -482,15 +481,15 @@ function formatScannerRow(
   return parts.length > 0 ? `<b>${symbol}</b> — ${parts.join(" · ")}` : `<b>${symbol}</b>`;
 }
 
-/**
- * 推送用的振幅门槛。与界面滑块的最小值同源（`CLIENT_SLIDER.amplitude.min`）——
- * 群里收到的榜单必须和用户把滑块拉到最松时看到的是同一批币，
- * 两边各写一个数字迟早会对不上。
+/*
+ * 这里曾经有一个 `PUSH_MIN_AMPLITUDE`（= 界面滑块的最小值 1.5%）。
+ * T24 删除，理由和删掉那个滑块一样：选币改成「按振幅排名取前 N 个」之后，
+ * payload 里的行振幅实测都在 14% 以上，1.5% 的门槛筛不掉任何一行。
  *
- * 成交量与市值不在这里过滤：它们已经是服务端固定门槛，
- * payload 里的行必然已经达标。
+ * 成交量与市值同样不在这里过滤——三条门槛全部由服务端执行完了，
+ * payload 里的行必然已经达标。推送与界面看到的是同一批币，
+ * 这一点现在由「两边都不过滤」保证，比两边各写一个数字更难漂。
  */
-const PUSH_MIN_AMPLITUDE = CLIENT_SLIDER.amplitude.min;
 
 /** 每一组最多列几行。两组加起来仍要留在 Telegram 单条消息 4096 字符以内。 */
 const MAX_PUSH_ROWS_PER_GROUP = 8;
@@ -533,7 +532,7 @@ export function formatScannerMessage(
   const timestamp = new Date(payload.computedAt).toISOString().replace("T", " ").slice(0, 16);
   const head = `📊 <b>${s.title}</b> · ${timestamp} UTC`;
 
-  const eligible = payload.rows.filter((r) => r.amplitude >= PUSH_MIN_AMPLITUDE);
+  const eligible = payload.rows;
   if (eligible.length === 0) return `${head}\n\n${s.empty}`;
 
   const longs = eligible.filter((r) => r.direction === "long");

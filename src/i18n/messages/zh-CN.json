@@ -937,12 +937,13 @@
     "candidate_count": "{count} 个候选标的",
     "filters": {
       "volume": "24H 成交量 ≥",
-      "amplitude": "24H 振幅 ≥",
+      "amplitude": "24H 振幅",
       "market_cap": "市值 ≥",
       "direction": "方向",
       "dir_all": "全部",
       "dir_long": "Long",
-      "dir_short": "Short"
+      "dir_short": "Short",
+      "amplitude_rank": "按排名取前 {n}"
     },
     "columns": {
       "symbol": "Symbol",

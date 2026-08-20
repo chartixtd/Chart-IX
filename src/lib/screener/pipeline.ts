@@ -49,8 +49,9 @@ export const BINGX_EXCHANGE = "BingX";
  * 真的在动吗」，两者都是拿去 BingX 执行的，用别家的 K 线算等于按 A 市场的
  * 走势在 B 市场下单。
  *
- * toMarketStage 已经要求 BingX 那一行必须存在（否则整个币跳过），
- * 所以这里的回落分支实际不会触发。
+ * 这个常量现在同时是「拉哪家 K 线」和「表格上标的来源」——T24 去掉行情层
+ * 之后不再有「BingX 拿不到就回落到别家」这条分支：候选本来就来自 BingX
+ * ticker，合约 id 就是那个 symbol，不存在挑不到的情况。
  */
 export const PRICE_EXCHANGE = "BingX";
 

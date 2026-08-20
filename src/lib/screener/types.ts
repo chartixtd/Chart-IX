@@ -156,15 +156,18 @@ export interface ScannerRow {
   /**
    * price / change24h / amplitude / volumeUsd 这四个字段口径故意不同，
    * 各自回答不同的问题：
-   *   · price 与 change24h 取 CoinGlass pairs-markets 里 BingX 那一行，
+   *   · price 与 change24h 取 BingX ticker 自己的 lastPrice / priceChangePercent，
    *     两者必须同源——用户在哪儿下单就该看哪儿的价和涨跌，不能显示的价格
-   *     来自 BingX、涨跌却来自另一个市场。pairs-markets 也没有像
-   *     open-interest/exchange-list 那样的 "All" 聚合行，"全交易所涨跌"
-   *     这个东西本来就拿不到。
-   *   · amplitude 取 history 交易所（默认 Binance）的 30m K 线，
-   *     因为振幅要连续的价格序列，只有拉了 K 线的那一家才有。
-   *   · volumeUsd 是全交易所 volume_usd 求和，因为流动性门槛问的是
-   *     「这个币好不好进出」，那是全市场属性，不该只看下单那一家。
+   *     来自 BingX、涨跌却来自另一个市场。（T24 之前取的是 pairs-markets 里
+   *     BingX 那一行，同一个来源绕了一圈，还要多花一次调用。）
+   *   · amplitude 取 BingX 的 30m K 线算，因为振幅要连续的价格序列。
+   *     注意**选币排名用的是另一份**——BingX ticker 的 24h 高低，那份在
+   *     批量层免费就有，不必等 K 线。实测两份几乎一致（14 个币中位差 0.0%、
+   *     最大 0.3%），因为 CoinGlass 的 BingX K 线就是 BingX 自己的数据、
+   *     48 根 30 分钟也正好是 24 小时。
+   *   · volumeUsd 来自 screener_volume_cache，是全交易所 volume_usd 求和，
+   *     因为流动性门槛问的是「这个币好不好进出」，那是全市场属性，
+   *     不该只看下单那一家。
    */
   price: number;
   /** BingX 那一行的 24h 涨跌 %，与 price 同源（见上方 price 的注释） */

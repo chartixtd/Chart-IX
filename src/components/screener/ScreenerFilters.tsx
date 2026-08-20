@@ -2,7 +2,8 @@
 
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { CLIENT_SLIDER, SERVER_GATE } from "@/lib/screener/universe";
+import { SERVER_GATE } from "@/lib/screener/universe";
+import { AMPLITUDE_RANK_TAKE } from "@/lib/screener/types";
 // FilterState / DEFAULT_FILTERS / DirectionFilter 的唯一定义放在 src/lib/screener/filter.ts
 // （不能在组件里再声明一份 —— 两份定义漂移之后滑块和过滤逻辑会对不上，TS 不会报错；
 // 且 vitest 只收集 src/lib 下的测试文件，筛选逻辑必须住在 src/lib 才测得到）。
@@ -37,23 +38,17 @@ export function ScreenerFilters({
         </span>
       </div>
 
-      <label className="flex min-w-[9rem] flex-1 flex-col gap-1.5">
+      {/* 振幅曾经是这里唯一可调的滑块。选币改成「按振幅排名取前 N 个」之后
+          它就失效了——能进榜的行振幅实测都在 14% 以上，而滑块范围是 1.5–3%，
+          拉到头也筛不掉任何一行。换成和成交量/市值一样的只读说明。 */}
+      <div className="flex flex-col gap-1.5">
         <span className="text-[11px] uppercase tracking-wider text-text-muted">
           {t("filters.amplitude")}
         </span>
-        <input
-          type="range"
-          min={CLIENT_SLIDER.amplitude.min}
-          max={CLIENT_SLIDER.amplitude.max}
-          step={0.5}
-          value={value.amplitude}
-          onChange={(e) => onChange({ ...value, amplitude: Number(e.target.value) })}
-          className="accent-gold"
-        />
         <span className="tnum text-xs text-text-secondary">
-          <b className="text-text-primary">{value.amplitude.toFixed(1)}</b>%
+          {t("filters.amplitude_rank", { n: AMPLITUDE_RANK_TAKE })}
         </span>
-      </label>
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <span className="text-[11px] uppercase tracking-wider text-text-muted">

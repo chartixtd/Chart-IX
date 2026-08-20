@@ -7,6 +7,29 @@ const PER_PAGE = 250;
 const CACHE_SECONDS = 3600;
 const PAGE_TIMEOUT_MS = 8000;
 const RATE_LIMIT_RETRY_MS = 1500;
+/**
+ * 四页之间的错峰间隔。
+ *
+ * 四个请求同时发出去正好踩在 CoinGecko 免密钥档的限流阈值上——这一点
+ * fetchPage 里原本就写着，但当时的应对只是「429 了等 1.5 秒重试一次」，
+ * 治的是症状。错峰是治因：把并发峰值从 4 降到 1，请求本身就不再触发限流。
+ *
+ * 350ms 是取舍点：四页总共只多等约 1 秒（仍然是重叠的，不是串行），
+ * 而这一秒买回来的是「不再因为一次限流丢掉排名 500 名开外的全部币」。
+ */
+const PAGE_STAGGER_MS = 350;
+
+/**
+ * 上一次成功取到的每页数据，页号 → 行。
+ *
+ * 市值是慢变量（这个模块本来就按小时缓存），所以某一页这次失败时，
+ * 用上一次的结果顶上远比「这一页整个缺失」正确——缺失会让那个排名区间的
+ * 币全部变成「查不到市值」被 preselect 排除，而榜单看起来完全正常。
+ *
+ * 只在进程内存活。serverless 实例是短命的，冷启动时这份兜底是空的，
+ * 所以它是第二道防线而不是第一道——第一道是上面的错峰。
+ */
+const lastGoodPage = new Map<number, CoinGeckoMarketRow[]>();
 
 interface RawRow {
   symbol?: unknown;
@@ -78,30 +101,53 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  */
 export async function fetchMarketCapRows(): Promise<CoinGeckoMarketRow[]> {
   const settled = await Promise.allSettled(
-    PAGES.map((page) => withTimeout(fetchPage(page), PAGE_TIMEOUT_MS))
+    PAGES.map(async (page, i) => {
+      // 错峰而不是串行：四页仍然重叠，总耗时只多约 1 秒，但并发峰值降到 1。
+      if (i > 0) await new Promise((resolve) => setTimeout(resolve, i * PAGE_STAGGER_MS));
+      return withTimeout(fetchPage(page), PAGE_TIMEOUT_MS);
+    })
   );
 
   const rows: CoinGeckoMarketRow[] = [];
   const failed: number[] = [];
+  const servedFromCache: number[] = [];
   for (let i = 0; i < settled.length; i++) {
+    const page = PAGES[i];
     const result = settled[i];
-    if (result.status === "fulfilled") rows.push(...result.value);
-    else failed.push(PAGES[i]);
+    if (result.status === "fulfilled") {
+      lastGoodPage.set(page, result.value);
+      rows.push(...result.value);
+      continue;
+    }
+    const cached = lastGoodPage.get(page);
+    if (cached) {
+      rows.push(...cached);
+      servedFromCache.push(page);
+    } else {
+      failed.push(page);
+    }
   }
 
-  // 部分页失败是**静默缩小候选池**，必须喊出来。
+  // 部分页彻底缺失是**静默缩小候选池**，必须喊出来。
+  //
   // 下面的校验只看第 1 页（排名 1-250）——那是市值排除规则要拦的那批，
-  // 缺了它后果最严重。但第 3、4 页（排名 500-1000）失败时校验照样通过，
+  // 缺了它后果最严重。但第 3、4 页（排名 500-1000）缺失时校验照样通过，
   // 函数返回一份残缺名单，而排名 500 名开外的币会全部变成「查不到市值」
   // 被 preselect 排除掉。实测撞上 CoinGecko 限流时，候选池从 253 缩到 153
   // ——少了 40%，而榜单看起来完全正常，只是少了一批币。
   //
-  // 这里不改成硬失败：那会让整轮扫描因为一次上游限流而完全没有产出，
-  // 代价比「这一轮少一些候选」大得多。要的是让它**可见**。
+  // 不改成整体硬失败：那会让一次上游限流毁掉整轮扫描，代价比「这一轮
+  // 少一些候选」大得多。要的是**先让它不发生**（错峰 + 上一次的结果顶上），
+  // 真的发生了就**让它可见**。
+  if (servedFromCache.length > 0) {
+    console.warn(
+      `[market-cap] 第 ${servedFromCache.join("、")} 页拉取失败，用上一次的结果顶上（市值是慢变量，可接受）`
+    );
+  }
   if (failed.length > 0) {
     console.error(
-      `[market-cap] ${failed.length}/${PAGES.length} 页拉取失败（第 ${failed.join("、")} 页），` +
-        `候选池会因此缩小——排名靠后的币这一轮拿不到市值`
+      `[market-cap] 第 ${failed.join("、")} 页拉取失败且无缓存可顶，` +
+        `候选池会因此缩小——这些排名区间的币这一轮拿不到市值`
     );
   }
 

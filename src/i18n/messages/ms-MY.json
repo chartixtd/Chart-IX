@@ -879,12 +879,13 @@
     "candidate_count": "{count} calon",
     "filters": {
       "volume": "Volum 24j ≥",
-      "amplitude": "Amplitud 24j ≥",
+      "amplitude": "Amplitud 24j",
       "market_cap": "Permodalan ≥",
       "direction": "Arah",
       "dir_all": "Semua",
       "dir_long": "Long",
-      "dir_short": "Short"
+      "dir_short": "Short",
+      "amplitude_rank": "{n} teratas mengikut kedudukan"
     },
     "columns": {
       "symbol": "Simbol",

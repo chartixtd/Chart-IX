@@ -1,34 +1,31 @@
-import { CLIENT_SLIDER } from "./universe";
 import type { ScannerRow } from "./types";
 
 export type DirectionFilter = "all" | "long" | "short";
 
 export interface FilterState {
-  /** 百分比。唯一还可调的门槛，其余（成交量、市值）已固定并下沉到服务端。 */
-  amplitude: number;
   direction: DirectionFilter;
 }
 
 export const DEFAULT_FILTERS: FilterState = {
-  amplitude: CLIENT_SLIDER.amplitude.default,
   direction: "all",
 };
 
 export type SortKey = "symbol" | "direction" | "total" | "volumeUsd" | "change24h" | "marketCap";
 
 /**
- * 纯客户端过滤。服务端已经对整池算好分，这里只决定哪些行显示 ——
- * 拉动滑块不会改变任何币的分数，也不会改变警报触发。
+ * 纯客户端过滤。服务端已经对整池算好分，这里只决定哪些行显示——
+ * 切换方向不会改变任何币的分数，也不会改变警报触发。
  *
- * 成交量与市值**不在这里过滤**：它们已经是固定门槛，由服务端在粗筛
- * （市值）与行情层（成交额）执行完了，能到前端的行必然已经达标。
- * 固定门槛再放一份在客户端是双重损失——既浪费深度扫描名额，
- * 又让读者以为它可调。
+ * 成交量、市值、振幅**都不在这里过滤**：三者全部由服务端执行完了，
+ * 能到前端的行必然已经达标。
+ *
+ * 振幅这一维 T24 删掉：它曾经是个滑块（1.5–3%），而选币改成「按振幅排名
+ * 取前 AMPLITUDE_RANK_TAKE 个」之后，能进榜的行振幅实测都在 14% 以上，
+ * 滑块拉到头也筛不掉任何一行——一个可证明无效的控件比没有更糟，
+ * 它在暗示用户「我调了一下，结果变了」，而实际什么都没发生。
  */
 export function applyFilters(rows: ScannerRow[], f: FilterState): ScannerRow[] {
-  return rows.filter(
-    (r) => r.amplitude >= f.amplitude && (f.direction === "all" || r.direction === f.direction)
-  );
+  return rows.filter((r) => f.direction === "all" || r.direction === f.direction);
 }
 
 /** 返回新数组 —— react 的列表渲染依赖引用变化，原地排序会让表格不更新。 */

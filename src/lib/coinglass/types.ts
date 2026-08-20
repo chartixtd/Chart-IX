@@ -50,24 +50,6 @@ export function toFiniteNumber(v: string | number): number {
   return Number.isFinite(n) ? n : NaN;
 }
 
-/** /api/futures/liquidation/coin-list 的一行（全交易所聚合） */
-export interface CoinGlassLiquidationCoin {
-  symbol: string;
-  liquidation_usd_1h: number;
-  long_liquidation_usd_1h: number;
-  short_liquidation_usd_1h: number;
-  liquidation_usd_24h: number;
-  long_liquidation_usd_24h: number;
-  short_liquidation_usd_24h: number;
-}
-
-/** /api/futures/liquidation/history 的一根。金额是字符串，调用方负责 parseFloat。 */
-export interface CoinGlassLiquidationBar {
-  time: number;
-  long_liquidation_usd: string;
-  short_liquidation_usd: string;
-}
-
 /** /api/futures/price/history 的一根。OHLCV 全是字符串。 */
 export interface CoinGlassPriceBar {
   time: number;

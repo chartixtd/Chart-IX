@@ -937,12 +937,13 @@
     "candidate_count": "{count} candidates",
     "filters": {
       "volume": "24h volume ≥",
-      "amplitude": "24h amplitude ≥",
+      "amplitude": "24h amplitude",
       "market_cap": "Market cap ≥",
       "direction": "Direction",
       "dir_all": "All",
       "dir_long": "Long",
-      "dir_short": "Short"
+      "dir_short": "Short",
+      "amplitude_rank": "Top {n} by rank"
     },
     "columns": {
       "symbol": "Symbol",

@@ -28,10 +28,11 @@ describe("applyFilters", () => {
     expect(applyFilters([row()], DEFAULT_FILTERS)).toHaveLength(1);
   });
 
-  it("振幅滑块过滤", () => {
-    expect(applyFilters([row({ amplitude: 1.2 })], DEFAULT_FILTERS)).toHaveLength(0);
-    expect(applyFilters([row({ amplitude: 2 })], { ...DEFAULT_FILTERS, amplitude: 3 })).toHaveLength(0);
-    expect(applyFilters([row({ amplitude: 3 })], { ...DEFAULT_FILTERS, amplitude: 3 })).toHaveLength(1);
+  it("不再按振幅过滤——选币已经是按振幅排名取前 N 个，客户端再筛一次筛不掉任何东西", () => {
+    // 曾经这里有个 1.5–3% 的滑块。能进榜的行振幅实测都在 14% 以上，
+    // 滑块拉到头也是空操作——一个可证明无效的控件比没有更糟，
+    // 它让用户以为「我调了，结果变了」。
+    expect(applyFilters([row({ amplitude: 0.1 })], DEFAULT_FILTERS)).toHaveLength(1);
   });
 
   it("不再过滤成交量与市值——它们已是服务端固定门槛，到这里的行必然达标", () => {

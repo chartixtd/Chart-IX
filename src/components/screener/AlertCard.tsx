@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { cn, formatPrice, formatPercent } from "@/lib/utils";
 import { FACTOR_MAX, SCAN_INTERVAL_MS } from "@/lib/screener/types";
 import type { AlertRecord } from "@/lib/screener/alerts-store";
+import { signedPct } from "@/lib/screener/alerts";
 import { FactorStack } from "./FactorStack";
 import { scenarioTone, readingKey, TONE_CLASSES, DIRECTION_CLASSES } from "./scenario-ui";
 
@@ -87,9 +88,36 @@ function TimeMeta({ alert, t }: { alert: AlertRecord; t: ReturnType<typeof useTr
   );
 }
 
-export function AlertCard({ alert }: { alert: AlertRecord }) {
+/**
+ * livePrice 是 BingX 每 15 秒刷新的最新成交价（见 useLivePrices）。
+ * 它优先于 alert.lastPrice —— 后者是**上一轮扫描**写进库里的价格，
+ * 而扫描 15 分钟才一轮（受 CoinGlass 配额限制）。卡片上这一格标着
+ * 「实时价格」，拿一个可能十几分钟前的数去填它是名不副实：实测
+ * PUMP 现价 0.003279、库里 0.003247，差了 0.98%，而卡片上那个
+ * ▼1.73% 是照着旧价算的。
+ *
+ * 拿不到实时价（BingX 抖动、或这个 symbol 不在永续列表里）就回落到
+ * lastPrice，并且**涨跌幅要跟着一起回落**——用实时价配 currentPct
+ * （服务端按 lastPrice 算的）会拼出一个自相矛盾的卡片：价格是新的，
+ * 百分比是旧的，两个数对不上账。
+ */
+export function AlertCard({
+  alert,
+  livePrice = null,
+}: {
+  alert: AlertRecord;
+  livePrice?: number | null;
+}) {
   const t = useTranslations("screener");
-  const pct = alert.currentPct ?? 0;
+  const shownPrice = livePrice ?? alert.lastPrice;
+  const pct =
+    livePrice === null
+      ? (alert.currentPct ?? 0)
+      : signedPct(alert.triggerPrice, livePrice, alert.direction);
+  // peakPct 只在每轮扫描时落库，而 pct 现在是实时的——不取 max 的话，
+  // 价格在两轮扫描之间创了新高时卡片会自相矛盾：「现在 +2.1%，最高到过
+  // 0.00%」。「最高到过」问的是「触发以来最好到过哪儿」，此刻本身也算数。
+  const shownPeak = alert.peakPct === null ? null : Math.max(alert.peakPct, pct);
 
   // 老警报（T22 之前触发、没有场景判定）：沿用简单卡片样式，不套用
   // 场景基调——scenario 为 null 时也没有判定句/操作文案/CVD-OI 标签
@@ -138,7 +166,7 @@ export function AlertCard({ alert }: { alert: AlertRecord }) {
               {t("alerts.last_price")}
             </div>
             <div className="tnum text-sm text-text-primary">
-              {alert.lastPrice === null ? "—" : formatPrice(alert.lastPrice)}
+              {shownPrice === null ? "—" : formatPrice(shownPrice)}
             </div>
           </div>
         </div>
@@ -149,9 +177,9 @@ export function AlertCard({ alert }: { alert: AlertRecord }) {
           </div>
           <div className="text-[10px] uppercase tracking-wider text-text-muted">
             {t("alerts.cumulative")}
-            {alert.peakPct !== null && (
+            {shownPeak !== null && (
               <span className="ml-1.5">
-                · {t("alerts.peak")} {alert.peakPct.toFixed(2)}%
+                · {t("alerts.peak")} {shownPeak.toFixed(2)}%
               </span>
             )}
           </div>
@@ -245,7 +273,7 @@ export function AlertCard({ alert }: { alert: AlertRecord }) {
             {t("alerts.last_price")}
           </div>
           <div className="tnum text-sm text-text-primary">
-            {alert.lastPrice === null ? "—" : formatPrice(alert.lastPrice)}
+            {shownPrice === null ? "—" : formatPrice(shownPrice)}
           </div>
         </div>
       </div>
@@ -256,9 +284,9 @@ export function AlertCard({ alert }: { alert: AlertRecord }) {
         </div>
         <div className="text-[10px] uppercase tracking-wider text-text-muted">
           {t("alerts.cumulative")}
-          {alert.peakPct !== null && (
+          {shownPeak !== null && (
             <span className="ml-1.5">
-              · {t("alerts.peak")} {alert.peakPct.toFixed(2)}%
+              · {t("alerts.peak")} {shownPeak.toFixed(2)}%
             </span>
           )}
         </div>

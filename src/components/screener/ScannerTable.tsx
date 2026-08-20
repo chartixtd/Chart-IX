@@ -113,7 +113,16 @@ export const ScannerTable = memo(function ScannerTable({
       key: "total",
       header: t("columns.total"),
       sortable: true,
-      render: (r) => (
+      render: (r) =>
+        r.dataGaps.length > 0 ? (
+          // 数据不全时显示「—」而不是分数：两个因子在缺数据时都会退回中性分
+          // （OI 30 + CVD 10 = 40），显示成 40 会让「上游挂了」看起来像
+          // 「信号平平」，而这两件事读者要做的反应完全不同。
+          // 完整理由见 types.ts ScannerRow.dataGaps 的字段注释。
+          <span className="tnum text-sm text-text-muted" title={t("columns.data_missing")}>
+            —
+          </span>
+        ) : (
         <span
           className={cn(
             "tnum text-sm font-bold",
@@ -126,13 +135,16 @@ export const ScannerTable = memo(function ScannerTable({
         >
           {r.total}
         </span>
-      ),
+        ),
     },
     {
       key: "factors",
       header: t("columns.factors"),
       hideOnMobile: true,
-      render: (r) => (
+      render: (r) =>
+        r.dataGaps.length > 0 ? (
+          <span className="text-sm text-text-muted">—</span>
+        ) : (
         // FactorStack 本身整个是 aria-hidden（它只是两根装饰柱），
         // 所以这里补一层文字说明，屏幕阅读器用户才能读到这两个数。
         // 警报卡不需要这个 —— 它每根柱子旁边已经有文字标签和分数。
@@ -142,7 +154,7 @@ export const ScannerTable = memo(function ScannerTable({
             {`OI ${r.factors.oi} / CVD ${r.factors.cvd}`}
           </span>
         </span>
-      ),
+        ),
     },
     {
       key: "volumeUsd",

@@ -34,6 +34,13 @@ export function applyFilters(rows: ScannerRow[], f: FilterState): ScannerRow[] {
 /** 返回新数组 —— react 的列表渲染依赖引用变化，原地排序会让表格不更新。 */
 export function sortRows(rows: ScannerRow[], key: SortKey, dir: 1 | -1): ScannerRow[] {
   return [...rows].sort((a, b) => {
+    // 数据不全的行永远沉底，**不受当前排序列与升降序影响**。
+    // 它们的分数/方向是缺失回退值，混进任何一列的排序里都会误导：
+    // 按分数降序时它们会插在中段（回退分合计 40），按升序时又会跑到最前，
+    // 两种都在暗示一个它们没有的结论。
+    const gapDiff = a.dataGaps.length - b.dataGaps.length;
+    if (gapDiff !== 0) return gapDiff;
+
     const av = a[key];
     const bv = b[key];
     if (typeof av === "string" && typeof bv === "string") return av.localeCompare(bv) * dir;

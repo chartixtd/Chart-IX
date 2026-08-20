@@ -2,30 +2,26 @@ import { getFuturesTickers } from "@/lib/bingx/market";
 import { buildMarketCapMap } from "@/lib/market-cap";
 import { fetchMarketCapRows } from "@/lib/market-cap-fetch";
 import { runWithConcurrency } from "@/lib/coinglass/client";
-import { getPairsMarkets, getFundingRateList, pickExchangeRow } from "@/lib/coinglass/market";
+import { getFundingRateList } from "@/lib/coinglass/market";
 import { getOpenInterestHistory } from "@/lib/coinglass/open-interest";
-// getLiquidationCoinList 保留：它服务的是下面 rankForDeepScan 的预排序信号
-// （爆仓异常度），跟已经退役的 Sweep 因子是两回事，不要因为删 Sweep 而连带删掉。
-import { getLiquidationCoinList } from "@/lib/coinglass/liquidation";
 import { getPriceHistory } from "@/lib/coinglass/price-history";
 import { getTakerVolumeHistory } from "@/lib/coinglass/taker-volume";
 import type {
-  CoinGlassPairMarket,
   CoinGlassFundingRow,
-  CoinGlassLiquidationCoin,
   CoinGlassPriceBar,
   CoinGlassTakerBar,
   CoinGlassOiBar,
 } from "@/lib/coinglass/types";
+import type { BingXTicker } from "@/types/bingx";
 import { preselect, amplitudeFromTicker, SERVER_GATE } from "./universe";
 import type { PreselectCandidate } from "./universe";
-import { rankForDeepScan } from "./preselect-rank";
-import type { RankInput } from "./preselect-rank";
+import { readVolumeCache } from "./volume-cache";
+import type { CachedVolume } from "./volume-cache";
 import { pickDirection, amplitudeFromBars } from "./score";
 import { pickFundingRate } from "./funding";
 import { classifyScenario } from "./factors/scenario";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
-import { DEEP_SCAN_LIMIT } from "./types";
+import { AMPLITUDE_RANK_TAKE } from "./types";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -58,144 +54,148 @@ export const BINGX_EXCHANGE = "BingX";
  */
 export const PRICE_EXCHANGE = "BingX";
 
-interface MarketStage {
+export interface ScanTarget {
   candidate: PreselectCandidate;
-  /** BingX 那一行，用于展示价格 */
-  bingx: CoinGlassPairMarket;
-  /** 拉 K 线用的交易所与合约 id —— 与下单盘口同源 */
-  priceExchange: string;
-  priceInstrumentId: string;
+  /** BingX ticker 的 24h 高低算出的振幅，% —— 选币排名的唯一依据 */
+  amplitude: number;
+  /** 全交易所成交额之和，来自 screener_volume_cache（扫描时零配额） */
   volumeUsd: number;
+  /** BingX 最新成交价 */
+  price: number;
   change24h: number | null;
 }
 
 /**
- * 行情层：一个币一次 pairs-markets，且只对预排序选中的 `DEEP_SCAN_LIMIT`
- * 个候选调用（见 runScan 里预排序那一段的注释）。
+ * 选币：成交量门槛 + 振幅排名。**这一整段不花任何上游调用。**
  *
- * 这里**不再**用 volume_usd 卡门槛（T19 之前有一个 `< SERVER_GATE.minVolumeUsd`
- * 就 return null 的检查，已删掉）：现在 pairs-markets 只对选中的
- * `DEEP_SCAN_LIMIT` 个调用，卡这个门槛只会让某几轮不足 `DEEP_SCAN_LIMIT` 行，
- * 而不会缩小上游调用量——门槛该起的作用已经被「只选这些进明细层」这件事本身
- * 取代了。真实成交额仍然写进 `ScannerRow.volumeUsd`，交给客户端滑块做流动性过滤。
+ * T24 之前这里是「预排序（爆仓异常度 + 振幅各半）挑出 N 个 → 行情层逐个调
+ * pairs-markets 拿成交额 → 不达标的丢掉」。那套的毛病是成交额门槛只对
+ * 已经选中的币生效：选中了，进来才发现不达标，这一轮就白少一行。
+ *
+ * 现在成交额来自缓存，所以门槛能在**全池**生效，选出来的每个币都是
+ * 已经过了流动性门槛的。名额不再被浪费。
+ *
+ * 振幅从「门槛」改成「排名」的理由是实测的：固定门槛在不同行情下筛掉的
+ * 比例天差地别（同样一条 8%，过去七天有 76% 的时点在它之下，而大行情日
+ * 只有 27%），候选池大小会自己漂；排名则不管行情如何都稳定输出这么多行。
+ * 详见 universe.ts 里 SERVER_GATE 下方那段删除说明。
+ *
+ * 拿不到缓存的币直接排除，与市值同一条原则：下限是「必须证明达标」的
+ * 条件，证明不了就当不达标。新上市的币会在轮转刷到它之后进入候选
+ * （见 volume-cache.ts 的 pickStaleCoins——未缓存的排在刷新队列最前）。
  */
-function toMarketStage(
-  candidate: PreselectCandidate,
-  rows: CoinGlassPairMarket[] | null
-): MarketStage | null {
-  if (!rows || rows.length === 0) return null;
+export function buildScanTargets(
+  candidates: PreselectCandidate[],
+  tickerBySymbol: Map<string, BingXTicker>,
+  volumeCache: Map<string, CachedVolume>
+): ScanTarget[] {
+  const targets: ScanTarget[] = [];
+  for (const candidate of candidates) {
+    const cached = volumeCache.get(candidate.coin);
+    if (!cached || cached.volumeUsd < SERVER_GATE.minVolumeUsd) continue;
 
-  const bingx = rows.find((r) => r.exchange_name === BINGX_EXCHANGE);
-  // BingX 那一行拿不到就整个跳过：没有它就没有可下单的价格，
-  // 而这个页面唯一的出口就是跳去 BingX 下单。
-  if (!bingx) return null;
+    const ticker = tickerBySymbol.get(candidate.bingxSymbol);
+    if (!ticker) continue;
 
-  const price = pickExchangeRow(rows, PRICE_EXCHANGE);
-  if (!price) return null;
+    // 价格取 BingX ticker 自己的最新成交价。T24 之前取的是 pairs-markets
+    // 里 BingX 那一行的 current_price——同一个来源绕了一圈，而且那一圈
+    // 要花一次调用，还会静默丢币（见下面 bingxSymbol 的注释）。
+    const price =
+      typeof ticker.lastPrice === "number" ? ticker.lastPrice : parseFloat(ticker.lastPrice);
+    if (!Number.isFinite(price) || price <= 0) continue;
 
-  // 成交额用全交易所之和，而不是单家 —— 流动性门槛问的是「这个币好不好进出」，
-  // 那是全市场的属性。
-  const volumeUsd = rows.reduce((a, r) => a + (Number.isFinite(r.volume_usd) ? r.volume_usd : 0), 0);
-  // 这条门槛只能在这里执行：CoinGlass 的成交额要逐币调 pairs-markets 才有，
-  // 粗筛阶段查不到值。所以会有少数深度扫描名额落在这里被淘汰（实测 14 个里
-  // 约掉 1 个）。粗筛那边用 SERVER_GATE.minBingxVolumeUsd 当粗略代理先挡一层。
-  if (volumeUsd < SERVER_GATE.minVolumeUsd) return null;
+    const change = parseFloat(ticker.priceChangePercent);
+    targets.push({
+      candidate,
+      amplitude: amplitudeFromTicker(ticker),
+      volumeUsd: cached.volumeUsd,
+      price,
+      change24h: Number.isFinite(change) ? change : null,
+    });
+  }
 
-  return {
-    candidate,
-    bingx,
-    priceExchange: price.exchange_name,
-    priceInstrumentId: price.instrument_id,
-    volumeUsd,
-    change24h: Number.isFinite(bingx.price_change_percent_24h)
-      ? bingx.price_change_percent_24h
-      : null,
-  };
+  // 振幅从高到低。并列时按 symbol 排，只是为了让结果稳定可复现。
+  targets.sort((a, b) => b.amplitude - a.amplitude || a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol));
+  return targets.slice(0, AMPLITUDE_RANK_TAKE);
 }
 
 /**
- * 服务端一次算出整池榜单。
+ * 服务端一次算出整池榜单。四段式，一轮固定 `1 + AMPLITUDE_RANK_TAKE × 3` 次
+ * CoinGlass 调用（当前 61 次）：
  *
- * T19 之前这里是三段式：批量层（tickers/市值/资金费率，0 次 CoinGlass 调用）
- * → 行情层（对*每个粗筛候选*调 pairs-markets）→ 明细层（对*每个行情层存活的
- * 候选*调 4 个端点）。粗筛池子常有 100–150 个候选，三段式在真实 key 下
- * 一轮要打 450–800 次 CoinGlass 调用，而 `API-KEY-MAX-LIMIT: 80`——差一个
- * 数量级，dryrun 直接被 429 打回、当时的四因子全部退化成缺数据的默认分
- * （见 client.ts 顶部 `COINGLASS_CONCURRENCY` 的注释）。
+ *   ① 批量层（1 次调用）：BingX ticker（0 次）+ CoinGecko 市值（0 次）+
+ *      `funding-rate/exchange-list`（1 次，全币资金费率，仅供展示）。
+ *   ② 粗筛 `preselect()`：0 次调用，只用批量层已有的数据。
+ *   ③ 选币 `buildScanTargets()`：0 次调用。成交量门槛读 screener_volume_cache
+ *      （由 cron 空转的 tick 轮转刷新，见 volume-cache.ts），振幅排名取前
+ *      `AMPLITUDE_RANK_TAKE` 个。
+ *   ④ 明细层（`AMPLITUDE_RANK_TAKE × 3` 次）：open-interest/aggregated-history +
+ *      price/history + 聚合版 taker-buy-sell-volume。
  *
- * 现在是四段式，一轮固定 74 次调用（`DEEP_SCAN_LIMIT` 目前推导为 18，见
- * `types.ts` 的注释——**这个数不是拍脑袋定的整数，是从限流器的真实配额
- * `RATE_LIMIT_PER_MIN` 推导出来的，改了限流器配额这里的次数会跟着变**。
- * T21 退役 Zone/Sweep 两因子之后每个币少打一次 liquidation/history，
- * `DEEP_SCAN_LIMIT` 因此从 14 涨到 18——同一条不等式，配额没变，
- * 单个币变便宜了，能塞进去的币就变多了）：
- *   ① 批量层（4 路，2 次 CoinGlass 调用）：BingX ticker（0 次）+ CoinGecko
- *      市值（0 次）+ `liquidation/coin-list`（1 次，全币爆仓，供 ③ 预排序用）+
- *      `funding-rate/exchange-list`（1 次，全币资金费率）。
- *   ② 粗筛：`preselect()`，0 次调用，只用批量层已有的数据。
- *   ③ 预排序：从粗筛池子里选出 `DEEP_SCAN_LIMIT` 个进入明细层，
- *      0 次调用（下面详细说）。
- *   ④ 明细层（`DEEP_SCAN_LIMIT` × 4 次调用）：只对预排序选中的候选依次调
- *      pairs-markets、open-interest/aggregated-history、price/history、
- *      taker-buy-sell-volume/history。
+ * `BATCH_LAYER_CALLS + DETAIL_CALLS_PER_COIN × DEEP_SCAN_LIMIT ≤ RATE_LIMIT_PER_MIN`
+ * 这条不等式仍然是硬约束（推导式与断言测试见 types.ts）。**它踩过一次真实的坑**：
+ * T19 第一版把上限写死成 15，`2 + 15 × 5 = 77 > 75`，最后两次调用撞上限流器
+ * 等待，一轮跑到 60.7 秒，撞破 Vercel Hobby 的 60 秒函数上限。所以那个上限
+ * 至今是从限流器配额推导的，不是写死的整数。
  *
- * `2 + DEEP_SCAN_LIMIT × 4` 必须 `≤ RATE_LIMIT_PER_MIN`（不是 CoinGlass 文档
- * 写的 80，是限流器实际生效的 75——两者的差就是限流器给「cron 刚扫完、用户
- * 马上刷新」这类重叠留的余量）。**这条不等式踩过一次真实的坑**：T19 第一版
- * `DEEP_SCAN_LIMIT` 直接写死 15，当时`DETAIL_CALLS_PER_COIN` 还是 5，
- * `2 + 15 × 5 = 77 > 75`，最后两次调用撞上限流器等待，一轮跑到 60.7 秒，
- * 撞破 Vercel Hobby 的 60 秒函数上限——这正是为什么 `DEEP_SCAN_LIMIT`
- * 现在改成从 `RATE_LIMIT_PER_MIN` 推导，而不是写死的常量，具体推导式与
- * 断言测试见 `types.ts`。
+ * 注意 `AMPLITUDE_RANK_TAKE`（想看几行，20）与 `DEEP_SCAN_LIMIT`（配额允许的
+ * 上限，24）是两个不同的数，不要合并——理由见 types.ts 那两个常量的注释。
  *
- * 为什么是预排序而不是直接把 `DEEP_SCAN_LIMIT` 定成粗筛门槛的一部分：粗筛用的
- * 信号（市值、BingX 高低振幅）批量层就有，不花额外调用；但「这个币现在
- * 是否值得深挖」还需要爆仓异常度这个信号——liquidation/coin-list 同样
- * 是批量层已经拿到的数据，不花额外调用，所以能在明细层开始之前，
- * 用「爆仓异常度 + 振幅」各半的分数从粗筛池子里再挑一轮，把最值得
- * 打分的那些送进明细层，而不是任意选或者按粗筛的自然顺序截断。
+ * **T24 相对上一版的三处结构性改动：**
  *
- * 预排序的代价（无法避免，不是疏忽）：OI/CVD 两个因子的数据只有
- * 进了明细层才能拿到，预排序阶段完全看不到，只能用爆仓与振幅这两个
- * 粗筛阶段就有的信号做代理。一个「爆仓平淡、振幅也一般，但 OI/CVD
- * 两项本来会打出高分」的币，在限流器 75/分钟的真实配额下就是进不了这一轮的深度扫描——
- * 这是配额约束下必然要接受的代价，下一轮扫描（15 分钟后）它仍有机会
- * 凭爆仓或振幅的变化被选中。
+ * 1. 行情层（逐币 pairs-markets）整个消失了。它此前唯一的产出是全市场成交额
+ *    和 BingX 合约 id：成交额现在来自缓存，合约 id 直接用 BingX ticker 自己的
+ *    symbol。每个币从 4 次调用降到 3 次。
+ * 2. 顺带修掉一个静默丢币的 bug：`pairs-markets?symbol=PEPE` 里**没有 BingX
+ *    那一行**（BingX 把它上成 1000PEPE-USDT），旧代码要求 BingX 行必须存在，
+ *    所以所有带乘数的币（实测 9 个：1000PEPE / 1000BONK / 1000000BABYDOGE …）
+ *    此前根本进不了榜单。
+ * 3. 预排序（爆仓异常度 + 振幅各半）退役，选币改成纯振幅排名。爆仓那一半
+ *    从未被真实数据验证过，而振幅至少有一个方向性证据支持；在回测台建好
+ *    之前，用一个未验证的信号去加权另一个未验证的信号，只是把不确定性
+ *    叠起来。`liquidation/coin-list` 因此也不再拉，批量层从 2 次降到 1 次。
  *
- * 失败语义（与 spec 的降级矩阵一一对应）：
+ * 失败语义：
  *   · BingX ticker 失败或为空 → 抛错。没有可交易白名单，产出的榜单
  *     可能整片都是下不了单的币。
- *   · CoinGecko 市值失败或空 map → 抛错。这与旧的 6 维模型相反：那里
- *     市值只是 25% 权重的打分项，可以降级成中性分；这里市值是硬门槛，
- *     拿不到 = 门槛失效 = BTC/ETH 和查不到的合成品直接涌进小市值筛选器。
- *   · 资金费率整表失败 → 降级，fundingRate 全为 null。它在两因子模型里
- *     只是展示字段，不参与打分。
- *   · liquidation/coin-list 整表失败 → 降级，不中断。预排序退化成
- *     只按振幅排（爆仓这一半的信号对每个候选都是同一个常数，不再区分
- *     谁高谁低，实际效果等价于「爆仓百分位全给 0」，具体原理见
- *     preselect-rank.ts 里 percentileRank 的并列取平均名次注释）。
- *     它不是硬门槛，不该因为这一个批量端点挂掉就让整轮扫描失败。
+ *   · CoinGecko 市值失败或空 map → 抛错。市值是硬门槛，拿不到 = 门槛失效
+ *     = BTC/ETH 和查不到的合成品直接涌进小市值筛选器。
+ *   · 成交量缓存读失败 → readVolumeCache 返回空 Map，这一轮**没有任何币
+ *     能证明成交量达标**，榜单为空。这是刻意的：宁可空榜也不要一份
+ *     绕过了流动性门槛的榜单。缓存表是独立的一张表，读失败是罕见事件，
+ *     而下一轮（15 分钟后）会自愈。
+ *   · 资金费率整表失败 → 降级，fundingRate 全为 null，只是展示字段。
  *   · 单个币的单个端点失败 → runWithConcurrency 把它写成 null，
  *     对应因子走各自的缺失分支，不牵连其他币。
  */
 export async function runScan(): Promise<ScannerPayload> {
-  const [tickersSettled, capSettled, fundingSettled, liquidationSettled] = await Promise.allSettled([
-    getFuturesTickers(),
-    fetchMarketCapRows(),
-    getFundingRateList(),
-    getLiquidationCoinList(),
+  const [tickersSettled, capSettled, fundingSettled, volumeCache] = await Promise.all([
+    getFuturesTickers().then(
+      (v) => ({ ok: true as const, v }),
+      (e) => ({ ok: false as const, e })
+    ),
+    fetchMarketCapRows().then(
+      (v) => ({ ok: true as const, v }),
+      (e) => ({ ok: false as const, e })
+    ),
+    getFundingRateList().then(
+      (v) => ({ ok: true as const, v }),
+      (e) => ({ ok: false as const, e })
+    ),
+    // 读缓存表，不打上游，与三个网络请求并行只是为了少等一个来回
+    readVolumeCache(),
   ]);
 
-  if (tickersSettled.status === "rejected") {
-    throw new Error(`BingX tickers unavailable: ${String(tickersSettled.reason)}`);
+  if (!tickersSettled.ok) {
+    throw new Error(`BingX tickers unavailable: ${String(tickersSettled.e)}`);
   }
-  const tickers = tickersSettled.value;
+  const tickers = tickersSettled.v;
   if (tickers.length === 0) throw new Error("BingX tickers unavailable: empty response");
 
-  if (capSettled.status === "rejected") {
-    throw new Error(`Market cap unavailable: ${String(capSettled.reason)}`);
+  if (!capSettled.ok) {
+    throw new Error(`Market cap unavailable: ${String(capSettled.e)}`);
   }
-  const marketCapMap = buildMarketCapMap(capSettled.value);
+  const marketCapMap = buildMarketCapMap(capSettled.v);
   // 空 map 必须当成失败：它是真值，会让每个币都走「查不到市值」那条路被排除，
   // 结果是一份看起来正常的空榜单被 TTL 缓存原样钉住。
   if (Object.keys(marketCapMap).length === 0) {
@@ -203,52 +203,20 @@ export async function runScan(): Promise<ScannerPayload> {
   }
 
   const fundingByCoin = new Map<string, CoinGlassFundingRow>();
-  if (fundingSettled.status === "fulfilled") {
-    for (const row of fundingSettled.value) fundingByCoin.set(row.symbol, row);
+  if (fundingSettled.ok) {
+    for (const row of fundingSettled.v) fundingByCoin.set(row.symbol, row);
   } else {
-    console.error("[screener] funding rate list unavailable, degrading to null", fundingSettled.reason);
+    console.error("[screener] funding rate list unavailable, degrading to null", fundingSettled.e);
   }
 
-  const liquidationByCoin = new Map<string, CoinGlassLiquidationCoin>();
-  if (liquidationSettled.status === "fulfilled") {
-    for (const row of liquidationSettled.value) liquidationByCoin.set(row.symbol, row);
-  } else {
-    // 不抛错：预排序对拿不到的币会用 liq1h = liq24h = 0 填充，
-    // 效果是退化成只按振幅排（见上面 runScan 顶部注释与
-    // preselect-rank.ts 的 percentileRank 注释）。
-    console.error(
-      "[screener] liquidation coin-list unavailable, degrading preselect to amplitude-only",
-      liquidationSettled.reason
-    );
-  }
-
-  // ① 批量层粗筛
+  // ② 粗筛：只用批量层已有的免费数据（BingX ticker + CoinGecko 市值）
   const candidates = preselect(tickers, marketCapMap);
 
-  // ② 预排序：从粗筛池子里选出 DEEP_SCAN_LIMIT 个进入明细层。
-  // tickerBySymbol 只是为了把 preselect() 已经消费过的 ticker 重新按
-  // symbol 找回来算振幅——PreselectCandidate 本身不携带这个数值
-  // （粗筛只需要知道振幅达不达标，预排序才需要具体数值），非空断言
-  // 是安全的：candidates 里的每个 bingxSymbol 都直接来自 tickers 数组。
+  // ③ 选币：成交量门槛（读缓存）+ 振幅排名，0 次上游调用。
+  // tickerBySymbol 是为了把 preselect() 已经消费过的 ticker 按 symbol 找回来
+  // ——PreselectCandidate 本身不携带价格与振幅（粗筛不需要它们）。
   const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
-  const rankInputs: RankInput[] = candidates.map((c) => {
-    const liq = liquidationByCoin.get(c.coin);
-    return {
-      candidate: c,
-      amplitude: amplitudeFromTicker(tickerBySymbol.get(c.bingxSymbol)!),
-      liq1h: liq?.liquidation_usd_1h ?? 0,
-      liq24h: liq?.liquidation_usd_24h ?? 0,
-    };
-  });
-  const deepScanTargets = rankForDeepScan(rankInputs, DEEP_SCAN_LIMIT);
-
-  // ③ 行情层：只对预排序选中的 DEEP_SCAN_LIMIT 个调用 pairs-markets
-  const pairRows = await runWithConcurrency(
-    deepScanTargets.map((c) => () => getPairsMarkets(c.coin))
-  );
-  const staged = deepScanTargets
-    .map((c, i) => toMarketStage(c, pairRows[i]))
-    .filter((s): s is MarketStage => s !== null);
+  const staged = buildScanTargets(candidates, tickerBySymbol, volumeCache);
 
   // ④ 明细层：三个端点共用同一个并发池，所以并发上限是对上游的真实总上限。
   // staged 现在最多 DEEP_SCAN_LIMIT 个，入队顺序与下面取结果的 base + 0..2 下标算术
@@ -269,7 +237,11 @@ export async function runScan(): Promise<ScannerPayload> {
     // K 线取下单盘口（OI 判断与振幅要跟执行同源），资金流取最深的池子
     // （CVD 统计的是整个市场的方向，薄盘口取样会让它失效）。
     // 调用次数不变，只是 exchange 参数不同。
-    detailTasks.push(() => getPriceHistory(s.priceExchange, s.priceInstrumentId));
+    // BingX ticker 的 symbol 直接就是 CoinGlass 的 instrument_id（实测 39 个
+    // 里 38 个可用，唯一的例外是 CoinGlass 上根本查不到的币）。这样就不必
+    // 先调 pairs-markets 去找 instrument_id——那一步不但费一次调用，还会
+    // 把所有带乘数的币整个丢掉（见 runScan 顶部第 2 条）。
+    detailTasks.push(() => getPriceHistory(PRICE_EXCHANGE, s.candidate.bingxSymbol));
     detailTasks.push(() => getTakerVolumeHistory(s.candidate.coin));
   }
   const detail = await runWithConcurrency(detailTasks);
@@ -284,9 +256,15 @@ export async function runScan(): Promise<ScannerPayload> {
     const priceBars = (detail[base + 1] as CoinGlassPriceBar[] | null) ?? [];
     const taker = (detail[base + 2] as CoinGlassTakerBar[] | null) ?? [];
 
-    const price = s.bingx.current_price;
-    if (!Number.isFinite(price) || price <= 0) continue;
+    const price = s.price;
 
+    // 「整段拿不到」= 对应的序列是空数组（上游请求失败或这个币在 CoinGlass
+    // 上查不到）。两个因子各自需要哪几条序列，与它们内部的取数一致：
+    // OI 要持仓量 + K 线（象限判断比的是两者的配合），CVD 要主动买卖 + K 线
+    // （背离那一半要比价格走向）。
+    const dataGaps: Array<"oi" | "cvd"> = [];
+    if (oiBars.length === 0 || priceBars.length === 0) dataGaps.push("oi");
+    if (taker.length === 0 || priceBars.length === 0) dataGaps.push("cvd");
     const { direction, total, factors } = pickDirection({
       price,
       priceBars,
@@ -313,6 +291,7 @@ export async function runScan(): Promise<ScannerPayload> {
       direction: rowDirection,
       total,
       factors,
+      dataGaps,
       scenario,
       price,
       change24h: s.change24h,
@@ -325,11 +304,34 @@ export async function runScan(): Promise<ScannerPayload> {
       fundingRate: pickFundingRate(fundingByCoin.get(s.candidate.coin), BINGX_EXCHANGE),
       // 展示的是**价格/K 线**的来源（也就是下单盘口），不是资金流的来源。
       // 表格里这个标签紧挨着 symbol 与价格，标的就是「这一行的价格是哪儿的」。
-      sourceExchange: s.priceExchange,
+      sourceExchange: PRICE_EXCHANGE,
     });
   }
 
-  rows.sort((a, b) => b.total - a.total || a.symbol.localeCompare(b.symbol));
+  // 数据不全的行一律沉底，不参与分数排序——它们的分数是缺失回退值，
+  // 拿它跟真实算出来的分数比大小没有意义。
+  rows.sort(
+    (a, b) =>
+      a.dataGaps.length - b.dataGaps.length ||
+      b.total - a.total ||
+      a.symbol.localeCompare(b.symbol)
+  );
 
   return { rows, computedAt: Date.now() };
+}
+
+/**
+ * 成交量缓存该覆盖哪些币：过了所有**免费**门槛的候选。
+ *
+ * 与 runScan 共用同一个 `preselect()`，这是刻意的——两边如果各写一份口径，
+ * 迟早会漂：缓存里刷的是 A 集合、扫描时按 B 集合筛，交集之外的币
+ * 要么永远缺成交量（进不了榜），要么白白占着轮转名额。
+ *
+ * 只用 BingX ticker + CoinGecko 市值，0 次 CoinGlass 调用。
+ */
+export async function listVolumeRefreshCoins(): Promise<string[]> {
+  const [tickers, capRows] = await Promise.all([getFuturesTickers(), fetchMarketCapRows()]);
+  const marketCapMap = buildMarketCapMap(capRows);
+  if (tickers.length === 0 || Object.keys(marketCapMap).length === 0) return [];
+  return preselect(tickers, marketCapMap).map((c) => c.coin);
 }

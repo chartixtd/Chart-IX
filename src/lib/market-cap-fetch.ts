@@ -82,8 +82,27 @@ export async function fetchMarketCapRows(): Promise<CoinGeckoMarketRow[]> {
   );
 
   const rows: CoinGeckoMarketRow[] = [];
-  for (const result of settled) {
+  const failed: number[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
     if (result.status === "fulfilled") rows.push(...result.value);
+    else failed.push(PAGES[i]);
+  }
+
+  // 部分页失败是**静默缩小候选池**，必须喊出来。
+  // 下面的校验只看第 1 页（排名 1-250）——那是市值排除规则要拦的那批，
+  // 缺了它后果最严重。但第 3、4 页（排名 500-1000）失败时校验照样通过，
+  // 函数返回一份残缺名单，而排名 500 名开外的币会全部变成「查不到市值」
+  // 被 preselect 排除掉。实测撞上 CoinGecko 限流时，候选池从 253 缩到 153
+  // ——少了 40%，而榜单看起来完全正常，只是少了一批币。
+  //
+  // 这里不改成硬失败：那会让整轮扫描因为一次上游限流而完全没有产出，
+  // 代价比「这一轮少一些候选」大得多。要的是让它**可见**。
+  if (failed.length > 0) {
+    console.error(
+      `[market-cap] ${failed.length}/${PAGES.length} 页拉取失败（第 ${failed.join("、")} 页），` +
+        `候选池会因此缩小——排名靠后的币这一轮拿不到市值`
+    );
   }
 
   // 第 1 页装着排名 1-250，正是市值排除规则要拦的那批。少了它，

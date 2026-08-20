@@ -954,7 +954,8 @@
       "change": "24h Chg",
       "market_cap": "Mkt Cap",
       "updated": "Updated",
-      "actions": "Actions"
+      "actions": "Actions",
+      "data_missing": "Data unavailable"
     },
     "table_title": "Scan results",
     "table_hint": "Ranked by score · click a row for details",

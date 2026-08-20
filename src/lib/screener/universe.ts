@@ -12,12 +12,19 @@ import type { BingXTicker } from "@/types/bingx";
  */
 export const SERVER_GATE = {
   /**
-   * CoinGlass volume_usd（全交易所之和）下限。
+   * 全交易所 volume_usd 之和的下限。
    *
-   * 这条门槛只能在**行情层**生效（拿到 pairs-markets 之后），因为
-   * CoinGlass 的成交额要逐币调用才有；粗筛阶段查不到值。所以会有少数
-   * 深度扫描名额落在这里被淘汰——实测 14 个里约掉 1 个，可以接受。
-   * 想在粗筛就挡住得靠下面的 minBingxVolumeUsd 当粗略代理。
+   * 这条门槛**现在在全池生效**（T24）。此前它只能在行情层执行——CoinGlass
+   * 的成交额要逐币调 pairs-markets 才有，一轮扫描的配额装不下两百多个币，
+   * 所以只对已经选中的那十几个生效，结果是名额被浪费：选中了，进来才发现
+   * 不达标，这一轮就少一行。
+   *
+   * 现在由 screener_volume_cache 供数（见 volume-cache.ts）：cron 空转的
+   * tick 轮转刷新，约半小时刷一遍全池，扫描时零配额读缓存。
+   *
+   * 查不到缓存的币一律排除，与 minMarketCap 同一条原则——下限是「必须
+   * 证明达标」的条件，证明不了就当不达标。新上市的币会在下一次轮转
+   * 刷到它之后进入候选。
    */
   minVolumeUsd: 20_000_000,
   /**
@@ -28,30 +35,29 @@ export const SERVER_GATE = {
    * CoinGecko 前 50 名（见下面 TOP_MARKET_CAP_EXCLUDED）就能进候选池。
    * 所以实际的上界是「不是主流大币」，而不是一个具体的市值数字。
    *
-   * 这条在粗筛阶段生效（CoinGecko 市值是免费数据，不花 CoinGlass 配额），
-   * 所以深度扫描的名额不会浪费在会被淘汰的币上。
+   * 这条在粗筛阶段生效（CoinGecko 市值是免费数据，不花 CoinGlass 配额）。
    */
   minMarketCap: 30_000_000,
-  /**
-   * BingX ticker 的 24h 高低算出的振幅下限，单位 %。
-   *
-   * 必须严格小于滑块最小值（1.5%）：粗筛发生在拉 K 线之前，只能用 BingX 的高低，
-   * 而客户端滑块用的是 30m K 线算的真振幅。两边不同源却取等值，会误杀一个
-   * 真振幅 1.7%、BingX 高低算出 1.45% 的币——而且这种误杀在榜单上完全看不出来。
-   */
-  minAmplitude: 0.5,
-  /**
-   * BingX ticker 的 quoteVolume（24h 成交额）下限，美元。
-   *
-   * 这**不是** minVolumeUsd 的等价物，只是它在粗筛阶段的粗略代理：实测 BingX
-   * 长尾的 quoteVolume 在 600–700 万美元这一带是被拍平的假数据（516 个永续里
-   * 有 144 个全挤在 619–691 万这个 0.73M 宽的带里），所以这个门槛只能定在
-   * 那条假带**下方**，绝不能顶着那条假带定、更不能超过它——否则会把大量
-   * 真实有成交量、只是恰好落在假带里的币一起误杀。真正的成交额门槛是
-   * minVolumeUsd，在行情层用 CoinGlass 的真实值执行。
-   */
-  minBingxVolumeUsd: 2_000_000,
 } as const;
+
+/*
+ * 这里曾经还有两条门槛，T24 一并删除，删除的理由都是实测的：
+ *
+ * · `minAmplitude: 0.5`（BingX 24h 高低算出的振幅下限）——实测**一个币
+ *   都没筛掉**。真实候选池 252 个币的振幅最小值就有 2.63%，中位数 9.7%，
+ *   加密货币一天不动 1.5% 才是稀奇事。而且固定门槛在不同行情下筛掉的
+ *   比例天差地别：同样一条 8%，过去七天有 76% 的时点在它之下，而大行情
+ *   日只有 27%。振幅现在改成**排名**（见 pipeline.ts 的选币段），
+ *   不管行情火爆还是平静，选出来的数量都稳定。
+ *
+ * · `minBingxVolumeUsd: 2_000_000`——它只是 minVolumeUsd 在粗筛阶段的
+ *   粗略代理，而实测证明这个代理不成立：同一批币两个口径的倍数从 1.3x
+ *   到 28.3x（CRV 在 BingX 只有 3.4M、全市场 96.4M；WET 在 BingX 6.5M、
+ *   全市场只有 8.7M），没有任何 BingX 门槛能翻译成「全市场 ≥2000万」。
+ *   更糟的是 BingX 长尾的成交额是被拍平的假数据（516 个永续里 144 个
+ *   全挤在 619–691 万这个 0.73M 宽的带里）。现在有了真实成交量缓存，
+ *   代理不再需要。
+ */
 
 /** 客户端滑块的取值域。单位：成交量与市值是百万美元，振幅是 %。 */
 /**
@@ -122,14 +128,6 @@ export function preselect(
     // 见 SERVER_GATE.minMarketCap 的注释。
     if (entry.rank <= TOP_MARKET_CAP_EXCLUDED) continue;
     if (entry.marketCap < SERVER_GATE.minMarketCap) continue;
-
-    const quoteVolume = parseFloat(t.quoteVolume);
-    if (!Number.isFinite(quoteVolume) || quoteVolume < SERVER_GATE.minBingxVolumeUsd) continue;
-
-    const high = parseFloat(t.highPrice);
-    const low = parseFloat(t.lowPrice);
-    if (!Number.isFinite(high) || !Number.isFinite(low) || low <= 0) continue;
-    if (((high - low) / low) * 100 < SERVER_GATE.minAmplitude) continue;
 
     seen.add(t.symbol);
     out.push({

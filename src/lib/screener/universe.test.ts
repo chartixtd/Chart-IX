@@ -43,12 +43,15 @@ describe("门槛包含关系", () => {
     expect(CLIENT_SLIDER).not.toHaveProperty("marketCapCeiling");
   });
 
-  it("BingX 成交额粗筛门槛必须定在假带（619万–691万）下方，不能顶到假带里", () => {
-    expect(SERVER_GATE.minBingxVolumeUsd).toBeLessThan(6_190_000);
-  });
-
-  it("振幅两边不同源，服务端必须留余量而不是取等值", () => {
-    expect(SERVER_GATE.minAmplitude).toBeLessThan(CLIENT_SLIDER.amplitude.min);
+  it("服务端不该再有振幅门槛或 BingX 成交额代理门槛", () => {
+    // 两条都在 T24 删了，理由见 SERVER_GATE 下方的注释块（都是实测的）：
+    // 振幅门槛一个币都没筛掉且筛选强度随行情漂移，已改成排名；
+    // BingX 成交额与全市场成交额的倍数从 1.3x 到 28.3x，代理不成立，
+    // 现在由 screener_volume_cache 提供真实成交量。
+    // 这条断言防止以后有人「顺手加回一个粗筛门槛」——那会重新引入
+    // 一个看不见的、随行情漂移的筛选层。
+    expect(SERVER_GATE).not.toHaveProperty("minAmplitude");
+    expect(SERVER_GATE).not.toHaveProperty("minBingxVolumeUsd");
   });
 });
 
@@ -98,10 +101,6 @@ describe("preselect", () => {
     expect(preselect([ticker("UNKNOWN-USDT", 1.02, 1)], caps)).toHaveLength(0);
   });
 
-  it("排除振幅不足的币", () => {
-    expect(preselect([ticker("FLAT-USDT", 1.001, 1)], caps)).toHaveLength(0);
-  });
-
   it("排除非 -USDT 交易对", () => {
     expect(preselect([ticker("TIA-USDC", 1.02, 1)], caps)).toHaveLength(0);
   });
@@ -114,14 +113,16 @@ describe("preselect", () => {
     expect(preselect([ticker("TIA-USDT", 1.02, 1), ticker("TIA-USDT", 1.03, 1)], caps)).toHaveLength(1);
   });
 
-  it("排除 BingX quoteVolume 低于门槛的币（真正没有成交）", () => {
-    expect(preselect([ticker("TIA-USDT", 1.02, 1, 500_000)], caps)).toHaveLength(0);
+  it("不再因为 BingX 成交额低就排除——真实成交量门槛在缓存那一层执行", () => {
+    // BingX 长尾的 quoteVolume 是被拍平的假数据，拿它筛成交额等于用假数据
+    // 决定谁进池子。这里放行，由 pipeline 用 screener_volume_cache 里的
+    // 全市场真实成交额来筛。
+    expect(preselect([ticker("TIA-USDT", 1.02, 1, 500_000)], caps)).toHaveLength(1);
   });
 
-  it("quoteVolume 恰好达标时放行", () => {
-    expect(
-      preselect([ticker("TIA-USDT", 1.02, 1, SERVER_GATE.minBingxVolumeUsd)], caps)
-    ).toHaveLength(1);
+  it("不再因为振幅低就排除——振幅现在是排名依据，不是门槛", () => {
+    // high/low 几乎相等 = 振幅接近 0，旧门槛会砍掉它。
+    expect(preselect([ticker("TIA-USDT", 1.0001, 1, 50_000_000)], caps)).toHaveLength(1);
   });
 });
 

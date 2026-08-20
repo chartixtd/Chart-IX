@@ -954,7 +954,8 @@
       "change": "24h涨跌",
       "market_cap": "市值",
       "updated": "更新",
-      "actions": "操作"
+      "actions": "操作",
+      "data_missing": "数据缺失"
     },
     "table_title": "主扫描表",
     "table_hint": "按总分排序 · 点击行查看详情",

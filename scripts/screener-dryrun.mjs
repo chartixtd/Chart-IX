@@ -16,7 +16,23 @@
  *   COINGLASS_API_KEY=... npx tsx scripts/screener-dryrun.mjs
  */
 import { runScan } from "../src/lib/screener/pipeline.ts";
-import { FACTOR_MAX } from "../src/lib/screener/types.ts";
+import { FACTOR_MAX, AMPLITUDE_RANK_TAKE } from "../src/lib/screener/types.ts";
+import { readVolumeCache } from "../src/lib/screener/volume-cache.ts";
+
+// 成交量缓存是选币的前置条件：缓存空 = 没有任何币能证明成交量达标 = 空榜。
+// 先把它的状态打出来，否则一份空榜单看不出是「上游挂了」还是「缓存还没暖」。
+const vc = await readVolumeCache();
+const ages = [...vc.values()].map((v) => (Date.now() - v.updatedAt) / 60000).sort((a, b) => a - b);
+console.log(
+  `成交量缓存：${vc.size} 个币` +
+    (ages.length ? ` · 最新 ${ages[0].toFixed(0)} 分钟前 · 最旧 ${ages[ages.length - 1].toFixed(0)} 分钟前` : "")
+);
+if (vc.size === 0) {
+  console.log(
+    "⚠ 缓存是空的。要么 migration 050 还没跑，要么 cron 的空转 tick 还没刷过一轮。\n" +
+      "  这种情况下榜单必然是空的——这是刻意的：宁可空榜，也不要一份绕过流动性门槛的榜单。"
+  );
+}
 
 const started = Date.now();
 const payload = await runScan();
@@ -44,7 +60,7 @@ for (const r of payload.rows.slice(0, 40)) {
   console.log(
     r.coin.padEnd(12),
     r.direction.toUpperCase().padEnd(7),
-    String(r.total).padStart(3),
+    (r.dataGaps.length ? "—" : String(r.total)).padStart(3),
     String(f.oi).padStart(5),
     String(f.cvd).padStart(6),
     (r.volumeUsd / 1e6).toFixed(1).padStart(7),

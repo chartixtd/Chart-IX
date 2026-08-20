@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { authorizeCronTick } from "@/lib/cron-auth";
-import { runScan } from "@/lib/screener/pipeline";
+import { runScan, listVolumeRefreshCoins } from "@/lib/screener/pipeline";
 import { isScanDue, writeScannerCache } from "@/lib/screener/cache";
 import { planAlerts } from "@/lib/screener/alerts";
 import { listOpenAlerts, applyAlertPlan } from "@/lib/screener/alerts-store";
 import { pushNewAlerts } from "@/lib/screener/alert-push";
+import { readVolumeCache, pickStaleCoins, refreshVolumeBatch, VOLUME_REFRESH_BATCH } from "@/lib/screener/volume-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,10 +20,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Too many ticks", retryAfterMs: auth.retryAfterMs }, { status: auth.status });
   }
 
-  // 提前退出不是优化，是必需：触发器每 5 分钟打一次而扫描间隔是 15 分钟，
-  // 三次里有两次应该在这里就走人，只花一次单行 DB 读。
+  // 触发器每 5 分钟打一次而扫描间隔是 15 分钟，所以三次里有两次不该扫描。
+  // 那两跳此前直接走人，现在拿去轮转刷新全池成交量缓存——扫描那一跳因此
+  // 不必再逐币调 pairs-markets，成交量门槛得以在**全池**生效而不是只对
+  // 已经选中的那二十个生效（完整理由见 migration 050 与 volume-cache.ts）。
+  //
+  // 放在同一个路由里而不是新开一条 cron 调度，是为了让「扫描」和「刷成交量」
+  // 天然互斥：两件事都要打 CoinGlass，各自都会吃掉大半个每分钟配额，
+  // 而两条独立的调度没有任何机制保证它们不会撞在同一分钟里。
   if (!(await isScanDue())) {
-    return NextResponse.json({ skipped: true, reason: "not due" });
+    try {
+      const coins = await listVolumeRefreshCoins();
+      const stale = pickStaleCoins(coins, await readVolumeCache(), VOLUME_REFRESH_BATCH);
+      const refreshed = await refreshVolumeBatch(stale);
+      return NextResponse.json({ skipped: true, reason: "not due", volumeRefreshed: refreshed });
+    } catch (err) {
+      // 刷新失败不该记成 5xx：这一跳本来就不是扫描，失败的代价只是
+      // 某些币的成交量再旧 5 分钟，下一跳会因为它们仍然最旧而重试。
+      console.error("[cron/screener-scan] volume refresh failed", err);
+      return NextResponse.json({ skipped: true, reason: "not due", volumeRefreshed: 0 });
+    }
   }
 
   try {

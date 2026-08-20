@@ -896,7 +896,8 @@
       "change": "Perubahan 24j",
       "market_cap": "Permodalan",
       "updated": "Dikemas kini",
-      "actions": "Tindakan"
+      "actions": "Tindakan",
+      "data_missing": "Data tiada"
     },
     "table_title": "Keputusan imbasan",
     "table_hint": "Disusun mengikut skor · klik baris untuk butiran",

@@ -41,20 +41,24 @@ export const ALERT_CLOSE_STREAK = 3;
 const BATCH_LAYER_CALLS = 2;
 
 /**
- * 每个币在批量层之外要打的调用总数：行情层的 pairs-markets（1 次）+
- * 明细层的 open-interest/aggregated-history + price/history +
- * taker-buy-sell-volume/history（3 次）。
- * T21 退役 Zone/Sweep 两因子之后，原来给 Sweep 用的 liquidation/history
- * 不用再拉了，这个总数从 5 降到 4。**注意这个 4 不等于 pipeline.ts 里
- * `detailTasks` 的下标基数**：那个下标只数明细层自己的 3 个端点
- * （`base = i * 3`），pairs-markets 是行情层单独一次调用、走的是另一个
- * 数组 `pairRows`，不进 `detailTasks`。这里是「一个币总共花几次调用」，
- * 用于反推 `DEEP_SCAN_LIMIT`；下标基数是「明细层内部第几个」，两个数字
- * 语义不同，不要混着改（详见 pipeline.ts runScan 里 base 的注释）。
- * T20 把 open-interest 那一路从快照端点（exchange-list）换成了序列端点
- * （aggregated-history，OI 因子要在序列上做背离判断），调用次数没变，仍是 1 次。
+ * 每个币在明细层要打的调用总数：open-interest/aggregated-history +
+ * price/history + taker-buy-sell-volume 聚合版，三次。
+ *
+ * T24 从 4 降到 3：行情层的 pairs-markets 被 screener_volume_cache 取代了。
+ * 它此前唯一的作用是取全市场成交额和 BingX 合约 id，而成交额现在由缓存
+ * 提供（扫描时零配额），合约 id 直接用 BingX ticker 自己的 symbol
+ * （实测 39 个里 38 个可直接当 CoinGlass 的 instrument_id 用）。
+ *
+ * 顺带修掉一个静默丢币的 bug：`pairs-markets?symbol=PEPE` 里**没有 BingX
+ * 那一行**（BingX 把它上成 1000PEPE-USDT），旧的 toMarketStage 要求
+ * BingX 行必须存在，所以所有带乘数的币（1000PEPE / 1000BONK /
+ * 1000000BABYDOGE 等，实测 9 个）此前根本进不了榜单。
+ *
+ * 现在这个数**就是** pipeline.ts 里 `detailTasks` 的下标基数（`base = i * 3`）
+ * ——T21～T23 期间两者语义不同（那时还有行情层单独一次调用走另一个数组），
+ * 是这段代码最容易改错的地方，现在合二为一了。
  */
-const DETAIL_CALLS_PER_COIN = 4;
+const DETAIL_CALLS_PER_COIN = 3;
 
 /**
  * 一轮扫描进入明细层的币数上限，由 `RATE_LIMIT_PER_MIN` **推导**而不是写死的整数。
@@ -75,6 +79,26 @@ const DETAIL_CALLS_PER_COIN = 4;
  * 直接把 `DEEP_SCAN_LIMIT` 改回一个写死的数字。
  */
 export const DEEP_SCAN_LIMIT = Math.floor((RATE_LIMIT_PER_MIN - BATCH_LAYER_CALLS) / DETAIL_CALLS_PER_COIN);
+
+/**
+ * 实际送进明细层的币数：按 24h 振幅排名取前这么多。
+ *
+ * 与 `DEEP_SCAN_LIMIT` 是两个不同的数，不要合并：
+ *   · `DEEP_SCAN_LIMIT`（24）是**配额允许的上限**，由限流器推导；
+ *   · `AMPLITUDE_RANK_TAKE`（20）是**产品上想看几行**，是个选择。
+ * 合成一个数会让「想少看几行」这个决定意外地被配额常量绑架，
+ * 也会让「配额变了」和「口味变了」这两种完全不同的改动挤在同一个数字上。
+ *
+ * 为什么用排名而不是振幅门槛：固定门槛在不同行情下筛掉的比例天差地别
+ * （同样一条 8%，过去七天有 76% 的时点在它之下，而大行情日只有 27%），
+ * 候选池大小会自己漂；排名则不管行情如何都稳定输出这么多行。
+ *
+ * **注意这个数还没有被真实数据验证过。** 它来自「振幅越高越容易大动」
+ * 这个方向性结论，而支撑那个结论的回测样本很薄、且我们自己的三轮测量
+ * 基准率从 0.2% 到 4.78% 不等（抽样方法主导了结果）。取 20 是个占位选择，
+ * 等回测台建好后应当重新定。
+ */
+export const AMPLITUDE_RANK_TAKE = 20;
 
 /**
  * 两因子权重：OI 60 / CVD 40。保持退役前 Zone/Sweep/OI/CVD = 30/20/30/20
@@ -109,6 +133,24 @@ export interface ScannerRow {
   /** 0–100，等于 factors 两项之和（已取整）。打分口径不因 scenario 改变。 */
   total: number;
   factors: FactorBreakdown;
+  /**
+   * 哪些因子的上游序列这一轮整段拿不到。空数组 = 数据齐全。
+   *
+   * **为什么需要它：两个因子在缺数据时都会退回中性分**（OI 给 30、CVD 给 10，
+   * 合计 40），于是一个上游全挂、什么都没算出来的币，和一个真实处于中性
+   * 状态的币，在榜单上分数一样、排在一起，读者分不出哪个是「没信号」、
+   * 哪个是「没数据」。实测一轮 dryrun 的分数几乎全挤在 31–65 这一段，
+   * 很大程度就是这个原因。
+   *
+   * 缺数据时**不**把分数改成 null：分数在内部仍然要能参与比较（pickDirection
+   * 要在 long/short 之间选一边），改成 null 会让打分链路上每一处都要处理
+   * 空值。真正要修的是**展示**——榜单上这一行的分数显示成「—」并排到最后，
+   * 而不是假装它是个 40 分。
+   *
+   * 警报路径不受影响：六场景判定要求三条序列齐全且等长，缺数据时返回 null，
+   * 从来不会因为缺数据而误触发。
+   */
+  dataGaps: Array<"oi" | "cvd">;
   /** 六场景判定结果（factors/scenario.ts），无场景为 null。警报改成场景驱动之后，这是警报状态机的判据。 */
   scenario: Scenario | null;
   /**

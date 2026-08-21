@@ -1,3 +1,4 @@
+import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
 import type { Scenario } from "./factors/scenario";
 
 /**
@@ -77,4 +78,38 @@ export function isInvalidated(line: InvalidationLine, high: number, low: number)
   // 最高/最低价，所以「碰到」在锚点那一刻必然成立——用 >= 会让每张卡
   // 在诞生的同一秒就判定失效。
   return line.breach === "above" ? high > line.price : low < line.price;
+}
+
+/**
+ * 这个场景是不是已经被价格证伪了。
+ *
+ * 窗口从**摆动点成形那一刻**（`swingNowAt`）算起，而不是从「我们第一次
+ * 看到这张卡」算起。后者取决于扫描什么时候轮到这个币，跟结构本身无关；
+ * 而且它会漏判最要紧的一类：结构成形之后、我们看到之前，价格已经走反了。
+ *
+ * 实测的漏判：APR 的存量清算锚在 0.1821 → 0.1744 两个低点上，失效线
+ * 0.1821（涨破即失效），而价格早已反弹到 0.2217。按「第一次看到」算的
+ * 窗口里价格一直在 0.2195–0.2221 之间波动，一次穿越都没有——因为穿越
+ * 发生在我们看到它之前。按结构成形算就一目了然。
+ *
+ * 用区间最高/最低价而不是收盘价：插针也算数（见 isInvalidated 的注释）。
+ */
+export function scenarioInvalidated(scenario: Scenario, bars: CoinGlassPriceBar[]): boolean {
+  const line = invalidationLine(scenario);
+  if (!line) return false;
+
+  let high = -Infinity;
+  let low = Infinity;
+  for (const b of bars) {
+    if (b.time < scenario.swingNowAt) continue;
+    const h = parseFloat(b.high);
+    const l = parseFloat(b.low);
+    if (Number.isFinite(h) && h > high) high = h;
+    if (Number.isFinite(l) && l < low) low = l;
+  }
+  // 一根都没有 = 摆动点比整段序列还新，理论上不可能（它就取自这段序列）。
+  // 真出现了就当没失效——宁可留着一个可疑的场景，也不要因为一个说不通的
+  // 数据状态把所有场景静默清空。
+  if (!Number.isFinite(high) || !Number.isFinite(low)) return false;
+  return isInvalidated(line, high, low);
 }

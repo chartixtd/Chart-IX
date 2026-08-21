@@ -23,6 +23,7 @@ import type { ScenarioCard, ScenarioMemo } from "./cards";
 import { pickDirection, amplitudeFromBars } from "./score";
 import { pickFundingRate } from "./funding";
 import { classifyScenario } from "./factors/scenario";
+import { scenarioInvalidated } from "./invalidation";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
 import { AMPLITUDE_RANK_TAKE, CARD_RESERVE_SLOTS } from "./types";
 
@@ -307,7 +308,18 @@ export async function runScan(): Promise<ScannerPayload> {
     // 六场景判定用的正是这三条序列——调用次数不变，明细层本来就都拉了。
     // scenario 为 null 是绝大多数币的预期行为（大多数币此刻没有摆动点对
     // 命中任何一格），不是 bug。
-    const scenario = classifyScenario(priceBars, oiBars, taker);
+    //
+    // **失效判定在这里做，不在卡片那一层做。** 场景只比较两个已确认的
+    // 摆动点，完全不看那之后价格走去了哪儿，所以它会长期报出一个早就
+    // 死掉的结构：实测 APR 的存量清算锚在 0.1821 → 0.1744 两个低点上，
+    // 而价格已经反弹到 0.2217（比失效线高 21%）。此前失效只在卡片那层
+    // 判，后果是**主扫描表照样显示「存量清算 · 分批止盈，等反手」，
+    // 而卡片是空的**——两个视图对同一个币给出相反的结论。
+    //
+    // 置 null 而不是加个标记：一个已经被价格证伪的结构，不该出现在
+    // 「现在是哪种局面」这个问题的答案里，表格和卡片都不该。
+    const raw = classifyScenario(priceBars, oiBars, taker);
+    const scenario = raw && !scenarioInvalidated(raw, priceBars) ? raw : null;
 
     // 行的最终方向：有场景时用 scenario.direction（manage 除外，manage
     // 不是可下单方向，维持分数方向）；无场景时维持分数方向。完整优先级

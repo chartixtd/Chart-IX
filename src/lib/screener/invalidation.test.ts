@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { invalidationLine, isInvalidated } from "./invalidation";
+import { invalidationLine, isInvalidated, scenarioInvalidated } from "./invalidation";
 import type { Scenario, ScenarioKind } from "./factors/scenario";
 
 function sc(kind: ScenarioKind, side: "high" | "low"): Scenario {
@@ -10,6 +10,7 @@ function sc(kind: ScenarioKind, side: "high" | "low"): Scenario {
     trap: false,
     swingPrev: 100,
     swingNow: side === "high" ? 110 : 90,
+    swingNowAt: 0,
     cvdPct: 0,
     oiPct: 0,
     side,
@@ -84,5 +85,61 @@ describe("isInvalidated", () => {
   it("非有限值不算失效——宁可留着卡，也不要因为一个坏数据误撤", () => {
     expect(isInvalidated(above, NaN, 90)).toBe(false);
     expect(isInvalidated(below, 120, NaN)).toBe(false);
+  });
+});
+
+describe("scenarioInvalidated", () => {
+  const bar = (time: number, high: number, low: number) => ({
+    time,
+    open: String(low),
+    high: String(high),
+    low: String(low),
+    close: String(high),
+    volume_usd: "1",
+  });
+  const T = 1_700_000_000_000;
+
+  it("窗口从摆动点成形算起，不是从我们第一次看到算起", () => {
+    // 这是线上抓到的真实 bug（APR）：存量清算锚在两个很早的低点上，
+    // 失效线在 swingPrev（涨破即失效），而价格早就反弹到远高于它的位置。
+    // 穿越发生在「我们看到它」之前——所以按 firstSeenAt 开窗判不出来，
+    // 而主扫描表照样在推销一个死掉的信号。
+    const s: Scenario = {
+      ...sc("inventory_flush", "low"),
+      swingPrev: 0.1821,
+      swingNow: 0.1744,
+      swingNowAt: T,
+    };
+    // 摆动点之后价格一路反弹到 0.2217，远高于失效线 0.1821
+    const bars = [
+      bar(T - 3_600_000, 0.19, 0.17), // 摆动点之前，不该参与
+      bar(T, 0.1744, 0.1744),
+      bar(T + 1_800_000, 0.2217, 0.2195),
+    ];
+    expect(scenarioInvalidated(s, bars)).toBe(true);
+  });
+
+  it("摆动点之前的 K 线不参与判定", () => {
+    const s: Scenario = { ...sc("healthy_trend", "high"), swingNowAt: T };
+    // 失效线是 swingPrev=100（跌破即失效）。摆动点之前跌到过 50，
+    // 但那属于这个结构成形之前的事，不能算它失效。
+    const bars = [bar(T - 3_600_000, 120, 50), bar(T, 110, 105)];
+    expect(scenarioInvalidated(s, bars)).toBe(false);
+  });
+
+  it("结构成形之后穿线才算", () => {
+    const s: Scenario = { ...sc("healthy_trend", "high"), swingNowAt: T };
+    const bars = [bar(T, 110, 105), bar(T + 1_800_000, 108, 99)];
+    expect(scenarioInvalidated(s, bars)).toBe(true);
+  });
+
+  it("锚点价格非法时不判失效——宁可留着可疑场景，也不要静默清空全部", () => {
+    const s: Scenario = { ...sc("healthy_trend", "high"), swingPrev: 0, swingNowAt: T };
+    expect(scenarioInvalidated(s, [bar(T, 1, 1)])).toBe(false);
+  });
+
+  it("窗口内一根 K 线都没有时不判失效", () => {
+    const s: Scenario = { ...sc("healthy_trend", "high"), swingNowAt: T };
+    expect(scenarioInvalidated(s, [bar(T - 1000, 1, 1)])).toBe(false);
   });
 });

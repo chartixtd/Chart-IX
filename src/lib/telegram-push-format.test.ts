@@ -11,6 +11,7 @@ function scenario(overrides: Partial<Scenario> = {}): Scenario {
     trap: false,
     swingPrev: 0.28,
     swingNow: 0.2961,
+    swingNowAt: 0,
     cvdPct: 3.1,
     oiPct: 2.4,
     side: "high",

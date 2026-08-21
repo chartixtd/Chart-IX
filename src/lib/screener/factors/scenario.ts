@@ -27,6 +27,17 @@ export interface Scenario {
   /** 判定锚点：前一个摆动点价格与最新摆动点价格 */
   swingPrev: number;
   swingNow: number;
+  /**
+   * 最新摆动点那根 K 线的时刻，ms epoch。
+   *
+   * 失效判定要用它当窗口起点：「这个结构成形之后，价格有没有打穿失效线」。
+   * 用「我们第一次看到这张卡」当起点是错的——那取决于扫描什么时候轮到
+   * 这个币，而不是取决于结构本身。实测过一个真实后果：APR 的存量清算
+   * 锚在两个很早的低点上（0.1821 → 0.1744），价格早就反弹到 0.2217，
+   * 按结构成形算它显然已经失效，但按「第一次看到」算的窗口里价格一直
+   * 在 0.2195–0.2221 之间，反而判不出穿线。
+   */
+  swingNowAt: number;
   /** 两摆动点之间的净流占换手 %、OI 变化 % —— 警报卡的判定句直接用它们 */
   cvdPct: number;
   oiPct: number;
@@ -156,7 +167,9 @@ function classifySide(
   priceValues: number[],
   oiCloses: number[],
   buys: number[],
-  sells: number[]
+  sells: number[],
+  /** 与 priceValues 同下标的时间戳，用来给场景带上摆动点时刻 */
+  times: number[]
 ): SideResult | null {
   const pivots = findPivots(priceValues, PIVOT_N, side);
   if (pivots.length < 2) return null;
@@ -208,6 +221,7 @@ function classifySide(
       trap: cell.trap,
       swingPrev: prevPrice,
       swingNow: currPrice,
+      swingNowAt: times[i2],
       cvdPct,
       oiPct,
       side,
@@ -238,8 +252,9 @@ export function classifyScenario(
   const buys = takerBars.map((b) => toFiniteNumber(b.aggregated_buy_volume_usd));
   const sells = takerBars.map((b) => toFiniteNumber(b.aggregated_sell_volume_usd));
 
-  const highResult = classifySide("high", highs, oiCloses, buys, sells);
-  const lowResult = classifySide("low", lows, oiCloses, buys, sells);
+  const times = priceBars.map((b) => b.time);
+  const highResult = classifySide("high", highs, oiCloses, buys, sells, times);
+  const lowResult = classifySide("low", lows, oiCloses, buys, sells, times);
 
   if (!highResult) return lowResult ? lowResult.scenario : null;
   if (!lowResult) return highResult.scenario;

@@ -1,7 +1,7 @@
 import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
 import type { Scenario, ScenarioDirection } from "./factors/scenario";
 import type { FactorBreakdown, ScannerRow } from "./types";
-import { invalidationLine, isInvalidated } from "./invalidation";
+import { invalidationLine } from "./invalidation";
 import type { InvalidationLine } from "./invalidation";
 
 /**
@@ -92,20 +92,15 @@ export interface BuildCardResult {
 }
 
 /**
- * 把一行扫描结果变成一张卡片。三种结果：
+ * 把一行扫描结果变成一张卡片。
  *
- *   · 没有场景 → 没有卡（大多数币）
- *   · 有场景、失效线没被打穿 → 出卡
- *   · 有场景、但价格已经打穿失效线 → **没有卡**
+ * **这里不做失效判定。** 那件事在流水线的行级做（pipeline.ts 调
+ * scenarioInvalidated），失效的场景在那里就被置成 null，根本走不到这儿。
+ * 放在一处而不是两处，是因为两边一旦用不同的窗口就会给出不同的结论，
+ * 而那正是这次要修的 bug：主扫描表显示「存量清算」、警报卡却是空的。
  *
- * 第三种是这套设计最要紧的一处：场景锚在**已确认的**摆动点上，而摆动点
- * 要 2.5 小时才确认。价格早已跌穿那个底、而系统还在显示「反手做多」的
- * 空窗期，正是失效线要补上的。
- *
- * **失效之后不删备忘。** 删了的话下一轮 firstSeenAt 会重置成「现在」，
- * 失效判定只看得到刚才那几分钟的 K 线、判不出穿线，这张卡就会原地复活。
- * 备忘留着，穿线的事实就一直成立，卡片保持消失——直到摆动点更新（钥匙
- * 变了，本来就是新事件）或备忘按时间被清理掉。
+ * 这里仍然算 invalidationLine，但只为了**显示**——卡片上那个「失效价」
+ * 是给你看的止损参考位，不是判据。
  */
 export function buildCard({ row, priceBars, memo, now }: BuildCardInput): BuildCardResult {
   const { scenario } = row;
@@ -117,13 +112,11 @@ export function buildCard({ row, priceBars, memo, now }: BuildCardInput): BuildC
   const newMemo = memo ? undefined : { key, symbol: row.symbol, firstSeenAt, firstPrice };
 
   const line = invalidationLine(scenario);
-  // 刚开的卡在序列里还没有属于它的 K 线，用当前价顶上——它同样能表达
-  // 「此刻有没有穿线」，只是覆盖的区间是一个点。
+  // 刚开的卡在序列里还没有属于它的 K 线，用当前价顶上。
   const ext = extremesSince(priceBars, new Date(firstSeenAt).getTime()) ?? {
     high: row.price,
     low: row.price,
   };
-  if (line && isInvalidated(line, ext.high, ext.low)) return { card: null, newMemo };
 
   // 峰值取区间内对这个方向最有利的那一端：做多看最高价，做空看最低价。
   // 再和当前价取 max，是因为 K 线是 30 分钟粒度，最后一根还没走完时

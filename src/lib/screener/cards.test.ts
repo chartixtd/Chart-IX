@@ -14,6 +14,7 @@ function scenario(o: Partial<Scenario> = {}): Scenario {
     trap: false,
     swingPrev: 100,
     swingNow: 110,
+    swingNowAt: 0,
     cvdPct: 5,
     oiPct: 3,
     side: "high",
@@ -96,31 +97,26 @@ describe("buildCard", () => {
     expect(r.newMemo).toBeUndefined();
   });
 
-  it("价格打穿失效线 → 没有卡", () => {
-    // healthy_trend 高点侧的失效线在 swingPrev(100) 下方。
+
+
+  it("失效判定不在这里做——它在流水线的行级，失效的场景根本走不到这儿", () => {
+    // 两处各判一次、且窗口不同，正是这次要修的 bug：主扫描表显示
+    // 「存量清算」而警报卡是空的。现在唯一的判据是 scenarioInvalidated
+    // （见 invalidation.test.ts），这里只负责把 invalidationLine 算出来给
+    // 卡片显示。传一段早已穿线的 K 线进来，卡片照样要出。
     const memo: ScenarioMemo = {
       key: memoKey("TIA-USDT", scenario()),
       symbol: "TIA-USDT",
       firstSeenAt: new Date(T0 - 3_600_000).toISOString(),
       firstPrice: 105,
     };
-    const b = bars([[T0 - 1_800_000, 106, 99]]); // 最低 99 < 100，穿了
-    expect(buildCard({ row: row(), priceBars: b, memo, now: T0 }).card).toBeNull();
+    const b = bars([[T0 - 1_800_000, 106, 50]]); // 远远跌破 swingPrev(100)
+    const card = buildCard({ row: row(), priceBars: b, memo, now: T0 }).card;
+    expect(card).not.toBeNull();
+    expect(card!.invalidation).toEqual({ price: 100, breach: "below" });
   });
 
-  it("插针穿线也算——用区间最低价而不是收盘价", () => {
-    const memo: ScenarioMemo = {
-      key: memoKey("TIA-USDT", scenario()),
-      symbol: "TIA-USDT",
-      firstSeenAt: new Date(T0 - 3_600_000).toISOString(),
-      firstPrice: 105,
-    };
-    // 收盘回到 106（线内），但盘中插到 99
-    const b = bars([[T0 - 1_800_000, 106, 99]]);
-    expect(buildCard({ row: row(), priceBars: b, memo, now: T0 }).card).toBeNull();
-  });
-
-  it("首次之前的 K 线不参与失效判定", () => {
+  it("首次之前的 K 线不参与峰值计算", () => {
     // 卡是 T0 才第一次看到的，一小时前跌破过 100 跟这张卡无关。
     const memo: ScenarioMemo = {
       key: memoKey("TIA-USDT", scenario()),
@@ -132,14 +128,6 @@ describe("buildCard", () => {
     expect(buildCard({ row: row(), priceBars: b, memo, now: T0 }).card).not.toBeNull();
   });
 
-  it("失效时仍然返回 newMemo——备忘必须落库，否则这张卡下一轮会原地复活", () => {
-    // 不落库的话下一轮 firstSeenAt 重置成「现在」，失效判定只看得到
-    // 刚才那几分钟的 K 线、判不出穿线，卡就又冒出来了。
-    const b = bars([[T0, 106, 99]]);
-    const r = buildCard({ row: row({ price: 99 }), priceBars: b, memo: undefined, now: T0 });
-    expect(r.card).toBeNull();
-    expect(r.newMemo).toBeDefined();
-  });
 
   it("峰值从 K 线区间算，做多看最高价", () => {
     const memo: ScenarioMemo = {

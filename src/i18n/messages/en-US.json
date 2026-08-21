@@ -978,7 +978,9 @@
       "fresh_new": "NEW",
       "fresh_stale": "STALE",
       "last_confirmed": "Last confirmed",
-      "never_confirmed": "not yet confirmed"
+      "never_confirmed": "not yet confirmed",
+      "invalidation": "Invalid at",
+      "invalidated": "Invalidated"
     },
     "source_note": "Data from CoinGlass · price and execution on BingX · candles from {exchange}",
     "scenarios": {

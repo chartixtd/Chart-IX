@@ -70,11 +70,20 @@ for (const r of payload.rows.slice(0, 40)) {
   );
 }
 
-// 警报由场景驱动，不再看分数线
-const qualified = payload.rows.filter((r) => r.scenario !== null);
-console.log(
-  `\n检测到场景（会触发警报）：${qualified.length} 个 —— ${qualified.map((r) => `${r.coin}(${r.scenario.kind})`).join(", ") || "无"}`
-);
+// 卡片 = 当轮扫描里判出场景、且未被价格打穿失效线的行，按总分排序。
+// 主表行数与卡片数会对不上，那是正常的：掉出振幅前 20 但仍有卡片的币
+// 坐复核名额被扫描，它进卡片但不进主表。
+console.log(`\n卡片 ${payload.cards.length} 张（本轮新出现 ${payload.newCards.length} 张），按总分排序：`);
+for (const c of payload.cards) {
+  const inv = c.invalidation
+    ? `失效价 ${c.invalidation.price}（${c.invalidation.breach === "above" ? "涨破" : "跌破"}即失效）`
+    : "无失效线";
+  console.log(
+    `  ${c.symbol.padEnd(15)} ${String(c.total).padStart(3)}分  ${c.scenario.kind}(${c.scenario.direction})` +
+      `  首次价 ${c.firstPrice}  峰值 ${c.peakPct.toFixed(2)}%  ${inv}`
+  );
+}
+if (payload.cards.length === 0) console.log("  （本轮没有任何币判出场景，这是常态）");
 
 // 分数分布仍然打印——分数管排序，场景管警报，两者独立观察。
 // 全挤在同一个桶说明打分曲线出了问题（历史上发生过一次，是 429 导致

@@ -6,8 +6,7 @@ import {
   escapeHtml,
   type TelegramMessageLang,
 } from "@/lib/telegram-push";
-import { markAlertsPushed } from "./alerts-store";
-import type { NewAlert } from "./alerts";
+import type { ScenarioCard } from "./cards";
 import type { ScenarioKind } from "./factors/scenario";
 
 const SETTINGS_KEY = "screener_alert_push";
@@ -113,7 +112,7 @@ const SCENARIO_ACTIONS: Record<TelegramMessageLang, Record<ScenarioKind, string>
  * 这类场景的操作方向跟直觉相反（背离却要顺势），不额外提醒容易被
  * 看错成普通背离。
  */
-export function formatAlertMessage(alerts: NewAlert[], lang: TelegramMessageLang): string {
+export function formatAlertMessage(alerts: ScenarioCard[], lang: TelegramMessageLang): string {
   const s = STRINGS[lang];
   const lines = alerts.map((a) => {
     const dir = a.scenario.direction === "long" ? s.long : a.scenario.direction === "short" ? s.short : s.manage;
@@ -125,7 +124,7 @@ export function formatAlertMessage(alerts: NewAlert[], lang: TelegramMessageLang
     return (
       `${trapPrefix}<b>${coin}</b> ${dir} · ${name} · ${action} · ` +
       `OI${f.oi}/CVD${f.cvd} · ` +
-      `${s.at} ${a.triggerPrice}`
+      `${s.at} ${a.firstPrice}`
     );
   });
   return `${s.title}\n\n${lines.join("\n")}`;
@@ -139,7 +138,7 @@ export function formatAlertMessage(alerts: NewAlert[], lang: TelegramMessageLang
  * 通道，等于给所有订阅过价格提醒的人推他们从没要求过的东西。
  * 要接的话应该是一个独立的订阅开关，那是另一个功能。
  */
-export async function pushNewAlerts(alerts: NewAlert[]): Promise<number> {
+export async function pushNewAlerts(alerts: ScenarioCard[]): Promise<number> {
   if (alerts.length === 0) return 0;
 
   const config = await getAlertPushConfig();
@@ -166,6 +165,5 @@ export async function pushNewAlerts(alerts: NewAlert[]): Promise<number> {
 
   if (!results.some((r) => r.ok)) return 0;
 
-  await markAlertsPushed(alerts.map((a) => a.symbol));
   return alerts.length;
 }

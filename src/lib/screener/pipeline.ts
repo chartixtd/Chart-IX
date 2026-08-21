@@ -17,11 +17,14 @@ import { preselect, amplitudeFromTicker, SERVER_GATE } from "./universe";
 import type { PreselectCandidate } from "./universe";
 import { readVolumeCache } from "./volume-cache";
 import type { CachedVolume } from "./volume-cache";
+import { readMemos, saveMemos } from "./cards-store";
+import { buildCard, sortCards, memoKey } from "./cards";
+import type { ScenarioCard, ScenarioMemo } from "./cards";
 import { pickDirection, amplitudeFromBars } from "./score";
 import { pickFundingRate } from "./funding";
 import { classifyScenario } from "./factors/scenario";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
-import { AMPLITUDE_RANK_TAKE } from "./types";
+import { AMPLITUDE_RANK_TAKE, CARD_RESERVE_SLOTS } from "./types";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -64,6 +67,12 @@ export interface ScanTarget {
   /** BingX 最新成交价 */
   price: number;
   change24h: number | null;
+  /**
+   * 进主表还是只坐复核名额。
+   * 复核名额上的币这一轮照样被完整扫描（要算出它的场景还在不在），
+   * 但**不进主表**——主表是「振幅前 20」，它已经不在里面了。
+   */
+  inMainTable: boolean;
 }
 
 /**
@@ -88,7 +97,8 @@ export interface ScanTarget {
 export function buildScanTargets(
   candidates: PreselectCandidate[],
   tickerBySymbol: Map<string, BingXTicker>,
-  volumeCache: Map<string, CachedVolume>
+  volumeCache: Map<string, CachedVolume>,
+  cardSymbols: Set<string> = new Set()
 ): ScanTarget[] {
   const targets: ScanTarget[] = [];
   for (const candidate of candidates) {
@@ -112,12 +122,28 @@ export function buildScanTargets(
       volumeUsd: cached.volumeUsd,
       price,
       change24h: Number.isFinite(change) ? change : null,
+      inMainTable: true,
     });
   }
 
   // 振幅从高到低。并列时按 symbol 排，只是为了让结果稳定可复现。
-  targets.sort((a, b) => b.amplitude - a.amplitude || a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol));
-  return targets.slice(0, AMPLITUDE_RANK_TAKE);
+  targets.sort(
+    (a, b) => b.amplitude - a.amplitude || a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol)
+  );
+
+  const picked = targets.slice(0, AMPLITUDE_RANK_TAKE);
+
+  // 已有卡片但这轮掉出前 20 的币，坐配额里空着的那几个名额继续扫。
+  // 不这么做的话，它们这一轮算不出场景，卡片会因为「排名掉了」而消失
+  // ——而卡片消失必须只意味着「信号没了」，否则那个信号就不可信了。
+  // 它们**追加**在 picked 之后而不是顶掉谁：主表的 20 行一个都不少。
+  const inMain = new Set(picked.map((t) => t.candidate.bingxSymbol));
+  const reserved = targets
+    .filter((t) => cardSymbols.has(t.candidate.bingxSymbol) && !inMain.has(t.candidate.bingxSymbol))
+    .slice(0, CARD_RESERVE_SLOTS)
+    .map((t) => ({ ...t, inMainTable: false }));
+
+  return [...picked, ...reserved];
 }
 
 /**
@@ -170,7 +196,7 @@ export function buildScanTargets(
  *     对应因子走各自的缺失分支，不牵连其他币。
  */
 export async function runScan(): Promise<ScannerPayload> {
-  const [tickersSettled, capSettled, fundingSettled, volumeCache] = await Promise.all([
+  const [tickersSettled, capSettled, fundingSettled, volumeCache, memos] = await Promise.all([
     getFuturesTickers().then(
       (v) => ({ ok: true as const, v }),
       (e) => ({ ok: false as const, e })
@@ -183,8 +209,9 @@ export async function runScan(): Promise<ScannerPayload> {
       (v) => ({ ok: true as const, v }),
       (e) => ({ ok: false as const, e })
     ),
-    // 读缓存表，不打上游，与三个网络请求并行只是为了少等一个来回
+    // 两张缓存表，不打上游，与三个网络请求并行只是为了少等一个来回
     readVolumeCache(),
+    readMemos(),
   ]);
 
   if (!tickersSettled.ok) {
@@ -217,7 +244,8 @@ export async function runScan(): Promise<ScannerPayload> {
   // tickerBySymbol 是为了把 preselect() 已经消费过的 ticker 按 symbol 找回来
   // ——PreselectCandidate 本身不携带价格与振幅（粗筛不需要它们）。
   const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
-  const staged = buildScanTargets(candidates, tickerBySymbol, volumeCache);
+  const cardSymbols = new Set([...memos.values()].map((m) => m.symbol));
+  const staged = buildScanTargets(candidates, tickerBySymbol, volumeCache, cardSymbols);
 
   // ④ 明细层：三个端点共用同一个并发池，所以并发上限是对上游的真实总上限。
   // staged 现在最多 DEEP_SCAN_LIMIT 个，入队顺序与下面取结果的 base + 0..2 下标算术
@@ -248,6 +276,9 @@ export async function runScan(): Promise<ScannerPayload> {
   const detail = await runWithConcurrency(detailTasks);
 
   const rows: ScannerRow[] = [];
+  const cards: ScenarioCard[] = [];
+  const newMemos: ScenarioMemo[] = [];
+  const now = Date.now();
   for (let i = 0; i < staged.length; i++) {
     const s = staged[i];
     const base = i * 3;
@@ -286,7 +317,7 @@ export async function runScan(): Promise<ScannerPayload> {
     const rowDirection: Direction =
       scenario && scenario.direction !== "manage" ? scenario.direction : direction;
 
-    rows.push({
+    const row: ScannerRow = {
       symbol: s.candidate.bingxSymbol,
       coin: s.candidate.coin,
       direction: rowDirection,
@@ -306,8 +337,28 @@ export async function runScan(): Promise<ScannerPayload> {
       // 展示的是**价格/K 线**的来源（也就是下单盘口），不是资金流的来源。
       // 表格里这个标签紧挨着 symbol 与价格，标的就是「这一行的价格是哪儿的」。
       sourceExchange: PRICE_EXCHANGE,
-    });
+    };
+
+    // 复核名额上的币不进主表——主表是「振幅前 20」，它已经不在里面了。
+    // 但它的卡片照常参与下面的判定，这正是给它留名额的全部意义。
+    if (s.inMainTable) rows.push(row);
+
+    // 没场景就没有卡片，也不必去查备忘（备忘的钥匙本来就要用场景拼）。
+    if (scenario) {
+      const built = buildCard({
+        row,
+        priceBars,
+        memo: memos.get(memoKey(row.symbol, scenario)),
+        now,
+      });
+      if (built.newMemo) newMemos.push(built.newMemo);
+      if (built.card) cards.push(built.card);
+    }
   }
+
+  // 写备忘顺带清过期。放在返回之前而不是 await 之后再算，是因为写失败
+  // 不该影响这一轮的产出——saveMemos 内部吞掉错误，只记录。
+  await saveMemos(newMemos, now);
 
   // 数据不全的行一律沉底，不参与分数排序——它们的分数是缺失回退值，
   // 拿它跟真实算出来的分数比大小没有意义。
@@ -318,7 +369,13 @@ export async function runScan(): Promise<ScannerPayload> {
       a.symbol.localeCompare(b.symbol)
   );
 
-  return { rows, computedAt: Date.now() };
+  const newKeys = new Set(newMemos.map((m) => m.key));
+  return {
+    rows,
+    cards: sortCards(cards),
+    newCards: cards.filter((c) => newKeys.has(c.key)),
+    computedAt: now,
+  };
 }
 
 /**

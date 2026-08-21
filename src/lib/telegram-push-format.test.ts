@@ -61,7 +61,7 @@ function row(o: Partial<ScannerRow> = {}): ScannerRow {
   };
 }
 
-const payload: ScannerPayload = { rows: [row()], computedAt: Date.UTC(2026, 7, 18, 12, 0) };
+const payload: ScannerPayload = { rows: [row()], cards: [], newCards: [], computedAt: Date.UTC(2026, 7, 18, 12, 0) };
 
 describe("formatScannerMessage", () => {
   it("做多与做空分成两组，各带自己的标题", () => {
@@ -114,13 +114,15 @@ describe("formatScannerMessage", () => {
   });
 
   it("空榜单给一句明确的话，不给一张空表", () => {
-    const msg = formatScannerMessage({ rows: [], computedAt: 0 }, settings, "zh");
+    const msg = formatScannerMessage({ rows: [], cards: [], newCards: [], computedAt: 0 }, settings, "zh");
     expect(msg).toContain("暂无");
   });
 
   it("每组最多列 8 行——两组加起来仍要留在 Telegram 单条消息的长度上限内", () => {
     const many: ScannerPayload = {
       rows: Array.from({ length: 40 }, (_, i) => row({ symbol: `C${i}-USDT`, coin: `C${i}` })),
+      cards: [],
+      newCards: [],
       computedAt: 0,
     };
     const msg = formatScannerMessage(many, settings, "en");

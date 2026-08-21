@@ -22,7 +22,7 @@ export default function ScreenerPage() {
   const t = useTranslations("screener");
   const tCalc = useTranslations("calculator");
   const locale = useLocale();
-  const { rows, alerts, isLoading, error, isRefreshing, lastUpdated, refetch } = useScannerData();
+  const { rows, cards, isLoading, error, isRefreshing, lastUpdated, refetch } = useScannerData();
 
   // 初值必须是 DEFAULT_FILTERS 而不是直接读 localStorage：服务端渲染时
   // 没有 localStorage，两边初值不一致会触发 hydration 不匹配。
@@ -153,7 +153,7 @@ export default function ScreenerPage() {
               />
             </section>
           </div>
-          <AlertRail alerts={alerts} />
+          <AlertRail cards={cards} />
         </div>
       )}
     </div>

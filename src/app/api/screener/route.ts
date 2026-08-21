@@ -1,29 +1,17 @@
 import { NextResponse } from "next/server";
 import { getScannerPayload } from "@/lib/screener/cache";
-import { listAlertRecords } from "@/lib/screener/alerts-store";
 
 // 结果由模块内的 TTL 缓存托管，路由本身必须每次执行才能读到它
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    // 警报读失败不该拖垮榜单——listAlertRecords 内部已经吞掉错误返回 []，
-    // 这里用 allSettled 再兜一层，防止将来有人改成抛错。
-    const [payloadSettled, alertsSettled] = await Promise.allSettled([
-      getScannerPayload(),
-      listAlertRecords(),
-    ]);
-
-    if (payloadSettled.status === "rejected") throw payloadSettled.reason;
-
+    // 卡片现在是扫描结果的一部分（payload.cards），不再单独查一张警报表。
+    // 旧版这里是 Promise.allSettled([扫描, 查警报表])——两个数据源意味着
+    // 表格和卡片可能来自不同时刻，而卡片本该就是「这一轮扫出来的东西」。
+    const data = await getScannerPayload();
     return NextResponse.json(
-      {
-        success: true,
-        data: {
-          ...payloadSettled.value,
-          alerts: alertsSettled.status === "fulfilled" ? alertsSettled.value : [],
-        },
-      },
+      { success: true, data },
       { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=900" } }
     );
   } catch (error) {

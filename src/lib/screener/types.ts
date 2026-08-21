@@ -1,4 +1,5 @@
 import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/limits";
+import type { ScenarioCard } from "./cards";
 import type { Scenario, ScenarioDirection } from "./factors/scenario";
 
 export type Direction = "long" | "short";
@@ -101,6 +102,21 @@ export const DEEP_SCAN_LIMIT = Math.floor((RATE_LIMIT_PER_MIN - BATCH_LAYER_CALL
 export const AMPLITUDE_RANK_TAKE = 20;
 
 /**
+ * 留给「已有卡片但这轮掉出振幅前 20」的币的名额。
+ *
+ * 卡片的去留必须只由信号决定（场景没了/变了/价格打穿失效线），不能因为
+ * 「振幅排名掉了几位」就消失——排名第 20 与第 25 名实测只差 1.67 个百分点，
+ * 边界纯粹是噪音。所以有卡片的币即使掉出前 20，也要继续被扫描，
+ * 否则这一轮根本算不出它的场景还在不在。
+ *
+ * 这些名额是**白捡的**：配额允许 DEEP_SCAN_LIMIT(24) 个，而主表只要 20 个，
+ * 剩下的 4 个本来就一直空着。实测每轮判出场景的只有 3–4 个币，而且大多
+ * 本来就在前 20 里（高振幅），4 个名额绰绰有余。发现新机会的 20 个名额
+ * 一个都不占。
+ */
+export const CARD_RESERVE_SLOTS = DEEP_SCAN_LIMIT - AMPLITUDE_RANK_TAKE;
+
+/**
  * 两因子权重：OI 60 / CVD 40。保持退役前 Zone/Sweep/OI/CVD = 30/20/30/20
  * 里 OI:CVD = 30:20（即 3:2）的相对轻重不变，只是把 Zone 与 Sweep 空出来的
  * 50 分按同一个比例分给 OI 与 CVD，不趁机改变两者谁更重要。
@@ -186,6 +202,18 @@ export interface ScannerRow {
 
 export interface ScannerPayload {
   rows: ScannerRow[];
+  /**
+   * 六场景卡片，按总分从高到低。**它是 rows 的视图，不是独立的实体**
+   * ——每一张都来自当轮扫描里判出场景、且未被价格打穿失效线的行。
+   * 没有「关闭」这个动作：卡片不在 = 这一轮它就不成立。
+   */
+  cards: ScenarioCard[];
+  /**
+   * 这一轮**新出现**的卡片（备忘表里刚建的那些）。给 Telegram 推送用，
+   * 前端不消费——推送要回答的是「有什么新事」，而 cards 回答的是
+   * 「现在有什么」，两者不是一回事。
+   */
+  newCards: ScenarioCard[];
   /** 这份结果的计算时间，ms epoch —— 前端用它算倒计时 */
   computedAt: number;
 }

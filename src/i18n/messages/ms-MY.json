@@ -920,7 +920,9 @@
       "fresh_new": "BARU",
       "fresh_stale": "LAPUK",
       "last_confirmed": "Disahkan terakhir",
-      "never_confirmed": "belum disahkan"
+      "never_confirmed": "belum disahkan",
+      "invalidation": "Tidak sah pada",
+      "invalidated": "Tidak sah"
     },
     "source_note": "Data daripada CoinGlass · harga dan dagangan di BingX · lilin daripada {exchange}",
     "scenarios": {

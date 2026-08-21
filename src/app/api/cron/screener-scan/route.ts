@@ -2,8 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { authorizeCronTick } from "@/lib/cron-auth";
 import { runScan, listVolumeRefreshCoins } from "@/lib/screener/pipeline";
 import { isScanDue, writeScannerCache } from "@/lib/screener/cache";
-import { planAlerts } from "@/lib/screener/alerts";
-import { listOpenAlerts, applyAlertPlan } from "@/lib/screener/alerts-store";
 import { pushNewAlerts } from "@/lib/screener/alert-push";
 import { readVolumeCache, pickStaleCoins, refreshVolumeBatch, VOLUME_REFRESH_BATCH } from "@/lib/screener/volume-cache";
 
@@ -43,27 +41,25 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // 卡片现在是扫描的产出之一，不再需要一套「开/更新/关」的状态机：
+    // runScan 内部按当轮结果算出 cards，并把新出现的结构事件记进备忘表。
     const payload = await runScan();
     await writeScannerCache(payload);
 
-    const open = await listOpenAlerts();
-    const plan = planAlerts(payload.rows, open);
-    const opened = await applyAlertPlan(plan);
     // 推送失败不该让整轮扫描记成失败——榜单已经算好并落库了，
     // 那才是这个路由的主产出。推送是附加动作。
     let pushed = 0;
     try {
-      pushed = await pushNewAlerts(opened);
+      pushed = await pushNewAlerts(payload.newCards);
     } catch (err) {
       console.error("[cron/screener-scan] alert push failed", err);
     }
 
     return NextResponse.json({
       rows: payload.rows.length,
-      opened: opened.length,
+      cards: payload.cards.length,
+      newCards: payload.newCards.length,
       pushed,
-      updated: plan.updates.length,
-      closed: plan.closes.length,
     });
   } catch (error) {
     console.error("[cron/screener-scan]", error);

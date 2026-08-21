@@ -1,19 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { formatAlertMessage, parseAlertPushConfig, pushNewAlerts } from "./alert-push";
 import { getTelegramPushSettings, listTargetsFor, deliverToTargets } from "@/lib/telegram-push";
-import type { NewAlert } from "./alerts";
+import type { ScenarioCard } from "./cards";
 import type { Scenario } from "./factors/scenario";
 
 // pushNewAlerts 的编排逻辑要靠 mock 掉外部依赖来测——真实实现会打 Supabase
 // 和 Telegram API。这里只 mock 三层：telegram-push（总开关/targets/投递）、
-// alerts-store（落库标记）、supabase/middleware（getAlertPushConfig 读配置用）。
+// supabase/middleware（getAlertPushConfig 读配置用）。
 vi.mock("@/lib/telegram-push", () => ({
   getTelegramPushSettings: vi.fn(),
   listTargetsFor: vi.fn(),
   deliverToTargets: vi.fn(),
   escapeHtml: (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
 }));
-vi.mock("./alerts-store", () => ({ markAlertsPushed: vi.fn() }));
 vi.mock("@/lib/supabase/middleware", () => ({
   // getAlertPushConfig 走这条链路读 admin_settings.screener_alert_push；
   // 固定返回「开启」，这样测试的重点——总开关检查——不会被这一层配置挡在前面。
@@ -42,13 +41,17 @@ function scenario(overrides: Partial<Scenario> = {}): Scenario {
   };
 }
 
-const alert: NewAlert = {
+const alert: ScenarioCard = {
+  key: "TIA-USDT|healthy_trend|long|high|0.31",
   symbol: "TIA-USDT",
-  direction: "long",
-  triggerPrice: 0.2961,
-  triggerScore: 87,
-  factors: { oi: 26, cvd: 13 },
+  coin: "TIA",
   scenario: scenario(),
+  factors: { oi: 26, cvd: 13 },
+  total: 39,
+  firstSeenAt: "2026-08-20T00:00:00.000Z",
+  firstPrice: 0.2961,
+  peakPct: 0,
+  invalidation: { price: 0.28, breach: "below" },
 };
 
 describe("parseAlertPushConfig", () => {
@@ -92,13 +95,13 @@ describe("formatAlertMessage", () => {
   });
 
   it("陷阱场景加 ⚠ 前缀，非陷阱场景不加", () => {
-    const trapAlert: NewAlert = { ...alert, scenario: scenario({ kind: "false_top_div", trap: true, direction: "long" }) };
+    const trapAlert: ScenarioCard = { ...alert, scenario: scenario({ kind: "false_top_div", trap: true, direction: "long" }) };
     expect(formatAlertMessage([trapAlert], "zh")).toContain("⚠");
     expect(formatAlertMessage([alert], "zh")).not.toContain("⚠");
   });
 
   it("manage 场景显示为「观望」而不是做多/做空", () => {
-    const manageAlert: NewAlert = {
+    const manageAlert: ScenarioCard = {
       ...alert,
       scenario: scenario({ kind: "inventory_flush", direction: "manage" }),
     };

@@ -23,8 +23,9 @@ export default function MorePage() {
         locale,
         tier: auth.tier ?? null,
         role: auth.role ?? null,
+        signedOut: !auth.loading && !auth.userId,
       }),
-    [locale, auth.tier, auth.role]
+    [locale, auth.tier, auth.role, auth.loading, auth.userId]
   );
 
   const handleLogout = useCallback(async () => {

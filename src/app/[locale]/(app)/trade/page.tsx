@@ -85,6 +85,86 @@ import { Icon } from "@/components/ui/Icon";
 const ALL_INTERVALS = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"];
 type MarketType = TradeMarketType;
 
+/**
+ * 现货 / 模拟盘 / 合约切换。手机与桌面两套顶栏共用同一份实现——两处各写一遍
+ * 的话，「模拟盘要登录、合约要 Pro」这两条门槛迟早会在其中一边漂掉。
+ */
+function MarketSwitch({
+  market,
+  onMarketChange,
+  locale,
+  isPro,
+  isLoggedIn,
+  authLoading,
+}: {
+  market: MarketType;
+  onMarketChange: (m: MarketType) => void;
+  locale: string;
+  isPro: boolean;
+  isLoggedIn: boolean;
+  authLoading: boolean;
+}) {
+  const t = useTranslations("trade");
+
+  return (
+    <div className="flex shrink-0 rounded-xs bg-bg-tertiary p-0.5">
+      <button
+        onClick={() => onMarketChange("spot")}
+        className={cn(
+          "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
+          market === "spot" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+        )}
+      >
+        Spot
+      </button>
+      {!authLoading && (
+        isLoggedIn ? (
+          <button
+            onClick={() => onMarketChange("paper")}
+            className={cn(
+              "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
+              market === "paper" ? "bg-bg-primary text-gold" : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            {t("paper_trading")}
+          </button>
+        ) : (
+          <Link
+            href={`/${locale}/login`}
+            className="rounded-xs px-3 py-1 text-xs font-medium text-text-muted hover:text-gold transition-colors"
+            title={t("paper_trading_locked")}
+          >
+            {t("paper_trading")}
+            <span className="ml-1 opacity-60">&#x1F512;</span>
+          </Link>
+        )
+      )}
+      {!authLoading && (
+        isPro ? (
+          <button
+            onClick={() => onMarketChange("futures")}
+            className={cn(
+              "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
+              market === "futures" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+            )}
+          >
+            Futures
+          </button>
+        ) : (
+          <Link
+            href={`/${locale}/upgrade`}
+            className="rounded-xs px-3 py-1 text-xs font-medium text-text-muted hover:text-gold transition-colors"
+            title={t("futures.pro_required")}
+          >
+            Futures
+            <span className="ml-1 opacity-60">&#x1F512;</span>
+          </Link>
+        )
+      )}
+    </div>
+  );
+}
+
 // Memoized top bar — isolates ticker-driven re-renders from the rest of the page
 const TickerBar = memo(function TickerBar({
   symbol,
@@ -128,95 +208,110 @@ const TickerBar = memo(function TickerBar({
   // 用合约的 status 直接判定并标注，比让用户对着空白栏猜要诚实。
   const marketClosed = contract ? !isContractOpen(contract.status) : false;
 
+  const marketSwitch = (
+    <MarketSwitch
+      market={market}
+      onMarketChange={onMarketChange}
+      locale={locale}
+      isPro={isPro}
+      isLoggedIn={isLoggedIn}
+      authLoading={authLoading}
+    />
+  );
+
+  const symbolButton = (
+    <button
+      onClick={onPickSymbol}
+      className={cn("flex shrink-0 items-center gap-2", onPickSymbol && "lg:pointer-events-none")}
+    >
+      <h2 className="font-display text-lg font-semibold tracking-tight">{displaySymbol}</h2>
+      {marketClosed && (
+        <span className="shrink-0 rounded-xs bg-bg-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-muted">
+          {t("market_overview.closed")}
+        </span>
+      )}
+      {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">▾</span>}
+    </button>
+  );
+
+  // 24h 高/低/量。手机上此前整块 hidden lg:flex 砍掉了——这三个数是判断
+  // 「现价在今天这段区间里的什么位置」的唯一依据，手机端同样需要，只是
+  // 压缩成缩写标签排成一行。
+  const stats = ticker && (
+    <>
+      <span className="whitespace-nowrap">
+        {t("stat_high")} <span className="font-mono tabular-nums text-text-primary">{formatPrice(parseFloat(ticker.highPrice))}</span>
+      </span>
+      <span className="whitespace-nowrap">
+        {t("stat_low")} <span className="font-mono tabular-nums text-text-primary">{formatPrice(parseFloat(ticker.lowPrice))}</span>
+      </span>
+      <span className="whitespace-nowrap">
+        {t("stat_vol")} <span className="font-mono tabular-nums text-text-primary">{formatNumber(parseFloat(ticker.volume), 0)}</span>
+      </span>
+    </>
+  );
+
   return (
-    <div className="flex items-center gap-4 border-b border-border-default px-4 py-3 overflow-x-auto">
-      <div className="flex shrink-0 rounded-xs bg-bg-tertiary p-0.5">
-        <button
-          onClick={() => onMarketChange("spot")}
-          className={cn(
-            "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
-            market === "spot" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+    <>
+      {/* 手机：两行。此前这一栏是单行 overflow-x-auto，在 375px 上实际宽度
+          683px——市场切换把交易对、价格、涨跌、提醒铃全推出了屏幕，用户要
+          横向拖一下才能看到当前价。价格是这一页最该一眼看到的数，不能藏在
+          滚动条右边。第一行只放「看的东西」（交易对+价格+涨跌+提醒），
+          第二行放「切的东西」（市场切换）与 24h 区间。 */}
+      <div className="shrink-0 border-b border-border-default px-3 pb-1.5 pt-2 lg:hidden">
+        <div className="flex items-center gap-2">
+          {symbolButton}
+          {ticker && (
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              <span
+                className={cn(
+                  "truncate font-mono text-lg font-semibold tabular-nums",
+                  isPositive ? "text-success" : "text-danger"
+                )}
+              >
+                {formatPrice(Number(ticker.lastPrice))}
+              </span>
+              <Badge variant={isPositive ? "green" : "red"}>
+                {formatPercent(parseFloat(ticker.priceChangePercent))}
+              </Badge>
+              <SetAlertButton symbol={symbol} currentPrice={Number(ticker.lastPrice)} />
+            </div>
           )}
-        >
-          Spot
-        </button>
-        {!authLoading && (
-          isLoggedIn ? (
-            <button
-              onClick={() => onMarketChange("paper")}
-              className={cn(
-                "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
-                market === "paper" ? "bg-bg-primary text-gold" : "text-text-muted hover:text-text-secondary"
-              )}
-            >
-              {t("paper_trading")}
-            </button>
-          ) : (
-            <Link
-              href={`/${locale}/login`}
-              className="rounded-xs px-3 py-1 text-xs font-medium text-text-muted hover:text-gold transition-colors"
-              title={t("paper_trading_locked")}
-            >
-              {t("paper_trading")}
-              <span className="ml-1 opacity-60">&#x1F512;</span>
-            </Link>
-          )
-        )}
-        {!authLoading && (
-          isPro ? (
-            <button
-              onClick={() => onMarketChange("futures")}
-              className={cn(
-                "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
-                market === "futures" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
-              )}
-            >
-              Futures
-            </button>
-          ) : (
-            <Link
-              href={`/${locale}/upgrade`}
-              className="rounded-xs px-3 py-1 text-xs font-medium text-text-muted hover:text-gold transition-colors"
-              title={t("futures.pro_required")}
-            >
-              Futures
-              <span className="ml-1 opacity-60">&#x1F512;</span>
-            </Link>
-          )
-        )}
+        </div>
+
+        {/* 市场切换 + 24h 区间。这一行用换行而不是横向滚动：横向滚动会把
+            「24h 量」推到屏幕外，而屏幕外的东西在手机上等于不存在——宁可
+            在 375px 上多占一行，也不要藏。宽一点的机型上仍是一行。 */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-secondary">
+          {marketSwitch}
+          {stats}
+        </div>
       </div>
 
-      <div className="hidden h-4 w-px bg-border-default sm:block" />
+      {/* 桌面：单行，与改版前一致 */}
+      <div className="hidden items-center gap-4 border-b border-border-default px-4 py-3 lg:flex">
+        {marketSwitch}
 
-      <button
-        onClick={onPickSymbol}
-        className={cn("flex shrink-0 items-center gap-3", onPickSymbol && "lg:pointer-events-none")}
-      >
-        <h2 className="font-sans text-lg font-semibold tracking-tight font-display tracking-tight">{displaySymbol}</h2>
-        {marketClosed && (
-          <span className="shrink-0 rounded-xs bg-bg-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-muted">
-            {t("market_overview.closed")}
-          </span>
+        <div className="h-4 w-px bg-border-default" />
+
+        {symbolButton}
+
+        {ticker && (
+          <>
+            <span className={cn("shrink-0 font-mono text-xl font-semibold tabular-nums", isPositive ? "text-success" : "text-danger")}>
+              {formatPrice(Number(ticker.lastPrice))}
+            </span>
+            <Badge variant={isPositive ? "green" : "red"}>
+              {formatPercent(parseFloat(ticker.priceChangePercent))}
+            </Badge>
+            <SetAlertButton symbol={symbol} currentPrice={Number(ticker.lastPrice)} />
+            <div className="ml-auto flex shrink-0 items-center gap-4 text-xs text-text-secondary">
+              {stats}
+            </div>
+          </>
         )}
-        {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">{t("mobile_symbol_picker")} ▾</span>}
-      </button>
-      {ticker && (
-        <>
-          <span className={cn("shrink-0 font-mono text-xl font-semibold tabular-nums", isPositive ? "text-success" : "text-danger")}>
-            {formatPrice(Number(ticker.lastPrice))}
-          </span>
-          <Badge variant={isPositive ? "green" : "red"}>
-            {formatPercent(parseFloat(ticker.priceChangePercent))}
-          </Badge>
-          <SetAlertButton symbol={symbol} currentPrice={Number(ticker.lastPrice)} />
-          <div className="ml-auto hidden shrink-0 items-center gap-4 text-xs text-text-secondary lg:flex">
-            <span>24h High: <span className="font-mono text-text-primary tabular-nums">{formatPrice(parseFloat(ticker.highPrice))}</span></span>
-            <span>24h Low: <span className="font-mono text-text-primary tabular-nums">{formatPrice(parseFloat(ticker.lowPrice))}</span></span>
-            <span>Vol: <span className="font-mono text-text-primary tabular-nums">{formatNumber(parseFloat(ticker.volume), 0)}</span></span>
-          </div>
-        </>
-      )}
-    </div>
+      </div>
+    </>
   );
 });
 
@@ -536,8 +631,10 @@ export default function TradePage() {
   return (
     // 手机上 100vh 会被 Safari 的地址栏高度算错，用 dvh；
     // 底部还要给手机 header 的顶部安全区和 L1 tab bar（含其底部安全区）让位——
-    // desktop 分支的 4rem 不受影响，因为 <main> 在 lg 断点上没有这两块 padding
-    <div className="flex h-[calc(100dvh-3rem-env(safe-area-inset-top)-70px-env(safe-area-inset-bottom))] flex-col lg:h-[calc(100dvh-4rem)]">
+    // desktop 分支的 4rem 不受影响，因为 <main> 在 lg 断点上没有这两块 padding。
+    // tab bar 的高度走 --tabbar-h（与 pb-tabbar 同源）而不是写死 70px：
+    // 访客底栏没有中央凸起、矮 20px，写死的话图表底下会空出一条死带。
+    <div className="flex h-[calc(100dvh-3rem-env(safe-area-inset-top)-var(--tabbar-h,70px)-env(safe-area-inset-bottom))] flex-col lg:h-[calc(100dvh-4rem)]">
       <TickerBar
         symbol={symbol}
         market={market}

@@ -4,7 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemo } from "react";
-import { MOBILE_TABS, resolveActiveTab, type TabKey } from "@/lib/nav/tabs";
+import {
+  MOBILE_TABS,
+  GUEST_MOBILE_TABS,
+  resolveActiveTab,
+  resolveActiveGuestTab,
+  type TabKey,
+} from "@/lib/nav/tabs";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -55,6 +61,22 @@ function TabIcon({ tab, className }: { tab: TabKey; className?: string }) {
           <circle cx="19" cy="12" r="1.4" />
         </svg>
       );
+    // 访客底栏专用的两格
+    case "home":
+      return (
+        <svg {...common}>
+          <path d="M4 11.5 12 4.5l8 7" />
+          <path d="M6.5 10.5V20h11v-9.5" />
+          <path d="M10 20v-5h4v5" />
+        </svg>
+      );
+    case "tools":
+      return (
+        <svg {...common}>
+          <path d="M4 7h16M4 12h10M4 17h13" />
+          <circle cx="17.5" cy="12" r="2" />
+        </svg>
+      );
   }
 }
 
@@ -64,24 +86,32 @@ export function MobileTabBar() {
   const t = useTranslations("nav");
   const auth = useAuth();
 
-  const active = useMemo(() => resolveActiveTab(pathname, locale), [pathname, locale]);
+  // 确认未登录才切访客底栏。auth.loading 期间沿用已登录那套，避免冷启动时
+  // 底栏先闪一下 3 格再变成 5 格。
+  const isGuest = !auth.loading && !auth.userId;
+  const tabs = isGuest ? GUEST_MOBILE_TABS : MOBILE_TABS;
 
-  // Signed-out visitors get no product nav here, mirroring desktop Navbar's
-  // GUEST_NAV_ITEMS decision — the 5 tabs all dead-end in login prompts, which
-  // is exactly the "teasing" the desktop nav was built to avoid. Keep rendering
-  // during the loading window (auth.loading) to avoid a flash/flicker; only
-  // suppress once auth has resolved and confirmed there's no user.
-  if (!auth.loading && !auth.userId) {
-    return null;
-  }
+  const active = useMemo(
+    () => (isGuest ? resolveActiveGuestTab(pathname, locale) : resolveActiveTab(pathname, locale)),
+    [isGuest, pathname, locale]
+  );
+
+  // 此前这里对未登录用户整个 return null，理由是「5 个 tab 都会撞登录墙」。
+  // 那条理由已经不成立了（筛选器、交易、学习内容对访客都是开放的），而且
+  // 后果很实际：搜索进来的手机访客落在公开内容页上，除了返回键之外没有
+  // 任何站内导航，桌面访客却仍有一整条顶栏。现在改成给访客一套与桌面
+  // GUEST_NAV_ITEMS 同门槛的三格底栏。
 
   return (
     <nav
+      // data-tabbar 供 globals.css 的 :has() 判断该给内容区留多少底部空间——
+      // 访客底栏没有中央凸起，不需要为它让位
+      data-tabbar={isGuest ? "guest" : "user"}
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border-default bg-bg-secondary/95 backdrop-blur-md pb-safe-b lg:hidden"
       aria-label={t("tab_more")}
     >
       <div className="flex items-stretch">
-        {MOBILE_TABS.map((tab) => {
+        {tabs.map((tab) => {
           const isActive = active === tab.key;
 
           if (tab.center) {

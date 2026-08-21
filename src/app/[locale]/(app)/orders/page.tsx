@@ -85,7 +85,9 @@ export default function OrdersPage() {
       {
         key: "market_type",
         header: t("market_type"),
-        hideOnMobile: true,
+        // 不再 hideOnMobile：现货单和合约单的风险完全不是一回事，
+        // 一份分不出这两者的成交记录读起来是危险的。徽章本身很小，
+        // 手机卡片的两列网格放得下。
         render: (order) => (
           <Badge variant={order.market_type === "futures" ? "gold" : "blue"} size="sm">
             {order.market_type === "futures" ? "Futures" : "Spot"}
@@ -141,7 +143,10 @@ export default function OrdersPage() {
       {
         key: "time",
         header: t("time"),
-        hideOnMobile: true,
+        // 手机上作为交易对旁边的副行显示，而不是砍掉。一份没有时间的成交
+        // 记录没法对账——而完整时间戳塞进两列键值网格会被挤成三行，
+        // 所以给它 secondary 这个整行角色。
+        secondary: true,
         render: (order) => (
           <span className="text-text-secondary font-mono text-xs">
             {formatDate(order.created_at)}
@@ -279,7 +284,7 @@ export default function OrdersPage() {
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            导出 CSV
+            {t("export_csv")}
           </Button>
         )}
       </div>

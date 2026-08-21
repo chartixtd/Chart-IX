@@ -51,8 +51,10 @@ const config: Config = {
         "safe-l": "env(safe-area-inset-left)",
         "safe-r": "env(safe-area-inset-right)",
         // 底部 tab bar 高度(56) + 中央凸起溢出(14) + 系统安全区
-        // 页面内容底部统一用 pb-tabbar，避免逐页手算导致漂移
-        tabbar: "calc(70px + env(safe-area-inset-bottom))",
+        // 页面内容底部统一用 pb-tabbar，避免逐页手算导致漂移。
+        // 高度走 CSS 变量：访客底栏没有中央凸起，也就不需要给凸起让位，
+        // 否则页面底部会空出 20px 死区（globals.css 里用 :has() 改写）。
+        tabbar: "calc(var(--tabbar-h, 70px) + env(safe-area-inset-bottom))",
       },
       height: {
         dvh: "100dvh",

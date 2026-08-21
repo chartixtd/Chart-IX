@@ -8,6 +8,16 @@ export interface RecordColumn<T> {
   align?: "left" | "right";
   /** 手机卡片上作为标题行显示（通常是交易对 / 名称） */
   primary?: boolean;
+  /**
+   * 手机卡片上作为标题下方的副行整行显示，不带表头标签。
+   * 给「时间戳」这类值本身就自解释、但塞进两列键值网格会被挤到换行的列用。
+   */
+  secondary?: boolean;
+  /**
+   * 手机卡片上作为底部整宽的操作区显示。按钮在两列网格的格子里只有半格宽，
+   * 既够不到 44px 的舒适命中区，也读不出「这是这张卡的主操作」。
+   */
+  action?: boolean;
   /** 手机上完全不显示这一列 */
   hideOnMobile?: boolean;
   /** 设了这个键，表头就可点排序；不设的列（如"因子构成"）表头不可点 */
@@ -42,7 +52,11 @@ export function RecordList<T>({
   }
 
   const primary = columns.find((c) => c.primary);
-  const details = columns.filter((c) => !c.primary && !c.hideOnMobile);
+  const secondary = columns.find((c) => c.secondary);
+  const action = columns.find((c) => c.action);
+  const details = columns.filter(
+    (c) => !c.primary && !c.secondary && !c.action && !c.hideOnMobile
+  );
 
   // 可点击的行必须能用键盘到达并触发，否则整张表对键盘用户是死的。
   const interactiveProps = (row: T) =>
@@ -75,8 +89,13 @@ export function RecordList<T>({
               rowClassName?.(row)
             )}
           >
-            {primary && (
-              <div className="mb-2 text-sm text-text-primary">{primary.render(row)}</div>
+            {(primary || secondary) && (
+              <div className="mb-2 flex items-baseline justify-between gap-3">
+                {primary && <div className="min-w-0 text-sm text-text-primary">{primary.render(row)}</div>}
+                {secondary && (
+                  <div className="tnum shrink-0 text-[11px] text-text-muted">{secondary.render(row)}</div>
+                )}
+              </div>
             )}
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5">
               {details.map((col) => (
@@ -86,6 +105,7 @@ export function RecordList<T>({
                 </div>
               ))}
             </dl>
+            {action && <div className="mt-3">{action.render(row)}</div>}
           </li>
         ))}
       </ul>

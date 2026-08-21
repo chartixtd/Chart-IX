@@ -55,7 +55,10 @@
     "more_settings": "设置",
     "more_notifications": "通知设置",
     "more_upgrade": "升级 Pro",
-    "more_admin": "后台管理"
+    "more_admin": "后台管理",
+    "more_tools": "仓位计算器",
+    "tab_home": "首页",
+    "tab_tools": "工具"
   },
   "auth": {
     "login": {
@@ -253,7 +256,8 @@
       "fee": "手续费",
       "time": "时间",
       "cancel_order": "撤单",
-      "no_orders": "暂无交易记录"
+      "no_orders": "暂无交易记录",
+      "export_csv": "导出 CSV"
     },
     "mobile_buy": "买入",
     "mobile_sell": "卖出",
@@ -343,7 +347,10 @@
       "duration_days": "{days}天 ({bars}根)",
       "duration_hours": "{hours}小时 ({bars}根)",
       "text_input_placeholder": "输入文字后回车"
-    }
+    },
+    "stat_high": "24h 高",
+    "stat_low": "24h 低",
+    "stat_vol": "24h 量"
   },
   "upgrade": {
     "banner_title": "升级至 Chart-IX Pro",

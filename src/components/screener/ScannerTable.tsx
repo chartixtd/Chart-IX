@@ -140,7 +140,10 @@ export const ScannerTable = memo(function ScannerTable({
     {
       key: "factors",
       header: t("columns.factors"),
-      hideOnMobile: true,
+      // 不再 hideOnMobile：OI/CVD 是这个产品的全部主张（副标题就写着
+      // 「双因子扫描」），在手机上把它整列砍掉，剩下的总分就成了一个
+      // 无从复核的黑箱数字。手机上柱子旁边补两个读数——那里横向有空间，
+      // 而 5px 宽的柱子单独看确实读不出高低。
       render: (r) =>
         r.dataGaps.length > 0 ? (
           <span className="text-sm text-text-muted">—</span>
@@ -148,8 +151,11 @@ export const ScannerTable = memo(function ScannerTable({
         // FactorStack 本身整个是 aria-hidden（它只是两根装饰柱），
         // 所以这里补一层文字说明，屏幕阅读器用户才能读到这两个数。
         // 警报卡不需要这个 —— 它每根柱子旁边已经有文字标签和分数。
-        <span title={`OI ${r.factors.oi} / CVD ${r.factors.cvd}`}>
+        <span className="inline-flex items-center gap-1.5" title={`OI ${r.factors.oi} / CVD ${r.factors.cvd}`}>
           <FactorStack factors={r.factors} />
+          <span className="tnum text-[10px] text-text-muted lg:hidden" aria-hidden>
+            {r.factors.oi}/{r.factors.cvd}
+          </span>
           <span className="sr-only">
             {`OI ${r.factors.oi} / CVD ${r.factors.cvd}`}
           </span>
@@ -191,7 +197,6 @@ export const ScannerTable = memo(function ScannerTable({
       key: "marketCap",
       header: t("columns.market_cap"),
       sortable: true,
-      hideOnMobile: true,
       render: (r) => (
         <span className="tnum whitespace-nowrap text-sm">{formatCompactUsd(r.marketCap)}</span>
       ),
@@ -199,6 +204,8 @@ export const ScannerTable = memo(function ScannerTable({
     {
       key: "actions",
       header: t("columns.actions"),
+      // 手机上作为卡片底部的整宽主操作，而不是挤在两列网格的半个格子里
+      action: true,
       render: (r) => {
         // manage 场景（存量清算）不是一个下单方向：ScannerRow.direction 在
         // 这种情况下仍是分数兜底的 long/short（见 types.ts 字段注释），
@@ -207,19 +214,19 @@ export const ScannerTable = memo(function ScannerTable({
         // 默认方向。
         if (r.scenario?.direction === "manage") {
           return (
-            <Link href={`/trade?symbol=${r.symbol}&market=futures`}>
-              <Button variant="secondary" size="sm" className="min-h-[44px] px-2 text-xs lg:h-6">
+            <Link href={`/trade?symbol=${r.symbol}&market=futures`} className="block lg:inline-block">
+              <Button variant="secondary" size="sm" className="min-h-[44px] w-full px-2 text-xs lg:h-6 lg:w-auto">
                 {t("action_view")}
               </Button>
             </Link>
           );
         }
         return (
-          <Link href={`/trade?symbol=${r.symbol}&side=${r.direction}&market=futures`}>
+          <Link href={`/trade?symbol=${r.symbol}&side=${r.direction}&market=futures`} className="block lg:inline-block">
             <Button
               variant={r.direction === "long" ? "green" : "red"}
               size="sm"
-              className="min-h-[44px] px-2 text-xs lg:h-6"
+              className="min-h-[44px] w-full px-2 text-xs lg:h-6 lg:w-auto"
             >
               {r.direction === "long" ? t("action_long") : t("action_short")}
             </Button>

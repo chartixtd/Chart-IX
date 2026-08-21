@@ -55,7 +55,10 @@
     "more_settings": "Settings",
     "more_notifications": "Notifications",
     "more_upgrade": "Upgrade to Pro",
-    "more_admin": "Admin"
+    "more_admin": "Admin",
+    "more_tools": "Position Calculator",
+    "tab_home": "Home",
+    "tab_tools": "Tools"
   },
   "auth": {
     "login": {
@@ -253,7 +256,8 @@
       "fee": "Fee",
       "time": "Time",
       "cancel_order": "Cancel Order",
-      "no_orders": "No order history"
+      "no_orders": "No order history",
+      "export_csv": "Export CSV"
     },
     "mobile_buy": "Buy",
     "mobile_sell": "Sell",
@@ -343,7 +347,10 @@
       "duration_days": "{days}d ({bars} bars)",
       "duration_hours": "{hours}h ({bars} bars)",
       "text_input_placeholder": "Type text and press Enter"
-    }
+    },
+    "stat_high": "24h High",
+    "stat_low": "24h Low",
+    "stat_vol": "24h Vol"
   },
   "upgrade": {
     "banner_title": "Upgrade to Chart-IX Pro",

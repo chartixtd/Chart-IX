@@ -1,4 +1,4 @@
-export type TabKey = "dashboard" | "learn" | "trade" | "screener" | "more";
+export type TabKey = "dashboard" | "learn" | "trade" | "screener" | "more" | "home" | "tools";
 
 export interface MobileTab {
   key: TabKey;
@@ -6,6 +6,23 @@ export interface MobileTab {
   /** 中央凸起的金色圆盘。它是目的地不是动作——点了直接跳转并显示选中态 */
   center: boolean;
 }
+
+/**
+ * 未登录访客的底栏。
+ *
+ * 门槛跟桌面 Navbar 的 GUEST_NAV_ITEMS 走，一个不多一个不少：首页与计算器
+ * 是公开的，其余产品页在桌面上也不对访客开放，这里不该自作主张放开。
+ *
+ * 为什么访客也要有底栏：公开内容页（文章 / 视频 / 学习）的流量大头是搜索
+ * 进来的手机访客，而此前底栏对未登录用户整个 return null——他们落到
+ * /articles 之后，除了返回键之外没有任何站内导航，桌面访客却仍有一整条顶栏。
+ * 没有凸起圆盘：访客这三个入口里没有哪个够格当全站视觉重心。
+ */
+export const GUEST_MOBILE_TABS: MobileTab[] = [
+  { key: "home", href: (l) => `/${l}`, center: false },
+  { key: "tools", href: (l) => `/${l}/tools/position-size`, center: false },
+  { key: "more", href: (l) => `/${l}/more`, center: false },
+];
 
 export const MOBILE_TABS: MobileTab[] = [
   { key: "dashboard", href: (l) => `/${l}/dashboard`, center: false },
@@ -20,6 +37,11 @@ export const MOBILE_TABS: MobileTab[] = [
  * 学习 tab 是 hub，收编视频、文章与行业资讯；更多 tab 收编所有低频页面。
  */
 const TAB_SEGMENTS: Record<TabKey, string[]> = {
+  // 访客底栏专用。首页没有一级路由段（它就是 /{locale} 本身），由
+  // resolveActiveTab 单独处理；tools 在已登录底栏里归 screener，
+  // 这里给访客单列一档——他们的底栏上根本没有 screener 这一格。
+  home: [],
+  tools: [],
   dashboard: ["dashboard"],
   // 行业资讯是学习性质的内容，归学习 hub；原先它和订单/设置挤在「更多」这个
   // 杂物抽屉里，学习 tab 反而找不到它
@@ -43,6 +65,22 @@ export function resolveActiveTab(pathname: string, locale: string): TabKey | nul
   for (const [key, owned] of Object.entries(TAB_SEGMENTS) as [TabKey, string[]][]) {
     if (owned.includes(first)) return key;
   }
+  return null;
+}
+
+/**
+ * 访客底栏的高亮判定。不复用 resolveActiveTab：那套映射里 tools 归 screener，
+ * 而访客底栏上压根没有 screener 这一格，套过来会出现「点了工具，没有任何一格
+ * 亮起来」。
+ */
+export function resolveActiveGuestTab(pathname: string, locale: string): TabKey | null {
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments[0] !== locale) return null;
+
+  const first = segments[1];
+  if (!first) return "home"; // 语言首页
+  if (first === "tools") return "tools";
+  if (first === "more") return "more";
   return null;
 }
 
@@ -121,8 +159,23 @@ export function buildMoreEntries(input: {
   locale: string;
   tier: string | null;
   role: string | null;
+  /**
+   * auth 已加载完且确认没有用户。默认 undefined = 已登录或仍在加载，
+   * 沿用原有行为。
+   */
+  signedOut?: boolean;
 }): MoreEntry[] {
-  const { locale, tier, role } = input;
+  const { locale, tier, role, signedOut } = input;
+
+  // 确认未登录的访客：订单与设置在他们那里只是两堵登录墙（桌面顶栏同样
+  // 不对访客显示这两项），换成桌面访客确实有的两个入口——计算器与升级。
+  if (signedOut) {
+    return [
+      { key: "tools", href: `/${locale}/tools/position-size` },
+      { key: "upgrade", href: `/${locale}/upgrade` },
+    ];
+  }
+
   // 资讯已移入「学习」；价格提醒与通知设置暂时隐藏（路由与页面都保留，
   // 想开回来把条目加回这里即可）
   const entries: MoreEntry[] = [

@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   MOBILE_TABS,
+  GUEST_MOBILE_TABS,
   resolveActiveTab,
+  resolveActiveGuestTab,
   buildMoreEntries,
   shouldShowBackButton,
   resolveBackTarget,
@@ -23,6 +25,54 @@ describe("MOBILE_TABS", () => {
       "/ms-MY/screener",
       "/ms-MY/more",
     ]);
+  });
+});
+
+describe("GUEST_MOBILE_TABS", () => {
+  it("门槛与桌面访客顶栏一致：只有首页、计算器、更多，没有凸起圆盘", () => {
+    expect(GUEST_MOBILE_TABS.map((t) => t.key)).toEqual(["home", "tools", "more"]);
+    expect(GUEST_MOBILE_TABS.some((t) => t.center)).toBe(false);
+  });
+
+  it("不放开桌面对访客也不开放的产品页", () => {
+    const keys = GUEST_MOBILE_TABS.map((t) => t.key);
+    for (const gated of ["dashboard", "trade", "screener", "learn"]) {
+      expect(keys).not.toContain(gated);
+    }
+  });
+
+  it("链接带上语言前缀，首页就是语言根路径", () => {
+    expect(GUEST_MOBILE_TABS.map((t) => t.href("en-US"))).toEqual([
+      "/en-US",
+      "/en-US/tools/position-size",
+      "/en-US/more",
+    ]);
+  });
+});
+
+describe("resolveActiveGuestTab", () => {
+  it("语言首页点亮首页", () => {
+    expect(resolveActiveGuestTab("/zh-CN", "zh-CN")).toBe("home");
+    expect(resolveActiveGuestTab("/zh-CN/", "zh-CN")).toBe("home");
+  });
+
+  it("计算器点亮工具——不能套用已登录那套把它算给 screener", () => {
+    expect(resolveActiveGuestTab("/zh-CN/tools/position-size", "zh-CN")).toBe("tools");
+    expect(resolveActiveTab("/zh-CN/tools/position-size", "zh-CN")).toBe("screener");
+  });
+
+  it("更多点亮更多", () => {
+    expect(resolveActiveGuestTab("/ms-MY/more", "ms-MY")).toBe("more");
+  });
+
+  it("访客底栏上没有的页面不点亮任何一格", () => {
+    for (const p of ["/zh-CN/articles", "/zh-CN/trade", "/zh-CN/screener", "/zh-CN/login"]) {
+      expect(resolveActiveGuestTab(p, "zh-CN")).toBeNull();
+    }
+  });
+
+  it("语言前缀不一致时不做匹配", () => {
+    expect(resolveActiveGuestTab("/en-US/more", "zh-CN")).toBeNull();
   });
 });
 
@@ -102,6 +152,21 @@ describe("buildMoreEntries", () => {
   it("auth 尚未加载完成时（tier 为 null）不显示升级入口，避免闪现", () => {
     const keys = buildMoreEntries({ ...base, tier: null }).map((e) => e.key);
     expect(keys).not.toContain("upgrade");
+  });
+
+  it("确认未登录的访客拿到的是计算器与升级，而不是两堵登录墙", () => {
+    const entries = buildMoreEntries({ ...base, tier: null, role: null, signedOut: true });
+    expect(entries.map((e) => e.key)).toEqual(["tools", "upgrade"]);
+    expect(entries[0].href).toBe("/zh-CN/tools/position-size");
+  });
+
+  it("访客即使 role 是 admin（不可能，但别让它漏）也不给后台入口", () => {
+    const keys = buildMoreEntries({ ...base, role: "admin", signedOut: true }).map((e) => e.key);
+    expect(keys).not.toContain("admin");
+  });
+
+  it("signedOut 未传时行为与改动前完全一致", () => {
+    expect(buildMoreEntries(base).map((e) => e.key)).toEqual(["orders", "settings", "upgrade"]);
   });
 
   it("资讯、价格提醒、通知设置都不再出现在更多里", () => {

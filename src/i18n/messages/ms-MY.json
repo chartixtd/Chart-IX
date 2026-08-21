@@ -55,7 +55,10 @@
     "more_settings": "Tetapan",
     "more_notifications": "Pemberitahuan",
     "more_upgrade": "Naik taraf ke Pro",
-    "more_admin": "Admin"
+    "more_admin": "Admin",
+    "more_tools": "Kalkulator Posisi",
+    "tab_home": "Utama",
+    "tab_tools": "Alat"
   },
   "auth": {
     "login": {
@@ -273,7 +276,8 @@
       "fee": "Yuran",
       "time": "Masa",
       "cancel_order": "Batalkan Pesanan",
-      "no_orders": "Tiada sejarah dagangan"
+      "no_orders": "Tiada sejarah dagangan",
+      "export_csv": "Eksport CSV"
     },
     "mobile_buy": "Beli",
     "mobile_sell": "Jual",
@@ -285,7 +289,10 @@
     "offline_disabled": "Anda luar talian — pesanan tidak boleh dibuat",
     "indicators": {
       "no_data": "Tiada data buat masa ini — pasaran instrumen ini mungkin tutup."
-    }
+    },
+    "stat_high": "24j Tinggi",
+    "stat_low": "24j Rendah",
+    "stat_vol": "24j Vol"
   },
   "upgrade": {
     "banner_title": "Naik Taraf ke Chart-IX Pro",

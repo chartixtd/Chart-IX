@@ -922,7 +922,8 @@
       "last_confirmed": "Disahkan terakhir",
       "never_confirmed": "belum disahkan",
       "invalidation": "Tidak sah pada",
-      "invalidated": "Tidak sah"
+      "invalidated": "Tidak sah",
+      "page_hint": "Kad hilang apabila senario tamat, berubah, atau harga menembusi paras tidak sah"
     },
     "source_note": "Data daripada CoinGlass · harga dan dagangan di BingX · lilin daripada {exchange}",
     "scenarios": {
@@ -985,6 +986,10 @@
       "cvd": "CVD (40 mata) — beli tolak jual secara terkumpul. Separuh mata untuk arah, separuh untuk divergens: harga jatuh sementara CVD naik bermakna ada yang menyerap, isyarat long terkuat; harga naik sementara CVD jatuh ialah pengagihan.",
       "alert": "Amaran dicetuskan apabila salah satu daripada enam senario dikesan, mengunci harga ketika itu. Senario yang berubah menggantikannya serta-merta; senario yang hilang hanya ditutup selepas tiga imbasan berturut-turut tanpanya — penimbal itulah yang menghalang pencetusan berulang semasa titik ayun disahkan. Skor hanya menyusun jadual, ia tidak mencetuskan amaran.",
       "scenarios_title": "Rujukan pantas enam senario"
+    },
+    "tabs": {
+      "table": "Jadual imbasan",
+      "cards": "Kad amaran"
     }
   },
   "pwa": {

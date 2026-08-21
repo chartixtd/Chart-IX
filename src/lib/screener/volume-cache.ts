@@ -120,10 +120,14 @@ export async function refreshVolumeBatch(coins: string[]): Promise<number> {
   const updates: VolumeUpsert[] = [];
   for (let i = 0; i < coins.length; i++) {
     const r = rows[i];
-    if (!r || r.length === 0) continue;
+    // 请求失败（null）才跳过——那是暂时的，下一跳会因为它仍然最旧而重试。
+    if (!r) continue;
+    // 空数组不是失败，是「CoinGlass 查不到这个币的任何合约」。写 0 而不是
+    // 跳过：跳过的话它永远排在「最旧」队首，每一跳都白占一个刷新名额而且
+    // 每一跳都会再失败一次。线上实测有 3 个币这样卡了 11 小时。
+    // 写 0 的结果是它被成交量门槛挡掉——那本来就是「查不到成交量」的正确
+    // 归宿，而且它会正常参与轮转，哪天 CoinGlass 收录了就自动恢复。
     const volumeUsd = r.reduce((a, x) => a + (Number.isFinite(x.volume_usd) ? x.volume_usd : 0), 0);
-    // 0 也要写：它是「这个币在全市场确实没有成交」这个事实，
-    // 跳过不写会让它永远排在「最旧」队首，把轮转名额一直占着。
     if (!Number.isFinite(volumeUsd)) continue;
     updates.push({ coin: coins[i], volumeUsd });
   }

@@ -8,7 +8,7 @@ import { signedPct } from "@/lib/screener/cards";
 import { isInvalidated } from "@/lib/screener/invalidation";
 import { Button } from "@/components/ui/Button";
 import { FactorMeter } from "./FactorMeter";
-import { scenarioTone, readingKey, TONE_CLASSES, DIRECTION_CLASSES } from "./scenario-ui";
+import { readingKey, TONE_CLASSES, DIRECTION_CLASSES } from "./scenario-ui";
 
 // 接收 t 而不是硬编码文案——页面其余文案全部走 i18n，这里也不能例外
 // （英文/马来语环境下直接冒出一个中文"刚刚"是真的会发生的 bug）。
@@ -77,8 +77,7 @@ export function AlertCard({
     livePrice !== null &&
     isInvalidated(card.invalidation, livePrice, livePrice);
 
-  const tone = scenarioTone(scenario.kind);
-  const toneCls = TONE_CLASSES[tone];
+  const toneCls = TONE_CLASSES[scenario.kind];
   const dirCls = DIRECTION_CLASSES[scenario.direction];
   const fresh = freshness(card.firstSeenAt);
   const pricePct = ((scenario.swingNow - scenario.swingPrev) / scenario.swingPrev) * 100;

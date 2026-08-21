@@ -7,7 +7,7 @@ import { useScannerData } from "@/hooks/useScreenerData";
 import { ScanCountdown } from "@/components/screener/ScanCountdown";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
-import { SCENARIO_KINDS, TRAP_KINDS, scenarioTone, TONE_CLASSES } from "@/components/screener/scenario-ui";
+import { SCENARIO_KINDS, TRAP_KINDS, TONE_CLASSES } from "@/components/screener/scenario-ui";
 
 /**
  * 主扫描表与警报卡片的公共外壳：标题、倒计时、刷新、图例、以及两个子页的
@@ -102,7 +102,7 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
             <ul className="space-y-1">
               {SCENARIO_KINDS.map((kind) => (
                 <li key={kind} className="flex items-baseline gap-1.5">
-                  <span className={cn("font-medium", TONE_CLASSES[scenarioTone(kind)].text)}>
+                  <span className={cn("font-medium", TONE_CLASSES[kind].text)}>
                     {TRAP_KINDS.has(kind) && <span aria-hidden>⚠ </span>}
                     {t(`scenarios.${kind}.name`)}
                   </span>

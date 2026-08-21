@@ -6,9 +6,6 @@ import type { ScenarioKind, ScenarioDirection } from "@/lib/screener/factors/sce
  * 抽到这里是为了不让三处各自维护一份、改一处漏两处。
  */
 
-/** 场景卡片的四色基调——不是六色，是六个 kind 归并到四档。 */
-export type ScenarioTone = "trend" | "manage" | "divTrue" | "divFalse";
-
 export const SCENARIO_KINDS: ScenarioKind[] = [
   "healthy_trend",
   "inventory_flush",
@@ -21,69 +18,79 @@ export const SCENARIO_KINDS: ScenarioKind[] = [
 /** 仅这两个 kind 是陷阱——与 factors/scenario.ts classifyCell 里 trap 的赋值一一对应。 */
 export const TRAP_KINDS = new Set<ScenarioKind>(["false_top_div", "false_bottom_div"]);
 
-export function scenarioTone(kind: ScenarioKind): ScenarioTone {
-  switch (kind) {
-    case "healthy_trend":
-      return "trend";
-    case "inventory_flush":
-      return "manage";
-    case "true_top_div":
-    case "true_bottom_div":
-      return "divTrue";
-    case "false_top_div":
-    case "false_bottom_div":
-      return "divFalse";
-  }
-}
-
 /**
- * 色调 → Tailwind 既有 token。假背离的紫色是唯一允许引入的新颜色（用
- * Tailwind 内置 purple-400/500 一族），其余三档全部复用项目已有的
- * success/info/gold。
+ * 六场景各自的配色，一个 kind 一种颜色。
+ *
+ * 曾经是「六个 kind 归并到四档」——真顶/真底共用金色、假顶/假底共用紫色。
+ * 那样做是为了让「金=可以反手 / 紫=陷阱」这条最要紧的区分更醒目，但代价是
+ * 六个场景在卡片上只能看出四种，读者认不出具体是哪一个。
+ *
+ * 现在一人一色，但**同族的两个用相邻色相**，两件事就都拿到了：
+ *   · 真背离家族走暖色（金 / 橙）——一眼是「可以反手」那一类
+ *   · 假背离家族走紫色系（紫 / 品红）——一眼是「陷阱」那一类
+ *   · 家族内部再靠色相差异分出顶 / 底
+ *
+ * **绿与红是禁区**：它们已经被方向占用（顶部 pill 与操作指令条）。基调
+ * 再用绿/红，一张卡上会出现两个含义不同的绿，读者分不清哪个代表什么。
+ * 所以六色全部避开 success/danger，落在青→蓝→金→橙→紫→品红这一圈上。
+ *
+ * borderTint 必须显式写死，不能用 badgeBg 拼字符串——**Tailwind 只生成
+ * 它在源码里原样看到的 class**，动态拼出来的名字一条规则都不会生成
+ * （这个坑在 Button 的 bg-success/12 上踩过一次，那两个变体的底色一直是
+ * 透明的，而且没人发现）。
  */
 export const TONE_CLASSES: Record<
-  ScenarioTone,
+  ScenarioKind,
   { border: string; text: string; badgeBg: string; borderTint: string; fill: string }
 > = {
-  // 健康趋势用青色（teal）。此前它是「无色」——边框与场景名都是白的，
-  // 而计量条填充却是绿的，自己跟自己矛盾；更要紧的是它是最常见的场景，
-  // 无色意味着大多数卡片看上去没有基调，六场景的配色系统等于只对少数
-  // 卡片生效。
-  //
-  // 为什么不用 success 绿：**绿/红已经被方向占用了**（顶部 pill 与操作
-  // 指令条）。基调再用绿，一张低点侧的健康趋势卡就会同时出现「绿色基调
-  // + 红色 SHORT」，读者分不清哪个绿代表什么。青色离绿够远、又不跟
-  // 蓝(存量清算)/金(真背离)/紫(假背离)撞。
-  trend: {
+  // 健康趋势：青。最常见的场景，此前是「无色」（白边框+白字），
+  // 导致大多数卡片看上去没有基调。
+  healthy_trend: {
     border: "border-l-teal-400",
     text: "text-teal-400",
     badgeBg: "bg-teal-400/15",
-    // 显式写死，不要用 badgeBg 拼字符串——Tailwind 只生成它在源码里
-    // **原样看到**的 class，动态拼出来的名字一条规则都不会生成（这个坑
-    // 刚在 Button 的 bg-success/12 上踩过一次，那两个变体的底色一直是透明的）。
     borderTint: "border-teal-400/20",
     fill: "bg-teal-400",
   },
-  manage: {
+  // 存量清算：蓝。与操作指令条的 info 蓝呼应——两处都在说「该管理仓位了」。
+  inventory_flush: {
     border: "border-l-info",
     text: "text-info",
     badgeBg: "bg-info/15",
     borderTint: "border-info/20",
     fill: "bg-info",
   },
-  divTrue: {
+  // 真顶背离：金。项目主题色，给了最值钱的两个信号之一。
+  true_top_div: {
     border: "border-l-gold",
     text: "text-gold",
     badgeBg: "bg-gold/15",
     borderTint: "border-gold/20",
     fill: "bg-gold",
   },
-  divFalse: {
+  // 真底背离：橙。与金同属暖色（同一家族），但更鲜亮，分得开顶与底。
+  true_bottom_div: {
+    border: "border-l-orange-400",
+    text: "text-orange-400",
+    badgeBg: "bg-orange-400/15",
+    borderTint: "border-orange-400/20",
+    fill: "bg-orange-400",
+  },
+  // 假顶背离：紫。陷阱家族。
+  false_top_div: {
     border: "border-l-purple-400",
     text: "text-purple-400",
     badgeBg: "bg-purple-400/15",
     borderTint: "border-purple-400/20",
     fill: "bg-purple-400",
+  },
+  // 假底背离：品红。与紫同族，色相再推一档。
+  false_bottom_div: {
+    border: "border-l-fuchsia-400",
+    text: "text-fuchsia-400",
+    badgeBg: "bg-fuchsia-400/15",
+    borderTint: "border-fuchsia-400/20",
+    fill: "bg-fuchsia-400",
   },
 };
 

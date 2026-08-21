@@ -11,7 +11,7 @@ import { formatCompactUsd } from "@/lib/market-cap";
 import type { ScannerRow } from "@/lib/screener/types";
 import type { SortKey } from "@/lib/screener/filter";
 import { FactorStack } from "./FactorStack";
-import { scenarioTone, TONE_CLASSES } from "./scenario-ui";
+import { TONE_CLASSES } from "./scenario-ui";
 
 export const ScannerTable = memo(function ScannerTable({
   rows,
@@ -86,7 +86,7 @@ export const ScannerTable = memo(function ScannerTable({
       header: t("columns.scenario"),
       render: (r) => {
         if (!r.scenario) return <span className="text-text-muted">—</span>;
-        const cls = TONE_CLASSES[scenarioTone(r.scenario.kind)];
+        const cls = TONE_CLASSES[r.scenario.kind];
         const name = t(`scenarios.${r.scenario.kind}.name`);
         return (
           <span
@@ -245,7 +245,7 @@ export const ScannerTable = memo(function ScannerTable({
           // （四色系统，见 scenario-ui.ts）而不是统一金色——假背离陷阱
           // 用金色边框会跟真背离撞色，读者会把陷阱误当成可反手的真信号。
           r.scenario !== null && "border-l-2",
-          r.scenario !== null && TONE_CLASSES[scenarioTone(r.scenario.kind)].border,
+          r.scenario !== null && TONE_CLASSES[r.scenario.kind].border,
           r.symbol === selectedSymbol && "bg-bg-tertiary"
         )
       }

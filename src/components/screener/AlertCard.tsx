@@ -128,7 +128,16 @@ export function AlertCard({
       </div>
 
       <div className="mb-2.5 flex items-center gap-1.5">
-        <span className={cn("font-display text-[13px] font-bold", toneCls.text)}>
+        {/* 场景名做成填色徽章而不是裸的彩色文字：基调色此前只落在一条 2px
+            边框和一行 13px 文字上，颜色面积太小，几张卡并排时看不出区别。
+            徽章给了基调一块真正的surface，一眼就能认出这是哪一类场景。 */}
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 font-display text-[12px] font-bold",
+            toneCls.badgeBg,
+            toneCls.text
+          )}
+        >
           {t(`scenarios.${scenario.kind}.name`)}
         </span>
         {scenario.trap && (
@@ -144,7 +153,12 @@ export function AlertCard({
         )}
       </div>
 
-      <p className="mb-3 rounded-md bg-bg-tertiary px-2.5 py-2 text-[11px] leading-relaxed text-text-secondary">
+      <p
+        className={cn(
+          "mb-3 rounded-md border bg-bg-tertiary px-2.5 py-2 text-[11px] leading-relaxed text-text-secondary",
+          toneCls.borderTint
+        )}
+      >
         {verdict}
       </p>
 

@@ -43,30 +43,46 @@ export function scenarioTone(kind: ScenarioKind): ScenarioTone {
  */
 export const TONE_CLASSES: Record<
   ScenarioTone,
-  { border: string; text: string; badgeBg: string; fill: string }
+  { border: string; text: string; badgeBg: string; borderTint: string; fill: string }
 > = {
+  // 健康趋势用青色（teal）。此前它是「无色」——边框与场景名都是白的，
+  // 而计量条填充却是绿的，自己跟自己矛盾；更要紧的是它是最常见的场景，
+  // 无色意味着大多数卡片看上去没有基调，六场景的配色系统等于只对少数
+  // 卡片生效。
+  //
+  // 为什么不用 success 绿：**绿/红已经被方向占用了**（顶部 pill 与操作
+  // 指令条）。基调再用绿，一张低点侧的健康趋势卡就会同时出现「绿色基调
+  // + 红色 SHORT」，读者分不清哪个绿代表什么。青色离绿够远、又不跟
+  // 蓝(存量清算)/金(真背离)/紫(假背离)撞。
   trend: {
-    border: "border-l-text-primary/50",
-    text: "text-text-primary",
-    badgeBg: "bg-text-primary/10",
-    fill: "bg-success",
+    border: "border-l-teal-400",
+    text: "text-teal-400",
+    badgeBg: "bg-teal-400/15",
+    // 显式写死，不要用 badgeBg 拼字符串——Tailwind 只生成它在源码里
+    // **原样看到**的 class，动态拼出来的名字一条规则都不会生成（这个坑
+    // 刚在 Button 的 bg-success/12 上踩过一次，那两个变体的底色一直是透明的）。
+    borderTint: "border-teal-400/20",
+    fill: "bg-teal-400",
   },
   manage: {
     border: "border-l-info",
     text: "text-info",
     badgeBg: "bg-info/15",
+    borderTint: "border-info/20",
     fill: "bg-info",
   },
   divTrue: {
     border: "border-l-gold",
     text: "text-gold",
     badgeBg: "bg-gold/15",
+    borderTint: "border-gold/20",
     fill: "bg-gold",
   },
   divFalse: {
     border: "border-l-purple-400",
     text: "text-purple-400",
     badgeBg: "bg-purple-400/15",
+    borderTint: "border-purple-400/20",
     fill: "bg-purple-400",
   },
 };

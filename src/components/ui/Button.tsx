@@ -14,8 +14,13 @@ const variants: Record<ButtonVariant, string> = {
     "border border-gold/60 text-gold hover:bg-gold/10 hover:border-gold active:bg-gold/15",
   ghost: "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary",
   danger: "bg-danger/10 text-danger border border-danger/25 hover:bg-danger/20",
-  green: "bg-success/12 text-success border border-success/25 hover:bg-success/20 font-semibold",
-  red: "bg-danger/12 text-danger border border-danger/25 hover:bg-danger/20 font-semibold",
+  // 底色用 /15 而不是 /12：**Tailwind 不会为 /12 生成任何规则**（实测
+  // 整份 CSS 里查不到 bg-success\/12 这条选择器，而 bg-success\/15 有），
+  // 所以这两个变体的底色一直是透明的——只有边框和字色在起作用。按钮小的
+  // 时候看不太出来，做成整宽的主操作按钮就很明显了。
+  // /15 是这个代码库里的主力档位（28 处在用），换过来同时也统一了口径。
+  green: "bg-success/15 text-success border border-success/25 hover:bg-success/20 font-semibold",
+  red: "bg-danger/15 text-danger border border-danger/25 hover:bg-danger/20 font-semibold",
 };
 
 /**

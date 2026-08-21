@@ -981,7 +981,8 @@
       "never_confirmed": "尚未确认",
       "invalidation": "失效价",
       "invalidated": "已失效",
-      "page_hint": "场景没了、变了、或价格打穿失效线，卡片就会消失"
+      "page_hint": "场景没了、变了、或价格打穿失效线，卡片就会消失",
+      "trade": "交易 →"
     },
     "source_note": "数据源 CoinGlass · 价格与下单 BingX · K线取自 {exchange}",
     "scenarios": {

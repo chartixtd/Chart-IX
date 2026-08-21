@@ -49,14 +49,14 @@ export function MobileTradeBar({
         <button
           onClick={onBuy}
           disabled={!online}
-          className="min-h-[48px] flex-1 rounded-sm bg-success/12 text-sm font-semibold text-success transition-colors active:bg-success/20 disabled:cursor-not-allowed disabled:opacity-40"
+          className="min-h-[48px] flex-1 rounded-sm bg-success/15 text-sm font-semibold text-success transition-colors active:bg-success/20 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {t("mobile_buy")}
         </button>
         <button
           onClick={onSell}
           disabled={!online}
-          className="min-h-[48px] flex-1 rounded-sm bg-danger/12 text-sm font-semibold text-danger transition-colors active:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-40"
+          className="min-h-[48px] flex-1 rounded-sm bg-danger/15 text-sm font-semibold text-danger transition-colors active:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {t("mobile_sell")}
         </button>

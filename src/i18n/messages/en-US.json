@@ -981,7 +981,8 @@
       "never_confirmed": "not yet confirmed",
       "invalidation": "Invalid at",
       "invalidated": "Invalidated",
-      "page_hint": "A card disappears when its scenario ends, changes, or price breaks the invalidation level"
+      "page_hint": "A card disappears when its scenario ends, changes, or price breaks the invalidation level",
+      "trade": "Trade →"
     },
     "source_note": "Data from CoinGlass · price and execution on BingX · candles from {exchange}",
     "scenarios": {

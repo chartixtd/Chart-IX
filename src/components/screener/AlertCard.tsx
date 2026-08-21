@@ -1,18 +1,14 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import Link from "next/link";
+import { useTranslations, useLocale } from "next-intl";
 import { cn, formatPrice, formatPercent } from "@/lib/utils";
-import { FACTOR_MAX } from "@/lib/screener/types";
 import type { ScenarioCard } from "@/lib/screener/cards";
 import { signedPct } from "@/lib/screener/cards";
 import { isInvalidated } from "@/lib/screener/invalidation";
-import { FactorStack } from "./FactorStack";
+import { Button } from "@/components/ui/Button";
+import { FactorMeter } from "./FactorMeter";
 import { scenarioTone, readingKey, TONE_CLASSES, DIRECTION_CLASSES } from "./scenario-ui";
-
-const FACTOR_LABELS = [
-  ["oi", "OI"],
-  ["cvd", "CVD"],
-] as const;
 
 // 接收 t 而不是硬编码文案——页面其余文案全部走 i18n，这里也不能例外
 // （英文/马来语环境下直接冒出一个中文"刚刚"是真的会发生的 bug）。
@@ -65,6 +61,7 @@ export function AlertCard({
   livePrice?: number | null;
 }) {
   const t = useTranslations("screener");
+  const locale = useLocale();
   const { scenario } = card;
   const price = livePrice ?? card.firstPrice;
   const pct = signedPct(card.firstPrice, price, scenario.direction);
@@ -162,58 +159,60 @@ export function AlertCard({
         {t(`scenarios.${scenario.kind}.action`)}
       </div>
 
-      <div className="mb-3 flex items-end justify-between gap-2">
+      {/* 涨跌与价格并成一组：左边是「赚了多少」，右边是三个价格。
+          原来大涨跌数字独占一整块、价格另占一块，两者其实回答的是同一个
+          问题（这单现在怎么样了），拆成两块反而要读者来回看。 */}
+      <div className="mb-3 flex items-end justify-between gap-3 rounded-md bg-bg-tertiary px-3 py-2.5">
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-text-muted">
-            {t("alerts.first_price")}
+          <div className={cn("tnum text-2xl font-bold leading-none", pct >= 0 ? "text-success" : "text-danger")}>
+            {pct >= 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(2)}%
           </div>
-          <div className="tnum text-sm text-text-secondary">{formatPrice(card.firstPrice)}</div>
+          <div className="mt-1 text-[10px] text-text-muted">
+            {t("alerts.cumulative")} · {t("alerts.peak")} {peak.toFixed(2)}%
+          </div>
         </div>
-        {/* 失效价紧挨着首次价：两个都是「结构位」，而右边那个是实时的市场状态。
-            这一格让卡片从「一个信号」变成「一个完整的交易框架」——进场理由、
-            失效位置、实时进度，一眼全在。而且这个止损位不是我们编的建议，
-            就是信号本身锚定的那个摆动点。 */}
-        {card.invalidation && (
-          <div className="text-center">
-            <div className="text-[10px] uppercase tracking-wider text-text-muted">
-              {t("alerts.invalidation")}
-            </div>
-            <div className={cn("tnum text-sm", dead ? "text-danger" : "text-text-secondary")}>
-              {formatPrice(card.invalidation.price)}
-            </div>
+        <div className="space-y-0.5 text-right">
+          {/* 实时价放第一行且最重：它是唯一每秒都在变的数，也是读者最先要找的。
+              首次价与失效价是两个不动的结构位，退到次级。 */}
+          <div className="tnum text-base font-semibold leading-none text-text-primary">
+            {formatPrice(price)}
           </div>
-        )}
-        <div className="text-right">
-          <div className="text-[10px] uppercase tracking-wider text-text-muted">
-            {t("alerts.last_price")}
+          <div className="text-[10px] text-text-muted">{t("alerts.last_price")}</div>
+          <div className="tnum pt-1 text-[10px] text-text-secondary">
+            {t("alerts.first_price")} {formatPrice(card.firstPrice)}
           </div>
-          <div className="tnum text-sm text-text-primary">{formatPrice(price)}</div>
+          {card.invalidation && (
+            <div className={cn("tnum text-[10px]", dead ? "text-danger" : "text-text-secondary")}>
+              {t("alerts.invalidation")} {formatPrice(card.invalidation.price)}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="mb-3 rounded-md bg-bg-tertiary px-3 py-2 text-center">
-        <div className={cn("tnum text-xl font-bold", pct >= 0 ? "text-success" : "text-danger")}>
-          {pct >= 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(2)}%
-        </div>
-        <div className="text-[10px] uppercase tracking-wider text-text-muted">
-          {t("alerts.cumulative")}
-          <span className="ml-1.5">
-            · {t("alerts.peak")} {peak.toFixed(2)}%
-          </span>
-        </div>
-      </div>
+      <FactorMeter factors={card.factors} fillClassName={toneCls.fill} className="mb-3" />
 
-      <div className="flex items-end justify-between gap-2">
-        {FACTOR_LABELS.map(([key, label]) => (
-          <div key={key} className="flex flex-col items-center gap-1">
-            <FactorStack factors={card.factors} size="lg" only={key} fillClassName={toneCls.fill} />
-            <span className="text-[10px] text-text-muted">{label}</span>
-            <span className={cn("text-[10px] font-medium", toneCls.text)}>
-              {card.factors[key]}/{FACTOR_MAX[key]}
-            </span>
-          </div>
-        ))}
-      </div>
+      {/* manage 不是可下单方向：按钮改成中性「查看」、链接不带 side，
+          交易页自己决定默认方向。与主扫描表的操作列同一套处理。
+          失效之后按钮也保留——你可能正持着这个仓要去平掉，
+          这时候更需要一键跳过去，而不是把入口收走。 */}
+      <Link
+        href={
+          scenario.direction === "manage"
+            ? `/${locale}/trade?symbol=${card.symbol}&market=futures`
+            : `/${locale}/trade?symbol=${card.symbol}&side=${scenario.direction}&market=futures`
+        }
+        className="block"
+      >
+        <Button
+          variant={
+            scenario.direction === "long" ? "green" : scenario.direction === "short" ? "red" : "secondary"
+          }
+          size="sm"
+          className="min-h-[38px] w-full text-xs"
+        >
+          {scenario.direction === "manage" ? t("action_view") : t("alerts.trade")}
+        </Button>
+      </Link>
     </div>
   );
 }

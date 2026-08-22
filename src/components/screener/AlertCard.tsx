@@ -12,7 +12,12 @@ import { readingKey, TONE_CLASSES, DIRECTION_CLASSES } from "./scenario-ui";
 
 // 接收 t 而不是硬编码文案——页面其余文案全部走 i18n，这里也不能例外
 // （英文/马来语环境下直接冒出一个中文"刚刚"是真的会发生的 bug）。
-function sinceLabel(iso: string, t: ReturnType<typeof useTranslations>): string {
+//
+// 三条文案各自是**完整的一句话**（「35分钟前触发」），不是「时长」+
+// 「触发」两段拼起来的。拼接会拼出「刚刚前触发」这种病句，而且英文与
+// 马来语的语序跟中文不同（fired 35m ago / dicetuskan 35m lalu），
+// 靠拼接根本排不对。
+function triggeredLabel(iso: string, t: ReturnType<typeof useTranslations>): string {
   const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
   if (mins < 1) return t("alerts.just_now");
   if (mins < 60) return t("alerts.minutes_ago", { n: mins });
@@ -122,7 +127,7 @@ export function AlertCard({
               {t("alerts.fresh_stale")}
             </span>
           )}
-          {sinceLabel(card.firstSeenAt, t)} {t("alerts.triggered")}
+          {triggeredLabel(card.firstSeenAt, t)}
         </span>
       </div>
 

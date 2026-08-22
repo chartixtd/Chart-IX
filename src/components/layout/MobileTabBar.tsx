@@ -120,7 +120,9 @@ export function MobileTabBar() {
                 <Link
                   href={tab.href(locale)}
                   aria-current={isActive ? "page" : undefined}
-                  aria-label={t("tab_trade")}
+                  // 圆盘不显示文字标签，所以标签必须走 aria-label——而且要跟着
+                  // 中央那一格实际是谁走，不能写死成某一个 tab
+                  aria-label={t(`tab_${tab.key}`)}
                   className={cn(
                     // 凸起圆盘的上沿会侵入内容区，页面内容用 pb-tabbar 让位
                     "-mt-4 flex h-14 w-14 items-center justify-center rounded-full border transition-all",

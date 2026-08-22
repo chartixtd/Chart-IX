@@ -10,19 +10,24 @@ import {
 } from "./tabs";
 
 describe("MOBILE_TABS", () => {
-  it("共 5 个位置，交易在正中间且标记为凸起", () => {
+  it("共 5 个位置，选币在正中间且标记为凸起", () => {
     expect(MOBILE_TABS).toHaveLength(5);
-    expect(MOBILE_TABS[2].key).toBe("trade");
+    expect(MOBILE_TABS[2].key).toBe("screener");
     expect(MOBILE_TABS[2].center).toBe(true);
     expect(MOBILE_TABS.filter((t) => t.center)).toHaveLength(1);
+  });
+
+  it("交易退到第 4 格，仍然一步可达", () => {
+    expect(MOBILE_TABS[3].key).toBe("trade");
+    expect(MOBILE_TABS[3].center).toBe(false);
   });
 
   it("链接带上语言前缀", () => {
     expect(MOBILE_TABS.map((t) => t.href("ms-MY"))).toEqual([
       "/ms-MY/dashboard",
       "/ms-MY/learn",
-      "/ms-MY/trade",
       "/ms-MY/screener",
+      "/ms-MY/trade",
       "/ms-MY/more",
     ]);
   });
@@ -56,9 +61,9 @@ describe("resolveActiveGuestTab", () => {
     expect(resolveActiveGuestTab("/zh-CN/", "zh-CN")).toBe("home");
   });
 
-  it("计算器点亮工具——不能套用已登录那套把它算给 screener", () => {
+  it("计算器点亮工具——不能套用已登录那套把它算给「更多」", () => {
     expect(resolveActiveGuestTab("/zh-CN/tools/position-size", "zh-CN")).toBe("tools");
-    expect(resolveActiveTab("/zh-CN/tools/position-size", "zh-CN")).toBe("screener");
+    expect(resolveActiveTab("/zh-CN/tools/position-size", "zh-CN")).toBe("more");
   });
 
   it("更多点亮更多", () => {
@@ -114,8 +119,8 @@ describe("resolveActiveTab", () => {
     expect(resolveActiveTab("/zh-CN/trade/", "zh-CN")).toBe("trade");
   });
 
-  it("工具页归筛选器 tab", () => {
-    expect(resolveActiveTab("/zh-CN/tools/position-size", "zh-CN")).toBe("screener");
+  it("工具页归「更多」tab——计算器就列在那一页上", () => {
+    expect(resolveActiveTab("/zh-CN/tools/position-size", "zh-CN")).toBe("more");
   });
 });
 
@@ -145,8 +150,8 @@ describe("buildMoreEntries", () => {
 
   it("常规入口按既定顺序排列并带语言前缀", () => {
     const entries = buildMoreEntries({ locale: "ms-MY", tier: "pro", role: "user" });
-    expect(entries.map((e) => e.key)).toEqual(["orders", "settings"]);
-    expect(entries[0].href).toBe("/ms-MY/orders");
+    expect(entries.map((e) => e.key)).toEqual(["tools", "orders", "settings"]);
+    expect(entries[1].href).toBe("/ms-MY/orders");
   });
 
   it("auth 尚未加载完成时（tier 为 null）不显示升级入口，避免闪现", () => {
@@ -154,9 +159,19 @@ describe("buildMoreEntries", () => {
     expect(keys).not.toContain("upgrade");
   });
 
-  it("确认未登录的访客拿到的是计算器与升级，而不是两堵登录墙", () => {
+  it("确认未登录的访客拿到的是升级，而不是订单/设置两堵登录墙", () => {
     const entries = buildMoreEntries({ ...base, tier: null, role: null, signedOut: true });
-    expect(entries.map((e) => e.key)).toEqual(["tools", "upgrade"]);
+    expect(entries.map((e) => e.key)).toEqual(["upgrade"]);
+  });
+
+  it("访客这里不重复列计算器——他们底栏上已经有独立的工具格", () => {
+    const keys = buildMoreEntries({ ...base, signedOut: true }).map((e) => e.key);
+    expect(keys).not.toContain("tools");
+  });
+
+  it("已登录用户能在「更多」里找到计算器，且排在最前", () => {
+    const entries = buildMoreEntries(base);
+    expect(entries[0].key).toBe("tools");
     expect(entries[0].href).toBe("/zh-CN/tools/position-size");
   });
 
@@ -165,8 +180,13 @@ describe("buildMoreEntries", () => {
     expect(keys).not.toContain("admin");
   });
 
-  it("signedOut 未传时行为与改动前完全一致", () => {
-    expect(buildMoreEntries(base).map((e) => e.key)).toEqual(["orders", "settings", "upgrade"]);
+  it("signedOut 未传时按既定顺序给出全部入口", () => {
+    expect(buildMoreEntries(base).map((e) => e.key)).toEqual([
+      "tools",
+      "orders",
+      "settings",
+      "upgrade",
+    ]);
   });
 
   it("资讯、价格提醒、通知设置都不再出现在更多里", () => {
@@ -271,7 +291,7 @@ describe("resolveBackTarget", () => {
     expect(resolveBackTarget("/ms-MY/articles/x", "ms-MY")).toBe("/ms-MY/articles");
   });
 
-  it("工具页退回筛选器", () => {
-    expect(resolveBackTarget("/zh-CN/tools/position-size", "zh-CN")).toBe("/zh-CN/screener");
+  it("工具页退回「更多」——计算器现在列在那一页上", () => {
+    expect(resolveBackTarget("/zh-CN/tools/position-size", "zh-CN")).toBe("/zh-CN/more");
   });
 });

@@ -24,11 +24,18 @@ export const GUEST_MOBILE_TABS: MobileTab[] = [
   { key: "more", href: (l) => `/${l}/more`, center: false },
 ];
 
+/**
+ * 已登录用户的底栏。
+ *
+ * 中央凸起的金圆盘给「选币」而不是「交易」：底栏正中是全站视觉重心，
+ * 该给的是这个产品每天要你做的第一件事——先扫出值得看的标的。交易页
+ * 是你选完之后才去的地方，退到第 4 格，仍然一步可达。
+ */
 export const MOBILE_TABS: MobileTab[] = [
   { key: "dashboard", href: (l) => `/${l}/dashboard`, center: false },
   { key: "learn", href: (l) => `/${l}/learn`, center: false },
-  { key: "trade", href: (l) => `/${l}/trade`, center: true },
-  { key: "screener", href: (l) => `/${l}/screener`, center: false },
+  { key: "screener", href: (l) => `/${l}/screener`, center: true },
+  { key: "trade", href: (l) => `/${l}/trade`, center: false },
   { key: "more", href: (l) => `/${l}/more`, center: false },
 ];
 
@@ -38,8 +45,8 @@ export const MOBILE_TABS: MobileTab[] = [
  */
 const TAB_SEGMENTS: Record<TabKey, string[]> = {
   // 访客底栏专用。首页没有一级路由段（它就是 /{locale} 本身），由
-  // resolveActiveTab 单独处理；tools 在已登录底栏里归 screener，
-  // 这里给访客单列一档——他们的底栏上根本没有 screener 这一格。
+  // resolveActiveTab 单独处理；tools 在已登录底栏里归「更多」（计算器就
+  // 列在那一页上），这里给访客单列一档——他们的底栏上有独立的工具格。
   home: [],
   tools: [],
   dashboard: ["dashboard"],
@@ -47,10 +54,11 @@ const TAB_SEGMENTS: Record<TabKey, string[]> = {
   // 杂物抽屉里，学习 tab 反而找不到它
   learn: ["learn", "videos", "articles", "news"],
   trade: ["trade"],
-  // 计算器等交易辅助工具归筛选器 tab——两者同属「开仓前的准备」，
-  // 且手机底部 5 个 tab 位置已满，不值得为一个工具再开一个
-  screener: ["screener", "tools"],
-  more: ["more", "orders", "settings", "upgrade"],
+  screener: ["screener"],
+  // 计算器归「更多」——它就列在那一页上。此前它归筛选器 tab，那是
+  // 「底栏 5 格已满、只好挂靠一个」的权宜；现在它在更多页有自己的一行
+  // 入口，点进去时点亮「更多」才对得上路径。
+  more: ["more", "orders", "settings", "upgrade", "tools"],
 };
 
 export function resolveActiveTab(pathname: string, locale: string): TabKey | null {
@@ -128,8 +136,9 @@ export function resolveBackTarget(pathname: string, locale: string): string {
       return second ? `/${locale}/articles` : `/${locale}/learn`;
     case "videos":
       return second ? `/${locale}/videos` : `/${locale}/learn`;
+    // 计算器的上级是「更多」（它列在那一页上），不再是筛选器
     case "tools":
-      return `/${locale}/screener`;
+      return `/${locale}/more`;
     case "learn":
       return `/${locale}/learn`;
     case "community":
@@ -168,17 +177,18 @@ export function buildMoreEntries(input: {
   const { locale, tier, role, signedOut } = input;
 
   // 确认未登录的访客：订单与设置在他们那里只是两堵登录墙（桌面顶栏同样
-  // 不对访客显示这两项），换成桌面访客确实有的两个入口——计算器与升级。
+  // 不对访客显示这两项）。计算器不在这里重复——访客底栏上已经有独立的
+  // 工具格，同一个入口出现两次只是噪音。
   if (signedOut) {
-    return [
-      { key: "tools", href: `/${locale}/tools/position-size` },
-      { key: "upgrade", href: `/${locale}/upgrade` },
-    ];
+    return [{ key: "upgrade", href: `/${locale}/upgrade` }];
   }
 
   // 资讯已移入「学习」；价格提醒与通知设置暂时隐藏（路由与页面都保留，
-  // 想开回来把条目加回这里即可）
+  // 想开回来把条目加回这里即可）。
+  // 计算器排在第一位：底栏 5 格给了主页/学习/选币/交易，它是这一页上
+  // 唯一一个「工具」性质的目的地，其余三条都是账户类页面。
   const entries: MoreEntry[] = [
+    { key: "tools", href: `/${locale}/tools/position-size` },
     { key: "orders", href: `/${locale}/orders` },
     { key: "settings", href: `/${locale}/settings` },
   ];

@@ -323,7 +323,11 @@
       "loading_history": "Loading history…",
       "pro_upsell": "30+ technical indicators and drawing tools are Pro-exclusive",
       "pro_upsell_cta": "Upgrade to Pro to unlock",
-      "no_data": "No data for this instrument right now — its market may be closed."
+      "no_data": "No data for this instrument right now — its market may be closed.",
+      "ext_interval_note": "30m+ timeframes only",
+      "ext_unsupported_interval": "30m+ timeframes only",
+      "ext_loading": "Loading…",
+      "ext_error": "CoinGlass data unavailable"
     },
     "drawing": {
       "select_tool": "Selection tool (Esc)",

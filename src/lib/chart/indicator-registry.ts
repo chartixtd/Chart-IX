@@ -17,14 +17,21 @@ import {
   computeUltimateOscillator, computeADX, computeAroon, computeVortex,
   computeOBV, computeMFI, computeCMF, computeAwesomeOscillator, computeAlligator, computePivotPoints, computeChaikinOscillator,
 } from "@/lib/indicators";
+import {
+  emptyCandles,
+  type CandleSeries,
+  type ExternalInput,
+  type ExternalKind,
+} from "@/lib/chart/external-series";
 
-export type IndicatorCategory = "trend" | "volatility" | "momentum" | "volume";
+export type IndicatorCategory = "trend" | "volatility" | "momentum" | "volume" | "derivatives";
 
 export const CATEGORY_LABELS: Record<IndicatorCategory, string> = {
   trend: "Trend",
   volatility: "Volatility",
   momentum: "Momentum / Oscillators",
   volume: "Volume",
+  derivatives: "Derivatives · CoinGlass",
 };
 
 export const CATEGORY_LABELS_ZH: Record<IndicatorCategory, string> = {
@@ -32,6 +39,7 @@ export const CATEGORY_LABELS_ZH: Record<IndicatorCategory, string> = {
   volatility: "波动率",
   momentum: "动量 / 震荡",
   volume: "成交量",
+  derivatives: "衍生品数据 · CoinGlass",
 };
 
 export interface IndicatorInput {
@@ -40,7 +48,19 @@ export interface IndicatorInput {
   low: number[];
   close: number[];
   volume: number[];
+  /**
+   * 来自 CoinGlass、已对齐到同一根 K 线数组的外部序列（见 external-series.ts）。
+   * 只有声明了 `requires` 的指标会读它；KlineChart 只在有指标声明了才去拉，
+   * 没拉到/周期不支持时为 undefined，指标应当退化成全 null 而不是抛错。
+   */
+  ext?: ExternalInput;
 }
+
+/**
+ * compute() 每条 plot 的输出：普通指标是数值数组；`kind: "candles"` 的 plot
+ * 输出与 K 线等长的蜡烛数组。两者都用 null 表示"这一根没有值"。
+ */
+export type PlotSeries = (number | null)[] | CandleSeries;
 
 export interface ParamDef {
   key: string;
@@ -55,7 +75,8 @@ export interface PlotDef {
   key: string;
   label?: string;
   color: string;
-  kind?: "line" | "histogram" | "dots";
+  /** "candles" 的 plot 必须由 compute() 输出 CandleSeries；颜色固定用图表主题的涨跌色。 */
+  kind?: "line" | "histogram" | "dots" | "candles";
   /** 0 solid, 1 dotted, 2 dashed */
   lineStyle?: 0 | 1 | 2 | 3 | 4;
   lineWidth?: 1 | 2 | 3 | 4;
@@ -76,9 +97,16 @@ export interface IndicatorDef {
   placement: "main" | "pane";
   params: ParamDef[];
   plots: PlotDef[];
-  compute: (input: IndicatorInput, p: Record<string, number>) => Record<string, (number | null)[]>;
+  compute: (input: IndicatorInput, p: Record<string, number>) => Record<string, PlotSeries>;
   /** Horizontal reference lines drawn in the indicator's own pane. */
   guides?: number[];
+  /**
+   * 需要 KlineChart 额外拉取的外部序列。声明了就意味着：只在 30m 及以上周期
+   * 有数据、数据经 /api/coinglass/series 来、Pro 专属。
+   */
+  requires?: ExternalKind[];
+  /** 数据来源标签，图例与选择器上显示。 */
+  source?: "coinglass";
   /** Formats the legend suffix, e.g. "MA 20". Defaults to the joined param values. */
   legendParams?: (p: Record<string, number>) => string;
 }
@@ -530,6 +558,31 @@ export const INDICATORS: IndicatorDef[] = [
     plots: [{ key: "chaikinosc", color: C.indigo }],
     compute: (i, p) => ({ chaikinosc: computeChaikinOscillator(i.high, i.low, i.close, i.volume, p.fastPeriod, p.slowPeriod) }),
     guides: [0],
+  },
+
+  // ---------------- Derivatives (CoinGlass) ----------------
+  // 这两个不是从 OHLCV 算出来的，而是 KlineChart 按 `requires` 向
+  // /api/coinglass/series 拉来、对齐到 K 线数组后经 input.ext 交进来的。
+  // 没有 ext（周期 <30m、还没加载完、上游失败）时输出全 null——图表上是空副图
+  // 加图例提示，而不是报错。
+  {
+    id: "cg_oi", name: "Aggregated Open Interest (CoinGlass)", nameZh: "聚合持仓量 OI (CoinGlass)", short: "OI", category: "derivatives", placement: "pane",
+    params: [],
+    plots: [{ key: "oi", label: "Open Interest", color: C.up, kind: "candles" }],
+    compute: (i) => ({ oi: i.ext?.oi ?? emptyCandles(i.close.length) }),
+    requires: ["oi"],
+    source: "coinglass",
+    legendParams: () => "",
+  },
+  {
+    id: "cg_cvd", name: "Aggregated CVD (CoinGlass)", nameZh: "聚合 CVD 主动买卖差 (CoinGlass)", short: "CVD", category: "derivatives", placement: "pane",
+    params: [],
+    plots: [{ key: "cvd", label: "CVD", color: C.blue, kind: "candles" }],
+    compute: (i) => ({ cvd: i.ext?.cvd ?? emptyCandles(i.close.length) }),
+    requires: ["cvd"],
+    source: "coinglass",
+    guides: [0],
+    legendParams: () => "",
   },
 ];
 

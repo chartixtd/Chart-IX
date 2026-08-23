@@ -323,7 +323,11 @@
       "loading_history": "加载历史K线…",
       "pro_upsell": "30+ 技术指标与画图工具为 Pro 专属功能",
       "pro_upsell_cta": "升级 Pro 解锁",
-      "no_data": "当前无行情数据，该品种可能正在休市。"
+      "no_data": "当前无行情数据，该品种可能正在休市。",
+      "ext_interval_note": "需 30m 及以上周期",
+      "ext_unsupported_interval": "需 30m 及以上周期",
+      "ext_loading": "加载中…",
+      "ext_error": "CoinGlass 数据暂不可用"
     },
     "drawing": {
       "select_tool": "选择工具（Esc）",

@@ -2,6 +2,8 @@
 
 import { useTranslations } from "next-intl";
 import { legendLabel } from "@/lib/chart/indicator-registry";
+import type { ExternalKind } from "@/lib/chart/external-series";
+import type { ExternalSeriesStatus } from "@/hooks/useExternalSeries";
 import { useChartStore, resolveDef } from "@/stores/chartStore";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/ui/Icon";
@@ -11,7 +13,14 @@ import { Icon } from "@/components/ui/Icon";
  * hide / settings / remove controls — the TradingView pattern where you manage
  * indicators from the chart itself rather than reopening a dialog.
  */
-export function ChartLegend({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function ChartLegend({
+  onOpenSettings,
+  externalStatus,
+}: {
+  onOpenSettings: () => void;
+  /** CoinGlass 序列的加载状态（按 kind）。声明了 `requires` 的指标据此显示提示。 */
+  externalStatus?: Partial<Record<ExternalKind, ExternalSeriesStatus>>;
+}) {
   const t = useTranslations("trade.indicators");
   const applied = useChartStore((s) => s.appliedIndicators);
   const toggleVisible = useChartStore((s) => s.toggleIndicatorVisible);
@@ -24,6 +33,17 @@ export function ChartLegend({ onOpenSettings }: { onOpenSettings: () => void }) 
       {applied.map((a) => {
         const def = resolveDef(a);
         if (!def) return null;
+        // 外部数据指标：把「周期不支持 / 加载中 / 不可用」直接写在图例上，
+        // 否则空副图看起来像坏了。
+        const extState = def.requires?.length ? externalStatus?.[def.requires[0]] : undefined;
+        const extHint =
+          extState === "unsupported"
+            ? t("ext_unsupported_interval")
+            : extState === "loading"
+              ? t("ext_loading")
+              : extState === "error"
+                ? t("ext_error")
+                : null;
         return (
           <div
             key={a.instanceId}
@@ -41,6 +61,16 @@ export function ChartLegend({ onOpenSettings }: { onOpenSettings: () => void }) 
             >
               {legendLabel(def, a.params)}
             </span>
+            {def.source === "coinglass" && (
+              <span className="rounded-xs bg-gold/10 px-1 font-mono text-[10px] leading-none text-gold/80">
+                CoinGlass
+              </span>
+            )}
+            {extHint && (
+              <span className={cn("text-[11px] leading-none", extState === "error" ? "text-danger" : "text-text-muted")}>
+                {extHint}
+              </span>
+            )}
 
             <span className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
               <button

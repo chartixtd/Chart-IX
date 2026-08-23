@@ -12,7 +12,7 @@ import { ColorPicker } from "./ColorPicker";
 import { LineStyleControl, type DrawingLineStyle } from "./LineStyleControl";
 import { Icon } from "@/components/ui/Icon";
 
-const CATEGORIES: (IndicatorCategory | "all")[] = ["all", "trend", "momentum", "volatility", "volume"];
+const CATEGORIES: (IndicatorCategory | "all")[] = ["all", "trend", "momentum", "volatility", "volume", "derivatives"];
 
 const LINE_STYLE_TO_DRAWING: Record<number, DrawingLineStyle> = { 0: "solid", 1: "dotted", 2: "dashed", 3: "dashed", 4: "dotted" };
 const DRAWING_TO_LINE_STYLE: Record<DrawingLineStyle, 0 | 1 | 2> = { solid: 0, dotted: 1, dashed: 2 };
@@ -108,6 +108,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                       <span className="block text-[11px] text-text-muted">
                         {categoryLabels[def.category]}
                         {def.placement === "pane" ? ` · ${t("placement_pane")}` : ` · ${t("placement_main")}`}
+                        {def.requires?.length ? ` · ${t("ext_interval_note")}` : ""}
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
@@ -180,7 +181,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                       >
                         <Icon name={a.visible ? "eye" : "eye-off"} className="h-3.5 w-3.5" />
                       </button>
-                      {(def.params.length > 0 || def.plots.length > 0) && (
+                      {(def.params.length > 0 || def.plots.some((p) => p.kind !== "candles")) && (
                         <button
                           onClick={() => setEditingId(isEditing ? null : a.instanceId)}
                           title={t("settings")}
@@ -227,7 +228,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                             />
                           </label>
                         ))}
-                        {def.plots.map((plot) => {
+                        {def.plots.filter((p) => p.kind !== "candles").map((plot) => {
                           const resolved = resolvePlotStyle(def, a.styleOverrides, plot.key);
                           return (
                             <div key={plot.key} className="space-y-1">

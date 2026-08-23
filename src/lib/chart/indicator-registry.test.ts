@@ -2,6 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   INDICATORS, INDICATOR_BY_ID, defaultParams, legendLabel, resolvePlotStyle, type IndicatorInput,
 } from "./indicator-registry";
+import { isCandlePoint, type CandlePoint } from "./external-series";
+
+/** Indicators fed by CoinGlass (`requires`) are all-null without `input.ext`; they get their own suite below. */
+const ohlcvOnly = INDICATORS.filter((d) => !d.requires?.length);
 
 /** Deterministic 200-bar OHLCV series with a trend, a cycle, and varied volume. */
 function makeBars(n = 200): IndicatorInput {
@@ -67,7 +71,7 @@ describe("indicator computation contract", () => {
   });
 
   it("produces at least one non-null point per plot on a 200-bar series", () => {
-    for (const def of INDICATORS) {
+    for (const def of ohlcvOnly) {
       const out = def.compute(bars, defaultParams(def));
       for (const plot of def.plots) {
         const nonNull = out[plot.key].filter((v) => v !== null && !Number.isNaN(v));
@@ -82,8 +86,19 @@ describe("indicator computation contract", () => {
       for (const plot of def.plots) {
         for (const v of out[plot.key]) {
           if (v === null) continue;
-          expect(Number.isFinite(v), `${def.id}.${plot.key} produced ${v}`).toBe(true);
+          const nums = isCandlePoint(v) ? [v.open, v.high, v.low, v.close] : [v];
+          for (const n of nums) {
+            expect(Number.isFinite(n), `${def.id}.${plot.key} produced ${n}`).toBe(true);
+          }
         }
+      }
+    }
+  });
+
+  it("declares candle plots only on indicators that also declare an external source", () => {
+    for (const def of INDICATORS) {
+      if (def.plots.some((p) => p.kind === "candles")) {
+        expect(def.requires?.length, `${def.id} has candle plots but no requires`).toBeGreaterThan(0);
       }
     }
   });
@@ -104,8 +119,8 @@ describe("indicator computation contract", () => {
 
   it("respects a user-edited period (output shifts when params change)", () => {
     const def = INDICATOR_BY_ID.get("ma")!;
-    const fast = def.compute(bars, { period: 5 }).ma;
-    const slow = def.compute(bars, { period: 50 }).ma;
+    const fast = def.compute(bars, { period: 5 }).ma as (number | null)[];
+    const slow = def.compute(bars, { period: 50 }).ma as (number | null)[];
     expect(fast[fast.length - 1]).not.toBe(slow[slow.length - 1]);
     // A longer period must start later.
     const firstNonNull = (a: (number | null)[]) => a.findIndex((v) => v !== null);
@@ -130,6 +145,51 @@ describe("indicator computation contract", () => {
     expect(plot.barColor!({ i: 0, value: 5, input: rising })).not.toBe(
       plot.barColor!({ i: 0, value: 5, input: falling })
     );
+  });
+});
+
+describe("CoinGlass-fed indicators", () => {
+  const candle = (i: number): CandlePoint => ({ open: i, high: i + 1, low: i - 1, close: i + 0.5 });
+  const ext = {
+    oi: bars.close.map((_, i) => (i < 10 ? null : candle(i))),
+    cvd: bars.close.map((_, i) => (i % 2 ? null : candle(i))),
+  };
+
+  it("exist, live in the derivatives category and require their kind", () => {
+    const oi = INDICATOR_BY_ID.get("cg_oi")!;
+    const cvd = INDICATOR_BY_ID.get("cg_cvd")!;
+    expect(oi.category).toBe("derivatives");
+    expect(cvd.category).toBe("derivatives");
+    expect(oi.requires).toEqual(["oi"]);
+    expect(cvd.requires).toEqual(["cvd"]);
+    expect(oi.source).toBe("coinglass");
+    expect(oi.plots[0].kind).toBe("candles");
+    expect(cvd.plots[0].kind).toBe("candles");
+  });
+
+  it("pass the aligned external candles straight through", () => {
+    const oi = INDICATOR_BY_ID.get("cg_oi")!.compute({ ...bars, ext }, {});
+    const cvd = INDICATOR_BY_ID.get("cg_cvd")!.compute({ ...bars, ext }, {});
+    expect(oi.oi).toBe(ext.oi);
+    expect(cvd.cvd).toBe(ext.cvd);
+  });
+
+  it("degrade to an all-null series of bar length without ext (finer interval / not loaded yet)", () => {
+    for (const id of ["cg_oi", "cg_cvd"]) {
+      const def = INDICATOR_BY_ID.get(id)!;
+      const out = def.compute(bars, {});
+      const series = out[def.plots[0].key];
+      expect(series).toHaveLength(bars.close.length);
+      expect(series.every((v) => v === null)).toBe(true);
+      // partial ext (only the other kind loaded) behaves the same
+      const partial = def.compute({ ...bars, ext: id === "cg_oi" ? { cvd: ext.cvd } : { oi: ext.oi } }, {});
+      expect(partial[def.plots[0].key].every((v) => v === null)).toBe(true);
+    }
+  });
+
+  it("have param-less legend labels", () => {
+    expect(legendLabel(INDICATOR_BY_ID.get("cg_oi")!, {})).toBe("OI");
+    expect(legendLabel(INDICATOR_BY_ID.get("cg_cvd")!, {})).toBe("CVD");
   });
 });
 

@@ -32,7 +32,9 @@ import { useMarketStore } from "@/stores/market";
 import { useChartStore } from "@/stores/chartStore";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { canUseAdvancedChart } from "@/lib/access";
-import { INDICATOR_BY_ID, resolvePlotStyle, type IndicatorInput } from "@/lib/chart/indicator-registry";
+import { INDICATOR_BY_ID, resolvePlotStyle, type IndicatorInput, type PlotSeries } from "@/lib/chart/indicator-registry";
+import { buildExternalInput, isCandlePoint, type ExternalInput, type ExternalKind, type ExternalSeriesPayload } from "@/lib/chart/external-series";
+import { useExternalSeries } from "@/hooks/useExternalSeries";
 import { classifyBarsUpdate, classifyTail, overlaySignature } from "@/lib/chart/incremental";
 import { IndicatorModal } from "./chart/IndicatorModal";
 import { ChartLegend } from "./chart/ChartLegend";
@@ -133,6 +135,9 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
   // incremental path must not be trusted and we fall back to full setData.
   const lastAppliedRef = useRef<typeof applied | null>(null);
   const lastAdvancedRef = useRef<boolean | null>(null);
+  // CoinGlass 序列的引用：变了就必须走全量路径——增量路径只碰尾部一两根，
+  // 而一次刷新会改写整条序列（CVD 的累计起点还会整体平移）。
+  const lastExtRef = useRef<ExternalSeriesPayload | null>(null);
 
   // Held in state (not just refs) so the drawing layer re-renders once they exist.
   const [chartApi, setChartApi] = useState<IChartApi | null>(null);
@@ -213,6 +218,17 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     [applied]
   );
 
+  // 已应用的指标里声明了哪些 CoinGlass 序列。没人声明就一个请求都不发。
+  const requiredKinds = useMemo<ExternalKind[]>(() => {
+    const set = new Set<ExternalKind>();
+    for (const a of applied) {
+      for (const k of INDICATOR_BY_ID.get(a.defId)?.requires ?? []) set.add(k);
+    }
+    return [...set].sort();
+  }, [applied]);
+  const external = useExternalSeries(symbol, interval, requiredKinds, hasAdvancedChart);
+  const extPayload = external.payload;
+
   const bars = useMemo(() => {
     if (!klines?.length) return null;
     const valid = klines
@@ -235,6 +251,14 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
       } as IndicatorInput,
     };
   }, [klines]);
+
+  // 把 CoinGlass 序列对齐到当前 K 线数组。bars 每次轮询都是新数组，所以这里
+  // 每次轮询都重算一遍（1000 根的 Map 查找，可忽略）；但「要不要全量重绘」
+  // 看的是 extPayload 的引用，不是这个对齐结果——否则每次轮询都会全量重绘。
+  const extAligned = useMemo<ExternalInput | undefined>(() => {
+    if (!bars || (!extPayload.oi && !extPayload.cvd)) return undefined;
+    return buildExternalInput(extPayload, bars.times as unknown as number[]);
+  }, [bars, extPayload]);
 
   const drawingTimes = useMemo(() => (bars ? bars.times.map((t) => t as number) : []), [bars]);
 
@@ -308,6 +332,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
       lastCandleRef.current = null;
       lastAppliedRef.current = null;
       lastAdvancedRef.current = null;
+      lastExtRef.current = null;
       prevLastTimeRef.current = null;
     };
   }, []);
@@ -377,7 +402,21 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
           visible: false, // the data effect turns it on
         };
         let series: ISeriesApi<SeriesType>;
-        if (plot.kind === "histogram") {
+        if (plot.kind === "candles") {
+          // CoinGlass 的 OI / CVD：颜色固定用主图的涨跌色，数值按成交量格式
+          // （3.93B / 682.8M）显示，不走 resolvePlotStyle 的线型/颜色覆盖。
+          series = chartApi.addSeries(
+            CandlestickSeries,
+            {
+              ...base,
+              upColor: UP, downColor: DOWN,
+              borderUpColor: UP, borderDownColor: DOWN,
+              wickUpColor: UP, wickDownColor: DOWN,
+              priceFormat: { type: "volume" },
+            },
+            paneIndex
+          );
+        } else if (plot.kind === "histogram") {
           series = chartApi.addSeries(
             HistogramSeries,
             { ...base, color: plot.color, priceFormat: { type: "volume" } },
@@ -456,10 +495,13 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     // 半透明遮罩已表达"过期"语义。跳过记账写入，保住 reset effect 留下的
     // null/0 状态，真实数据到达帧才能正确判 "full" 并触发 fitContent。
     if (isPlaceholder) return;
-    const { times, input } = bars;
+    const { times } = bars;
+    const input: IndicatorInput = extAligned ? { ...bars.input, ext: extAligned } : bars.input;
 
     const kind =
-      applied !== lastAppliedRef.current || hasAdvancedChart !== lastAdvancedRef.current
+      applied !== lastAppliedRef.current ||
+      hasAdvancedChart !== lastAdvancedRef.current ||
+      extPayload !== lastExtRef.current
         ? "full"
         : classifyBarsUpdate(
             { earliest: prevEarliestTimeRef.current, count: prevBarCountRef.current },
@@ -510,7 +552,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
               const def = INDICATOR_BY_ID.get(a.defId);
               const entries = seriesMapRef.current.get(a.instanceId);
               if (!def || !entries) continue;
-              let out: Record<string, (number | null)[]>;
+              let out: Record<string, PlotSeries>;
               try { out = def.compute(input, a.params); } catch { continue; }
               for (const e of entries) {
                 const plot = def.plots.find((p) => p.key === e.plotKey);
@@ -523,7 +565,14 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
                   // 里所有指标的 null 输出是单调的(窗口预热型:只有前段可能是
                   // null,一旦有值就不会再变回 null)——不存在非 null→null 回退,
                   // 所以跳过等价于该点本来也不存在于序列里,和全量路径一致。
-                  if (v === null || v === undefined || Number.isNaN(v)) continue;
+                  // CoinGlass 蜡烛是另一种情况:刚开的新根在下次刷新前就是 null,
+                  // 跳过即可;刷新到达时 extPayload 变引用,整条走全量路径重画。
+                  if (v === null || v === undefined) continue;
+                  if (plot.kind === "candles") {
+                    if (isCandlePoint(v)) e.series.update({ time: times[i], ...v }, i < lastIdx);
+                    continue;
+                  }
+                  if (typeof v !== "number" || Number.isNaN(v)) continue;
                   if (plot.kind === "histogram") {
                     e.series.update(
                       {
@@ -613,7 +662,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
       const entries = seriesMapRef.current.get(a.instanceId);
       if (!def || !entries) continue;
 
-      let out: Record<string, (number | null)[]>;
+      let out: Record<string, PlotSeries>;
       try {
         out = def.compute(input, a.params);
       } catch {
@@ -631,11 +680,23 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
 
         const resolvedStyle = resolvePlotStyle(def, a.styleOverrides, e.plotKey);
 
+        if (plot.kind === "candles") {
+          const data: CandlestickData[] = [];
+          for (let i = 0; i < values.length; i++) {
+            const v = values[i];
+            if (!isCandlePoint(v)) continue;
+            data.push({ time: times[i], ...v });
+          }
+          e.series.setData(data);
+          e.series.applyOptions({ visible });
+          continue;
+        }
+
         if (plot.kind === "histogram") {
           const data: HistogramData[] = [];
           for (let i = 0; i < values.length; i++) {
             const v = values[i];
-            if (v === null || v === undefined || Number.isNaN(v)) continue;
+            if (typeof v !== "number" || Number.isNaN(v)) continue;
             data.push({
               time: times[i],
               value: v,
@@ -647,7 +708,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
           const data: LineData[] = [];
           for (let i = 0; i < values.length; i++) {
             const v = values[i];
-            if (v === null || v === undefined || Number.isNaN(v)) continue;
+            if (typeof v !== "number" || Number.isNaN(v)) continue;
             data.push({ time: times[i], value: v });
           }
           e.series.setData(data);
@@ -679,9 +740,10 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     }
     lastAppliedRef.current = applied;
     lastAdvancedRef.current = hasAdvancedChart;
+    lastExtRef.current = extPayload;
     // `applied` covers both param edits and visibility toggles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartApi, candleSeries, bars, applied, structureKey, hasAdvancedChart, isPlaceholder]);
+  }, [chartApi, candleSeries, bars, applied, structureKey, hasAdvancedChart, isPlaceholder, extPayload, extAligned]);
 
   // ---- Drive the current candle with live ticker price (rAF-throttled) ----
   useEffect(() => {
@@ -904,7 +966,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
           )}
         </div>
 
-        <ChartLegend onOpenSettings={() => setIndicatorsOpen(true)} />
+        <ChartLegend onOpenSettings={() => setIndicatorsOpen(true)} externalStatus={external.status} />
 
         <div ref={chartRef} className="h-full w-full" />
 

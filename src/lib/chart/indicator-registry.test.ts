@@ -192,10 +192,10 @@ describe("CoinGlass-fed indicators", () => {
     expect(legendLabel(oi, {})).toBe("OI");
     expect(legendLabel(cvd, {})).toBe("CVD");
     expect(legendLabel(oi, {}, defaultSettings(oi))).toBe("OI 币本位 · USD · No Filter");
-    expect(legendLabel(cvd, {}, defaultSettings(cvd))).toBe("CVD 现货 · USD · No Filter");
+    expect(legendLabel(cvd, {}, defaultSettings(cvd))).toBe("CVD 合约 · USD · No Filter");
     expect(
-      legendLabel(cvd, {}, { ...defaultSettings(cvd), symbolMode: "custom", symbol: "eth", market: "futures", unit: "coin", exchangeMode: "custom", exchanges: ["OKX", "Binance", "Bybit"] })
-    ).toBe("CVD ETH · 合约 · 币 · OKX+2");
+      legendLabel(cvd, {}, { ...defaultSettings(cvd), symbolMode: "custom", symbol: "eth", market: "spot", unit: "coin", exchangeMode: "custom", exchanges: ["OKX", "Binance", "Bybit"] })
+    ).toBe("CVD ETH · 现货 · 币 · OKX+2");
   });
 
   it("declare the full CoinGlass input set with sane defaults", () => {
@@ -206,7 +206,7 @@ describe("CoinGlass-fed indicators", () => {
     expect(defaultSettings(oi)).toEqual({
       symbolMode: "main", symbol: "", margin: "coin", unit: "usd", exchangeMode: "all", exchanges: [], display: "candles", lineSource: "open",
     });
-    expect(defaultSettings(cvd).market).toBe("spot");
+    expect(defaultSettings(cvd).market).toBe("futures");
     // defaults are copied, never shared between instances
     const a = defaultSettings(cvd), b = defaultSettings(cvd);
     expect(a.exchanges).not.toBe(b.exchanges);
@@ -245,8 +245,9 @@ describe("resolveCandleStyle", () => {
     expect(s.downColor).toBe(CHART.down);
     expect(s.borderUpColor).toBe(CHART.up);
     expect(s.wickDownColor).toBe(CHART.down);
-    expect(s.lastValueVisible).toBe(false);
-    expect(s.priceLineVisible).toBe(false);
+    // 与主图蜡烛一致：右轴显示最新值标签，并画一条横向价格线
+    expect(s.lastValueVisible).toBe(true);
+    expect(s.priceLineVisible).toBe(true);
     expect(s.precision).toBe(2);
   });
 
@@ -259,9 +260,9 @@ describe("resolveCandleStyle", () => {
   });
 
   it("reads flags and precision from the override", () => {
-    const s = resolveCandleStyle({ oi: { lastValueVisible: true, priceLineVisible: true, precision: 0 } }, "oi");
-    expect(s.lastValueVisible).toBe(true);
-    expect(s.priceLineVisible).toBe(true);
+    const s = resolveCandleStyle({ oi: { lastValueVisible: false, priceLineVisible: false, precision: 0 } }, "oi");
+    expect(s.lastValueVisible).toBe(false);
+    expect(s.priceLineVisible).toBe(false);
     expect(s.precision).toBe(0);
   });
 });

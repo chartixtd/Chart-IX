@@ -707,7 +707,7 @@ export const INDICATORS: IndicatorDef[] = [
     legendSettings: (s) => cgLegend(s, { coin: "币本位", stablecoin: "U本位", all: "全部" }, "margin"),
   },
   {
-    id: "cg_cvd", name: "Aggregated CVD (CoinGlass)", nameZh: "聚合 CVD 主动买卖差 (CoinGlass)", short: "CVD", category: "derivatives", placement: "pane",
+    id: "cg_cvd", name: "Aggregated Futures CVD (CoinGlass)", nameZh: "聚合合约 CVD 主动买卖差 (CoinGlass)", short: "CVD", category: "derivatives", placement: "pane",
     params: [],
     plots: [{ key: "cvd", label: "CVD", color: C.blue, kind: "candles" }],
     compute: (i) => ({ cvd: i.ext?.series ?? emptyCandles(i.close.length) }),
@@ -717,7 +717,7 @@ export const INDICATORS: IndicatorDef[] = [
     settings: [
       CG_SYMBOL_MODE, CG_SYMBOL,
       {
-        key: "market", label: "Market", labelZh: "市场", type: "select", default: "spot",
+        key: "market", label: "Market", labelZh: "市场", type: "select", default: "futures",
         options: [
           { value: "spot", label: "Spot", labelZh: "现货" },
           { value: "futures", label: "Futures", labelZh: "合约" },
@@ -830,7 +830,11 @@ export interface ResolvedCandleStyle {
 
 /**
  * 蜡烛 plot 的有效样式：实体色默认主图涨跌色，边框/影线默认跟随实体色
- * （用户没单独设过就随实体变），标签/价格线默认关（副图里默认不占价格轴）。
+ * （用户没单独设过就随实体变）。
+ *
+ * 最新值标签与价格线默认**开**——与主图蜡烛一致（右轴那个高亮的当前值方块
+ * 加一条横向虚线）。没有它，副图右轴只有几个刻度，读当前 OI / CVD 到底是多少
+ * 得靠眼睛在刻度间估。两项都能在「样式」页各自关掉。
  */
 export function resolveCandleStyle(
   overrides: Record<string, PlotStyleOverride> | undefined,
@@ -846,8 +850,8 @@ export function resolveCandleStyle(
     borderDownColor: o.borderDownColor ?? down,
     wickUpColor: o.wickUpColor ?? up,
     wickDownColor: o.wickDownColor ?? down,
-    lastValueVisible: o.lastValueVisible ?? false,
-    priceLineVisible: o.priceLineVisible ?? false,
+    lastValueVisible: o.lastValueVisible ?? true,
+    priceLineVisible: o.priceLineVisible ?? true,
     precision: o.precision ?? 2,
   };
 }

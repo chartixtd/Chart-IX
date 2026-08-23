@@ -13,15 +13,17 @@
 
 | | TradingView 上的 CoinGlass 指标 | 本项目 |
 |---|---|---|
-| CVD 口径 | Spot（现货） | 默认现货，可切合约（设置项，见下） |
+| CVD 口径 | 合约（对齐 Aggregated Futures CVD Candles） | 默认合约，可切现货（设置项，见下） |
 | OI 口径 | COIN-margined | 默认币本位，可切 U 本位 / 全部 |
 | CVD 蜡烛影线 | 有（盘中累计高低） | **无**——只有逐根买卖量，合成不出盘中高低 |
 | 最细周期 | 1m | **30m**（套餐白名单，升 Standard 才解锁） |
 | 历史深度 | 无限 | 固定 1000 根，更早留空 |
 
 第一轮（commit 8a1f279）默认用的是选币器已实测的合约 CVD 与全保证金 OI；第二轮按
-CoinGlass API 文档把端点补齐并做成设置项，默认值对齐用户截图里的原版（现货 CVD、币本位 OI）。
-这两个端点在 STARTUP 套餐上的可用性本机没法验证（没有 key，见下「未验证项」）。
+CoinGlass API 文档把端点补齐并做成设置项。默认值最终定为**合约 CVD**（用户指定要对齐
+「\<CoinGlass\> Aggregated Futures Cumulative Volume Delta (CVD Candles)」那个指标）
+与**币本位 OI**（用户截图里的 COIN-margined）。现货 CVD / U 本位 OI 仍可在设置里切换，
+但这两个端点在 STARTUP 套餐上的可用性本机没法验证（没有 key，见下「未验证项」）。
 
 ## 三个硬约束决定的设计
 
@@ -54,7 +56,7 @@ OI：`open · No Filter`）加 CoinGlass API 实际支持的参数定出来的�
 |---|---|---|---|
 | `symbolMode` | 下拉 | 跟随主图品种 **/** 自定义 | Main chart symbol |
 | `symbol` | 文本（仅自定义时显示） | 任何写法，`coinFromChartSymbol` 归一化 | 自定义币 |
-| `market`（CVD） | 下拉 | **现货** / 合约 | 选 spot / futures 端点 |
+| `market`（CVD） | 下拉 | **合约** / 现货 | 选 futures / spot 端点 |
 | `margin`（OI） | 下拉 | **币本位** / U 本位 / 全部 | 选三个 OI 端点之一；「全部」端点无交易所参数 |
 | `unit` | 下拉 | **美元** / 币 | CoinGlass `unit=usd|coin` |
 | `exchangeMode` | 下拉 | **No Filter** / 自选 | No Filter = 服务端按端点套默认组合 |
@@ -73,7 +75,8 @@ OI：`open · No Filter`）加 CoinGlass API 实际支持的参数定出来的�
 ### 样式
 
 蜡烛：上涨/下跌各自的实体、边框、影线颜色（边框/影线默认跟随实体）；
-折线：颜色、粗细、线型。两种都有：价格轴标签、价格线、精度（0–4，默认 2）。
+折线：颜色、粗细、线型。两种都有：价格轴标签、价格线（两项**默认开**，与主图蜡烛
+一致——副图右轴显示最新值方块 + 横向虚线）、精度（0–4，默认 2）。
 存在 `styleOverrides[plotKey]` 的新增字段里（`upColor`…`precision`），
 `resolveCandleStyle` 负责套默认值。
 

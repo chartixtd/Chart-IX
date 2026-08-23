@@ -92,7 +92,7 @@ describe("indicator settings (CoinGlass inputs)", () => {
     useChartStore.getState().addIndicator("cg_cvd");
     useChartStore.getState().addIndicator("ma");
     const [cvd, ma] = useChartStore.getState().appliedIndicators;
-    expect(cvd.settings).toMatchObject({ symbolMode: "main", market: "spot", unit: "usd", exchangeMode: "all", display: "candles" });
+    expect(cvd.settings).toMatchObject({ symbolMode: "main", market: "futures", unit: "usd", exchangeMode: "all", display: "candles" });
     expect(ma.settings).toBeUndefined();
   });
 
@@ -100,12 +100,12 @@ describe("indicator settings (CoinGlass inputs)", () => {
     useChartStore.getState().addIndicator("cg_cvd");
     useChartStore.getState().addIndicator("cg_cvd");
     const [a, b] = useChartStore.getState().appliedIndicators;
-    useChartStore.getState().updateIndicatorSettings(a.instanceId, { market: "futures", exchanges: ["OKX"] });
+    useChartStore.getState().updateIndicatorSettings(a.instanceId, { market: "spot", exchanges: ["OKX"] });
     const [a2, b2] = useChartStore.getState().appliedIndicators;
-    expect(a2.settings?.market).toBe("futures");
+    expect(a2.settings?.market).toBe("spot");
     expect(a2.settings?.exchanges).toEqual(["OKX"]);
     expect(a2.settings?.unit).toBe("usd"); // untouched keys survive
-    expect(b2.settings?.market).toBe("spot");
+    expect(b2.settings?.market).toBe("futures");
     expect(b2.instanceId).toBe(b.instanceId);
   });
 

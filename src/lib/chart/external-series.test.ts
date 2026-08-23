@@ -96,9 +96,9 @@ describe("externalSeriesTtlMs", () => {
 });
 
 describe("buildExternalRequest", () => {
-  it("follows the chart symbol by default with CoinGlass-matching defaults (spot CVD, coin-margined OI, USD, No Filter)", () => {
+  it("follows the chart symbol by default with CoinGlass-matching defaults (futures CVD, coin-margined OI, USD, No Filter)", () => {
     expect(buildExternalRequest("cvd", undefined, "BTC-USDT", "30m")).toEqual({
-      kind: "cvd", coin: "BTC", interval: "30m", market: "spot", margin: "all", unit: "usd", exchanges: null,
+      kind: "cvd", coin: "BTC", interval: "30m", market: "futures", margin: "all", unit: "usd", exchanges: null,
     });
     expect(buildExternalRequest("oi", {}, "1000PEPE-USDT", "1h")).toEqual({
       kind: "oi", coin: "PEPE", interval: "1h", market: "futures", margin: "coin", unit: "usd", exchanges: null,
@@ -116,8 +116,8 @@ describe("buildExternalRequest", () => {
   });
 
   it("applies market/margin/unit and ignores keys that don't belong to the kind", () => {
-    const cvd = buildExternalRequest("cvd", { market: "futures", margin: "coin", unit: "coin" }, "BTC-USDT", "30m")!;
-    expect(cvd.market).toBe("futures");
+    const cvd = buildExternalRequest("cvd", { market: "spot", margin: "coin", unit: "coin" }, "BTC-USDT", "30m")!;
+    expect(cvd.market).toBe("spot");
     expect(cvd.margin).toBe("all"); // margin is an OI concept
     expect(cvd.unit).toBe("coin");
     const oi = buildExternalRequest("oi", { market: "spot", margin: "stablecoin" }, "BTC-USDT", "30m")!;
@@ -148,24 +148,24 @@ describe("buildExternalRequest", () => {
 
 describe("externalRequestKey / externalRequestToQuery", () => {
   const base: ExternalSeriesRequest = {
-    kind: "cvd", coin: "BTC", interval: "30m", market: "spot", margin: "all", unit: "usd", exchanges: null,
+    kind: "cvd", coin: "BTC", interval: "30m", market: "futures", margin: "all", unit: "usd", exchanges: null,
   };
 
   it("is stable and encodes every dimension", () => {
-    expect(externalRequestKey(base)).toBe("cvd:BTC:30m:spot:all:usd:*");
+    expect(externalRequestKey(base)).toBe("cvd:BTC:30m:futures:all:usd:*");
     expect(externalRequestKey({ ...base, unit: "coin" })).not.toBe(externalRequestKey(base));
-    expect(externalRequestKey({ ...base, market: "futures" })).not.toBe(externalRequestKey(base));
+    expect(externalRequestKey({ ...base, market: "spot" })).not.toBe(externalRequestKey(base));
   });
 
   it("treats exchange selection as a set (order-insensitive)", () => {
     const a = externalRequestKey({ ...base, exchanges: ["OKX", "Binance"] });
     const b = externalRequestKey({ ...base, exchanges: ["Binance", "OKX"] });
     expect(a).toBe(b);
-    expect(a).toBe("cvd:BTC:30m:spot:all:usd:Binance+OKX");
+    expect(a).toBe("cvd:BTC:30m:futures:all:usd:Binance+OKX");
   });
 
   it("round-trips through the query string parser", () => {
-    const r: ExternalSeriesRequest = { ...base, kind: "oi", market: "futures", margin: "stablecoin", exchanges: ["Binance", "OKX"] };
+    const r: ExternalSeriesRequest = { ...base, kind: "oi", margin: "stablecoin", exchanges: ["Binance", "OKX"] };
     const q = externalRequestToQuery(r);
     const parsed = parseExternalSeriesQuery((k) => q[k] ?? null);
     expect(parsed.ok && parsed.request).toEqual(r);
@@ -181,7 +181,7 @@ describe("parseExternalSeriesQuery", () => {
 
   it("applies kind-specific defaults when optional params are absent", () => {
     const cvd = q({ kind: "cvd", coin: "BTC", interval: "30m" });
-    expect(cvd.ok && cvd.request).toMatchObject({ market: "spot", margin: "all", unit: "usd", exchanges: null });
+    expect(cvd.ok && cvd.request).toMatchObject({ market: "futures", margin: "all", unit: "usd", exchanges: null });
     const oi = q({ kind: "oi", coin: "BTC", interval: "1d" });
     expect(oi.ok && oi.request).toMatchObject({ market: "futures", margin: "coin", unit: "usd", exchanges: null });
   });

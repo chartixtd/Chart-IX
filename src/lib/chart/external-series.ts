@@ -225,7 +225,8 @@ export function buildExternalRequest(
   const rawList = Array.isArray(s.exchanges) ? s.exchanges : [];
   const exchanges = exchangeMode === "custom" ? parseExchangeList(rawList.join(",")) : null;
   // 自选但一个都没选 = 退回 No Filter，而不是发一个空 exchange_list 让上游 400
-  const market = kind === "cvd" ? pick(s.market, EXTERNAL_MARKETS, "spot") : "futures";
+  // CVD 默认合约：对齐 CoinGlass 那个「Aggregated Futures CVD (CVD Candles)」指标。
+  const market = kind === "cvd" ? pick(s.market, EXTERNAL_MARKETS, "futures") : "futures";
   const margin = kind === "oi" ? pick(s.margin, EXTERNAL_MARGINS, "coin") : "all";
 
   return {
@@ -284,7 +285,7 @@ export function parseExternalSeriesQuery(get: (name: string) => string | null): 
     return { ok: false, code: "UNSUPPORTED_INTERVAL", message: "interval must be 30m or coarser" };
   }
 
-  const marketRaw = get("market") ?? (kind === "cvd" ? "spot" : "futures");
+  const marketRaw = get("market") ?? "futures";
   if (!(EXTERNAL_MARKETS as readonly string[]).includes(marketRaw)) {
     return { ok: false, code: "BAD_MARKET", message: "market must be spot or futures" };
   }

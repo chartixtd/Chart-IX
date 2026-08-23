@@ -85,6 +85,56 @@ describe("DRAWING_TOOLS", () => {
   });
 });
 
+describe("indicator settings (CoinGlass inputs)", () => {
+  beforeEach(() => useChartStore.setState({ appliedIndicators: [] }));
+
+  it("addIndicator seeds settings from the definition's defaults, and leaves them off for plain indicators", () => {
+    useChartStore.getState().addIndicator("cg_cvd");
+    useChartStore.getState().addIndicator("ma");
+    const [cvd, ma] = useChartStore.getState().appliedIndicators;
+    expect(cvd.settings).toMatchObject({ symbolMode: "main", market: "spot", unit: "usd", exchangeMode: "all", display: "candles" });
+    expect(ma.settings).toBeUndefined();
+  });
+
+  it("updateIndicatorSettings patches one instance only", () => {
+    useChartStore.getState().addIndicator("cg_cvd");
+    useChartStore.getState().addIndicator("cg_cvd");
+    const [a, b] = useChartStore.getState().appliedIndicators;
+    useChartStore.getState().updateIndicatorSettings(a.instanceId, { market: "futures", exchanges: ["OKX"] });
+    const [a2, b2] = useChartStore.getState().appliedIndicators;
+    expect(a2.settings?.market).toBe("futures");
+    expect(a2.settings?.exchanges).toEqual(["OKX"]);
+    expect(a2.settings?.unit).toBe("usd"); // untouched keys survive
+    expect(b2.settings?.market).toBe("spot");
+    expect(b2.instanceId).toBe(b.instanceId);
+  });
+
+  it("resetIndicatorToDefaults restores settings alongside params and styles", () => {
+    useChartStore.getState().addIndicator("cg_oi");
+    const id = useChartStore.getState().appliedIndicators[0].instanceId;
+    useChartStore.getState().updateIndicatorSettings(id, { margin: "all", unit: "coin" });
+    useChartStore.getState().updateIndicatorStyle(id, "oi", { upColor: "#123456" });
+    useChartStore.getState().resetIndicatorToDefaults(id);
+    const a = useChartStore.getState().appliedIndicators[0];
+    expect(a.settings).toMatchObject({ margin: "coin", unit: "usd" });
+    expect(a.styleOverrides).toBeUndefined();
+  });
+
+  it("mergeChartState backfills settings on instances persisted before they existed", () => {
+    const merged = mergeChartState(
+      { appliedIndicators: [{ instanceId: "old", defId: "cg_oi", params: {}, visible: true }] },
+      useChartStore.getState()
+    );
+    expect(merged.appliedIndicators[0].settings).toMatchObject({ margin: "coin", display: "candles" });
+    // and keeps user values when a subset was already stored
+    const partial = mergeChartState(
+      { appliedIndicators: [{ instanceId: "old", defId: "cg_oi", params: {}, visible: true, settings: { unit: "coin" } }] },
+      useChartStore.getState()
+    );
+    expect(partial.appliedIndicators[0].settings).toMatchObject({ unit: "coin", margin: "coin" });
+  });
+});
+
 describe("updateIndicatorStyle", () => {
   it("sets a style override for one plot without touching other plots or params", () => {
     useChartStore.getState().addIndicator("bb"); // multi-plot indicator: upper/middle/lower

@@ -13,15 +13,15 @@
 
 | | TradingView 上的 CoinGlass 指标 | 本项目 |
 |---|---|---|
-| CVD 口径 | Spot（现货） | **合约**四所聚合（Binance/Bybit/OKX/Hyperliquid），与选币器同源 |
-| OI 口径 | COIN-margined | **全保证金类型**聚合（`aggregated-history`） |
+| CVD 口径 | Spot（现货） | 默认现货，可切合约（设置项，见下） |
+| OI 口径 | COIN-margined | 默认币本位，可切 U 本位 / 全部 |
 | CVD 蜡烛影线 | 有（盘中累计高低） | **无**——只有逐根买卖量，合成不出盘中高低 |
-| 最细周期 | 1m | **30m**（套餐白名单） |
+| 最细周期 | 1m | **30m**（套餐白名单，升 Standard 才解锁） |
 | 历史深度 | 无限 | 固定 1000 根，更早留空 |
 
-前两项是因为现货 CVD 端点与 coin-margin OI 端点在 STARTUP 套餐上的可用性没有实测
-（本机没有 key，见下「未验证项」）；用的是选币器已经实测可用的两个端点。要换口径只需
-改 `src/lib/coinglass/chart-series.ts` 里的端点路径，其它层不动。
+第一轮（commit 8a1f279）默认用的是选币器已实测的合约 CVD 与全保证金 OI；第二轮按
+CoinGlass API 文档把端点补齐并做成设置项，默认值对齐用户截图里的原版（现货 CVD、币本位 OI）。
+这两个端点在 STARTUP 套餐上的可用性本机没法验证（没有 key，见下「未验证项」）。
 
 ## 三个硬约束决定的设计
 
@@ -38,6 +38,58 @@
    「需 30m 及以上周期」。不做 30m→1m 的前向填充（1m 图上是一条横线）。
 3. **数据按币聚合，不按交易对。** `BTC-USDT` → `BTC`（复用 `coinFromBingXSymbol`，
    会抹掉 `1000PEPE` 的乘数前缀）。UI 上标「CoinGlass」让用户知道这不是 BingX 单家的数。
+
+## 设置项（2026-08-23 第二轮：对齐 CoinGlass 在 TradingView 上的指标设置）
+
+CoinGlass 的 TradingView 指标是 invite-only 脚本，输入项没有公开文档；下面这套是按
+用户截图图例里的输入值（CVD：`Main chart symbol · Dollars · open · No Filter`，
+OI：`open · No Filter`）加 CoinGlass API 实际支持的参数定出来的，原版若有出入再调。
+
+设置分「输入」「样式」两页（与 TradingView 的指标设置对话框同构），存在
+`AppliedIndicator.settings`（非数值，与 `params` 分开）与 `styleOverrides`。
+
+### 输入
+
+| 键 | 控件 | 选项 / 默认 | 作用 |
+|---|---|---|---|
+| `symbolMode` | 下拉 | 跟随主图品种 **/** 自定义 | Main chart symbol |
+| `symbol` | 文本（仅自定义时显示） | 任何写法，`coinFromChartSymbol` 归一化 | 自定义币 |
+| `market`（CVD） | 下拉 | **现货** / 合约 | 选 spot / futures 端点 |
+| `margin`（OI） | 下拉 | **币本位** / U 本位 / 全部 | 选三个 OI 端点之一；「全部」端点无交易所参数 |
+| `unit` | 下拉 | **美元** / 币 | CoinGlass `unit=usd|coin` |
+| `exchangeMode` | 下拉 | **No Filter** / 自选 | No Filter = 服务端按端点套默认组合 |
+| `exchanges` | 多选 + 手填（仅自选时显示） | 清单按现货/合约切换；手填兜住清单之外的任何名字 | `exchange_list` |
+| `display` | 下拉 | **蜡烛** / 折线 | 决定 series 类型（结构的一部分，切换会重建） |
+| `lineSource` | 下拉（仅折线时显示） | **open** / high / low / close | 折线取蜡烛的哪个值 |
+
+文本类控件失焦/回车才提交——每敲一个字母就提交会让 "E"→"ET"→"ETH" 各发一次请求。
+依赖项的显隐会级联：`margin=all` 隐藏 `exchangeMode`，连带隐藏 `exchanges`。
+
+每个实例的设置经 `buildExternalRequest` 变成一个 `ExternalSeriesRequest`，
+`externalRequestKey`（kind/币/周期/市场/保证金/单位/交易所集合）是缓存键与去重键：
+设置相同的两个实例只发一次请求；**每一种不同组合都是一个独立的配额消耗者**，
+面板底部有一行提示说明这一点。
+
+### 样式
+
+蜡烛：上涨/下跌各自的实体、边框、影线颜色（边框/影线默认跟随实体）；
+折线：颜色、粗细、线型。两种都有：价格轴标签、价格线、精度（0–4，默认 2）。
+存在 `styleOverrides[plotKey]` 的新增字段里（`upColor`…`precision`），
+`resolveCandleStyle` 负责套默认值。
+
+### 端点映射（`coinglass/chart-series.ts`）
+
+| request | 端点 | exchange_list |
+|---|---|---|
+| oi · all | `/futures/open-interest/aggregated-history` | 无此参数 |
+| oi · stablecoin | `…/aggregated-stablecoin-margin-history` | 必填，默认 Binance/OKX/Bybit/Bitget/Gate/HTX |
+| oi · coin | `…/aggregated-coin-margin-history` | 必填，默认上表 + Bitmex |
+| cvd · futures | `/futures/aggregated-taker-buy-sell-volume/history` | 必填，默认 Binance/Bybit/OKX/Hyperliquid（= 选币器） |
+| cvd · spot | `/spot/aggregated-taker-buy-sell-volume/history` | 必填，默认 Binance/OKX/Bybit/Coinbase/Bitget |
+
+全部支持 `unit`、`limit≤1000`、`start_time/end_time`（docs.coinglass.com 2026-08-23 核对）；
+STARTUP 套餐 ≥30m。默认交易所名与勾选清单里的拼写**未经真实 key 验证**，
+拼错的名字会让上游 400，图例显示「CoinGlass 数据暂不可用」，服务端日志带 `COINGLASS_400`。
 
 ## 分层
 
@@ -90,4 +142,3 @@ KlineChart 的 tick/append 增量路径只 `update()` 尾部一两根。CoinGlas
 - 爆仓额、资金费率、多空比等其它 CoinGlass 序列——基础设施已通，各加一条注册表记录 +
   `chart-series.ts` 里一个端点分支即可
 - 向左翻页时跟着拉更早的 CoinGlass 历史
-- 蜡烛颜色/样式的用户自定义（固定用主图涨跌色）

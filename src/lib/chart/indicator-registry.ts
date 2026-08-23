@@ -18,11 +18,16 @@ import {
   computeOBV, computeMFI, computeCMF, computeAwesomeOscillator, computeAlligator, computePivotPoints, computeChaikinOscillator,
 } from "@/lib/indicators";
 import {
+  coinFromChartSymbol,
   emptyCandles,
+  FUTURES_EXCHANGE_CHOICES,
+  SPOT_EXCHANGE_CHOICES,
   type CandleSeries,
   type ExternalInput,
   type ExternalKind,
+  type ExternalSettingValue,
 } from "@/lib/chart/external-series";
+import { CHART } from "@/lib/chart-theme";
 
 export type IndicatorCategory = "trend" | "volatility" | "momentum" | "volume" | "derivatives";
 
@@ -71,6 +76,39 @@ export interface ParamDef {
   step?: number;
 }
 
+/** 一个选项：value 存进 settings，label/labelZh 给控件显示。 */
+export interface SettingOption {
+  value: string;
+  label: string;
+  labelZh: string;
+}
+
+/**
+ * 非数值的指标设置（TradingView「输入」页里下拉/文本/多选那一类）。
+ * 与 `params`（数值、进 compute）分开存：这些值不参与指标计算，而是决定
+ * **去哪里拿数据、怎么画**，由 KlineChart 与取数 hook 消费。
+ *
+ * `showWhen` 让一项只在另一项取某些值时出现（自定义品种的文本框只在
+ * 「品种来源 = 自定义」时显示）。
+ */
+export type SettingDef = {
+  key: string;
+  label: string;
+  labelZh: string;
+  showWhen?: { key: string; in: string[] };
+} & (
+  | { type: "select"; options: SettingOption[]; default: string }
+  | { type: "text"; default: string; placeholder?: string }
+  | {
+      type: "multiselect";
+      /** 勾选清单；可按另一项的取值切换（现货/合约的交易所清单不同） */
+      options: SettingOption[] | ((settings: Record<string, ExternalSettingValue>) => SettingOption[]);
+      default: string[];
+      /** 允许在清单之外手填（逗号分隔），满足清单没覆盖到的交易所 */
+      allowCustom?: boolean;
+    }
+);
+
 export interface PlotDef {
   key: string;
   label?: string;
@@ -107,6 +145,10 @@ export interface IndicatorDef {
   requires?: ExternalKind[];
   /** 数据来源标签，图例与选择器上显示。 */
   source?: "coinglass";
+  /** 非数值设置项（见 SettingDef）。 */
+  settings?: SettingDef[];
+  /** 图例里设置值的摘要，对齐 TradingView 在状态行显示输入值的做法。 */
+  legendSettings?: (s: Record<string, ExternalSettingValue>) => string;
   /** Formats the legend suffix, e.g. "MA 20". Defaults to the joined param values. */
   legendParams?: (p: Record<string, number>) => string;
 }
@@ -140,6 +182,80 @@ const C = {
 const p1 = (key: string, label: string, def: number, min = 1, max = 500): ParamDef => ({
   key, label, default: def, min, max, step: 1,
 });
+
+// ---- CoinGlass 指标共用的设置项 ----
+// 键的含义见 external-series.ts 的 ExternalSettings 注释；buildExternalRequest
+// 按这些键把设置变成请求。
+
+const toOptions = (names: readonly string[]): SettingOption[] =>
+  names.map((n) => ({ value: n, label: n, labelZh: n }));
+
+const CG_SYMBOL_MODE: SettingDef = {
+  key: "symbolMode", label: "Symbol", labelZh: "品种来源", type: "select", default: "main",
+  options: [
+    { value: "main", label: "Main chart symbol", labelZh: "跟随主图品种" },
+    { value: "custom", label: "Custom", labelZh: "自定义" },
+  ],
+};
+const CG_SYMBOL: SettingDef = {
+  key: "symbol", label: "Custom symbol", labelZh: "自定义品种", type: "text", default: "", placeholder: "ETH / ETH-USDT",
+  showWhen: { key: "symbolMode", in: ["custom"] },
+};
+const CG_UNIT: SettingDef = {
+  key: "unit", label: "Unit", labelZh: "单位", type: "select", default: "usd",
+  options: [
+    { value: "usd", label: "Dollars", labelZh: "美元" },
+    { value: "coin", label: "Coins", labelZh: "币" },
+  ],
+};
+const CG_EXCHANGE_MODE: SettingDef = {
+  key: "exchangeMode", label: "Exchange filter", labelZh: "交易所筛选", type: "select", default: "all",
+  options: [
+    { value: "all", label: "No Filter (aggregated default)", labelZh: "No Filter（默认聚合组合）" },
+    { value: "custom", label: "Custom selection", labelZh: "自选" },
+  ],
+};
+const CG_EXCHANGES: SettingDef = {
+  key: "exchanges", label: "Exchanges", labelZh: "交易所", type: "multiselect", default: [],
+  options: [], allowCustom: true,
+  showWhen: { key: "exchangeMode", in: ["custom"] },
+};
+const CG_DISPLAY: SettingDef = {
+  key: "display", label: "Display", labelZh: "显示方式", type: "select", default: "candles",
+  options: [
+    { value: "candles", label: "Candles", labelZh: "蜡烛" },
+    { value: "line", label: "Line", labelZh: "折线" },
+  ],
+};
+const CG_LINE_SOURCE: SettingDef = {
+  key: "lineSource", label: "Line value", labelZh: "折线取值", type: "select", default: "open",
+  options: [
+    { value: "open", label: "open", labelZh: "open" },
+    { value: "high", label: "high", labelZh: "high" },
+    { value: "low", label: "low", labelZh: "low" },
+    { value: "close", label: "close", labelZh: "close" },
+  ],
+  showWhen: { key: "display", in: ["line"] },
+};
+
+/** 图例摘要：自定义品种 · 市场/保证金 · 单位 · 交易所。对齐 TradingView 状态行里显示输入值的习惯。 */
+function cgLegend(
+  s: Record<string, ExternalSettingValue>,
+  modeLabels: Record<string, string>,
+  modeKey: string
+): string {
+  const parts: string[] = [];
+  if (s.symbolMode === "custom" && typeof s.symbol === "string" && s.symbol) parts.push(coinFromChartSymbol(s.symbol));
+  const mode = typeof s[modeKey] === "string" ? modeLabels[s[modeKey] as string] : undefined;
+  if (mode) parts.push(mode);
+  parts.push(s.unit === "coin" ? "币" : "USD");
+  if (s.exchangeMode === "custom" && Array.isArray(s.exchanges) && s.exchanges.length) {
+    parts.push(s.exchanges.length <= 2 ? s.exchanges.join("+") : `${s.exchanges[0]}+${s.exchanges.length - 1}`);
+  } else {
+    parts.push("No Filter");
+  }
+  return parts.join(" · ");
+}
 
 export const INDICATORS: IndicatorDef[] = [
   // ---------------- Trend ----------------
@@ -569,20 +685,54 @@ export const INDICATORS: IndicatorDef[] = [
     id: "cg_oi", name: "Aggregated Open Interest (CoinGlass)", nameZh: "聚合持仓量 OI (CoinGlass)", short: "OI", category: "derivatives", placement: "pane",
     params: [],
     plots: [{ key: "oi", label: "Open Interest", color: C.up, kind: "candles" }],
-    compute: (i) => ({ oi: i.ext?.oi ?? emptyCandles(i.close.length) }),
+    compute: (i) => ({ oi: i.ext?.series ?? emptyCandles(i.close.length) }),
     requires: ["oi"],
     source: "coinglass",
+    settings: [
+      CG_SYMBOL_MODE, CG_SYMBOL,
+      {
+        key: "margin", label: "Margin type", labelZh: "保证金类型", type: "select", default: "coin",
+        options: [
+          { value: "coin", label: "COIN-margined", labelZh: "币本位" },
+          { value: "stablecoin", label: "USDT-margined", labelZh: "U 本位" },
+          { value: "all", label: "All (no exchange filter)", labelZh: "全部（不可筛交易所）" },
+        ],
+      },
+      CG_UNIT,
+      { ...CG_EXCHANGE_MODE, showWhen: { key: "margin", in: ["coin", "stablecoin"] } },
+      { ...CG_EXCHANGES, options: toOptions(FUTURES_EXCHANGE_CHOICES) },
+      CG_DISPLAY, CG_LINE_SOURCE,
+    ],
     legendParams: () => "",
+    legendSettings: (s) => cgLegend(s, { coin: "币本位", stablecoin: "U本位", all: "全部" }, "margin"),
   },
   {
     id: "cg_cvd", name: "Aggregated CVD (CoinGlass)", nameZh: "聚合 CVD 主动买卖差 (CoinGlass)", short: "CVD", category: "derivatives", placement: "pane",
     params: [],
     plots: [{ key: "cvd", label: "CVD", color: C.blue, kind: "candles" }],
-    compute: (i) => ({ cvd: i.ext?.cvd ?? emptyCandles(i.close.length) }),
+    compute: (i) => ({ cvd: i.ext?.series ?? emptyCandles(i.close.length) }),
     requires: ["cvd"],
     source: "coinglass",
     guides: [0],
+    settings: [
+      CG_SYMBOL_MODE, CG_SYMBOL,
+      {
+        key: "market", label: "Market", labelZh: "市场", type: "select", default: "spot",
+        options: [
+          { value: "spot", label: "Spot", labelZh: "现货" },
+          { value: "futures", label: "Futures", labelZh: "合约" },
+        ],
+      },
+      CG_UNIT,
+      CG_EXCHANGE_MODE,
+      {
+        ...CG_EXCHANGES,
+        options: (s) => toOptions(s.market === "futures" ? FUTURES_EXCHANGE_CHOICES : SPOT_EXCHANGE_CHOICES),
+      },
+      CG_DISPLAY, CG_LINE_SOURCE,
+    ],
     legendParams: () => "",
+    legendSettings: (s) => cgLegend(s, { spot: "现货", futures: "合约" }, "market"),
   },
 ];
 
@@ -595,14 +745,55 @@ export function defaultParams(def: IndicatorDef): Record<string, number> {
   return out;
 }
 
-/** Legend label, e.g. "MA 20" or "MACD 12 26 9". */
-export function legendLabel(def: IndicatorDef, params: Record<string, number>): string {
+/** Default settings (non-numeric) for a definition; {} when it declares none. */
+export function defaultSettings(def: IndicatorDef): Record<string, ExternalSettingValue> {
+  const out: Record<string, ExternalSettingValue> = {};
+  for (const sdef of def.settings ?? []) out[sdef.key] = Array.isArray(sdef.default) ? [...sdef.default] : sdef.default;
+  return out;
+}
+
+/**
+ * Whether a setting is currently shown. A setting is hidden when its `showWhen`
+ * condition fails **or** when the setting it depends on is itself hidden
+ * (exchanges → exchangeMode → margin: picking "all" margin hides both).
+ */
+export function settingVisible(
+  sdef: SettingDef,
+  settings: Record<string, ExternalSettingValue> | undefined,
+  allDefs: SettingDef[] = []
+): boolean {
+  if (!sdef.showWhen) return true;
+  const v = settings?.[sdef.showWhen.key];
+  if (!(typeof v === "string" && sdef.showWhen.in.includes(v))) return false;
+  const parent = allDefs.find((d) => d.key === sdef.showWhen!.key);
+  return parent ? settingVisible(parent, settings, allDefs) : true;
+}
+
+/** Resolve a multiselect's option list (static or derived from other settings). */
+export function settingOptions(sdef: SettingDef, settings: Record<string, ExternalSettingValue> | undefined): SettingOption[] {
+  if (sdef.type === "text") return [];
+  return typeof sdef.options === "function" ? sdef.options(settings ?? {}) : sdef.options;
+}
+
+/** Legend label, e.g. "MA 20" or "MACD 12 26 9"; CoinGlass entries append a settings summary. */
+export function legendLabel(
+  def: IndicatorDef,
+  params: Record<string, number>,
+  settings?: Record<string, ExternalSettingValue>
+): string {
+  let base: string;
   if (def.legendParams) {
     const suffix = def.legendParams(params);
-    return suffix ? `${def.short} ${suffix}` : def.short;
+    base = suffix ? `${def.short} ${suffix}` : def.short;
+  } else {
+    const vals = def.params.map((p) => params[p.key]).filter((v) => v !== undefined);
+    base = vals.length ? `${def.short} ${vals.join(" ")}` : def.short;
   }
-  const vals = def.params.map((p) => params[p.key]).filter((v) => v !== undefined);
-  return vals.length ? `${def.short} ${vals.join(" ")}` : def.short;
+  if (def.legendSettings && settings) {
+    const extra = def.legendSettings(settings);
+    if (extra) return `${base} ${extra}`;
+  }
+  return base;
 }
 
 /** A single plot's overridable style fields — mirrors the relevant subset of PlotDef. */
@@ -610,6 +801,55 @@ export interface PlotStyleOverride {
   color?: string;
   lineWidth?: 1 | 2 | 3 | 4;
   lineStyle?: 0 | 1 | 2 | 3 | 4;
+  // ---- 蜡烛 plot 专用（TradingView「样式」页的那组） ----
+  upColor?: string;
+  downColor?: string;
+  borderUpColor?: string;
+  borderDownColor?: string;
+  wickUpColor?: string;
+  wickDownColor?: string;
+  /** 价格轴上的最新值标签 */
+  lastValueVisible?: boolean;
+  /** 最新值水平线 */
+  priceLineVisible?: boolean;
+  /** 刻度小数位；undefined = 默认 2 */
+  precision?: 0 | 1 | 2 | 3 | 4;
+}
+
+export interface ResolvedCandleStyle {
+  upColor: string;
+  downColor: string;
+  borderUpColor: string;
+  borderDownColor: string;
+  wickUpColor: string;
+  wickDownColor: string;
+  lastValueVisible: boolean;
+  priceLineVisible: boolean;
+  precision: 0 | 1 | 2 | 3 | 4;
+}
+
+/**
+ * 蜡烛 plot 的有效样式：实体色默认主图涨跌色，边框/影线默认跟随实体色
+ * （用户没单独设过就随实体变），标签/价格线默认关（副图里默认不占价格轴）。
+ */
+export function resolveCandleStyle(
+  overrides: Record<string, PlotStyleOverride> | undefined,
+  plotKey: string
+): ResolvedCandleStyle {
+  const o = overrides?.[plotKey] ?? {};
+  const up = o.upColor ?? CHART.up;
+  const down = o.downColor ?? CHART.down;
+  return {
+    upColor: up,
+    downColor: down,
+    borderUpColor: o.borderUpColor ?? up,
+    borderDownColor: o.borderDownColor ?? down,
+    wickUpColor: o.wickUpColor ?? up,
+    wickDownColor: o.wickDownColor ?? down,
+    lastValueVisible: o.lastValueVisible ?? false,
+    priceLineVisible: o.priceLineVisible ?? false,
+    precision: o.precision ?? 2,
+  };
 }
 
 /**

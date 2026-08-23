@@ -1,6 +1,11 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
-import { fetchExternalSeries, type ExternalSeriesBars } from "./chart-series";
-import { externalSeriesTtlMs, type ExternalKind } from "@/lib/chart/external-series";
+import { fetchExternalSeries } from "./chart-series";
+import {
+  externalRequestKey,
+  externalSeriesTtlMs,
+  type ExternalSeriesBars,
+  type ExternalSeriesRequest,
+} from "@/lib/chart/external-series";
 
 /**
  * 图表序列的双层缓存：进程内存 + Supabase `coinglass_series_cache`。
@@ -9,8 +14,8 @@ import { externalSeriesTtlMs, type ExternalKind } from "@/lib/chart/external-ser
  * lambda 的内存互不可见——只靠内存，冷启动的实例会各自再打一次上游，
  * 多几个用户同时看图就能把选币器那一轮的配额挤掉（文档里记录过的后果：
  * 四因子全部退化成缺数据默认分）。DB 层让所有实例共享同一份「上次拉到的
- * 数据 + 时间」，TTL 内无论多少实例多少用户，每个 (kind, coin, interval)
- * 只打一次上游。
+ * 数据 + 时间」，TTL 内无论多少实例多少用户，每个 request（键是
+ * externalRequestKey：kind/币/周期/市场/保证金/单位/交易所组合）只打一次上游。
  *
  * 降级顺序（任何一层失败都不能把图表接口打成 5xx，除非真的一根都没有）：
  *   内存新鲜 → 直接返回
@@ -37,14 +42,12 @@ interface Entry {
 
 export interface ExternalSeriesCacheDeps {
   now: () => number;
-  fetchUpstream: (kind: ExternalKind, coin: string, interval: string) => Promise<ExternalSeriesBars>;
+  fetchUpstream: (request: ExternalSeriesRequest) => Promise<ExternalSeriesBars>;
   readDb: (key: string) => Promise<Entry | null>;
   writeDb: (key: string, entry: Entry) => Promise<void>;
 }
 
-export function cacheKey(kind: ExternalKind, coin: string, interval: string): string {
-  return `${kind}:${coin}:${interval}`;
-}
+export const cacheKey = externalRequestKey;
 
 /** 内存层最多记多少个组合；超过就淘汰最早拉到的那个。一个组合约 60KB。 */
 const MEMORY_MAX_ENTRIES = 200;
@@ -65,7 +68,7 @@ export function createExternalSeriesCache(deps: ExternalSeriesCacheDeps) {
     }
   }
 
-  async function load(key: string, kind: ExternalKind, coin: string, interval: string, ttlMs: number): Promise<CachedExternalSeries> {
+  async function load(key: string, request: ExternalSeriesRequest, ttlMs: number): Promise<CachedExternalSeries> {
     const mem = memory.get(key) ?? null;
     const db = await deps.readDb(key);
     if (db && deps.now() - db.fetchedAt < ttlMs) {
@@ -74,7 +77,7 @@ export function createExternalSeriesCache(deps: ExternalSeriesCacheDeps) {
     }
 
     try {
-      const bars = await deps.fetchUpstream(kind, coin, interval);
+      const bars = await deps.fetchUpstream(request);
       const entry: Entry = { bars, fetchedAt: deps.now() };
       remember(key, entry);
       void deps.writeDb(key, entry).catch((err) => {
@@ -94,9 +97,9 @@ export function createExternalSeriesCache(deps: ExternalSeriesCacheDeps) {
   }
 
   return {
-    async get(kind: ExternalKind, coin: string, interval: string): Promise<CachedExternalSeries> {
-      const key = cacheKey(kind, coin, interval);
-      const ttlMs = externalSeriesTtlMs(interval);
+    async get(request: ExternalSeriesRequest): Promise<CachedExternalSeries> {
+      const key = cacheKey(request);
+      const ttlMs = externalSeriesTtlMs(request.interval);
 
       const mem = memory.get(key);
       if (mem && deps.now() - mem.fetchedAt < ttlMs) return { ...mem, stale: false };
@@ -104,7 +107,7 @@ export function createExternalSeriesCache(deps: ExternalSeriesCacheDeps) {
       const pending = inflight.get(key);
       if (pending) return pending;
 
-      const p = load(key, kind, coin, interval, ttlMs).finally(() => inflight.delete(key));
+      const p = load(key, request, ttlMs).finally(() => inflight.delete(key));
       inflight.set(key, p);
       return p;
     },
@@ -149,7 +152,7 @@ async function writeDb(key: string, entry: Entry): Promise<void> {
 
 let singleton: ReturnType<typeof createExternalSeriesCache> | null = null;
 
-export function getExternalSeriesCached(kind: ExternalKind, coin: string, interval: string): Promise<CachedExternalSeries> {
+export function getExternalSeriesCached(request: ExternalSeriesRequest): Promise<CachedExternalSeries> {
   if (!singleton) {
     singleton = createExternalSeriesCache({
       now: Date.now,
@@ -158,5 +161,5 @@ export function getExternalSeriesCached(kind: ExternalKind, coin: string, interv
       writeDb,
     });
   }
-  return singleton.get(kind, coin, interval);
+  return singleton.get(request);
 }

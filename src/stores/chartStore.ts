@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  INDICATOR_BY_ID, defaultParams, type IndicatorDef, type PlotStyleOverride,
+  INDICATOR_BY_ID, defaultParams, defaultSettings, type IndicatorDef, type PlotStyleOverride,
 } from "@/lib/chart/indicator-registry";
+import type { ExternalSettingValue } from "@/lib/chart/external-series";
 
 // ==================== Applied indicators ====================
 
@@ -13,6 +14,12 @@ export interface AppliedIndicator {
   params: Record<string, number>;
   visible: boolean;
   styleOverrides?: Record<string, PlotStyleOverride>;
+  /**
+   * 非数值设置（品种来源/市场/单位/交易所/显示方式…），只有声明了
+   * `settings` 的定义（目前是 CoinGlass 指标）会有；键含义见 registry 的 SettingDef。
+   * 旧实例没有这个字段 → 按定义默认值处理（mergeChartState 回填）。
+   */
+  settings?: Record<string, ExternalSettingValue>;
 }
 
 // ==================== Drawings ====================
@@ -211,6 +218,7 @@ interface ChartState {
   addIndicator: (defId: string, params?: Record<string, number>) => void;
   removeIndicator: (instanceId: string) => void;
   updateIndicatorParams: (instanceId: string, params: Record<string, number>) => void;
+  updateIndicatorSettings: (instanceId: string, patch: Record<string, ExternalSettingValue>) => void;
   updateIndicatorStyle: (instanceId: string, plotKey: string, patch: PlotStyleOverride) => void;
   toggleIndicatorVisible: (instanceId: string) => void;
   clearIndicators: () => void;
@@ -246,9 +254,16 @@ export function mergeChartState(
     ...p,
     // Drop instances whose definition no longer exists so a removed
     // registry entry can't leave an unrenderable ghost in the legend.
-    appliedIndicators: (p.appliedIndicators ?? current.appliedIndicators).filter((a) =>
-      INDICATOR_BY_ID.has(a.defId)
-    ),
+    appliedIndicators: (p.appliedIndicators ?? current.appliedIndicators)
+      .filter((a) => INDICATOR_BY_ID.has(a.defId))
+      // Backfill settings on instances persisted before the definition grew
+      // settings (or before a new key was added), so the modal/legend never see
+      // an undefined key where the definition promises one.
+      .map((a) => {
+        const def = INDICATOR_BY_ID.get(a.defId)!;
+        if (!def.settings?.length) return a;
+        return { ...a, settings: { ...defaultSettings(def), ...a.settings } };
+      }),
     // Backfill style fields on drawings persisted before those fields existed
     // (missing lineWidth/lineStyle/opacity would otherwise render, e.g., rectangles
     // as solid opaque blocks via the SVG default fill-opacity of 1).
@@ -322,6 +337,7 @@ export const useChartStore = create<ChartState>()(
                 defId,
                 params: { ...defaultParams(def), ...params },
                 visible: true,
+                ...(def.settings?.length ? { settings: defaultSettings(def) } : {}),
               },
             ],
           };
@@ -336,6 +352,13 @@ export const useChartStore = create<ChartState>()(
         set((s) => ({
           appliedIndicators: s.appliedIndicators.map((a) =>
             a.instanceId === instanceId ? { ...a, params: { ...a.params, ...params } } : a
+          ),
+        })),
+
+      updateIndicatorSettings: (instanceId, patch) =>
+        set((s) => ({
+          appliedIndicators: s.appliedIndicators.map((a) =>
+            a.instanceId === instanceId ? { ...a, settings: { ...a.settings, ...patch } } : a
           ),
         })),
 
@@ -368,7 +391,12 @@ export const useChartStore = create<ChartState>()(
           appliedIndicators: s.appliedIndicators.map((a) => {
             const def = INDICATOR_BY_ID.get(a.defId);
             return a.instanceId === instanceId && def
-              ? { ...a, params: defaultParams(def), styleOverrides: undefined }
+              ? {
+                  ...a,
+                  params: defaultParams(def),
+                  styleOverrides: undefined,
+                  settings: def.settings?.length ? defaultSettings(def) : undefined,
+                }
               : a;
           }),
         })),

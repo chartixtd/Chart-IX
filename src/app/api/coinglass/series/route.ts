@@ -4,14 +4,12 @@ import { getUserTier } from "@/lib/supabase/get-user-tier";
 import { canUseAdvancedChart } from "@/lib/access";
 import { getExternalSeriesCached } from "@/lib/coinglass/chart-series-cache";
 import { CoinGlassError } from "@/lib/coinglass/client";
-import {
-  isExternalIntervalSupported,
-  isExternalKind,
-  isValidExternalCoin,
-} from "@/lib/chart/external-series";
+import { parseExternalSeriesQuery } from "@/lib/chart/external-series";
 
 /**
  * GET /api/coinglass/series?kind=oi|cvd&coin=BTC&interval=30m
+ *     &market=spot|futures&margin=all|stablecoin|coin&unit=usd|coin&exchanges=Binance,OKX
+ * 参数含义与校验见 external-series.ts 的 parseExternalSeriesQuery。
  *
  * K 线图上 CoinGlass 指标（聚合 OI / 聚合 CVD）的唯一数据入口。
  *
@@ -33,22 +31,16 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = request.nextUrl;
-  const kind = searchParams.get("kind") ?? "";
-  const coin = searchParams.get("coin") ?? "";
-  const interval = searchParams.get("interval") ?? "";
-
-  if (!isExternalKind(kind)) return fail(400, "BAD_KIND", "kind must be oi or cvd");
-  if (!isValidExternalCoin(coin)) return fail(400, "BAD_COIN", "coin must be an uppercase ticker");
-  if (!isExternalIntervalSupported(interval)) {
-    return fail(400, "UNSUPPORTED_INTERVAL", "interval must be 30m or coarser");
-  }
+  const parsed = parseExternalSeriesQuery((name) => searchParams.get(name));
+  if (!parsed.ok) return fail(400, parsed.code, parsed.message);
+  const req = parsed.request;
 
   try {
-    const result = await getExternalSeriesCached(kind, coin, interval);
+    const result = await getExternalSeriesCached(req);
     return NextResponse.json(
       {
         success: true,
-        data: { kind, coin, interval, bars: result.bars, fetchedAt: result.fetchedAt, stale: result.stale },
+        data: { request: req, bars: result.bars, fetchedAt: result.fetchedAt, stale: result.stale },
       },
       { headers: { "Cache-Control": "private, no-store" } }
     );
@@ -56,7 +48,7 @@ export async function GET(request: NextRequest) {
     // 真走到这里 = 上游失败且一根旧数据都没有。区分配额/套餐问题与其它错误，
     // 方便在日志里一眼看出是「被限流了」还是「端点/粒度不在套餐里」。
     const code = error instanceof CoinGlassError ? `COINGLASS_${error.code}` : "UPSTREAM_ERROR";
-    console.error(`[coinglass/series] ${kind}:${coin}:${interval} failed`, error);
+    console.error(`[coinglass/series] ${JSON.stringify(req)} failed`, error);
     return fail(503, code, "CoinGlass data is temporarily unavailable");
   }
 }

@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  INDICATORS, INDICATOR_BY_ID, defaultParams, legendLabel, resolvePlotStyle, type IndicatorInput,
+  INDICATORS, INDICATOR_BY_ID, defaultParams, defaultSettings, legendLabel, resolvePlotStyle, resolveCandleStyle,
+  settingVisible, settingOptions, type IndicatorInput,
 } from "./indicator-registry";
+import { CHART } from "@/lib/chart-theme";
 import { isCandlePoint, type CandlePoint } from "./external-series";
 
 /** Indicators fed by CoinGlass (`requires`) are all-null without `input.ext`; they get their own suite below. */
@@ -150,10 +152,8 @@ describe("indicator computation contract", () => {
 
 describe("CoinGlass-fed indicators", () => {
   const candle = (i: number): CandlePoint => ({ open: i, high: i + 1, low: i - 1, close: i + 0.5 });
-  const ext = {
-    oi: bars.close.map((_, i) => (i < 10 ? null : candle(i))),
-    cvd: bars.close.map((_, i) => (i % 2 ? null : candle(i))),
-  };
+  const series = bars.close.map((_, i) => (i < 10 ? null : candle(i)));
+  const ext = { series };
 
   it("exist, live in the derivatives category and require their kind", () => {
     const oi = INDICATOR_BY_ID.get("cg_oi")!;
@@ -167,29 +167,102 @@ describe("CoinGlass-fed indicators", () => {
     expect(cvd.plots[0].kind).toBe("candles");
   });
 
-  it("pass the aligned external candles straight through", () => {
+  it("pass the instance's aligned external candles straight through", () => {
     const oi = INDICATOR_BY_ID.get("cg_oi")!.compute({ ...bars, ext }, {});
     const cvd = INDICATOR_BY_ID.get("cg_cvd")!.compute({ ...bars, ext }, {});
-    expect(oi.oi).toBe(ext.oi);
-    expect(cvd.cvd).toBe(ext.cvd);
+    expect(oi.oi).toBe(series);
+    expect(cvd.cvd).toBe(series);
   });
 
   it("degrade to an all-null series of bar length without ext (finer interval / not loaded yet)", () => {
     for (const id of ["cg_oi", "cg_cvd"]) {
       const def = INDICATOR_BY_ID.get(id)!;
       const out = def.compute(bars, {});
-      const series = out[def.plots[0].key];
-      expect(series).toHaveLength(bars.close.length);
-      expect(series.every((v) => v === null)).toBe(true);
-      // partial ext (only the other kind loaded) behaves the same
-      const partial = def.compute({ ...bars, ext: id === "cg_oi" ? { cvd: ext.cvd } : { oi: ext.oi } }, {});
-      expect(partial[def.plots[0].key].every((v) => v === null)).toBe(true);
+      const s = out[def.plots[0].key];
+      expect(s).toHaveLength(bars.close.length);
+      expect(s.every((v) => v === null)).toBe(true);
+      const empty = def.compute({ ...bars, ext: {} }, {});
+      expect(empty[def.plots[0].key].every((v) => v === null)).toBe(true);
     }
   });
 
-  it("have param-less legend labels", () => {
-    expect(legendLabel(INDICATOR_BY_ID.get("cg_oi")!, {})).toBe("OI");
-    expect(legendLabel(INDICATOR_BY_ID.get("cg_cvd")!, {})).toBe("CVD");
+  it("have param-less legend labels, with a CoinGlass-style settings summary when settings are given", () => {
+    const oi = INDICATOR_BY_ID.get("cg_oi")!;
+    const cvd = INDICATOR_BY_ID.get("cg_cvd")!;
+    expect(legendLabel(oi, {})).toBe("OI");
+    expect(legendLabel(cvd, {})).toBe("CVD");
+    expect(legendLabel(oi, {}, defaultSettings(oi))).toBe("OI 币本位 · USD · No Filter");
+    expect(legendLabel(cvd, {}, defaultSettings(cvd))).toBe("CVD 现货 · USD · No Filter");
+    expect(
+      legendLabel(cvd, {}, { ...defaultSettings(cvd), symbolMode: "custom", symbol: "eth", market: "futures", unit: "coin", exchangeMode: "custom", exchanges: ["OKX", "Binance", "Bybit"] })
+    ).toBe("CVD ETH · 合约 · 币 · OKX+2");
+  });
+
+  it("declare the full CoinGlass input set with sane defaults", () => {
+    const oi = INDICATOR_BY_ID.get("cg_oi")!;
+    const cvd = INDICATOR_BY_ID.get("cg_cvd")!;
+    expect(oi.settings!.map((s) => s.key)).toEqual(["symbolMode", "symbol", "margin", "unit", "exchangeMode", "exchanges", "display", "lineSource"]);
+    expect(cvd.settings!.map((s) => s.key)).toEqual(["symbolMode", "symbol", "market", "unit", "exchangeMode", "exchanges", "display", "lineSource"]);
+    expect(defaultSettings(oi)).toEqual({
+      symbolMode: "main", symbol: "", margin: "coin", unit: "usd", exchangeMode: "all", exchanges: [], display: "candles", lineSource: "open",
+    });
+    expect(defaultSettings(cvd).market).toBe("spot");
+    // defaults are copied, never shared between instances
+    const a = defaultSettings(cvd), b = defaultSettings(cvd);
+    expect(a.exchanges).not.toBe(b.exchanges);
+  });
+
+  it("shows dependent settings only when their parents allow it, cascading", () => {
+    const oi = INDICATOR_BY_ID.get("cg_oi")!;
+    const defs = oi.settings!;
+    const by = (k: string) => defs.find((d) => d.key === k)!;
+    const base = defaultSettings(oi);
+    expect(settingVisible(by("symbol"), base, defs)).toBe(false);
+    expect(settingVisible(by("symbol"), { ...base, symbolMode: "custom" }, defs)).toBe(true);
+    expect(settingVisible(by("lineSource"), base, defs)).toBe(false);
+    expect(settingVisible(by("lineSource"), { ...base, display: "line" }, defs)).toBe(true);
+    // exchanges needs exchangeMode=custom AND a margin type that supports filtering
+    expect(settingVisible(by("exchanges"), { ...base, exchangeMode: "custom" }, defs)).toBe(true);
+    expect(settingVisible(by("exchangeMode"), { ...base, margin: "all" }, defs)).toBe(false);
+    expect(settingVisible(by("exchanges"), { ...base, exchangeMode: "custom", margin: "all" }, defs)).toBe(false);
+  });
+
+  it("swaps the CVD exchange list between spot and futures", () => {
+    const cvd = INDICATOR_BY_ID.get("cg_cvd")!;
+    const ex = cvd.settings!.find((d) => d.key === "exchanges")!;
+    const spot = settingOptions(ex, { market: "spot" }).map((o) => o.value);
+    const fut = settingOptions(ex, { market: "futures" }).map((o) => o.value);
+    expect(spot).toContain("Coinbase");
+    expect(fut).toContain("Hyperliquid");
+    expect(spot).not.toContain("Hyperliquid");
+  });
+});
+
+describe("resolveCandleStyle", () => {
+  it("defaults to the chart theme with borders/wicks following the body colour", () => {
+    const s = resolveCandleStyle(undefined, "oi");
+    expect(s.upColor).toBe(CHART.up);
+    expect(s.downColor).toBe(CHART.down);
+    expect(s.borderUpColor).toBe(CHART.up);
+    expect(s.wickDownColor).toBe(CHART.down);
+    expect(s.lastValueVisible).toBe(false);
+    expect(s.priceLineVisible).toBe(false);
+    expect(s.precision).toBe(2);
+  });
+
+  it("lets the body override cascade to border/wick unless those are set explicitly", () => {
+    const s = resolveCandleStyle({ oi: { upColor: "#111111", wickUpColor: "#222222" } }, "oi");
+    expect(s.upColor).toBe("#111111");
+    expect(s.borderUpColor).toBe("#111111");
+    expect(s.wickUpColor).toBe("#222222");
+    expect(s.downColor).toBe(CHART.down);
+  });
+
+  it("reads flags and precision from the override", () => {
+    const s = resolveCandleStyle({ oi: { lastValueVisible: true, priceLineVisible: true, precision: 0 } }, "oi");
+    expect(s.lastValueVisible).toBe(true);
+    expect(s.priceLineVisible).toBe(true);
+    expect(s.precision).toBe(0);
   });
 });
 

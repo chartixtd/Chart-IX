@@ -32,9 +32,15 @@ import { useMarketStore } from "@/stores/market";
 import { useChartStore } from "@/stores/chartStore";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { canUseAdvancedChart } from "@/lib/access";
-import { INDICATOR_BY_ID, resolvePlotStyle, type IndicatorInput, type PlotSeries } from "@/lib/chart/indicator-registry";
-import { buildExternalInput, isCandlePoint, type ExternalInput, type ExternalKind, type ExternalSeriesPayload } from "@/lib/chart/external-series";
-import { useExternalSeries } from "@/hooks/useExternalSeries";
+import {
+  INDICATOR_BY_ID, resolvePlotStyle, resolveCandleStyle, type IndicatorInput, type PlotSeries,
+} from "@/lib/chart/indicator-registry";
+import {
+  buildExternalRequest, candlesForRequest, externalRequestKey, isCandlePoint,
+  type CandlePoint, type CandleSeries, type ExternalKind, type ExternalSeriesPayload, type ExternalSeriesRequest,
+} from "@/lib/chart/external-series";
+import { useExternalSeries, type ExternalSeriesStatus } from "@/hooks/useExternalSeries";
+import type { AppliedIndicator } from "@/stores/chartStore";
 import { classifyBarsUpdate, classifyTail, overlaySignature } from "@/lib/chart/incremental";
 import { IndicatorModal } from "./chart/IndicatorModal";
 import { ChartLegend } from "./chart/ChartLegend";
@@ -110,6 +116,17 @@ const GUIDE_COLOR = "rgba(120,120,120,0.35)";
 interface InstanceSeries {
   plotKey: string;
   series: ISeriesApi<SeriesType>;
+}
+
+/** 蜡烛类 plot 的显示方式（CoinGlass 指标的 `display` 设置）。 */
+function candleDisplay(a: AppliedIndicator): "candles" | "line" {
+  return a.settings?.display === "line" ? "line" : "candles";
+}
+
+/** 折线模式取蜡烛的哪个值（`lineSource` 设置，默认 open——对齐 CoinGlass 图例里的默认）。 */
+function lineSource(a: AppliedIndicator): keyof CandlePoint {
+  const v = a.settings?.lineSource;
+  return v === "high" || v === "low" || v === "close" ? v : "open";
 }
 
 export function KlineChart({ symbol, interval = "1h", className, market = "spot", tradeMarkers, priceLines }: KlineChartProps) {
@@ -213,21 +230,39 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
   const isAllowed = (defId: string) => hasAdvancedChart || defId === "volume";
 
   /** Changes only when instances are added/removed — param edits don't rebuild series. */
+  // 蜡烛/折线显示方式决定 series 的类型，所以它也算结构的一部分。
   const structureKey = useMemo(
-    () => applied.map((a) => `${a.instanceId}:${a.defId}`).join("|"),
+    () => applied.map((a) => `${a.instanceId}:${a.defId}:${candleDisplay(a)}`).join("|"),
     [applied]
   );
 
-  // 已应用的指标里声明了哪些 CoinGlass 序列。没人声明就一个请求都不发。
-  const requiredKinds = useMemo<ExternalKind[]>(() => {
-    const set = new Set<ExternalKind>();
+  // 每个 CoinGlass 指标实例按自己的设置变成一个 request；设置相同的实例共用
+  // 一个 key（hook 里去重，只发一次）。没有这类指标就一个请求都不发。
+  const extRequests = useMemo(() => {
+    const byInstance = new Map<string, { key: string; request: ExternalSeriesRequest; kind: ExternalKind }>();
+    const invalid = new Set<string>();
+    const list: ExternalSeriesRequest[] = [];
     for (const a of applied) {
-      for (const k of INDICATOR_BY_ID.get(a.defId)?.requires ?? []) set.add(k);
+      const def = INDICATOR_BY_ID.get(a.defId);
+      const kind = def?.requires?.[0];
+      if (!def || !kind) continue;
+      const request = buildExternalRequest(kind, a.settings, symbol, interval);
+      if (!request) { invalid.add(a.instanceId); continue; }
+      byInstance.set(a.instanceId, { key: externalRequestKey(request), request, kind });
+      list.push(request);
     }
-    return [...set].sort();
-  }, [applied]);
-  const external = useExternalSeries(symbol, interval, requiredKinds, hasAdvancedChart);
+    return { byInstance, invalid, list };
+  }, [applied, symbol, interval]);
+  const external = useExternalSeries(extRequests.list, hasAdvancedChart);
   const extPayload = external.payload;
+
+  // 图例用：每个实例的加载状态
+  const legendStatus = useMemo(() => {
+    const out: Record<string, ExternalSeriesStatus | "invalid"> = {};
+    for (const id of extRequests.invalid) out[id] = "invalid";
+    for (const [id, { key }] of extRequests.byInstance) out[id] = external.status[key] ?? "loading";
+    return out;
+  }, [extRequests, external.status]);
 
   const bars = useMemo(() => {
     if (!klines?.length) return null;
@@ -252,13 +287,26 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     };
   }, [klines]);
 
-  // 把 CoinGlass 序列对齐到当前 K 线数组。bars 每次轮询都是新数组，所以这里
-  // 每次轮询都重算一遍（1000 根的 Map 查找，可忽略）；但「要不要全量重绘」
-  // 看的是 extPayload 的引用，不是这个对齐结果——否则每次轮询都会全量重绘。
-  const extAligned = useMemo<ExternalInput | undefined>(() => {
-    if (!bars || (!extPayload.oi && !extPayload.cvd)) return undefined;
-    return buildExternalInput(extPayload, bars.times as unknown as number[]);
-  }, [bars, extPayload]);
+  // 把 CoinGlass 序列对齐到当前 K 线数组，按实例索引（同 key 的实例共用一份
+  // 对齐结果）。bars 每次轮询都是新数组，所以这里每次轮询都重算一遍
+  // （1000 根的 Map 查找，可忽略）；但「要不要全量重绘」看的是 extPayload
+  // 的引用，不是这个对齐结果——否则每次轮询都会全量重绘。
+  const extAligned = useMemo<Map<string, CandleSeries> | null>(() => {
+    if (!bars) return null;
+    const byKey = new Map<string, CandleSeries>();
+    const out = new Map<string, CandleSeries>();
+    for (const [instanceId, { key, kind }] of extRequests.byInstance) {
+      const raw = extPayload[key];
+      if (!raw) continue;
+      let series = byKey.get(key);
+      if (!series) {
+        series = candlesForRequest(kind, raw, bars.times as unknown as number[]);
+        byKey.set(key, series);
+      }
+      out.set(instanceId, series);
+    }
+    return out;
+  }, [bars, extPayload, extRequests]);
 
   const drawingTimes = useMemo(() => (bars ? bars.times.map((t) => t as number) : []), [bars]);
 
@@ -403,17 +451,12 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
         };
         let series: ISeriesApi<SeriesType>;
         if (plot.kind === "candles") {
-          // CoinGlass 的 OI / CVD：颜色固定用主图的涨跌色，数值按成交量格式
-          // （3.93B / 682.8M）显示，不走 resolvePlotStyle 的线型/颜色覆盖。
+          // CoinGlass 的 OI / CVD：数值按成交量格式（3.93B / 682.8M）显示；
+          // 颜色/标签/精度在数据 effect 里按实例的样式覆盖 applyOptions。
+          // 「显示方式 = 折线」时建的是 LineSeries，取值由 lineSource 决定。
           series = chartApi.addSeries(
-            CandlestickSeries,
-            {
-              ...base,
-              upColor: UP, downColor: DOWN,
-              borderUpColor: UP, borderDownColor: DOWN,
-              wickUpColor: UP, wickDownColor: DOWN,
-              priceFormat: { type: "volume" },
-            },
+            candleDisplay(a) === "line" ? LineSeries : CandlestickSeries,
+            { ...base, priceFormat: { type: "volume" } },
             paneIndex
           );
         } else if (plot.kind === "histogram") {
@@ -495,8 +538,12 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     // 半透明遮罩已表达"过期"语义。跳过记账写入，保住 reset effect 留下的
     // null/0 状态，真实数据到达帧才能正确判 "full" 并触发 fitContent。
     if (isPlaceholder) return;
-    const { times } = bars;
-    const input: IndicatorInput = extAligned ? { ...bars.input, ext: extAligned } : bars.input;
+    const { times, input } = bars;
+    // CoinGlass 指标各自拿自己那份对齐后的序列；其它指标拿纯 OHLCV。
+    const inputFor = (a: AppliedIndicator): IndicatorInput => {
+      const series = extAligned?.get(a.instanceId);
+      return series ? { ...input, ext: { series } } : input;
+    };
 
     const kind =
       applied !== lastAppliedRef.current ||
@@ -553,7 +600,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
               const entries = seriesMapRef.current.get(a.instanceId);
               if (!def || !entries) continue;
               let out: Record<string, PlotSeries>;
-              try { out = def.compute(input, a.params); } catch { continue; }
+              try { out = def.compute(inputFor(a), a.params); } catch { continue; }
               for (const e of entries) {
                 const plot = def.plots.find((p) => p.key === e.plotKey);
                 const values = out[e.plotKey];
@@ -569,7 +616,13 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
                   // 跳过即可;刷新到达时 extPayload 变引用,整条走全量路径重画。
                   if (v === null || v === undefined) continue;
                   if (plot.kind === "candles") {
-                    if (isCandlePoint(v)) e.series.update({ time: times[i], ...v }, i < lastIdx);
+                    if (isCandlePoint(v)) {
+                      if (candleDisplay(a) === "line") {
+                        e.series.update({ time: times[i], value: v[lineSource(a)] }, i < lastIdx);
+                      } else {
+                        e.series.update({ time: times[i], ...v }, i < lastIdx);
+                      }
+                    }
                     continue;
                   }
                   if (typeof v !== "number" || Number.isNaN(v)) continue;
@@ -664,7 +717,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
 
       let out: Record<string, PlotSeries>;
       try {
-        out = def.compute(input, a.params);
+        out = def.compute(inputFor(a), a.params);
       } catch {
         continue; // a bad param combination must not take the whole chart down
       }
@@ -681,14 +734,43 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
         const resolvedStyle = resolvePlotStyle(def, a.styleOverrides, e.plotKey);
 
         if (plot.kind === "candles") {
-          const data: CandlestickData[] = [];
-          for (let i = 0; i < values.length; i++) {
-            const v = values[i];
-            if (!isCandlePoint(v)) continue;
-            data.push({ time: times[i], ...v });
+          const cs = resolveCandleStyle(a.styleOverrides, e.plotKey);
+          const common = {
+            visible,
+            lastValueVisible: cs.lastValueVisible,
+            priceLineVisible: cs.priceLineVisible,
+            priceFormat: { type: "volume" as const, precision: cs.precision },
+          };
+          if (candleDisplay(a) === "line") {
+            const src = lineSource(a);
+            const data: LineData[] = [];
+            for (let i = 0; i < values.length; i++) {
+              const v = values[i];
+              if (!isCandlePoint(v)) continue;
+              data.push({ time: times[i], value: v[src] });
+            }
+            e.series.setData(data);
+            e.series.applyOptions({
+              ...common,
+              color: resolvedStyle.color,
+              lineWidth: resolvedStyle.lineWidth,
+              lineStyle: resolvedStyle.lineStyle,
+            });
+          } else {
+            const data: CandlestickData[] = [];
+            for (let i = 0; i < values.length; i++) {
+              const v = values[i];
+              if (!isCandlePoint(v)) continue;
+              data.push({ time: times[i], ...v });
+            }
+            e.series.setData(data);
+            e.series.applyOptions({
+              ...common,
+              upColor: cs.upColor, downColor: cs.downColor,
+              borderUpColor: cs.borderUpColor, borderDownColor: cs.borderDownColor,
+              wickUpColor: cs.wickUpColor, wickDownColor: cs.wickDownColor,
+            });
           }
-          e.series.setData(data);
-          e.series.applyOptions({ visible });
           continue;
         }
 
@@ -966,7 +1048,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
           )}
         </div>
 
-        <ChartLegend onOpenSettings={() => setIndicatorsOpen(true)} externalStatus={external.status} />
+        <ChartLegend onOpenSettings={() => setIndicatorsOpen(true)} externalStatus={legendStatus} />
 
         <div ref={chartRef} className="h-full w-full" />
 

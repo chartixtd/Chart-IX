@@ -92,7 +92,7 @@ describe("indicator settings (CoinGlass inputs)", () => {
     useChartStore.getState().addIndicator("cg_cvd");
     useChartStore.getState().addIndicator("ma");
     const [cvd, ma] = useChartStore.getState().appliedIndicators;
-    expect(cvd.settings).toMatchObject({ symbolMode: "main", market: "futures", unit: "usd", exchangeMode: "all", display: "candles" });
+    expect(cvd.settings).toMatchObject({ lastNBars: "0", symbolMode: "main", market: "futures", unit: "usd", exchangeMode: "all", display: "candles" });
     expect(ma.settings).toBeUndefined();
   });
 

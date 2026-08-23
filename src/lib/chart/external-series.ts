@@ -150,7 +150,8 @@ export function isValidExchangeName(name: string): boolean {
   return /^[A-Za-z0-9._-]{1,24}$/.test(name);
 }
 
-export const MAX_EXCHANGES = 20;
+/** 勾选清单本身就有 20 项，再加手填的，上限要留出余量。 */
+export const MAX_EXCHANGES = 40;
 
 /**
  * 图表品种 → CoinGlass 币名。`BTC-USDT` / `BTC-USDC` → `BTC`，`1000PEPE-USDT` → `PEPE`
@@ -193,6 +194,7 @@ export function parseExchangeList(text: string | null | undefined): string[] {
  *   unit         usd / coin
  *   exchangeMode "all"（No Filter，走端点默认组合）/ "custom"
  *   exchanges    自选交易所数组（勾选 + 手填合并后的结果）
+ *   lastNBars    只取最近 N 根（"0" = 全部）；决定 CVD 的累计起点，见 rebaseLastN
  *   display      "candles" / "line"
  *   lineSource   折线模式取蜡烛的哪个值：open / high / low / close
  */
@@ -337,10 +339,15 @@ export function parseExternalSeriesQuery(get: (name: string) => string | null): 
 // 交易所清单（给设置面板勾选用；手填框兜住清单之外的任何名字）
 // ---------------------------------------------------------------------------
 
-/** 名字必须与 CoinGlass `supported-exchange-pairs` 返回的拼写一致，大小写敏感。 */
+/**
+ * 名字必须与 CoinGlass `supported-exchange-pairs` 返回的拼写一致，大小写敏感。
+ * 合约这份清单与顺序照抄 CoinGlass 那个指标设置对话框里的勾选列表（2026-08-23
+ * 用户截图核对），这样两边并排对比时肉眼就能看出勾的是不是同一批。
+ */
 export const FUTURES_EXCHANGE_CHOICES = [
-  "Binance", "OKX", "Bybit", "Bitget", "Gate", "HTX", "KuCoin", "Hyperliquid",
-  "Bitmex", "Deribit", "Kraken", "Coinbase", "Bitfinex", "MEXC", "CME",
+  "Binance", "Bybit", "OKX", "CME", "Deribit", "Bitfinex", "DYdX", "Bitmex",
+  "HTX", "Kraken", "Bitget", "CoinEx", "Gate", "Crypto.com", "Bitunix",
+  "Hyperliquid", "MEXC", "KuCoin", "LBank", "WhiteBIT",
 ] as const;
 
 export const SPOT_EXCHANGE_CHOICES = [
@@ -375,6 +382,46 @@ export function alignOhlcToTimes(bars: ExternalOhlcBar[], timesSec: ArrayLike<nu
         : null;
   }
   return out;
+}
+
+/**
+ * 「只取最近 N 根」——对齐 CoinGlass CVD 指标的 `Only last N bars (0 for all)` 输入。
+ *
+ * CVD 的绝对值完全由**从哪一根开始累加**决定。CoinGlass 的 Pine 指标默认 N=0
+ * （从 TradingView 加载到的第一根算起），我们默认从拉到的 1000 根的第一根算起——
+ * 两个锚点不同，绝对值就永远差一个常数（实测同一时刻 13.486B vs 10.2B，形状一致）。
+ *
+ * 把这个输入做出来，两边设成**同一个 N** 就会从同一根开始归零，数值随之完全对上。
+ * 这是唯一能让两个 CVD 读数相等的办法——不是补偿一个魔法常数，而是对齐锚点本身。
+ *
+ * N<=0 或 N>=序列长度时原样返回（= 全部）。锚点取这段里第一根非空蜡烛的 open；
+ * 之前的根置空，因为它们不在用户要求的窗口里。
+ */
+export function rebaseLastN(series: CandleSeries, n: number): CandleSeries {
+  if (!Number.isFinite(n) || n <= 0 || n >= series.length) return series;
+  const start = series.length - n;
+  let anchor: number | null = null;
+  for (let i = start; i < series.length; i++) {
+    const c = series[i];
+    if (c) { anchor = c.open; break; }
+  }
+  if (anchor === null) return series;
+  const base = anchor;
+  const out: CandleSeries = new Array(series.length).fill(null);
+  for (let i = start; i < series.length; i++) {
+    const c = series[i];
+    out[i] = c
+      ? { open: c.open - base, high: c.high - base, low: c.low - base, close: c.close - base }
+      : null;
+  }
+  return out;
+}
+
+/** 设置里的「只取最近 N 根」→ 一个安全的整数。非法/缺失一律当 0（全部）。 */
+export function lastNBarsFromSettings(settings: ExternalSettings | undefined): number {
+  const raw = settings?.lastNBars;
+  const n = typeof raw === "string" ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
 /** 没有外部数据时 compute() 的占位输出：与 K 线等长、全 null。 */

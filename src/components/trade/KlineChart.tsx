@@ -36,7 +36,7 @@ import {
   INDICATOR_BY_ID, resolvePlotStyle, resolveCandleStyle, type IndicatorInput, type PlotSeries,
 } from "@/lib/chart/indicator-registry";
 import {
-  alignOhlcToTimes, buildExternalRequest, externalRequestKey, isCandlePoint,
+  alignOhlcToTimes, buildExternalRequest, externalRequestKey, isCandlePoint, lastNBarsFromSettings, rebaseLastN,
   type CandlePoint, type CandleSeries, type ExternalSeriesPayload, type ExternalSeriesRequest,
 } from "@/lib/chart/external-series";
 import { useExternalSeries, type ExternalSeriesStatus } from "@/hooks/useExternalSeries";
@@ -295,6 +295,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     if (!bars) return null;
     const byKey = new Map<string, CandleSeries>();
     const out = new Map<string, CandleSeries>();
+    const byInstanceSettings = new Map(applied.map((a) => [a.instanceId, a.settings]));
     for (const [instanceId, { key }] of extRequests.byInstance) {
       const raw = extPayload[key];
       if (!raw) continue;
@@ -303,10 +304,12 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
         series = alignOhlcToTimes(raw, bars.times as unknown as number[]);
         byKey.set(key, series);
       }
-      out.set(instanceId, series);
+      // 「只取最近 N 根」是纯展示层的重定基准，同一份拉取可以被不同 N 的实例共用，
+      // 所以放在共享对齐**之后**、按实例各算一次。
+      out.set(instanceId, rebaseLastN(series, lastNBarsFromSettings(byInstanceSettings.get(instanceId))));
     }
     return out;
-  }, [bars, extPayload, extRequests]);
+  }, [bars, extPayload, extRequests, applied]);
 
   const drawingTimes = useMemo(() => (bars ? bars.times.map((t) => t as number) : []), [bars]);
 

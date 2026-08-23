@@ -201,6 +201,14 @@ const CG_SYMBOL: SettingDef = {
   key: "symbol", label: "Custom symbol", labelZh: "自定义品种", type: "text", default: "", placeholder: "ETH / ETH-USDT",
   showWhen: { key: "symbolMode", in: ["custom"] },
 };
+/**
+ * CoinGlass CVD 指标图例最前面那个 "0" 就是这一项。它决定累计从哪一根开始归零，
+ * 也就是 CVD 绝对值的唯一决定因素——两边设成同一个 N，读数才会相等。
+ */
+const CG_LAST_N: SettingDef = {
+  key: "lastNBars", label: "Only last N bars (0 for all)", labelZh: "只取最近 N 根（0 = 全部）",
+  type: "text", default: "0", placeholder: "0",
+};
 const CG_UNIT: SettingDef = {
   key: "unit", label: "Unit", labelZh: "单位", type: "select", default: "usd",
   options: [
@@ -208,11 +216,17 @@ const CG_UNIT: SettingDef = {
     { value: "coin", label: "Coins", labelZh: "币" },
   ],
 };
+/**
+ * 「No Filter」曾经被我当成交易所筛选写进这里——那是**误读**：CoinGlass 图例里的
+ * "open No Filter" 是 Bar Highlighter 的 Filter Source + Condition，跟交易所无关。
+ * 它的交易所就是下面那排勾选框，默认勾 Binance / Bybit / OKX / Hyperliquid，
+ * 正好等于我们的默认组合。所以这里只是「用默认那几家」还是「自己勾」。
+ */
 const CG_EXCHANGE_MODE: SettingDef = {
-  key: "exchangeMode", label: "Exchange filter", labelZh: "交易所筛选", type: "select", default: "all",
+  key: "exchangeMode", label: "Exchanges", labelZh: "交易所", type: "select", default: "all",
   options: [
-    { value: "all", label: "No Filter (aggregated default)", labelZh: "No Filter（默认聚合组合）" },
-    { value: "custom", label: "Custom selection", labelZh: "自选" },
+    { value: "all", label: "Default set", labelZh: "默认组合" },
+    { value: "custom", label: "Choose exchanges", labelZh: "自选" },
   ],
 };
 const CG_EXCHANGES: SettingDef = {
@@ -245,6 +259,8 @@ function cgLegend(
   modeKey: string
 ): string {
   const parts: string[] = [];
+  const lastN = typeof s.lastNBars === "string" ? Number(s.lastNBars) : 0;
+  if (Number.isFinite(lastN) && lastN > 0) parts.push(`${Math.floor(lastN)} 根`);
   if (s.symbolMode === "custom" && typeof s.symbol === "string" && s.symbol) parts.push(coinFromChartSymbol(s.symbol));
   const mode = typeof s[modeKey] === "string" ? modeLabels[s[modeKey] as string] : undefined;
   if (mode) parts.push(mode);
@@ -252,7 +268,7 @@ function cgLegend(
   if (s.exchangeMode === "custom" && Array.isArray(s.exchanges) && s.exchanges.length) {
     parts.push(s.exchanges.length <= 2 ? s.exchanges.join("+") : `${s.exchanges[0]}+${s.exchanges.length - 1}`);
   } else {
-    parts.push("No Filter");
+    parts.push("默认组合");
   }
   return parts.join(" · ");
 }
@@ -715,6 +731,7 @@ export const INDICATORS: IndicatorDef[] = [
     source: "coinglass",
     guides: [0],
     settings: [
+      CG_LAST_N,
       CG_SYMBOL_MODE, CG_SYMBOL,
       {
         key: "market", label: "Market", labelZh: "市场", type: "select", default: "futures",

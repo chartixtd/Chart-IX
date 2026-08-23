@@ -191,8 +191,10 @@ describe("CoinGlass-fed indicators", () => {
     const cvd = INDICATOR_BY_ID.get("cg_cvd")!;
     expect(legendLabel(oi, {})).toBe("OI");
     expect(legendLabel(cvd, {})).toBe("CVD");
-    expect(legendLabel(oi, {}, defaultSettings(oi))).toBe("OI 币本位 · USD · No Filter");
-    expect(legendLabel(cvd, {}, defaultSettings(cvd))).toBe("CVD 合约 · USD · No Filter");
+    expect(legendLabel(oi, {}, defaultSettings(oi))).toBe("OI 币本位 · USD · 默认组合");
+    expect(legendLabel(cvd, {}, defaultSettings(cvd))).toBe("CVD 合约 · USD · 默认组合");
+    // N 设了就排在最前，对齐 CoinGlass 图例里那个打头的数字
+    expect(legendLabel(cvd, {}, { ...defaultSettings(cvd), lastNBars: "300" })).toBe("CVD 300 根 · 合约 · USD · 默认组合");
     expect(
       legendLabel(cvd, {}, { ...defaultSettings(cvd), symbolMode: "custom", symbol: "eth", market: "spot", unit: "coin", exchangeMode: "custom", exchanges: ["OKX", "Binance", "Bybit"] })
     ).toBe("CVD ETH · 现货 · 币 · OKX+2");
@@ -202,11 +204,13 @@ describe("CoinGlass-fed indicators", () => {
     const oi = INDICATOR_BY_ID.get("cg_oi")!;
     const cvd = INDICATOR_BY_ID.get("cg_cvd")!;
     expect(oi.settings!.map((s) => s.key)).toEqual(["symbolMode", "symbol", "margin", "unit", "exchangeMode", "exchanges", "display", "lineSource"]);
-    expect(cvd.settings!.map((s) => s.key)).toEqual(["symbolMode", "symbol", "market", "unit", "exchangeMode", "exchanges", "display", "lineSource"]);
+    // lastNBars 排第一，与 CoinGlass 对话框里 "Only last N bars" 的位置一致
+    expect(cvd.settings!.map((s) => s.key)).toEqual(["lastNBars", "symbolMode", "symbol", "market", "unit", "exchangeMode", "exchanges", "display", "lineSource"]);
     expect(defaultSettings(oi)).toEqual({
       symbolMode: "main", symbol: "", margin: "coin", unit: "usd", exchangeMode: "all", exchanges: [], display: "candles", lineSource: "open",
     });
     expect(defaultSettings(cvd).market).toBe("futures");
+    expect(defaultSettings(cvd).lastNBars).toBe("0");
     // defaults are copied, never shared between instances
     const a = defaultSettings(cvd), b = defaultSettings(cvd);
     expect(a.exchanges).not.toBe(b.exchanges);

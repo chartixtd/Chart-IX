@@ -124,16 +124,46 @@ CoinGlass 另有一对专门的端点直接返回算好的累计值：
 `{buy,sell}` 换成 OHLC），键不变的话新代码会从 DB 缓存里读到旧结构，表现为副图
 空白直到 TTL 过期。以后再改 bar 的形状/语义必须同步 +1。
 
-### 仍未消除的两个变量
+### 换端点之后仍然对不上，以及真正的原因（第四轮）
 
-1. **「No Filter」的交易所集合。** CoinGlass 的 No Filter 大概率是「全部支持的
-   交易所」，我们用的是一份硬编码的主流所清单。用户那次对比里我们这边还是
-   「Binance+3」（自选 4 家），两边口径本来就不同。要真正对齐，得先拉
-   `supported-exchange-pairs` 再把全集传进 exchange_list——没有 key 没法验证
-   传 30 个所名会不会被上游拒，所以留到能实测时再做。
-2. **`cum_vol_delta` 是绝对累计还是窗口内累计。** 文档只说 "running total"。
-   若是后者，窗口长度仍会影响绝对值，需要对齐 limit。**上线后的判据**：看 CVD
-   序列最左边那根的 open 是不是 0——是 0 就说明是窗口内累计。
+换成 `aggregated-cvd` 部署后，用户拿两边设置完全相同的图再比一次：
+CoinGlass 10.2B，我们 13.486B——**几乎没变**（换端点前是 13.5B）。
+
+这证伪了「`cum_vol_delta` 是绝对累计」的猜测：它是**窗口内累计**，从返回的
+第一根起算。所以换端点没有改变任何东西——我们的锚点仍然是「拉到的 1000 根的
+第一根」。
+
+真正的答案在用户发来的 CoinGlass 设置对话框截图里：CVD 指标第一个输入是
+**`Only last N bars (0 for all)`**（图例最前面那个 `0` 就是它）。这就是锚点开关：
+N=0 表示从 TradingView 加载到的第一根算起，N>0 表示从倒数第 N 根算起。
+我们没有这个输入，所以两边的锚点各是各的，绝对值差一个常数（形状一致）。
+
+**做法**：把这个输入原样做出来（`lastNBars`，纯展示层的重定基准，见
+`rebaseLastN`）。两边设成同一个 N，就都从同一根归零，读数完全相等——这是让
+两个 CVD 数值相等的唯一办法，不是去补一个魔法常数。N=0 时各自用各自的全量
+窗口，仍会差一个常数，这是 CVD 这个指标的固有性质，不是缺陷。
+
+重定基准刻意**不进** `externalRequestKey`：它不影响拉什么数据，不同 N 的实例
+共用同一次上游调用。
+
+### 同一轮里纠正的两个理解错误
+
+1. **「No Filter」不是交易所筛选。** 它是 Bar Highlighter 的 `Condition`
+   （配合 `Filter Source`、`Filter 1 >=`、`Filter 2 <=` 给满足条件的 bar 上色）。
+   CoinGlass 的交易所就是下面那排勾选框，默认勾 Binance / Bybit / OKX /
+   Hyperliquid——**正好等于我们的默认组合**。所以设置里那个下拉改叫「交易所：
+   默认组合 / 自选」，不再出现 "No Filter" 字样。
+2. **勾选清单对齐。** `FUTURES_EXCHANGE_CHOICES` 换成 CoinGlass 对话框里的
+   20 家、连顺序一并照抄（Binance, Bybit, OKX, CME, Deribit, Bitfinex, DYdX,
+   Bitmex, HTX, Kraken, Bitget, CoinEx, Gate, Crypto.com, Bitunix, Hyperliquid,
+   MEXC, KuCoin, LBank, WhiteBIT），两边并排就能肉眼核对勾的是不是同一批。
+   `MAX_EXCHANGES` 随之从 20 提到 40。
+
+### 已知没做的一项
+
+**Bar Highlighter**（Filter Source / Condition / Filter 1 / Filter 2）没有实现。
+它只给满足阈值的 bar 上色，`Condition = No Filter` 时完全不起作用，**不影响任何
+数值**——两边数字对不上时不必怀疑它。
 
 ## 分层
 

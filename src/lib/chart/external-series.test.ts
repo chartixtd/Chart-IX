@@ -13,7 +13,9 @@ import {
   isExternalKind,
   isValidExchangeName,
   isValidExternalCoin,
+  lastNBarsFromSettings,
   parseExchangeList,
+  rebaseLastN,
   parseExternalSeriesQuery,
   EXTERNAL_SERIES_INTERVALS,
   FUTURES_EXCHANGE_CHOICES,
@@ -74,9 +76,9 @@ describe("parseExchangeList", () => {
     expect(parseExchangeList(null)).toEqual([]);
   });
 
-  it("caps at 20 entries", () => {
-    const many = Array.from({ length: 30 }, (_, i) => `Ex${i}`).join(",");
-    expect(parseExchangeList(many)).toHaveLength(20);
+  it("caps at MAX_EXCHANGES entries", () => {
+    const many = Array.from({ length: 60 }, (_, i) => `Ex${i}`).join(",");
+    expect(parseExchangeList(many)).toHaveLength(40);
   });
 });
 
@@ -249,6 +251,55 @@ describe("alignOhlcToTimes", () => {
   it("is the same length as the chart time array even when empty", () => {
     expect(alignOhlcToTimes([], [1, 2, 3])).toEqual([null, null, null]);
     expect(alignOhlcToTimes(bars, [])).toEqual([]);
+  });
+});
+
+describe("rebaseLastN — CoinGlass 的 Only last N bars", () => {
+  const c = (v: number) => ({ open: v, high: v + 1, low: v - 1, close: v + 0.5 });
+  const series = [c(100), c(110), c(120), c(130)];
+
+  it("从倒数第 N 根的 open 归零，之前的根置空", () => {
+    expect(rebaseLastN(series, 2)).toEqual([
+      null, null,
+      { open: 0, high: 1, low: -1, close: 0.5 },
+      { open: 10, high: 11, low: 9, close: 10.5 },
+    ]);
+  });
+
+  it("这正是让两边读数相等的机制：同一 N 下，相差常数的两条序列归零后完全一致", () => {
+    const offset = series.map((b) => ({ open: b.open + 3200, high: b.high + 3200, low: b.low + 3200, close: b.close + 3200 }));
+    expect(rebaseLastN(offset, 3)).toEqual(rebaseLastN(series, 3));
+  });
+
+  it("N<=0 / N>=长度 一律原样返回（= 全部）", () => {
+    expect(rebaseLastN(series, 0)).toBe(series);
+    expect(rebaseLastN(series, -5)).toBe(series);
+    expect(rebaseLastN(series, 4)).toBe(series);
+    expect(rebaseLastN(series, NaN)).toBe(series);
+  });
+
+  it("窗口里第一根是空时，锚点顺延到第一根有值的", () => {
+    const out = rebaseLastN([c(100), null, c(120), c(130)], 3);
+    expect(out[1]).toBeNull();
+    expect(out[2]).toEqual({ open: 0, high: 1, low: -1, close: 0.5 });
+    expect(out[3]).toEqual({ open: 10, high: 11, low: 9, close: 10.5 });
+  });
+
+  it("整段都是空时原样返回，不会把序列擦掉", () => {
+    const empty = [c(100), null, null];
+    expect(rebaseLastN(empty, 2)).toBe(empty);
+  });
+});
+
+describe("lastNBarsFromSettings", () => {
+  it("只接受正整数，其余一律当 0（全部）", () => {
+    expect(lastNBarsFromSettings({ lastNBars: "300" })).toBe(300);
+    expect(lastNBarsFromSettings({ lastNBars: "300.7" })).toBe(300);
+    expect(lastNBarsFromSettings({ lastNBars: "0" })).toBe(0);
+    expect(lastNBarsFromSettings({ lastNBars: "-5" })).toBe(0);
+    expect(lastNBarsFromSettings({ lastNBars: "abc" })).toBe(0);
+    expect(lastNBarsFromSettings({})).toBe(0);
+    expect(lastNBarsFromSettings(undefined)).toBe(0);
   });
 });
 

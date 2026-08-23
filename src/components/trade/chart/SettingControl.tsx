@@ -90,7 +90,7 @@ export function SettingControl({ def, settings, isZh, onChange }: Props) {
           <span className="text-[11px] text-text-muted">{t("setting_custom_exchanges")}</span>
           <CommitInput
             value={customOnes.join(", ")}
-            placeholder="Bitunix, WhiteBIT"
+            placeholder="…"
             onCommit={(text) => {
               // 手填的和勾选的按不区分大小写去重："okx" 不该和已勾选的 "OKX" 并存
               const keep = selected.filter((v) => optionValues.has(v));

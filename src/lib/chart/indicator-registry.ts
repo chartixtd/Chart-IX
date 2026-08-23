@@ -812,7 +812,7 @@ export interface PlotStyleOverride {
   lastValueVisible?: boolean;
   /** 最新值水平线 */
   priceLineVisible?: boolean;
-  /** 刻度小数位；undefined = 默认 2 */
+  /** 刻度小数位；undefined = 默认 3（对齐 CoinGlass 的读数，见 resolveCandleStyle） */
   precision?: 0 | 1 | 2 | 3 | 4;
 }
 
@@ -852,7 +852,10 @@ export function resolveCandleStyle(
     wickDownColor: o.wickDownColor ?? down,
     lastValueVisible: o.lastValueVisible ?? true,
     priceLineVisible: o.priceLineVisible ?? true,
-    precision: o.precision ?? 2,
+    // 3 位而不是 2：CoinGlass 图上读数是 2.318B / 10.241B，精度 2 会显示成
+    // 2.32B / 10.24B。成交量格式本身会去掉末尾的 0（2.300B → 2.3B），所以
+    // 调高精度不会让整数值变难读。
+    precision: o.precision ?? 3,
   };
 }
 

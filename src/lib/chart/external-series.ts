@@ -67,14 +67,15 @@ export interface ExternalOhlcBar {
   c: number;
 }
 
-/** 主动买/卖成交额的一根（单位由 request.unit 决定）。`t` 秒。CVD 在前端由它累加合成。 */
-export interface ExternalFlowBar {
-  t: number;
-  buy: number;
-  sell: number;
-}
-
-export type ExternalSeriesBars = ExternalOhlcBar[] | ExternalFlowBar[];
+/**
+ * OI 与 CVD 现在是同一种形状：服务端把两个上游端点都归一化成 OHLC。
+ *
+ * CVD 曾经由前端从主动买卖量自己累加（起点 0 = 拉到的窗口第一根），那样算出来的
+ * 绝对值取决于窗口起点，和 CoinGlass 图上的读数对不上——同一时刻我们 13.5B、
+ * 它们 10.24B。改用 CoinGlass 自己的 `cum_vol_delta`（服务端算好的累计值）之后
+ * 锚点与它们一致，绝对值才有可比性。详见 coinglass/chart-series.ts。
+ */
+export type ExternalSeriesBars = ExternalOhlcBar[];
 
 /** 按 `externalRequestKey` 索引的已拉到序列。 */
 export type ExternalSeriesPayload = Record<string, ExternalSeriesBars>;
@@ -242,11 +243,18 @@ export function buildExternalRequest(
 }
 
 /** 缓存键 / 去重键。交易所按不区分大小写排序，勾选顺序不同不算两个请求。 */
+/**
+ * 缓存键的格式版本。**改变 bar 的形状/语义时必须 +1**——DB 里存着上一版格式的
+ * 行，键不变的话新代码会读到旧结构（CVD 从 {buy,sell} 换成 OHLC 那次就是），
+ * 表现为副图空白直到 TTL 过期。换版本号等于让旧行自然失效、再也不会被读到。
+ */
+const CACHE_SCHEMA = "v2";
+
 export function externalRequestKey(r: ExternalSeriesRequest): string {
   const ex = r.exchanges
     ? [...r.exchanges].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).join("+")
     : "*";
-  return `${r.kind}:${r.coin}:${r.interval}:${r.market}:${r.margin}:${r.unit}:${ex}`;
+  return `${CACHE_SCHEMA}:${r.kind}:${r.coin}:${r.interval}:${r.market}:${r.margin}:${r.unit}:${ex}`;
 }
 
 /** request → /api/coinglass/series 的查询串参数（不含 key 以外的任何东西）。 */
@@ -349,29 +357,6 @@ export function exchangeChoicesFor(kind: ExternalKind, market: ExternalMarket): 
 // ---------------------------------------------------------------------------
 
 /**
- * 主动买卖量 → CVD 蜡烛。
- *
- * 从拉到的窗口第一根起累加，起点是 0：open 是上一根的累计值，close 是
- * 加上本根净买入之后的累计值，high/low 取两者的大小——没有真正的盘中
- * 高低点（那需要逐笔数据），所以合成出来的是**无影线**蜡烛。
- *
- * 纵向偏移量因此是「窗口起点」决定的：窗口向前滑一根，整条序列会整体
- * 平移掉滑出去那根的净值。CoinGlass 网页版的 CVD 同样如此——CVD 只有
- * 形状和相对变化有意义，绝对值没有。
- */
-export function cvdCandlesFromFlow(bars: ExternalFlowBar[]): ExternalOhlcBar[] {
-  const out: ExternalOhlcBar[] = [];
-  let cum = 0;
-  for (const b of bars) {
-    if (!Number.isFinite(b.buy) || !Number.isFinite(b.sell)) continue;
-    const open = cum;
-    cum += b.buy - b.sell;
-    out.push({ t: b.t, o: open, h: Math.max(open, cum), l: Math.min(open, cum), c: cum });
-  }
-  return out;
-}
-
-/**
  * 把 OHLC 序列按「同一开盘时刻」对到图表的 K 线数组上。
  *
  * 只做精确匹配：CoinGlass 与 BingX 的 K 线都按 UTC 整周期开盘，同周期下
@@ -390,22 +375,6 @@ export function alignOhlcToTimes(bars: ExternalOhlcBar[], timesSec: ArrayLike<nu
         : null;
   }
   return out;
-}
-
-export function isFlowBars(bars: ExternalSeriesBars): bars is ExternalFlowBar[] {
-  return bars.length > 0 && "buy" in bars[0];
-}
-
-/** 一个 request 拉到的原始序列 → 对齐到 K 线数组的蜡烛。CVD 先累加再对齐。 */
-export function candlesForRequest(
-  kind: ExternalKind,
-  bars: ExternalSeriesBars,
-  timesSec: ArrayLike<number>
-): CandleSeries {
-  if (kind === "cvd") {
-    return alignOhlcToTimes(isFlowBars(bars) ? cvdCandlesFromFlow(bars) : [], timesSec);
-  }
-  return alignOhlcToTimes(isFlowBars(bars) ? [] : bars, timesSec);
 }
 
 /** 没有外部数据时 compute() 的占位输出：与 K 线等长、全 null。 */

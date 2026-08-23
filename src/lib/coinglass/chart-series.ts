@@ -1,12 +1,11 @@
 import { coinglassGet } from "./client";
 import { toFiniteNumber } from "./types";
-import type { CoinGlassOiBar, CoinGlassTakerBar } from "./types";
+import type { CoinGlassCvdBar, CoinGlassOiBar } from "./types";
 import { CVD_EXCHANGES } from "./taker-volume";
 import {
   EXTERNAL_SERIES_LIMIT,
   type ExternalSeriesBars,
   type ExternalSeriesRequest,
-  type ExternalFlowBar,
   type ExternalOhlcBar,
 } from "@/lib/chart/external-series";
 
@@ -19,9 +18,14 @@ import {
  *   oi  margin=all         /api/futures/open-interest/aggregated-history            无 exchange_list
  *   oi  margin=stablecoin  /api/futures/open-interest/aggregated-stablecoin-margin-history  exchange_list 必填
  *   oi  margin=coin        /api/futures/open-interest/aggregated-coin-margin-history        exchange_list 必填
- *   cvd market=futures     /api/futures/aggregated-taker-buy-sell-volume/history           exchange_list 必填
- *   cvd market=spot        /api/spot/aggregated-taker-buy-sell-volume/history              exchange_list 必填
+ *   cvd market=futures     /api/futures/aggregated-cvd/history                             exchange_list 必填
+ *   cvd market=spot        /api/spot/aggregated-cvd/history                                exchange_list 必填
  * 全部支持 unit=usd|coin、limit≤1000、start_time/end_time。
+ *
+ * CVD 用 aggregated-cvd 而不是 aggregated-taker-buy-sell-volume，是因为前者直接返回
+ * `cum_vol_delta`——**CoinGlass 自己算好的累计值**。用后者的话只能拿到逐根买卖量，
+ * 前端从窗口第一根起从 0 累加，绝对值取决于我们拉了多长的窗口，和 CoinGlass 图上的
+ * 读数系统性对不上（实测同一时刻我们 13.5B、它们 10.24B）。锚点必须来自上游。
  *
  * 只在服务端跑：这里 import 了 `client.ts`。
  */
@@ -66,9 +70,7 @@ export function externalRequestToUpstream(r: ExternalSeriesRequest): UpstreamCal
 
   const spot = r.market === "spot";
   return {
-    path: spot
-      ? "/api/spot/aggregated-taker-buy-sell-volume/history"
-      : "/api/futures/aggregated-taker-buy-sell-volume/history",
+    path: spot ? "/api/spot/aggregated-cvd/history" : "/api/futures/aggregated-cvd/history",
     params: {
       ...base,
       exchange_list: (r.exchanges ?? (spot ? DEFAULT_EXCHANGES.cvdSpot : DEFAULT_EXCHANGES.cvdFutures)).join(","),
@@ -96,14 +98,26 @@ export function normalizeOiBars(raw: CoinGlassOiBar[]): ExternalOhlcBar[] {
   return dedupeSorted(out);
 }
 
-export function normalizeTakerBars(raw: CoinGlassTakerBar[]): ExternalFlowBar[] {
-  const out: ExternalFlowBar[] = [];
+/**
+ * CVD 序列 → 无影线蜡烛。
+ *
+ * close = 本根的累计值 `cum_vol_delta`；open = 上一根的累计值，直接由
+ * `cum − (buy − sell)` 得出——这个恒等式对**每一根**都成立（包括窗口第一根，
+ * 那根拿不到"上一根"），所以不需要为边界特殊处理，也不会因为窗口起点不同
+ * 而错位。high/low 就是这两者的大小：只有逐根的净额，没有盘中高低点
+ * （那要逐笔数据），所以合成出来的必然是无影线蜡烛——CoinGlass 那个
+ * 「CVD Candles」指标的 OHLC 读数也满足 H=C、L=O（截图实测），同一种画法。
+ */
+export function normalizeCvdBars(raw: CoinGlassCvdBar[]): ExternalOhlcBar[] {
+  const out: ExternalOhlcBar[] = [];
   for (const r of raw) {
     const t = Math.floor(toFiniteNumber(r.time) / 1000);
-    const buy = toFiniteNumber(r.aggregated_buy_volume_usd);
-    const sell = toFiniteNumber(r.aggregated_sell_volume_usd);
-    if (![t, buy, sell].every(Number.isFinite) || t <= 0) continue;
-    out.push({ t, buy, sell });
+    const c = toFiniteNumber(r.cum_vol_delta);
+    const buy = toFiniteNumber(r.agg_taker_buy_vol);
+    const sell = toFiniteNumber(r.agg_taker_sell_vol);
+    if (![t, c, buy, sell].every(Number.isFinite) || t <= 0) continue;
+    const o = c - (buy - sell);
+    out.push({ t, o, h: Math.max(o, c), l: Math.min(o, c), c });
   }
   return dedupeSorted(out);
 }
@@ -123,5 +137,5 @@ export async function fetchExternalSeries(r: ExternalSeriesRequest): Promise<Ext
   if (r.kind === "oi") {
     return normalizeOiBars(await coinglassGet<CoinGlassOiBar[]>(path, params));
   }
-  return normalizeTakerBars(await coinglassGet<CoinGlassTakerBar[]>(path, params));
+  return normalizeCvdBars(await coinglassGet<CoinGlassCvdBar[]>(path, params));
 }

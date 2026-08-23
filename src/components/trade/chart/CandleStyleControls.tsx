@@ -92,7 +92,7 @@ export function CandleStyleControls({ def, plotKey, overrides, display, onChange
           className="w-24 rounded-xs border border-border-default bg-bg-primary px-2 py-1 font-mono text-[11px] text-text-primary focus:border-gold focus:outline-none"
         >
           {[0, 1, 2, 3, 4].map((n) => (
-            <option key={n} value={n}>{n === 2 ? t("style_precision_default") : n}</option>
+            <option key={n} value={n}>{n === 3 ? t("style_precision_default") : n}</option>
           ))}
         </select>
       </label>

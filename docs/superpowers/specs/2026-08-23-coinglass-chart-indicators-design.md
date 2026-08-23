@@ -56,7 +56,7 @@ OI：`open · No Filter`）加 CoinGlass API 实际支持的参数定出来的�
 |---|---|---|---|
 | `symbolMode` | 下拉 | 跟随主图品种 **/** 自定义 | Main chart symbol |
 | `symbol` | 文本（仅自定义时显示） | 任何写法，`coinFromChartSymbol` 归一化 | 自定义币 |
-| `market`（CVD） | 下拉 | **合约** / 现货 | 选 futures / spot 端点 |
+| `market`（CVD） | 下拉 | **合约** / 现货 | 选 futures / spot 的 aggregated-cvd 端点 |
 | `margin`（OI） | 下拉 | **币本位** / U 本位 / 全部 | 选三个 OI 端点之一；「全部」端点无交易所参数 |
 | `unit` | 下拉 | **美元** / 币 | CoinGlass `unit=usd|coin` |
 | `exchangeMode` | 下拉 | **No Filter** / 自选 | No Filter = 服务端按端点套默认组合 |
@@ -87,12 +87,53 @@ OI：`open · No Filter`）加 CoinGlass API 实际支持的参数定出来的�
 | oi · all | `/futures/open-interest/aggregated-history` | 无此参数 |
 | oi · stablecoin | `…/aggregated-stablecoin-margin-history` | 必填，默认 Binance/OKX/Bybit/Bitget/Gate/HTX |
 | oi · coin | `…/aggregated-coin-margin-history` | 必填，默认上表 + Bitmex |
-| cvd · futures | `/futures/aggregated-taker-buy-sell-volume/history` | 必填，默认 Binance/Bybit/OKX/Hyperliquid（= 选币器） |
-| cvd · spot | `/spot/aggregated-taker-buy-sell-volume/history` | 必填，默认 Binance/OKX/Bybit/Coinbase/Bitget |
+| cvd · futures | `/futures/aggregated-cvd/history` | 必填，默认 Binance/Bybit/OKX/Hyperliquid（= 选币器） |
+| cvd · spot | `/spot/aggregated-cvd/history` | 必填，默认 Binance/OKX/Bybit/Coinbase/Bitget |
 
 全部支持 `unit`、`limit≤1000`、`start_time/end_time`（docs.coinglass.com 2026-08-23 核对）；
 STARTUP 套餐 ≥30m。默认交易所名与勾选清单里的拼写**未经真实 key 验证**，
 拼错的名字会让上游 400，图例显示「CoinGlass 数据暂不可用」，服务端日志带 `COINGLASS_400`。
+
+## CVD 必须用 aggregated-cvd 而不是 taker-buy-sell-volume（2026-08-23 第三轮）
+
+第二轮用的是 `aggregated-taker-buy-sell-volume/history`（逐根主动买卖量），前端
+从窗口第一根起从 0 累加成蜡烛。用户拿同一时刻的两张图一比：CoinGlass 10.24B，
+我们 13.5B。原因不是算法，而是**锚点**——从 0 累加得到的绝对值完全取决于我们拉了
+多长的窗口，而 CoinGlass 的锚点在它自己的服务端。
+
+CoinGlass 另有一对专门的端点直接返回算好的累计值：
+
+    /api/futures/aggregated-cvd/history    { time, agg_taker_buy_vol, agg_taker_sell_vol, cum_vol_delta }
+    /api/spot/aggregated-cvd/history       同上
+
+（Startup 可用，Hobbyist 不可用；limit 上限 4500，我们仍取 1000。）
+
+改用它之后：`close = cum_vol_delta`，`open = cum − (buy − sell)`。这个恒等式对
+**每一根都成立**，包括窗口第一根——所以不需要为边界特殊处理，也不会因为窗口长度
+不同而整体平移。high/low 取二者大小，得到无影线蜡烛；CoinGlass 那个「CVD Candles」
+的 OHLC 读数同样满足 H=C、L=O（截图实测 `10.071B 10.162B 10.071B 10.162B`），
+是同一种画法。
+
+**OI 这边不用改**：同一时刻我们 2.32B、CoinGlass 2.318B，本来就一致——
+持仓量是存量，不存在累加锚点的问题。
+
+顺带把刻度精度默认值从 2 改成 3：CoinGlass 显示 2.318B / 10.241B，精度 2 会显示成
+2.32B / 10.24B。成交量格式会去掉末尾的 0，所以不会让整数值变难读。
+
+`externalRequestKey` 加了 `CACHE_SCHEMA = "v2"` 前缀。bar 的形状变了（CVD 从
+`{buy,sell}` 换成 OHLC），键不变的话新代码会从 DB 缓存里读到旧结构，表现为副图
+空白直到 TTL 过期。以后再改 bar 的形状/语义必须同步 +1。
+
+### 仍未消除的两个变量
+
+1. **「No Filter」的交易所集合。** CoinGlass 的 No Filter 大概率是「全部支持的
+   交易所」，我们用的是一份硬编码的主流所清单。用户那次对比里我们这边还是
+   「Binance+3」（自选 4 家），两边口径本来就不同。要真正对齐，得先拉
+   `supported-exchange-pairs` 再把全集传进 exchange_list——没有 key 没法验证
+   传 30 个所名会不会被上游拒，所以留到能实测时再做。
+2. **`cum_vol_delta` 是绝对累计还是窗口内累计。** 文档只说 "running total"。
+   若是后者，窗口长度仍会影响绝对值，需要对齐 limit。**上线后的判据**：看 CVD
+   序列最左边那根的 open 是不是 0——是 0 就说明是窗口内累计。
 
 ## 分层
 

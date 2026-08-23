@@ -2,9 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   alignOhlcToTimes,
   buildExternalRequest,
-  candlesForRequest,
   coinFromChartSymbol,
-  cvdCandlesFromFlow,
   emptyCandles,
   exchangeChoicesFor,
   externalRequestKey,
@@ -152,7 +150,7 @@ describe("externalRequestKey / externalRequestToQuery", () => {
   };
 
   it("is stable and encodes every dimension", () => {
-    expect(externalRequestKey(base)).toBe("cvd:BTC:30m:futures:all:usd:*");
+    expect(externalRequestKey(base)).toBe("v2:cvd:BTC:30m:futures:all:usd:*");
     expect(externalRequestKey({ ...base, unit: "coin" })).not.toBe(externalRequestKey(base));
     expect(externalRequestKey({ ...base, market: "spot" })).not.toBe(externalRequestKey(base));
   });
@@ -161,7 +159,7 @@ describe("externalRequestKey / externalRequestToQuery", () => {
     const a = externalRequestKey({ ...base, exchanges: ["OKX", "Binance"] });
     const b = externalRequestKey({ ...base, exchanges: ["Binance", "OKX"] });
     expect(a).toBe(b);
-    expect(a).toBe("cvd:BTC:30m:futures:all:usd:Binance+OKX");
+    expect(a).toBe("v2:cvd:BTC:30m:futures:all:usd:Binance+OKX");
   });
 
   it("round-trips through the query string parser", () => {
@@ -220,35 +218,6 @@ describe("exchange choices", () => {
   });
 });
 
-describe("cvdCandlesFromFlow", () => {
-  it("accumulates net taker flow from zero, open = previous close", () => {
-    const out = cvdCandlesFromFlow([
-      { t: 0, buy: 100, sell: 40 }, // +60
-      { t: H, buy: 10, sell: 50 }, // -40
-      { t: 2 * H, buy: 5, sell: 5 }, // 0
-    ]);
-    expect(out).toEqual([
-      { t: 0, o: 0, h: 60, l: 0, c: 60 },
-      { t: H, o: 60, h: 60, l: 20, c: 20 },
-      { t: 2 * H, o: 20, h: 20, l: 20, c: 20 },
-    ]);
-  });
-
-  it("skips bars with non-finite flow without breaking the running sum", () => {
-    const out = cvdCandlesFromFlow([
-      { t: 0, buy: 10, sell: 0 },
-      { t: H, buy: NaN, sell: 0 },
-      { t: 2 * H, buy: 0, sell: 5 },
-    ]);
-    expect(out.map((b) => b.t)).toEqual([0, 2 * H]);
-    expect(out[1]).toEqual({ t: 2 * H, o: 10, h: 10, l: 5, c: 5 });
-  });
-
-  it("returns an empty series for empty input", () => {
-    expect(cvdCandlesFromFlow([])).toEqual([]);
-  });
-});
-
 describe("alignOhlcToTimes", () => {
   const bars = [
     { t: H, o: 1, h: 2, l: 0.5, c: 1.5 },
@@ -280,27 +249,6 @@ describe("alignOhlcToTimes", () => {
   it("is the same length as the chart time array even when empty", () => {
     expect(alignOhlcToTimes([], [1, 2, 3])).toEqual([null, null, null]);
     expect(alignOhlcToTimes(bars, [])).toEqual([]);
-  });
-});
-
-describe("candlesForRequest", () => {
-  it("turns flow bars into aligned CVD candles", () => {
-    const out = candlesForRequest("cvd", [{ t: 0, buy: 10, sell: 0 }, { t: H, buy: 0, sell: 4 }], [0, H, 2 * H]);
-    expect(out).toEqual([
-      { open: 0, high: 10, low: 0, close: 10 },
-      { open: 10, high: 10, low: 6, close: 6 },
-      null,
-    ]);
-  });
-
-  it("passes OI OHLC bars straight through", () => {
-    const out = candlesForRequest("oi", [{ t: H, o: 1, h: 2, l: 0.5, c: 1.5 }], [0, H]);
-    expect(out).toEqual([null, { open: 1, high: 2, low: 0.5, close: 1.5 }]);
-  });
-
-  it("tolerates a kind/payload mismatch by producing an empty series", () => {
-    expect(candlesForRequest("oi", [{ t: H, buy: 1, sell: 1 }], [H])).toEqual([null]);
-    expect(candlesForRequest("cvd", [{ t: H, o: 1, h: 1, l: 1, c: 1 }], [H])).toEqual([null]);
   });
 });
 

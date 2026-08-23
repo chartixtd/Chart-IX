@@ -36,8 +36,8 @@ import {
   INDICATOR_BY_ID, resolvePlotStyle, resolveCandleStyle, type IndicatorInput, type PlotSeries,
 } from "@/lib/chart/indicator-registry";
 import {
-  buildExternalRequest, candlesForRequest, externalRequestKey, isCandlePoint,
-  type CandlePoint, type CandleSeries, type ExternalKind, type ExternalSeriesPayload, type ExternalSeriesRequest,
+  alignOhlcToTimes, buildExternalRequest, externalRequestKey, isCandlePoint,
+  type CandlePoint, type CandleSeries, type ExternalSeriesPayload, type ExternalSeriesRequest,
 } from "@/lib/chart/external-series";
 import { useExternalSeries, type ExternalSeriesStatus } from "@/hooks/useExternalSeries";
 import type { AppliedIndicator } from "@/stores/chartStore";
@@ -239,7 +239,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
   // 每个 CoinGlass 指标实例按自己的设置变成一个 request；设置相同的实例共用
   // 一个 key（hook 里去重，只发一次）。没有这类指标就一个请求都不发。
   const extRequests = useMemo(() => {
-    const byInstance = new Map<string, { key: string; request: ExternalSeriesRequest; kind: ExternalKind }>();
+    const byInstance = new Map<string, { key: string; request: ExternalSeriesRequest }>();
     const invalid = new Set<string>();
     const list: ExternalSeriesRequest[] = [];
     for (const a of applied) {
@@ -248,7 +248,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
       if (!def || !kind) continue;
       const request = buildExternalRequest(kind, a.settings, symbol, interval);
       if (!request) { invalid.add(a.instanceId); continue; }
-      byInstance.set(a.instanceId, { key: externalRequestKey(request), request, kind });
+      byInstance.set(a.instanceId, { key: externalRequestKey(request), request });
       list.push(request);
     }
     return { byInstance, invalid, list };
@@ -295,12 +295,12 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     if (!bars) return null;
     const byKey = new Map<string, CandleSeries>();
     const out = new Map<string, CandleSeries>();
-    for (const [instanceId, { key, kind }] of extRequests.byInstance) {
+    for (const [instanceId, { key }] of extRequests.byInstance) {
       const raw = extPayload[key];
       if (!raw) continue;
       let series = byKey.get(key);
       if (!series) {
-        series = candlesForRequest(kind, raw, bars.times as unknown as number[]);
+        series = alignOhlcToTimes(raw, bars.times as unknown as number[]);
         byKey.set(key, series);
       }
       out.set(instanceId, series);

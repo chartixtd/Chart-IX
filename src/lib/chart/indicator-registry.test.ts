@@ -248,7 +248,7 @@ describe("resolveCandleStyle", () => {
     // 与主图蜡烛一致：右轴显示最新值标签，并画一条横向价格线
     expect(s.lastValueVisible).toBe(true);
     expect(s.priceLineVisible).toBe(true);
-    expect(s.precision).toBe(2);
+    expect(s.precision).toBe(3); // 对齐 CoinGlass 的 2.318B 而不是 2.32B
   });
 
   it("lets the body override cascade to border/wick unless those are set explicitly", () => {

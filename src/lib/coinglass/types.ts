@@ -81,6 +81,23 @@ export interface CoinGlassTakerBar {
   aggregated_sell_volume_usd: string | number;
 }
 
+/**
+ * /api/{futures,spot}/aggregated-cvd/history 的一根。
+ *
+ * `cum_vol_delta` 是 CoinGlass 服务端算好的**累计**净主动买入额；
+ * `agg_taker_buy_vol`/`agg_taker_sell_vol` 是同一根的逐根量。图表用前者当收盘价、
+ * 用 `cum − (buy − sell)` 反推开盘价（见 chart-series.ts 的 normalizeCvdBars）。
+ *
+ * 类型写成 string | number 的理由同 CoinGlassTakerBar：这一族端点的字段类型
+ * 实测不稳定，走 toFiniteNumber 的代价是零。
+ */
+export interface CoinGlassCvdBar {
+  time: number;
+  agg_taker_buy_vol: string | number;
+  agg_taker_sell_vol: string | number;
+  cum_vol_delta: string | number;
+}
+
 /** /api/futures/funding-rate/exchange-list 的一行 */
 export interface CoinGlassFundingRow {
   symbol: string;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { normalizeOiBars, normalizeTakerBars, externalRequestToUpstream, DEFAULT_EXCHANGES } from "./chart-series";
+import { normalizeOiBars, normalizeCvdBars, externalRequestToUpstream, DEFAULT_EXCHANGES } from "./chart-series";
 import { createExternalSeriesCache, cacheKey, type ExternalSeriesCacheDeps } from "./chart-series-cache";
 import type { ExternalOhlcBar, ExternalSeriesRequest } from "@/lib/chart/external-series";
 
@@ -22,13 +22,13 @@ describe("externalRequestToUpstream", () => {
     expect(stable.params.exchange_list).toBe("OKX,Bybit");
   });
 
-  it("routes CVD by market with the right default exchange set", () => {
+  it("routes CVD to the dedicated aggregated-cvd endpoints (the ones that return cum_vol_delta)", () => {
     const spot = externalRequestToUpstream(REQ({ kind: "cvd", market: "spot" }));
-    expect(spot.path).toBe("/api/spot/aggregated-taker-buy-sell-volume/history");
+    expect(spot.path).toBe("/api/spot/aggregated-cvd/history");
     expect(spot.params.exchange_list).toBe(DEFAULT_EXCHANGES.cvdSpot.join(","));
 
     const fut = externalRequestToUpstream(REQ({ kind: "cvd", market: "futures", unit: "coin" }));
-    expect(fut.path).toBe("/api/futures/aggregated-taker-buy-sell-volume/history");
+    expect(fut.path).toBe("/api/futures/aggregated-cvd/history");
     expect(fut.params.exchange_list).toBe(DEFAULT_EXCHANGES.cvdFutures.join(","));
     expect(fut.params.unit).toBe("coin");
   });
@@ -64,17 +64,44 @@ describe("normalizeOiBars", () => {
   });
 });
 
-describe("normalizeTakerBars", () => {
-  it("maps aggregated buy/sell into compact flow bars", () => {
-    const out = normalizeTakerBars([
-      { time: 60_000, aggregated_buy_volume_usd: "100.5", aggregated_sell_volume_usd: 40 },
+describe("normalizeCvdBars", () => {
+  // 用 CoinGlass 自己的累计值当收盘价，开盘价由 cum − (buy − sell) 反推。
+  it("uses cum_vol_delta as close and derives open from the bar's own net flow", () => {
+    const out = normalizeCvdBars([
+      { time: 60_000, agg_taker_buy_vol: "100", agg_taker_sell_vol: 40, cum_vol_delta: "10060" },
+      { time: 120_000, agg_taker_buy_vol: 10, agg_taker_sell_vol: 50, cum_vol_delta: 10020 },
     ]);
-    expect(out).toEqual([{ t: 60, buy: 100.5, sell: 40 }]);
+    expect(out).toEqual([
+      { t: 60, o: 10000, h: 10060, l: 10000, c: 10060 },
+      { t: 120, o: 10060, h: 10060, l: 10020, c: 10020 },
+    ]);
   });
 
-  it("drops bars with NaN flow", () => {
+  it("keeps the absolute level upstream gave it — never re-accumulates from zero", () => {
+    // 这正是换端点要修的病：从 0 累加会把 10060 变成 60。
+    const out = normalizeCvdBars([
+      { time: 60_000, agg_taker_buy_vol: 100, agg_taker_sell_vol: 40, cum_vol_delta: 10060 },
+    ]);
+    expect(out[0].c).toBe(10060);
+  });
+
+  it("produces wickless candles (H = max(o,c), L = min(o,c))", () => {
+    const out = normalizeCvdBars([
+      { time: 60_000, agg_taker_buy_vol: 100, agg_taker_sell_vol: 40, cum_vol_delta: 10060 },
+      { time: 120_000, agg_taker_buy_vol: 10, agg_taker_sell_vol: 50, cum_vol_delta: 10020 },
+    ]);
+    for (const b of out) {
+      expect(b.h).toBe(Math.max(b.o, b.c));
+      expect(b.l).toBe(Math.min(b.o, b.c));
+    }
+  });
+
+  it("drops bars with any non-finite field", () => {
     expect(
-      normalizeTakerBars([{ time: 60_000, aggregated_buy_volume_usd: "x", aggregated_sell_volume_usd: 1 }])
+      normalizeCvdBars([{ time: 60_000, agg_taker_buy_vol: "x", agg_taker_sell_vol: 1, cum_vol_delta: 5 }])
+    ).toEqual([]);
+    expect(
+      normalizeCvdBars([{ time: 60_000, agg_taker_buy_vol: 1, agg_taker_sell_vol: 1, cum_vol_delta: "bad" }])
     ).toEqual([]);
   });
 });
@@ -129,7 +156,7 @@ describe("createExternalSeriesCache", () => {
     await cache.get(REQ({ coin: "ETH" }));
     await cache.get(REQ({ interval: "1h" }));
     expect(fetchUpstream).toHaveBeenCalledTimes(4);
-    expect(cacheKey(REQ())).toBe("oi:BTC:30m:futures:all:usd:*");
+    expect(cacheKey(REQ())).toBe("v2:oi:BTC:30m:futures:all:usd:*");
   });
 
   it("serves a fresh DB row without touching upstream (cross-instance share)", async () => {

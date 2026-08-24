@@ -96,12 +96,12 @@ describe("externalSeriesTtlMs", () => {
 });
 
 describe("buildExternalRequest", () => {
-  it("follows the chart symbol by default with CoinGlass-matching defaults (futures CVD, coin-margined OI, USD, No Filter)", () => {
+  it("follows the chart symbol by default with CoinGlass-matching defaults (futures CVD, stablecoin-margined OI, USD, default exchanges)", () => {
     expect(buildExternalRequest("cvd", undefined, "BTC-USDT", "30m")).toEqual({
       kind: "cvd", coin: "BTC", interval: "30m", market: "futures", margin: "all", unit: "usd", exchanges: null,
     });
     expect(buildExternalRequest("oi", {}, "1000PEPE-USDT", "1h")).toEqual({
-      kind: "oi", coin: "PEPE", interval: "1h", market: "futures", margin: "coin", unit: "usd", exchanges: null,
+      kind: "oi", coin: "PEPE", interval: "1h", market: "futures", margin: "stablecoin", unit: "usd", exchanges: null,
     });
   });
 
@@ -120,14 +120,14 @@ describe("buildExternalRequest", () => {
     expect(cvd.market).toBe("spot");
     expect(cvd.margin).toBe("all"); // margin is an OI concept
     expect(cvd.unit).toBe("coin");
-    const oi = buildExternalRequest("oi", { market: "spot", margin: "stablecoin" }, "BTC-USDT", "30m")!;
+    const oi = buildExternalRequest("oi", { market: "spot", margin: "coin" }, "BTC-USDT", "30m")!;
     expect(oi.market).toBe("futures"); // market is a CVD concept
-    expect(oi.margin).toBe("stablecoin");
+    expect(oi.margin).toBe("coin");
   });
 
   it("falls back to defaults for unknown option values", () => {
     const r = buildExternalRequest("oi", { margin: "weird", unit: "eur", display: "x" }, "BTC-USDT", "30m")!;
-    expect(r.margin).toBe("coin");
+    expect(r.margin).toBe("stablecoin");
     expect(r.unit).toBe("usd");
   });
 
@@ -183,7 +183,7 @@ describe("parseExternalSeriesQuery", () => {
     const cvd = q({ kind: "cvd", coin: "BTC", interval: "30m" });
     expect(cvd.ok && cvd.request).toMatchObject({ market: "futures", margin: "all", unit: "usd", exchanges: null });
     const oi = q({ kind: "oi", coin: "BTC", interval: "1d" });
-    expect(oi.ok && oi.request).toMatchObject({ market: "futures", margin: "coin", unit: "usd", exchanges: null });
+    expect(oi.ok && oi.request).toMatchObject({ market: "futures", margin: "stablecoin", unit: "usd", exchanges: null });
   });
 
   it("rejects every bad field with a specific code", () => {

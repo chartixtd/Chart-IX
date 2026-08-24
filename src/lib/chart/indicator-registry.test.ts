@@ -191,7 +191,7 @@ describe("CoinGlass-fed indicators", () => {
     const cvd = INDICATOR_BY_ID.get("cg_cvd")!;
     expect(legendLabel(oi, {})).toBe("OI");
     expect(legendLabel(cvd, {})).toBe("CVD");
-    expect(legendLabel(oi, {}, defaultSettings(oi))).toBe("OI 币本位 · USD · 默认组合");
+    expect(legendLabel(oi, {}, defaultSettings(oi))).toBe("OI U本位 · USD · 默认组合");
     expect(legendLabel(cvd, {}, defaultSettings(cvd))).toBe("CVD 合约 · USD · 默认组合");
     // N 设了就排在最前，对齐 CoinGlass 图例里那个打头的数字
     expect(legendLabel(cvd, {}, { ...defaultSettings(cvd), lastNBars: "300" })).toBe("CVD 300 根 · 合约 · USD · 默认组合");
@@ -207,7 +207,7 @@ describe("CoinGlass-fed indicators", () => {
     // lastNBars 排第一，与 CoinGlass 对话框里 "Only last N bars" 的位置一致
     expect(cvd.settings!.map((s) => s.key)).toEqual(["lastNBars", "symbolMode", "symbol", "market", "unit", "exchangeMode", "exchanges", "display", "lineSource"]);
     expect(defaultSettings(oi)).toEqual({
-      symbolMode: "main", symbol: "", margin: "coin", unit: "usd", exchangeMode: "all", exchanges: [], display: "candles", lineSource: "open",
+      symbolMode: "main", symbol: "", margin: "stablecoin", unit: "usd", exchangeMode: "all", exchanges: [], display: "candles", lineSource: "open",
     });
     expect(defaultSettings(cvd).market).toBe("futures");
     expect(defaultSettings(cvd).lastNBars).toBe("0");

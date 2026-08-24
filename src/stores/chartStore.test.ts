@@ -116,7 +116,7 @@ describe("indicator settings (CoinGlass inputs)", () => {
     useChartStore.getState().updateIndicatorStyle(id, "oi", { upColor: "#123456" });
     useChartStore.getState().resetIndicatorToDefaults(id);
     const a = useChartStore.getState().appliedIndicators[0];
-    expect(a.settings).toMatchObject({ margin: "coin", unit: "usd" });
+    expect(a.settings).toMatchObject({ margin: "stablecoin", unit: "usd" });
     expect(a.styleOverrides).toBeUndefined();
   });
 
@@ -125,13 +125,13 @@ describe("indicator settings (CoinGlass inputs)", () => {
       { appliedIndicators: [{ instanceId: "old", defId: "cg_oi", params: {}, visible: true }] },
       useChartStore.getState()
     );
-    expect(merged.appliedIndicators[0].settings).toMatchObject({ margin: "coin", display: "candles" });
+    expect(merged.appliedIndicators[0].settings).toMatchObject({ margin: "stablecoin", display: "candles" });
     // and keeps user values when a subset was already stored
     const partial = mergeChartState(
       { appliedIndicators: [{ instanceId: "old", defId: "cg_oi", params: {}, visible: true, settings: { unit: "coin" } }] },
       useChartStore.getState()
     );
-    expect(partial.appliedIndicators[0].settings).toMatchObject({ unit: "coin", margin: "coin" });
+    expect(partial.appliedIndicators[0].settings).toMatchObject({ unit: "coin", margin: "stablecoin" });
   });
 });
 

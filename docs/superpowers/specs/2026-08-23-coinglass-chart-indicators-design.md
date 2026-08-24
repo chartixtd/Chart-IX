@@ -17,13 +17,19 @@
 | OI 口径 | COIN-margined | 默认币本位，可切 U 本位 / 全部 |
 | CVD 蜡烛影线 | 有（盘中累计高低） | **无**——只有逐根买卖量，合成不出盘中高低 |
 | 最细周期 | 1m | **30m**（套餐白名单，升 Standard 才解锁） |
-| 历史深度 | 无限 | 固定 1000 根，更早留空 |
+| 历史深度 | 无限 | OI 1000 根 / CVD 4500 根（各自端点上限），更早留空 |
 
 第一轮（commit 8a1f279）默认用的是选币器已实测的合约 CVD 与全保证金 OI；第二轮按
-CoinGlass API 文档把端点补齐并做成设置项。默认值最终定为**合约 CVD**（用户指定要对齐
-「\<CoinGlass\> Aggregated Futures Cumulative Volume Delta (CVD Candles)」那个指标）
-与**币本位 OI**（用户截图里的 COIN-margined）。现货 CVD / U 本位 OI 仍可在设置里切换，
-但这两个端点在 STARTUP 套餐上的可用性本机没法验证（没有 key，见下「未验证项」）。
+CoinGlass API 文档把端点补齐并做成设置项。默认值由用户逐项指定，对齐它们那两个指标：
+
+- **合约 CVD** —「<CoinGlass> Aggregated Futures Cumulative Volume Delta (CVD Candles)」
+- **U 本位 OI** —「<CoinGlass> Aggregated Open Interest(STABLECOIN-margined,Candles)」
+
+现货 CVD / 币本位 OI / 不分保证金 OI 仍可在设置里切换。这些端点在 STARTUP 套餐上的
+可用性本机没法验证（没有 key，见下「未验证项」）。
+
+**换保证金口径会让 OI 的量级整个变掉**：BTC 币本位约 2.3B，U 本位是它的十几倍——
+两条不是同一条曲线，不是数值算错了。
 
 ## 三个硬约束决定的设计
 

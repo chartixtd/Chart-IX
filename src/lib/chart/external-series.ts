@@ -240,7 +240,8 @@ export function buildExternalRequest(
   // 自选但一个都没选 = 退回 No Filter，而不是发一个空 exchange_list 让上游 400
   // CVD 默认合约：对齐 CoinGlass 那个「Aggregated Futures CVD (CVD Candles)」指标。
   const market = kind === "cvd" ? pick(s.market, EXTERNAL_MARKETS, "futures") : "futures";
-  const margin = kind === "oi" ? pick(s.margin, EXTERNAL_MARGINS, "coin") : "all";
+  // OI 默认 U 本位：对齐 CoinGlass 的「Aggregated Open Interest (STABLECOIN-margined, Candles)」。
+  const margin = kind === "oi" ? pick(s.margin, EXTERNAL_MARGINS, "stablecoin") : "all";
 
   return {
     kind,
@@ -311,7 +312,7 @@ export function parseExternalSeriesQuery(get: (name: string) => string | null): 
   if (!(EXTERNAL_MARKETS as readonly string[]).includes(marketRaw)) {
     return { ok: false, code: "BAD_MARKET", message: "market must be spot or futures" };
   }
-  const marginRaw = get("margin") ?? (kind === "oi" ? "coin" : "all");
+  const marginRaw = get("margin") ?? (kind === "oi" ? "stablecoin" : "all");
   if (!(EXTERNAL_MARGINS as readonly string[]).includes(marginRaw)) {
     return { ok: false, code: "BAD_MARGIN", message: "margin must be all, stablecoin or coin" };
   }

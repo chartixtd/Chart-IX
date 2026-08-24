@@ -698,7 +698,7 @@ export const INDICATORS: IndicatorDef[] = [
   // 没有 ext（周期 <30m、还没加载完、上游失败）时输出全 null——图表上是空副图
   // 加图例提示，而不是报错。
   {
-    id: "cg_oi", name: "Aggregated Open Interest (CoinGlass)", nameZh: "聚合持仓量 OI (CoinGlass)", short: "OI", category: "derivatives", placement: "pane",
+    id: "cg_oi", name: "Aggregated Open Interest (STABLECOIN-margined) (CoinGlass)", nameZh: "聚合持仓量 OI · U 本位 (CoinGlass)", short: "OI", category: "derivatives", placement: "pane",
     params: [],
     plots: [{ key: "oi", label: "Open Interest", color: C.up, kind: "candles" }],
     compute: (i) => ({ oi: i.ext?.series ?? emptyCandles(i.close.length) }),
@@ -707,10 +707,10 @@ export const INDICATORS: IndicatorDef[] = [
     settings: [
       CG_SYMBOL_MODE, CG_SYMBOL,
       {
-        key: "margin", label: "Margin type", labelZh: "保证金类型", type: "select", default: "coin",
+        key: "margin", label: "Margin type", labelZh: "保证金类型", type: "select", default: "stablecoin",
         options: [
+          { value: "stablecoin", label: "STABLECOIN-margined", labelZh: "U 本位" },
           { value: "coin", label: "COIN-margined", labelZh: "币本位" },
-          { value: "stablecoin", label: "USDT-margined", labelZh: "U 本位" },
           { value: "all", label: "All (no exchange filter)", labelZh: "全部（不可筛交易所）" },
         ],
       },
@@ -720,7 +720,7 @@ export const INDICATORS: IndicatorDef[] = [
       CG_DISPLAY, CG_LINE_SOURCE,
     ],
     legendParams: () => "",
-    legendSettings: (s) => cgLegend(s, { coin: "币本位", stablecoin: "U本位", all: "全部" }, "margin"),
+    legendSettings: (s) => cgLegend(s, { stablecoin: "U本位", coin: "币本位", all: "全部" }, "margin"),
   },
   {
     id: "cg_cvd", name: "Aggregated Futures CVD (CoinGlass)", nameZh: "聚合合约 CVD 主动买卖差 (CoinGlass)", short: "CVD", category: "derivatives", placement: "pane",

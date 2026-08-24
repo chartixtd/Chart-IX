@@ -3,7 +3,7 @@ import { toFiniteNumber } from "./types";
 import type { CoinGlassCvdBar, CoinGlassOiBar } from "./types";
 import { CVD_EXCHANGES } from "./taker-volume";
 import {
-  EXTERNAL_SERIES_LIMIT,
+  externalSeriesLimit,
   type ExternalSeriesBars,
   type ExternalSeriesRequest,
   type ExternalOhlcBar,
@@ -20,7 +20,8 @@ import {
  *   oi  margin=coin        /api/futures/open-interest/aggregated-coin-margin-history        exchange_list 必填
  *   cvd market=futures     /api/futures/aggregated-cvd/history                             exchange_list 必填
  *   cvd market=spot        /api/spot/aggregated-cvd/history                                exchange_list 必填
- * 全部支持 unit=usd|coin、limit≤1000、start_time/end_time。
+ * 全部支持 unit=usd|coin、start_time/end_time；**limit 上限两族不同**：
+ * open-interest 那三个 ≤1000，aggregated-cvd 那两个 ≤4500（见 externalSeriesLimit）。
  *
  * CVD 用 aggregated-cvd 而不是 aggregated-taker-buy-sell-volume，是因为前者直接返回
  * `cum_vol_delta`——**CoinGlass 自己算好的累计值**。用后者的话只能拿到逐根买卖量，
@@ -52,7 +53,7 @@ export function externalRequestToUpstream(r: ExternalSeriesRequest): UpstreamCal
   const base: Record<string, string | number> = {
     symbol: r.coin,
     interval: r.interval,
-    limit: EXTERNAL_SERIES_LIMIT,
+    limit: externalSeriesLimit(r.kind),
     unit: r.unit,
   };
 
@@ -134,8 +135,17 @@ function dedupeSorted<T extends { t: number }>(bars: T[]): T[] {
 
 export async function fetchExternalSeries(r: ExternalSeriesRequest): Promise<ExternalSeriesBars> {
   const { path, params } = externalRequestToUpstream(r);
-  if (r.kind === "oi") {
-    return normalizeOiBars(await coinglassGet<CoinGlassOiBar[]>(path, params));
-  }
-  return normalizeCvdBars(await coinglassGet<CoinGlassCvdBar[]>(path, params));
+  const bars =
+    r.kind === "oi"
+      ? normalizeOiBars(await coinglassGet<CoinGlassOiBar[]>(path, params))
+      : normalizeCvdBars(await coinglassGet<CoinGlassCvdBar[]>(path, params));
+
+  // 上游给了多少根、覆盖到多早——这两个数是回答"能不能拿到更早的数据"的唯一依据。
+  // 只在缓存未命中时打一行（每个组合每个 TTL 至多一次），不会刷屏。
+  const first = bars.length ? new Date(bars[0].t * 1000).toISOString() : "-";
+  const last = bars.length ? new Date(bars[bars.length - 1].t * 1000).toISOString() : "-";
+  console.info(
+    `[coinglass/series] ${r.kind}:${r.coin}:${r.interval} asked=${params.limit} got=${bars.length} ${first}..${last}`
+  );
+  return bars;
 }

@@ -152,7 +152,7 @@ describe("externalRequestKey / externalRequestToQuery", () => {
   };
 
   it("is stable and encodes every dimension", () => {
-    expect(externalRequestKey(base)).toBe("v2:cvd:BTC:30m:futures:all:usd:*");
+    expect(externalRequestKey(base)).toBe("v3:cvd:BTC:30m:futures:all:usd:*");
     expect(externalRequestKey({ ...base, unit: "coin" })).not.toBe(externalRequestKey(base));
     expect(externalRequestKey({ ...base, market: "spot" })).not.toBe(externalRequestKey(base));
   });
@@ -161,7 +161,7 @@ describe("externalRequestKey / externalRequestToQuery", () => {
     const a = externalRequestKey({ ...base, exchanges: ["OKX", "Binance"] });
     const b = externalRequestKey({ ...base, exchanges: ["Binance", "OKX"] });
     expect(a).toBe(b);
-    expect(a).toBe("v2:cvd:BTC:30m:futures:all:usd:Binance+OKX");
+    expect(a).toBe("v3:cvd:BTC:30m:futures:all:usd:Binance+OKX");
   });
 
   it("round-trips through the query string parser", () => {

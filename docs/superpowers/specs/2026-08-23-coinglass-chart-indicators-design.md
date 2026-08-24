@@ -175,6 +175,30 @@ N=0 表示从 TradingView 加载到的第一根算起，N>0 表示从倒数第 N
 它只给满足阈值的 bar 上色，`Condition = No Filter` 时完全不起作用，**不影响任何
 数值**——两边数字对不上时不必怀疑它。
 
+## CVD 的历史比 OI 短（第五轮）
+
+用户在 1h 图上往左拖：OI 铺满整个可见区间，CVD 只有右边一小段，左边全空。
+
+原因是 `EXTERNAL_SERIES_LIMIT` 一个常数给两族端点共用，写死 1000。而文档里
+两族的上限并不一样：
+
+| 端点 | limit 上限 |
+|---|---|
+| `open-interest/aggregated-*-history` | 1000 |
+| `aggregated-cvd/history`（现货/合约） | **4500** |
+
+改成按 kind 取各自的上限（`externalSeriesLimit`）：OI 仍 1000，CVD 提到 4500——
+1h 图上从 41 天变成约 187 天。缓存键版本随之 v2→v3，否则要等 TTL 过期才看得到
+更长的历史。
+
+同时在 `fetchExternalSeries` 里加了一行诊断日志（只在缓存未命中时打，每个组合
+每个 TTL 至多一次）：
+
+    [coinglass/series] cvd:BTC:1h asked=4500 got=<N> <首根>..<末根>
+
+`got` 明显小于 `asked` 就说明是**上游的历史深度限制**（套餐或该端点自身），
+不是我们请求得不够——这是回答「能不能拿到更早的 CVD」的唯一依据。
+
 ## 分层
 
 ```

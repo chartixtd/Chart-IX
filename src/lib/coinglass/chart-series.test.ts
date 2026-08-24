@@ -36,6 +36,15 @@ describe("externalRequestToUpstream", () => {
   it("passes the chart interval through unchanged", () => {
     expect(externalRequestToUpstream(REQ({ interval: "1d" })).params.interval).toBe("1d");
   });
+
+  // 两族端点的 limit 上限不同：OI ≤1000、CVD ≤4500。写死同一个数就是用户截图里
+  // 「OI 铺满、CVD 只有一小段」的成因。
+  it("asks each endpoint for as much history as it allows", () => {
+    expect(externalRequestToUpstream(REQ({ kind: "oi", margin: "all" })).params.limit).toBe(1000);
+    expect(externalRequestToUpstream(REQ({ kind: "oi", margin: "coin" })).params.limit).toBe(1000);
+    expect(externalRequestToUpstream(REQ({ kind: "cvd", market: "futures" })).params.limit).toBe(4500);
+    expect(externalRequestToUpstream(REQ({ kind: "cvd", market: "spot" })).params.limit).toBe(4500);
+  });
 });
 
 describe("normalizeOiBars", () => {
@@ -156,7 +165,7 @@ describe("createExternalSeriesCache", () => {
     await cache.get(REQ({ coin: "ETH" }));
     await cache.get(REQ({ interval: "1h" }));
     expect(fetchUpstream).toHaveBeenCalledTimes(4);
-    expect(cacheKey(REQ())).toBe("v2:oi:BTC:30m:futures:all:usd:*");
+    expect(cacheKey(REQ())).toBe("v3:oi:BTC:30m:futures:all:usd:*");
   });
 
   it("serves a fresh DB row without touching upstream (cross-instance share)", async () => {

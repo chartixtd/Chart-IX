@@ -115,10 +115,20 @@ export function isExternalIntervalSupported(interval: string): boolean {
 /**
  * 每次向 CoinGlass 要多少根。图表首页是 300 根，再往左翻页会继续拉 BingX
  * 的历史；CoinGlass 这边不跟着翻页（每翻一页就多一次上游调用，配额撑不住），
- * 固定拉 1000 根——30m 约 21 天、1h 约 41 天、1d 约 3 年——更早的部分留空。
- * 1000 是 CoinGlass 文档里 history 端点的 limit 上限。
+ * 一次性拉满，更早的部分留空。
+ *
+ * **两族端点的上限不一样**（docs.coinglass.com 2026-08-23）：
+ *   open-interest/aggregated-*-history  → max 1000
+ *   aggregated-cvd/history（现货/合约）  → max 4500
+ *
+ * 一开始两边都写死 1000，结果就是 1h 图上 OI 铺满 41 天而 CVD 只有一小段——
+ * 用户截图里那块空白正是这么来的。按 kind 各取各的上限。
  */
-export const EXTERNAL_SERIES_LIMIT = 1000;
+export const EXTERNAL_SERIES_LIMITS: Record<ExternalKind, number> = { oi: 1000, cvd: 4500 };
+
+export function externalSeriesLimit(kind: ExternalKind): number {
+  return EXTERNAL_SERIES_LIMITS[kind];
+}
 
 const TTL_MIN_MS = 5 * 60_000;
 const TTL_MAX_MS = 4 * 60 * 60_000;
@@ -249,8 +259,10 @@ export function buildExternalRequest(
  * 缓存键的格式版本。**改变 bar 的形状/语义时必须 +1**——DB 里存着上一版格式的
  * 行，键不变的话新代码会读到旧结构（CVD 从 {buy,sell} 换成 OHLC 那次就是），
  * 表现为副图空白直到 TTL 过期。换版本号等于让旧行自然失效、再也不会被读到。
+ * 拉取**长度**变化时也值得 +1（v2→v3 是 CVD 从 1000 根提到 4500 根），
+ * 否则要等 TTL 过期才看得到更长的历史。
  */
-const CACHE_SCHEMA = "v2";
+const CACHE_SCHEMA = "v3";
 
 export function externalRequestKey(r: ExternalSeriesRequest): string {
   const ex = r.exchanges

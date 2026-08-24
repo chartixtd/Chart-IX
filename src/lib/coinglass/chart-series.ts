@@ -32,15 +32,24 @@ import {
  */
 
 /**
- * 「No Filter」时各端点用的交易所组合。合约 CVD 对齐选币器/CoinGlass 网页版
- * 默认的四家；其余按各市场上真有对应合约/现货的主流所来定。名字必须与
- * CoinGlass 的拼写一致（大小写敏感）。
+ * 「默认组合」用的交易所，对齐 CoinGlass 指标对话框里**默认勾上**的那几家
+ * （2026-08-23 用户截图核对）。名字必须与 CoinGlass 的拼写一致（大小写敏感）。
+ *
+ * 合约 CVD 的 Binance/Bybit/OKX/Hyperliquid 是完整看过勾选列表确认的；
+ * OI 只看到对话框上半截——Binance/Bybit/OKX 勾着、CME 到 Bitget 都没勾，
+ * 再往下（CoinEx/Gate/Crypto.com/Bitunix/Hyperliquid/MEXC/KuCoin/LBank/WhiteBIT）
+ * 没看到。所以 OI 这两组按看得见的三家来定；若日后发现下半截还勾了别的，
+ * 改这里一行即可。
+ *
+ * 此前这里是我按「主流所」自己拟的 6–7 家（Bitget/Gate/HTX/Bitmex 都在内），
+ * 比 CoinGlass 的默认多出一截——同样口径下 OI 数值自然对不上。默认组合必须
+ * 照抄它们的勾选，不能凭常识拟。
  */
 export const DEFAULT_EXCHANGES = {
   cvdFutures: [...CVD_EXCHANGES] as string[],
-  cvdSpot: ["Binance", "OKX", "Bybit", "Coinbase", "Bitget"],
-  oiStablecoin: ["Binance", "OKX", "Bybit", "Bitget", "Gate", "HTX"],
-  oiCoin: ["Binance", "OKX", "Bybit", "Bitget", "Gate", "HTX", "Bitmex"],
+  cvdSpot: ["Binance", "Bybit", "OKX"],
+  oiStablecoin: ["Binance", "Bybit", "OKX"],
+  oiCoin: ["Binance", "Bybit", "OKX"],
 } as const;
 
 export interface UpstreamCall {

@@ -33,6 +33,15 @@ describe("externalRequestToUpstream", () => {
     expect(fut.params.unit).toBe("coin");
   });
 
+  // 默认组合必须照抄 CoinGlass 对话框里默认勾上的那几家——此前是自己拟的 6–7 家，
+  // 同样口径下 OI 数值自然对不上。
+  it("defaults to exactly the exchanges CoinGlass ticks by default", () => {
+    expect(DEFAULT_EXCHANGES.cvdFutures).toEqual(["Binance", "Bybit", "OKX", "Hyperliquid"]);
+    expect(DEFAULT_EXCHANGES.oiStablecoin).toEqual(["Binance", "Bybit", "OKX"]);
+    expect(DEFAULT_EXCHANGES.oiCoin).toEqual(["Binance", "Bybit", "OKX"]);
+    expect(DEFAULT_EXCHANGES.cvdSpot).toEqual(["Binance", "Bybit", "OKX"]);
+  });
+
   it("passes the chart interval through unchanged", () => {
     expect(externalRequestToUpstream(REQ({ interval: "1d" })).params.interval).toBe("1d");
   });

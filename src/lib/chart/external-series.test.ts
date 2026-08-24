@@ -15,7 +15,7 @@ import {
   isValidExternalCoin,
   lastNBarsFromSettings,
   parseExchangeList,
-  rebaseLastN,
+  rebaseLastNBars,
   parseExternalSeriesQuery,
   EXTERNAL_SERIES_INTERVALS,
   FUTURES_EXCHANGE_CHOICES,
@@ -254,40 +254,36 @@ describe("alignOhlcToTimes", () => {
   });
 });
 
-describe("rebaseLastN — CoinGlass 的 Only last N bars", () => {
-  const c = (v: number) => ({ open: v, high: v + 1, low: v - 1, close: v + 0.5 });
-  const series = [c(100), c(110), c(120), c(130)];
+describe("rebaseLastNBars — CoinGlass 的 Only last N bars", () => {
+  const b = (t: number, v: number) => ({ t, o: v, h: v + 1, l: v - 1, c: v + 0.5 });
+  const bars = [b(1, 100), b(2, 110), b(3, 120), b(4, 130)];
 
-  it("从倒数第 N 根的 open 归零，之前的根置空", () => {
-    expect(rebaseLastN(series, 2)).toEqual([
-      null, null,
-      { open: 0, high: 1, low: -1, close: 0.5 },
-      { open: 10, high: 11, low: 9, close: 10.5 },
+  it("只留最近 N 根，并从这段第一根的 open 归零", () => {
+    expect(rebaseLastNBars(bars, 2)).toEqual([
+      { t: 3, o: 0, h: 1, l: -1, c: 0.5 },
+      { t: 4, o: 10, h: 11, l: 9, c: 10.5 },
     ]);
   });
 
   it("这正是让两边读数相等的机制：同一 N 下，相差常数的两条序列归零后完全一致", () => {
-    const offset = series.map((b) => ({ open: b.open + 3200, high: b.high + 3200, low: b.low + 3200, close: b.close + 3200 }));
-    expect(rebaseLastN(offset, 3)).toEqual(rebaseLastN(series, 3));
+    // 3.283B 的恒定差值就是这个常数——归零之后两边逐根相同。
+    const offset = bars.map((x) => ({ t: x.t, o: x.o + 3283, h: x.h + 3283, l: x.l + 3283, c: x.c + 3283 }));
+    expect(rebaseLastNBars(offset, 3)).toEqual(rebaseLastNBars(bars, 3));
   });
 
   it("N<=0 / N>=长度 一律原样返回（= 全部）", () => {
-    expect(rebaseLastN(series, 0)).toBe(series);
-    expect(rebaseLastN(series, -5)).toBe(series);
-    expect(rebaseLastN(series, 4)).toBe(series);
-    expect(rebaseLastN(series, NaN)).toBe(series);
+    expect(rebaseLastNBars(bars, 0)).toBe(bars);
+    expect(rebaseLastNBars(bars, -5)).toBe(bars);
+    expect(rebaseLastNBars(bars, 4)).toBe(bars);
+    expect(rebaseLastNBars(bars, NaN)).toBe(bars);
   });
 
-  it("窗口里第一根是空时，锚点顺延到第一根有值的", () => {
-    const out = rebaseLastN([c(100), null, c(120), c(130)], 3);
-    expect(out[1]).toBeNull();
-    expect(out[2]).toEqual({ open: 0, high: 1, low: -1, close: 0.5 });
-    expect(out[3]).toEqual({ open: 10, high: 11, low: 9, close: 10.5 });
-  });
-
-  it("整段都是空时原样返回，不会把序列擦掉", () => {
-    const empty = [c(100), null, null];
-    expect(rebaseLastN(empty, 2)).toBe(empty);
+  it("在原始序列上做，所以 N 可以大于图表已加载的 K 线数（首屏只有 300 根）", () => {
+    const long = Array.from({ length: 1000 }, (_, i) => b(i + 1, i));
+    const out = rebaseLastNBars(long, 500);
+    expect(out).toHaveLength(500);
+    expect(out[0].o).toBe(0);
+    expect(out[499].o).toBe(499);
   });
 });
 

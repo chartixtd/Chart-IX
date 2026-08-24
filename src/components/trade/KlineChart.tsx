@@ -36,7 +36,7 @@ import {
   INDICATOR_BY_ID, resolvePlotStyle, resolveCandleStyle, type IndicatorInput, type PlotSeries,
 } from "@/lib/chart/indicator-registry";
 import {
-  alignOhlcToTimes, buildExternalRequest, externalRequestKey, isCandlePoint, lastNBarsFromSettings, rebaseLastN,
+  alignOhlcToTimes, buildExternalRequest, externalRequestKey, isCandlePoint, lastNBarsFromSettings, rebaseLastNBars,
   type CandlePoint, type CandleSeries, type ExternalSeriesPayload, type ExternalSeriesRequest,
 } from "@/lib/chart/external-series";
 import { useExternalSeries, type ExternalSeriesStatus } from "@/hooks/useExternalSeries";
@@ -299,14 +299,17 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     for (const [instanceId, { key }] of extRequests.byInstance) {
       const raw = extPayload[key];
       if (!raw) continue;
-      let series = byKey.get(key);
+      // 「只取最近 N 根」是纯展示层的重定基准：不影响拉什么数据，所以不进请求键，
+      // 但会改变序列，所以缓存要把 N 算进去（同 key 同 N 的实例才能共用一份）。
+      const n = lastNBarsFromSettings(byInstanceSettings.get(instanceId));
+      const memo = `${key}|${n}`;
+      let series = byKey.get(memo);
       if (!series) {
-        series = alignOhlcToTimes(raw, bars.times as unknown as number[]);
-        byKey.set(key, series);
+        // 先重定基准再对齐：图表首屏只有 300 根 K 线，反过来做的话 N>300 会静默失效。
+        series = alignOhlcToTimes(rebaseLastNBars(raw, n), bars.times as unknown as number[]);
+        byKey.set(memo, series);
       }
-      // 「只取最近 N 根」是纯展示层的重定基准，同一份拉取可以被不同 N 的实例共用，
-      // 所以放在共享对齐**之后**、按实例各算一次。
-      out.set(instanceId, rebaseLastN(series, lastNBarsFromSettings(byInstanceSettings.get(instanceId))));
+      out.set(instanceId, series);
     }
     return out;
   }, [bars, extPayload, extRequests, applied]);

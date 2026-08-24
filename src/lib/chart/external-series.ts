@@ -387,32 +387,29 @@ export function alignOhlcToTimes(bars: ExternalOhlcBar[], timesSec: ArrayLike<nu
 /**
  * 「只取最近 N 根」——对齐 CoinGlass CVD 指标的 `Only last N bars (0 for all)` 输入。
  *
- * CVD 的绝对值完全由**从哪一根开始累加**决定。CoinGlass 的 Pine 指标默认 N=0
- * （从 TradingView 加载到的第一根算起），我们默认从拉到的 1000 根的第一根算起——
- * 两个锚点不同，绝对值就永远差一个常数（实测同一时刻 13.486B vs 10.2B，形状一致）。
+ * CVD 的绝对值完全由**从哪一根开始累加**决定。CoinGlass 的 Pine 指标 N=0 时从
+ * TradingView 加载到的第一根算起，我们 N=0 时从拉到的第一根算起——两个平台加载的
+ * 根数不同，所以 N=0 两边必然差一个常数。实测两次对比：13.486−10.2=3.286、
+ * 13.195−9.912=3.283，**差值恒定**（0.02% 以内），正说明数据本身一致、只有锚点不同。
  *
- * 把这个输入做出来，两边设成**同一个 N** 就会从同一根开始归零，数值随之完全对上。
- * 这是唯一能让两个 CVD 读数相等的办法——不是补偿一个魔法常数，而是对齐锚点本身。
+ * 两边设成**同一个 N**，就都从倒数第 N 根归零，数值随之完全相等。这是唯一能让两个
+ * CVD 读数相等的办法——不是补一个魔法常数（那个常数会随窗口滑动而变，得天天调）。
  *
- * N<=0 或 N>=序列长度时原样返回（= 全部）。锚点取这段里第一根非空蜡烛的 open；
- * 之前的根置空，因为它们不在用户要求的窗口里。
+ * **作用在拉到的原始序列上，不是对齐后的序列上。** 图表首屏只加载 300 根 K 线
+ * （useKlineHistory 的 PAGE_SIZE），而 CoinGlass 序列有 1000 根；如果在对齐后再
+ * 重定基准，N>300 会因为 `n >= series.length` 而**静默失效**——用户填了 500 却
+ * 什么也没发生。放在对齐之前，N 最大可到我们真正拉到的根数。
+ *
+ * N<=0 或 N>=序列长度时原样返回（= 全部）。
  */
-export function rebaseLastN(series: CandleSeries, n: number): CandleSeries {
-  if (!Number.isFinite(n) || n <= 0 || n >= series.length) return series;
-  const start = series.length - n;
-  let anchor: number | null = null;
-  for (let i = start; i < series.length; i++) {
-    const c = series[i];
-    if (c) { anchor = c.open; break; }
-  }
-  if (anchor === null) return series;
-  const base = anchor;
-  const out: CandleSeries = new Array(series.length).fill(null);
-  for (let i = start; i < series.length; i++) {
-    const c = series[i];
-    out[i] = c
-      ? { open: c.open - base, high: c.high - base, low: c.low - base, close: c.close - base }
-      : null;
+export function rebaseLastNBars(bars: ExternalOhlcBar[], n: number): ExternalOhlcBar[] {
+  if (!Number.isFinite(n) || n <= 0 || n >= bars.length) return bars;
+  const start = bars.length - n;
+  const base = bars[start].o;
+  const out: ExternalOhlcBar[] = new Array(n);
+  for (let i = start; i < bars.length; i++) {
+    const b = bars[i];
+    out[i - start] = { t: b.t, o: b.o - base, h: b.h - base, l: b.l - base, c: b.c - base };
   }
   return out;
 }

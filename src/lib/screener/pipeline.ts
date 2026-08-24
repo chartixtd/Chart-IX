@@ -18,8 +18,8 @@ import type { PreselectCandidate } from "./universe";
 import { readVolumeCache } from "./volume-cache";
 import type { CachedVolume } from "./volume-cache";
 import { readMemos, saveMemos } from "./cards-store";
-import { buildCard, sortCards, memoKey } from "./cards";
-import type { ScenarioCard, ScenarioMemo } from "./cards";
+import { buildCard, sortCards, memoKey, ignitionMemoKey } from "./cards";
+import type { AlertCardData, ScenarioMemo } from "./cards";
 import { pickDirection, amplitudeFromBars } from "./score";
 import { pickFundingRate } from "./funding";
 import { classifyScenario } from "./factors/scenario";
@@ -143,10 +143,27 @@ export function buildScanTargets(
   // ——而卡片消失必须只意味着「信号没了」，否则那个信号就不可信了。
   // 它们**追加**在 picked 之后而不是顶掉谁：主表的 20 行一个都不少。
   const inMain = new Set(picked.map((t) => t.candidate.bingxSymbol));
-  const reserved = targets
-    .filter((t) => cardSymbols.has(t.candidate.bingxSymbol) && !inMain.has(t.candidate.bingxSymbol))
+  const needsReserve = targets.filter(
+    (t) => cardSymbols.has(t.candidate.bingxSymbol) && !inMain.has(t.candidate.bingxSymbol)
+  );
+  const reserved = needsReserve
     .slice(0, CARD_RESERVE_SLOTS)
     .map((t) => ({ ...t, inMainTable: false }));
+
+  // 名额不够时要出声。**这个失败是完全静默的**：被挤掉的币这一轮算不出
+  // 信号，它的卡片就消失了，而消失看起来跟「信号没了」一模一样。
+  //
+  // 4 个名额当初是按「每轮判出场景的只有 3–4 个币」定的，那是六场景时代的
+  // 数字。点火卡出现得比场景卡频繁得多，而且**刚点火的币按定义正在变吵**，
+  // 很容易下一轮就掉出「最安静的 20 个」——这两件事叠起来，挤爆的概率比
+  // 当初高。真挤爆了就该调 QUIET_RANK_TAKE / CARD_RESERVE_SLOTS 的配比，
+  // 但那要拿线上数据定，不是现在拍。
+  if (needsReserve.length > CARD_RESERVE_SLOTS) {
+    console.warn(
+      `[screener] 复核名额不够：${needsReserve.length} 个有卡片的币掉出主表，` +
+        `只能复核 ${CARD_RESERVE_SLOTS} 个，其余 ${needsReserve.length - CARD_RESERVE_SLOTS} 张卡片会因为排名而不是因为信号消失`
+    );
+  }
 
   return [...picked, ...reserved];
 }
@@ -281,7 +298,7 @@ export async function runScan(): Promise<ScannerPayload> {
   const detail = await runWithConcurrency(detailTasks);
 
   const rows: ScannerRow[] = [];
-  const cards: ScenarioCard[] = [];
+  const cards: AlertCardData[] = [];
   const newMemos: ScenarioMemo[] = [];
   const now = Date.now();
   for (let i = 0; i < staged.length; i++) {
@@ -364,14 +381,24 @@ export async function runScan(): Promise<ScannerPayload> {
     // 但它的卡片照常参与下面的判定，这正是给它留名额的全部意义。
     if (s.inMainTable) rows.push(row);
 
-    // 没场景就没有卡片，也不必去查备忘（备忘的钥匙本来就要用场景拼）。
-    if (scenario) {
-      const built = buildCard({
-        row,
-        priceBars,
-        memo: memos.get(memoKey(row.symbol, scenario)),
-        now,
-      });
+    // 场景**或**点火都能出卡片，两者都没有才跳过。
+    //
+    // 加上点火这一路，是因为选币翻成「最安静」之后六场景几乎判不出来：
+    // 它的第一道门要求「价格创了新极值且至少差 1%」，而安静的币正在区间
+    // 里横盘，按定义就不创新极值。实测最吵的 25 个币 48% 能过这道门，
+    // 最安静的 25 个只有 8%——线上的表现是场景数从每天 8–26 个直接掉到 0。
+    // 不是判定坏了，是选币和警报两边要的东西相反。详见 cards.ts CardTrigger。
+    //
+    // 钥匙要按触发源分别拼，所以这里跟 buildCard 里的优先级必须一致：
+    // 场景优先。不一致的话会拿场景的钥匙去查点火卡的备忘，每轮都查不到，
+    // 卡片的首次价与计时永远重置。
+    const cardKey = scenario
+      ? memoKey(row.symbol, scenario)
+      : ignition
+        ? ignitionMemoKey(row.symbol, ignition)
+        : null;
+    if (cardKey) {
+      const built = buildCard({ row, priceBars, memo: memos.get(cardKey), now });
       if (built.newMemo) newMemos.push(built.newMemo);
       if (built.card) cards.push(built.card);
     }

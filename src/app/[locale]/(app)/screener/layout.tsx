@@ -8,7 +8,7 @@ import { ScanCountdown } from "@/components/screener/ScanCountdown";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
-import { SCENARIO_KINDS, TRAP_KINDS, TONE_CLASSES } from "@/components/screener/scenario-ui";
+import { SCENARIO_KINDS, TRAP_KINDS, TONE_CLASSES, IGNITION_TONE } from "@/components/screener/scenario-ui";
 
 /**
  * 主扫描表与警报卡片的公共外壳：标题、倒计时、刷新、图例、以及两个子页的
@@ -107,6 +107,18 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
               {t("guide.scenarios_title")}
             </p>
             <ul className="space-y-1">
+              {/* 点火排在六场景之前：选币口径改成「最安静」之后，警报栏里
+                  绝大多数是点火卡（安静的币判不出场景），把最常见的那一类
+                  排在最后面会让这张速查表读起来跟实际看到的东西对不上。 */}
+              {(["up", "down"] as const).map((dir) => (
+                <li key={dir} className="flex items-baseline gap-1.5">
+                  <span className={cn("inline-flex items-center gap-1 font-medium", IGNITION_TONE.text)}>
+                    <Icon name="bolt" className="h-3 w-3" />
+                    {t(`ignition.${dir}.name`)}
+                  </span>
+                  <span>— {t(`ignition.${dir}.action`)}</span>
+                </li>
+              ))}
               {SCENARIO_KINDS.map((kind) => (
                 <li key={kind} className="flex items-baseline gap-1.5">
                   <span className={cn("inline-flex items-center gap-1 font-medium", TONE_CLASSES[kind].text)}>

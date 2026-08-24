@@ -1,5 +1,6 @@
 import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
 import type { Scenario } from "./factors/scenario";
+import type { Ignition } from "./ignition";
 
 /**
  * 场景的「失效价」——价格走到这里，就等于市场证明这个信号错了。
@@ -112,4 +113,24 @@ export function scenarioInvalidated(scenario: Scenario, bars: CoinGlassPriceBar[
   // 数据状态把所有场景静默清空。
   if (!Number.isFinite(high) || !Number.isFinite(low)) return false;
   return isInvalidated(line, high, low);
+}
+
+/**
+ * 点火的失效线：**被突破的那条区间边界**。
+ *
+ * 不需要像六场景那样分情况讨论——点火的论点只有一句「站上/跌破了前 6 小时
+ * 的区间」，价格收回区间内，这句话就不成立了。所以失效位就是 level 本身。
+ *
+ * 判据用**收盘价 / 现价**，不用区间极值——这跟六场景刻意相反。六场景的
+ * 失效是「止损被扫了就是被扫了」，插针也算数；点火的失效是「这次突破没
+ * 站住」，而影线穿回来一下又拉上去，恰恰是突破成立时的常见走法，用极值
+ * 判会把大多数真突破当场判死。detectIgnition 内部的存活判定用的也是收盘价，
+ * 两边同一个口径。
+ */
+export function ignitionLine(ignition: Ignition): InvalidationLine | null {
+  if (!Number.isFinite(ignition.level) || ignition.level <= 0) return null;
+  return {
+    price: ignition.level,
+    breach: ignition.direction === "up" ? "below" : "above",
+  };
 }

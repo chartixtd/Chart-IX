@@ -6,7 +6,7 @@ import {
   escapeHtml,
   type TelegramMessageLang,
 } from "@/lib/telegram-push";
-import type { ScenarioCard } from "./cards";
+import type { AlertCardData } from "./cards";
 import type { ScenarioKind } from "./factors/scenario";
 
 const SETTINGS_KEY = "screener_alert_push";
@@ -102,6 +102,13 @@ const SCENARIO_ACTIONS: Record<TelegramMessageLang, Record<ScenarioKind, string>
   },
 };
 
+/** 点火卡的名称与操作文案。两种触发源共用一条消息格式，这里只是把
+ *  「场景名 · 操作」那两格换成点火自己的说法。 */
+const IGNITION_LABELS: Record<TelegramMessageLang, { up: string; down: string; action: string }> = {
+  zh: { up: "向上点火", down: "向下点火", action: "刚突破区间，顺势跟" },
+  en: { up: "Ignition Up", down: "Ignition Down", action: "Just broke range — follow it" },
+};
+
 /**
  * 多条警报合并成**一条**消息。一轮扫描同时触发五六个币是常有的事，
  * 一条一发就是刷屏，而 Telegram 对同一个 chat 的连发也有速率限制。
@@ -112,15 +119,22 @@ const SCENARIO_ACTIONS: Record<TelegramMessageLang, Record<ScenarioKind, string>
  * 这类场景的操作方向跟直觉相反（背离却要顺势），不额外提醒容易被
  * 看错成普通背离。
  */
-export function formatAlertMessage(alerts: ScenarioCard[], lang: TelegramMessageLang): string {
+export function formatAlertMessage(alerts: AlertCardData[], lang: TelegramMessageLang): string {
   const s = STRINGS[lang];
   const lines = alerts.map((a) => {
-    const dir = a.scenario.direction === "long" ? s.long : a.scenario.direction === "short" ? s.short : s.manage;
+    const dir = a.direction === "long" ? s.long : a.direction === "short" ? s.short : s.manage;
     const coin = escapeHtml(a.symbol.replace(/-USDT$/, ""));
     const f = a.factors;
-    const name = SCENARIO_LABELS[lang][a.scenario.kind];
-    const action = SCENARIO_ACTIONS[lang][a.scenario.kind];
-    const trapPrefix = a.scenario.trap ? "⚠ " : "";
+    // 直接在 trigger 上分支，不抽成布尔量——抽出来 TypeScript 就不再收窄
+    // 这个联合类型，两支都会去访问对方没有的字段。
+    const tr = a.trigger;
+    const name =
+      tr.type === "scenario"
+        ? SCENARIO_LABELS[lang][tr.scenario.kind]
+        : IGNITION_LABELS[lang][tr.ignition.direction];
+    const action =
+      tr.type === "scenario" ? SCENARIO_ACTIONS[lang][tr.scenario.kind] : IGNITION_LABELS[lang].action;
+    const trapPrefix = tr.type === "scenario" && tr.scenario.trap ? "⚠ " : "";
     return (
       `${trapPrefix}<b>${coin}</b> ${dir} · ${name} · ${action} · ` +
       `OI${f.oi}/CVD${f.cvd} · ` +
@@ -138,7 +152,7 @@ export function formatAlertMessage(alerts: ScenarioCard[], lang: TelegramMessage
  * 通道，等于给所有订阅过价格提醒的人推他们从没要求过的东西。
  * 要接的话应该是一个独立的订阅开关，那是另一个功能。
  */
-export async function pushNewAlerts(alerts: ScenarioCard[]): Promise<number> {
+export async function pushNewAlerts(alerts: AlertCardData[]): Promise<number> {
   if (alerts.length === 0) return 0;
 
   const config = await getAlertPushConfig();

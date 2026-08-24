@@ -1091,6 +1091,20 @@
     "tabs": {
       "table": "Scan table",
       "cards": "Alert cards"
+    },
+    "ignition": {
+      "up": {
+        "name": "Ignition Up",
+        "action": "Go long with it — exit if it falls back in"
+      },
+      "down": {
+        "name": "Ignition Down",
+        "action": "Go short with it — exit if it climbs back in"
+      },
+      "reading": {
+        "up": "Closed above the prior 6h range top {level}, now {distancePct} beyond it. Invalid if it falls back below {level}.",
+        "down": "Closed below the prior 6h range bottom {level}, now {distancePct} beyond it. Invalid if it climbs back above {level}."
+      }
     }
   },
   "pwa": {

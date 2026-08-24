@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildCard, memoKey, sortCards, extremesSince, signedPct } from "./cards";
-import type { ScenarioCard, ScenarioMemo } from "./cards";
+import { buildCard, memoKey, ignitionMemoKey, sortCards, extremesSince, signedPct } from "./cards";
+import type { AlertCardData, ScenarioMemo } from "./cards";
 import type { Scenario } from "./factors/scenario";
+import type { Ignition } from "./ignition";
 import type { ScannerRow } from "./types";
 import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
 
@@ -20,6 +21,10 @@ function scenario(o: Partial<Scenario> = {}): Scenario {
     side: "high",
     ...o,
   };
+}
+
+function ignition(o: Partial<Ignition> = {}): Ignition {
+  return { direction: "up", level: 100, distancePct: 2, ignitedAt: T0 - 3_600_000, barsAgo: 2, ...o };
 }
 
 function row(o: Partial<ScannerRow> = {}): ScannerRow {
@@ -76,7 +81,9 @@ describe("memoKey", () => {
 
 describe("buildCard", () => {
   it("没场景就没有卡", () => {
-    expect(buildCard({ row: row({ scenario: null }), priceBars: [], memo: undefined, now: T0 }).card).toBeNull();
+    expect(
+      buildCard({ row: row({ scenario: null, ignition: null }), priceBars: [], memo: undefined, now: T0 }).card
+    ).toBeNull();
   });
 
   it("第一次看到：出卡，并要求新建备忘", () => {
@@ -169,11 +176,12 @@ describe("buildCard", () => {
 });
 
 describe("sortCards", () => {
-  const card = (symbol: string, total: number): ScenarioCard => ({
+  const card = (symbol: string, total: number): AlertCardData => ({
     key: symbol,
     symbol,
     coin: symbol,
-    scenario: scenario(),
+    trigger: { type: "scenario", scenario: scenario() },
+    direction: "long",
     factors: { oi: 0, cvd: 0 },
     total,
     firstSeenAt: "",
@@ -211,5 +219,82 @@ describe("extremesSince / signedPct", () => {
   it("做空时涨跌符号翻过来——跌了才是正的", () => {
     expect(signedPct(100, 90, "short")).toBeCloseTo(10);
     expect(signedPct(100, 90, "long")).toBeCloseTo(-10);
+  });
+});
+
+/**
+ * 点火卡这一路。它现在是警报栏里的主力——选币翻成「最安静」之后六场景
+ * 几乎判不出来（安静的币不创新极值，实测过门率 8% vs 最吵那组的 48%），
+ * 线上表现是场景数从每天 8–26 个掉到 0。这几条把点火卡的关键行为钉死。
+ */
+describe("buildCard —— 点火卡", () => {
+  it("没场景但有点火 = 出点火卡，向上突破对应做多", () => {
+    const r = buildCard({
+      row: row({ scenario: null, ignition: ignition() }),
+      priceBars: [],
+      memo: undefined,
+      now: T0,
+    });
+    expect(r.card?.trigger.type).toBe("ignition");
+    expect(r.card?.direction).toBe("long");
+  });
+
+  it("向下突破对应做空", () => {
+    const r = buildCard({
+      row: row({ scenario: null, ignition: ignition({ direction: "down", level: 120 }) }),
+      priceBars: [],
+      memo: undefined,
+      now: T0,
+    });
+    expect(r.card?.direction).toBe("short");
+  });
+
+  it("失效线就是被突破的那条边界，方向相反", () => {
+    const up = buildCard({
+      row: row({ scenario: null, ignition: ignition({ direction: "up", level: 100 }) }),
+      priceBars: [],
+      memo: undefined,
+      now: T0,
+    }).card!;
+    expect(up.invalidation).toEqual({ price: 100, breach: "below" });
+
+    const down = buildCard({
+      row: row({ scenario: null, ignition: ignition({ direction: "down", level: 120 }) }),
+      priceBars: [],
+      memo: undefined,
+      now: T0,
+    }).card!;
+    expect(down.invalidation).toEqual({ price: 120, breach: "above" });
+  });
+
+  it("场景优先于点火——两个都有时只出场景卡，不出两张", () => {
+    // 场景把资金流与持仓也说清楚了，是严格更多的信息；同一个币出两张卡
+    // 只会让人以为是两个独立信号。
+    const r = buildCard({
+      row: row({ scenario: scenario(), ignition: ignition() }),
+      priceBars: [],
+      memo: undefined,
+      now: T0,
+    });
+    expect(r.card?.trigger.type).toBe("scenario");
+  });
+
+  it("钥匙锚在点火时刻，level 变了也是同一张卡", () => {
+    // 回看窗口每走一根就往前滚一格，level 会跟着变。如果钥匙里含 level，
+    // 同一次点火每半小时换一把钥匙——卡片的首次价与计时每轮重置，
+    // 「累计 / 峰值」永远是 0，警报栏里全是「刚刚触发」。
+    const a = ignitionMemoKey("TIA-USDT", ignition({ level: 100 }));
+    const b = ignitionMemoKey("TIA-USDT", ignition({ level: 103 }));
+    expect(a).toBe(b);
+  });
+
+  it("不同的点火时刻是不同的事件——盘整之后再次突破要重新计时", () => {
+    const a = ignitionMemoKey("TIA-USDT", ignition({ ignitedAt: T0 }));
+    const b = ignitionMemoKey("TIA-USDT", ignition({ ignitedAt: T0 + 1_800_000 }));
+    expect(a).not.toBe(b);
+  });
+
+  it("点火卡与场景卡的钥匙不会撞车", () => {
+    expect(ignitionMemoKey("TIA-USDT", ignition())).not.toBe(memoKey("TIA-USDT", scenario()));
   });
 });

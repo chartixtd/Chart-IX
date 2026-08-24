@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectIgnition, IGNITION_LOOKBACK_BARS } from "./ignition";
+import { detectIgnition, IGNITION_LOOKBACK_BARS, IGNITION_MAX_AGE_BARS } from "./ignition";
 import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
 
 /** [high, low, close] → K 线 */
@@ -25,6 +25,8 @@ describe("detectIgnition", () => {
       direction: "up",
       level: 110,
       distancePct: expect.closeTo(1.818, 2),
+      ignitedAt: IGNITION_LOOKBACK_BARS * 1_800_000,
+      barsAgo: 0,
     });
   });
 
@@ -58,6 +60,63 @@ describe("detectIgnition", () => {
 
   it("K 线不够回看窗口时返回 null", () => {
     expect(detectIgnition(withHistory([115, 108, 112], 5))).toBeNull();
+  });
+
+  // ↓ 以下是「点火要能撑住一段时间」这件事的用例。
+  // 早先 detectIgnition 只看最后一根，检测本身没错，但拿来做卡片就不行了：
+  // 突破只在那一根上成立，下一轮扫描就判不出来，卡片会闪一下就消失。
+  // 实测后果是主扫描表的点火列 20 行全空——「恰好这一根在突破」是小概率瞬间。
+
+  it("突破之后横盘，只要守住那条线，点火仍然成立且锚点不变", () => {
+    // 第 13 根突破（收 112 > 前高 110），之后两根在 111–113 之间横着，
+    // 都没有再创新高，但都还在 110 之上。
+    const b = bars([
+      ...Array.from({ length: 12 }, () => [110, 100, 105] as [number, number, number]),
+      [115, 108, 112],
+      [114, 111, 111.5],
+      [113, 110.5, 111],
+    ]);
+    const r = detectIgnition(b)!;
+    expect(r.direction).toBe("up");
+    expect(r.level).toBe(110);
+    // 锚在最初突破那一根（下标 12），不是最后一根
+    expect(r.ignitedAt).toBe(12 * 1_800_000);
+    expect(r.barsAgo).toBe(2);
+  });
+
+  it("价格收回区间内 = 点火熄灭", () => {
+    const b = bars([
+      ...Array.from({ length: 12 }, () => [110, 100, 105] as [number, number, number]),
+      [115, 108, 112],
+      [113, 104, 106], // 收回 110 之下
+    ]);
+    expect(detectIgnition(b)).toBeNull();
+  });
+
+  it("连续突破时锚在这一串的第一根——否则钥匙每根一换，卡片计时永远重置", () => {
+    const b = bars([
+      ...Array.from({ length: 12 }, () => [110, 100, 105] as [number, number, number]),
+      [115, 108, 112],
+      [120, 113, 118],
+      [126, 119, 124],
+    ]);
+    const r = detectIgnition(b)!;
+    expect(r.ignitedAt).toBe(12 * 1_800_000);
+    expect(r.barsAgo).toBe(2);
+    expect(r.level).toBe(110); // 第一根突破时的那条线，不是最后一根的
+  });
+
+  it("点火超过 maxAge 根就不再认——过期的信号不该继续挂在警报栏", () => {
+    const tail: Array<[number, number, number]> = Array.from(
+      { length: IGNITION_MAX_AGE_BARS + 2 },
+      () => [113, 111, 112]
+    );
+    const b = bars([
+      ...Array.from({ length: 12 }, () => [110, 100, 105] as [number, number, number]),
+      [115, 108, 112],
+      ...tail,
+    ]);
+    expect(detectIgnition(b)).toBeNull();
   });
 
   it("非法价格不误判成点火", () => {

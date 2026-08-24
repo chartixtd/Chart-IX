@@ -155,6 +155,7 @@ const PATHS = {
     </>
   ),
   arrowRight: <path d="M4.5 12h15M13.5 6l6 6-6 6" />,
+  bolt: <path d="M13 2 4.5 13.2H11l-1 8.8 8.5-11.2H12z" />,
   alert: (
     <>
       <path d="M12 4.2 21 19.8H3z" />

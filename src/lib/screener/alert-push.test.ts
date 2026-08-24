@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { formatAlertMessage, parseAlertPushConfig, pushNewAlerts } from "./alert-push";
 import { getTelegramPushSettings, listTargetsFor, deliverToTargets } from "@/lib/telegram-push";
-import type { ScenarioCard } from "./cards";
+import type { AlertCardData } from "./cards";
 import type { Scenario } from "./factors/scenario";
 
 // pushNewAlerts 的编排逻辑要靠 mock 掉外部依赖来测——真实实现会打 Supabase
@@ -42,11 +42,12 @@ function scenario(overrides: Partial<Scenario> = {}): Scenario {
   };
 }
 
-const alert: ScenarioCard = {
+const alert: AlertCardData = {
   key: "TIA-USDT|healthy_trend|long|high|0.31",
   symbol: "TIA-USDT",
   coin: "TIA",
-  scenario: scenario(),
+  trigger: { type: "scenario", scenario: scenario() },
+  direction: "long",
   factors: { oi: 26, cvd: 13 },
   total: 39,
   firstSeenAt: "2026-08-20T00:00:00.000Z",
@@ -96,15 +97,19 @@ describe("formatAlertMessage", () => {
   });
 
   it("陷阱场景加 ⚠ 前缀，非陷阱场景不加", () => {
-    const trapAlert: ScenarioCard = { ...alert, scenario: scenario({ kind: "false_top_div", trap: true, direction: "long" }) };
+    const trapAlert: AlertCardData = {
+      ...alert,
+      trigger: { type: "scenario", scenario: scenario({ kind: "false_top_div", trap: true, direction: "long" }) },
+    };
     expect(formatAlertMessage([trapAlert], "zh")).toContain("⚠");
     expect(formatAlertMessage([alert], "zh")).not.toContain("⚠");
   });
 
   it("manage 场景显示为「观望」而不是做多/做空", () => {
-    const manageAlert: ScenarioCard = {
+    const manageAlert: AlertCardData = {
       ...alert,
-      scenario: scenario({ kind: "inventory_flush", direction: "manage" }),
+      trigger: { type: "scenario", scenario: scenario({ kind: "inventory_flush", direction: "manage" }) },
+      direction: "manage",
     };
     expect(formatAlertMessage([manageAlert], "zh")).toContain("观望");
   });

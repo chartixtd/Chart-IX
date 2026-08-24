@@ -1,5 +1,5 @@
 import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/limits";
-import type { ScenarioCard } from "./cards";
+import type { AlertCardData } from "./cards";
 import type { Ignition } from "./ignition";
 import type { Scenario, ScenarioDirection } from "./factors/scenario";
 
@@ -233,7 +233,7 @@ export interface ScannerRow {
  * 版本对不上就当缓存不存在，下一个请求重算一遍——代价是一轮扫描，
  * 比白屏便宜太多。
  */
-export const SCANNER_PAYLOAD_VERSION = 2;
+export const SCANNER_PAYLOAD_VERSION = 3;
 
 export interface ScannerPayload {
   /** 见 SCANNER_PAYLOAD_VERSION —— 形状对不上的缓存一律丢弃 */
@@ -244,13 +244,13 @@ export interface ScannerPayload {
    * ——每一张都来自当轮扫描里判出场景、且未被价格打穿失效线的行。
    * 没有「关闭」这个动作：卡片不在 = 这一轮它就不成立。
    */
-  cards: ScenarioCard[];
+  cards: AlertCardData[];
   /**
    * 这一轮**新出现**的卡片（备忘表里刚建的那些）。给 Telegram 推送用，
    * 前端不消费——推送要回答的是「有什么新事」，而 cards 回答的是
    * 「现在有什么」，两者不是一回事。
    */
-  newCards: ScenarioCard[];
+  newCards: AlertCardData[];
   /** 这份结果的计算时间，ms epoch —— 前端用它算倒计时 */
   computedAt: number;
 }

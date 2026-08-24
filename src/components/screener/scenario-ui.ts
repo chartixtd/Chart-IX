@@ -1,4 +1,5 @@
 import type { ScenarioKind, ScenarioDirection } from "@/lib/screener/factors/scenario";
+import type { CardTrigger } from "@/lib/screener/cards";
 
 /**
  * 六场景在前端共用的展示元数据：色调、方向配色、判定句 i18n key。
@@ -39,9 +40,17 @@ export const TRAP_KINDS = new Set<ScenarioKind>(["false_top_div", "false_bottom_
  * （这个坑在 Button 的 bg-success/12 上踩过一次，那两个变体的底色一直是
  * 透明的，而且没人发现）。
  */
+export interface Tone {
+  border: string;
+  text: string;
+  badgeBg: string;
+  borderTint: string;
+  fill: string;
+}
+
 export const TONE_CLASSES: Record<
   ScenarioKind,
-  { border: string; text: string; badgeBg: string; borderTint: string; fill: string }
+  Tone
 > = {
   // 健康趋势：青。最常见的场景，此前是「无色」（白边框+白字），
   // 导致大多数卡片看上去没有基调。
@@ -134,4 +143,24 @@ export const DIRECTION_CLASSES: Record<
 export function readingKey(kind: ScenarioKind, side: "high" | "low"): string {
   if (kind === "healthy_trend" || kind === "inventory_flush") return `${kind}_${side}`;
   return kind;
+}
+
+/**
+ * 点火卡的色调。**刻意不并进 TONE_CLASSES**——那张表的键是 ScenarioKind，
+ * 塞一个假的 kind 进去，编译器就再也帮不上忙了（六场景的穷尽性检查会失效，
+ * 以后新增场景漏配颜色不会报错）。点火是另一个类别，就让它是另一个常量。
+ *
+ * 黄绿色是新加的 accent-ignite，理由见 tailwind.config.ts 那条注释。
+ */
+export const IGNITION_TONE: Tone = {
+  border: "border-l-accent-ignite",
+  text: "text-accent-ignite",
+  badgeBg: "bg-accent-ignite/15",
+  borderTint: "border-accent-ignite/20",
+  fill: "bg-accent-ignite",
+};
+
+/** 一张卡该用哪套配色，两种触发源统一从这里取。 */
+export function toneFor(trigger: CardTrigger): Tone {
+  return trigger.type === "scenario" ? TONE_CLASSES[trigger.scenario.kind] : IGNITION_TONE;
 }

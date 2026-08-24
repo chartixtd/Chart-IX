@@ -1091,6 +1091,20 @@
     "tabs": {
       "table": "主扫描表",
       "cards": "警报卡片"
+    },
+    "ignition": {
+      "up": {
+        "name": "向上点火",
+        "action": "顺势做多，跌回区间就走"
+      },
+      "down": {
+        "name": "向下点火",
+        "action": "顺势做空，涨回区间就走"
+      },
+      "reading": {
+        "up": "收盘站上前 6 小时区间顶 {level}，已越出 {distancePct}。跌回 {level} 之下即失效。",
+        "down": "收盘跌破前 6 小时区间底 {level}，已越出 {distancePct}。涨回 {level} 之上即失效。"
+      }
     }
   },
   "pwa": {

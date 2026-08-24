@@ -26,52 +26,127 @@ import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
  */
 export const IGNITION_LOOKBACK_BARS = 12;
 
+/**
+ * 点火之后最多还认多少根 K 线。8 根 30 分钟 = 4 小时。
+ *
+ * 这道上限是**卡片能存在多久**的天花板，跟六场景卡片的 4 小时"陈旧"线
+ * 对齐（见 AlertCard 的 freshness）。理由一样：这类信号实测的生命周期是
+ * 几十分钟到几小时，超过 4 小时之后它已经从"入场信号"退化成"趋势确认"，
+ * 还挂在警报栏里只会让人照着一个过期的位置进场。
+ */
+export const IGNITION_MAX_AGE_BARS = 8;
+
 export interface Ignition {
   /** 突破方向：向上突破前高 / 向下跌破前低 */
   direction: "up" | "down";
   /** 被突破的那个区间边界价——它天然就是这次点火的失效位 */
   level: number;
-  /** 突破幅度，% —— 刚越过线和暴力拉穿是两回事 */
+  /** 现价相对 level 的突破幅度，% —— 刚越过线和暴力拉穿是两回事 */
   distancePct: number;
+  /** 点火那根 K 线的时刻，ms epoch */
+  ignitedAt: number;
+  /** 点火到现在过了几根 K 线。0 = 就是当前这根 */
+  barsAgo: number;
 }
 
-/**
- * 检测最后一根 K 线有没有点火。
- *
- * 用**收盘价**判突破而不是最高/最低价：影线穿一下又收回来不算启动，
- * 那正是最典型的假突破。这跟失效判定刻意相反——失效用区间极值（插针
- * 也算数，止损被扫了就是被扫了），点火用收盘价（要的是「站上去了」）。
- * 两处口径不同是故意的，因为它们要防的是两种相反的错误：失效怕漏判，
- * 点火怕误判。
- *
- * 比较区间**不含当前这根**（`[len-1-N, len-1)`）：拿当前根跟包含自己的
- * 区间比，永远不可能突破。
- */
-export function detectIgnition(
+/** 单根 K 线相对它**之前** lookback 根的突破判定。不含自己，否则永远突破不了。 */
+function breakoutAt(
   bars: CoinGlassPriceBar[],
-  lookback: number = IGNITION_LOOKBACK_BARS
-): Ignition | null {
-  if (bars.length < lookback + 1) return null;
+  i: number,
+  lookback: number
+): { direction: "up" | "down"; level: number } | null {
+  const from = i - lookback;
+  if (from < 0) return null;
 
-  const last = bars[bars.length - 1];
-  const close = parseFloat(last.close);
+  const close = parseFloat(bars[i].close);
   if (!Number.isFinite(close) || close <= 0) return null;
 
   let high = -Infinity;
   let low = Infinity;
-  for (let i = bars.length - 1 - lookback; i < bars.length - 1; i++) {
-    const h = parseFloat(bars[i].high);
-    const l = parseFloat(bars[i].low);
+  for (let j = from; j < i; j++) {
+    const h = parseFloat(bars[j].high);
+    const l = parseFloat(bars[j].low);
     if (Number.isFinite(h) && h > high) high = h;
     if (Number.isFinite(l) && l < low) low = l;
   }
   if (!Number.isFinite(high) || !Number.isFinite(low) || low <= 0) return null;
 
-  if (close > high) {
-    return { direction: "up", level: high, distancePct: ((close - high) / high) * 100 };
-  }
-  if (close < low) {
-    return { direction: "down", level: low, distancePct: ((low - close) / low) * 100 };
-  }
+  if (close > high) return { direction: "up", level: high };
+  if (close < low) return { direction: "down", level: low };
   return null;
+}
+
+/**
+ * 找出当前**仍然成立**的那次点火，并锚到它开始的那一根。
+ *
+ * 早先这个函数只看最后一根有没有突破。那样做检测是对的，但**没法拿来做
+ * 卡片**：突破只在那一根上成立，下一轮扫描就判不出来了，卡片会闪一下
+ * 就消失。实测的后果更直接——主扫描表的点火列 20 行全是空的，因为
+ * "恰好这一根在突破"是个很小概率的瞬间。
+ *
+ * 现在改成三步：
+ *   ① 从最后一根往回找，在 maxAge 根之内找到最近一次突破；
+ *   ② 沿着连续突破的那一串往回走到**第一根**，它才是点火时刻（ignitedAt）——
+ *      锚在这里，钥匙才是稳定的，卡片的首次价与计时才不会每轮重置；
+ *   ③ 现价必须仍在 level 之外，否则这次点火已经熄了，返回 null。
+ *
+ * 突破之后横盘（不再创新高）不会让卡片消失——第 ③ 步看的是"有没有守住
+ * 那条线"，不是"有没有继续突破"。只有价格收回区间内才算失败。
+ *
+ * 整段一律用**收盘价**，跟六场景的失效判定刻意相反（那边用区间极值，
+ * 插针也算数）。两者要防的是相反的错误：失效怕漏判，点火怕误判——
+ * 影线穿一下又收回来正是最典型的假突破。
+ *
+ * 一串连续突破中间断了、之后又突破，会被当成**一次新的点火**（钥匙变、
+ * 重新计时）。这是有意的：盘整之后再次突破，本来就是一个新的入场时点。
+ */
+export function detectIgnition(
+  bars: CoinGlassPriceBar[],
+  lookback: number = IGNITION_LOOKBACK_BARS,
+  maxAgeBars: number = IGNITION_MAX_AGE_BARS
+): Ignition | null {
+  const last = bars.length - 1;
+  if (last < lookback) return null;
+
+  // ① 最近一次突破
+  const oldest = Math.max(lookback, last - maxAgeBars);
+  let at = -1;
+  let hit: { direction: "up" | "down"; level: number } | null = null;
+  for (let i = last; i >= oldest; i--) {
+    const b = breakoutAt(bars, i, lookback);
+    if (b) {
+      at = i;
+      hit = b;
+      break;
+    }
+  }
+  if (!hit || at < 0) return null;
+
+  // ② 往回走到这一串连续同向突破的头一根
+  let origin = at;
+  let level = hit.level;
+  while (origin - 1 >= oldest) {
+    const prev = breakoutAt(bars, origin - 1, lookback);
+    if (!prev || prev.direction !== hit.direction) break;
+    origin -= 1;
+    level = prev.level;
+  }
+
+  // ③ 现价还守着那条线吗
+  const close = parseFloat(bars[last].close);
+  if (!Number.isFinite(close) || close <= 0) return null;
+  if (!Number.isFinite(level) || level <= 0) return null;
+  const alive = hit.direction === "up" ? close > level : close < level;
+  if (!alive) return null;
+
+  const ignitedAt = bars[origin].time;
+  if (!Number.isFinite(ignitedAt)) return null;
+
+  return {
+    direction: hit.direction,
+    level,
+    distancePct: (Math.abs(close - level) / level) * 100,
+    ignitedAt,
+    barsAgo: last - origin,
+  };
 }

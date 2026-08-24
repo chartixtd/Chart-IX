@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { SCAN_INTERVAL_MS } from "@/lib/screener/types";
 import type { ScannerRow, ScannerPayload } from "@/lib/screener/types";
-import type { ScenarioCard } from "@/lib/screener/cards";
+import type { AlertCardData } from "@/lib/screener/cards";
 
 type ScannerResponse = ScannerPayload;
 
@@ -17,7 +17,7 @@ async function fetchScannerPayload(): Promise<ScannerResponse> {
 
 export interface ScannerData {
   rows: ScannerRow[];
-  cards: ScenarioCard[];
+  cards: AlertCardData[];
   isLoading: boolean;
   error: Error | null;
   /** 请求正在飞行中；用来禁用"立即刷新"按钮，避免连点重复请求 */

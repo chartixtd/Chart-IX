@@ -44,6 +44,18 @@ const config: Config = {
         "warning-bg": "rgba(224, 169, 59, 0.1)",
         info: "#5B8DEF",
         "info-bg": "rgba(91, 141, 239, 0.1)",
+        // 六场景基调色（screener）。色相沿用 scenario-ui.ts 里的推导
+        // （青→蓝→金→橙→紫→品红，绿红是方向的禁区），但收进 token 层：
+        // 饱和度比 Tailwind 默认调色板低一档，跟暖黑曜石世界坐在一起。
+        "accent-teal": "#3CC4AF",
+        "accent-orange": "#EE9A4D",
+        "accent-violet": "#B692E8",
+        "accent-magenta": "#DF7ECD",
+        // 点火卡专用。六个场景色（青/蓝/金/橙/紫/品红）已经把色环占满，
+        // 而点火不是「第七个场景」——它是另一个类别的信号，需要一眼能跟
+        // 那六个分开。落在黄绿这一档：离金(42°)够远不会被读成同一族，
+        // 离 success 绿(152°)也够远不会被误读成「做多」。
+        "accent-ignite": "#B8E62E",
       },
       spacing: {
         "safe-t": "env(safe-area-inset-top)",

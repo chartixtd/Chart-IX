@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
 import { cn, formatPrice, formatPercent } from "@/lib/utils";
-import type { ScenarioCard } from "@/lib/screener/cards";
+import type { AlertCardData } from "@/lib/screener/cards";
 import { signedPct } from "@/lib/screener/cards";
 import { isInvalidated } from "@/lib/screener/invalidation";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { FactorMeter } from "./FactorMeter";
-import { readingKey, TONE_CLASSES, DIRECTION_CLASSES } from "./scenario-ui";
+import { readingKey, toneFor, DIRECTION_CLASSES } from "./scenario-ui";
 
 // 接收 t 而不是硬编码文案——页面其余文案全部走 i18n，这里也不能例外
 // （英文/马来语环境下直接冒出一个中文"刚刚"是真的会发生的 bug）。
@@ -63,14 +63,14 @@ export function AlertCard({
   card,
   livePrice = null,
 }: {
-  card: ScenarioCard;
+  card: AlertCardData;
   livePrice?: number | null;
 }) {
   const t = useTranslations("screener");
   const locale = useLocale();
-  const { scenario } = card;
+  const { trigger, direction } = card;
   const price = livePrice ?? card.firstPrice;
-  const pct = signedPct(card.firstPrice, price, scenario.direction);
+  const pct = signedPct(card.firstPrice, price, direction);
   // peakPct 只在扫描时从 K 线算，而 pct 是实时的——不取 max 的话，价格在
   // 两次扫描之间创了新高时卡片会自相矛盾：「现在 +2.1%，最高到过 0.00%」。
   const peak = Math.max(card.peakPct, pct);
@@ -83,16 +83,43 @@ export function AlertCard({
     livePrice !== null &&
     isInvalidated(card.invalidation, livePrice, livePrice);
 
-  const toneCls = TONE_CLASSES[scenario.kind];
-  const dirCls = DIRECTION_CLASSES[scenario.direction];
-  const fresh = freshness(card.firstSeenAt);
-  const pricePct = ((scenario.swingNow - scenario.swingPrev) / scenario.swingPrev) * 100;
-  const verdict = t(`scenarios.reading.${readingKey(scenario.kind, scenario.side)}`, {
-    price: formatPrice(scenario.swingNow),
-    pricePct: formatPercent(pricePct),
-    cvdPct: formatPercent(scenario.cvdPct),
-    oiPct: formatPercent(scenario.oiPct),
-  });
+  const toneCls = toneFor(trigger);
+  const dirCls = DIRECTION_CLASSES[direction];
+
+  // 「X 前触发」和新鲜度用的是**信号真正发生的时刻**，不是 firstSeenAt。
+  // 两者对场景卡是一回事，对点火卡不是：点火那根 K 线可能在我们扫到它之前
+  // 就走完了（扫描 15 分钟一轮、K 线 30 分钟一根），用 firstSeenAt 会把一次
+  // 半小时前的点火说成「刚刚」。firstSeenAt 仍然管首次价与累计涨跌——那两个
+  // 数就该锚在我们第一次记录它的那一刻。
+  const triggeredAt =
+    trigger.type === "ignition" ? new Date(trigger.ignition.ignitedAt).toISOString() : card.firstSeenAt;
+  const fresh = freshness(triggeredAt);
+
+  // 场景卡与点火卡在这三格上说的是不同的话，其余版式完全共用。
+  let title: string;
+  let verdict: string;
+  let action: string;
+  let trap = false;
+  if (trigger.type === "scenario") {
+    const sc = trigger.scenario;
+    trap = sc.trap;
+    title = t(`scenarios.${sc.kind}.name`);
+    action = t(`scenarios.${sc.kind}.action`);
+    verdict = t(`scenarios.reading.${readingKey(sc.kind, sc.side)}`, {
+      price: formatPrice(sc.swingNow),
+      pricePct: formatPercent(((sc.swingNow - sc.swingPrev) / sc.swingPrev) * 100),
+      cvdPct: formatPercent(sc.cvdPct),
+      oiPct: formatPercent(sc.oiPct),
+    });
+  } else {
+    const ig = trigger.ignition;
+    title = t(`ignition.${ig.direction}.name`);
+    action = t(`ignition.${ig.direction}.action`);
+    verdict = t(`ignition.reading.${ig.direction}`, {
+      level: formatPrice(ig.level),
+      distancePct: formatPercent(ig.distancePct),
+    });
+  }
 
   return (
     <div
@@ -111,7 +138,7 @@ export function AlertCard({
               dirCls.pillText
             )}
           >
-            {directionLabel(scenario.direction, t)}
+            {directionLabel(direction, t)}
           </span>
           <span className="font-display text-sm font-semibold text-text-primary">
             {card.symbol.replace(/-USDT$/, "")}
@@ -128,7 +155,7 @@ export function AlertCard({
               {t("alerts.fresh_stale")}
             </span>
           )}
-          {triggeredLabel(card.firstSeenAt, t)}
+          {triggeredLabel(triggeredAt, t)}
         </span>
       </div>
 
@@ -143,11 +170,12 @@ export function AlertCard({
             toneCls.text
           )}
         >
-          {t(`scenarios.${scenario.kind}.name`)}
+          {trigger.type === "ignition" && <Icon name="bolt" className="mr-0.5 inline h-3 w-3" />}
+          {title}
         </span>
         {/* 陷阱标签跟着场景自身的基调色走（假顶=紫 / 假底=品红），
             写死一个紫会让品红卡片上出现两个对不上的"陷阱色"。 */}
-        {scenario.trap && (
+        {trap && (
           <span className={cn("inline-flex items-center gap-0.5 text-[11px] font-semibold", toneCls.text)}>
             <Icon name="alert" className="h-3 w-3" />
             {t("scenarios.trap_label")}
@@ -177,7 +205,7 @@ export function AlertCard({
           dead && "line-through"
         )}
       >
-        {t(`scenarios.${scenario.kind}.action`)}
+        {action}
       </div>
 
       {/* 涨跌与价格并成一组：左边是「赚了多少」，右边是三个价格。
@@ -218,20 +246,20 @@ export function AlertCard({
           这时候更需要一键跳过去，而不是把入口收走。 */}
       <Link
         href={
-          scenario.direction === "manage"
+          direction === "manage"
             ? `/${locale}/trade?symbol=${card.symbol}&market=futures`
-            : `/${locale}/trade?symbol=${card.symbol}&side=${scenario.direction}&market=futures`
+            : `/${locale}/trade?symbol=${card.symbol}&side=${direction}&market=futures`
         }
         className="block"
       >
         <Button
           variant={
-            scenario.direction === "long" ? "green" : scenario.direction === "short" ? "red" : "secondary"
+            direction === "long" ? "green" : direction === "short" ? "red" : "secondary"
           }
           size="sm"
           className="min-h-[38px] w-full text-xs"
         >
-          {scenario.direction === "manage" ? t("action_view") : t("alerts.trade")}
+          {direction === "manage" ? t("action_view") : t("alerts.trade")}
         </Button>
       </Link>
     </div>

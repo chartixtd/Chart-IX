@@ -209,6 +209,8 @@ interface ChartState {
   drawingColor: string;
   /** Keep the armed tool after finishing a drawing (TradingView's "magnet"-style pin). */
   keepToolActive: boolean;
+  /** 图例折叠成一行。副图多的时候图例会挡住左上角的 K 线。 */
+  legendCollapsed: boolean;
 
   /** Folds this device's v1 localStorage indicator settings in, at most once. */
   runV1MigrationIfNeeded: () => void;
@@ -221,6 +223,7 @@ interface ChartState {
   updateIndicatorSettings: (instanceId: string, patch: Record<string, ExternalSettingValue>) => void;
   updateIndicatorStyle: (instanceId: string, plotKey: string, patch: PlotStyleOverride) => void;
   toggleIndicatorVisible: (instanceId: string) => void;
+  toggleLegendCollapsed: () => void;
   clearIndicators: () => void;
   resetIndicatorToDefaults: (instanceId: string) => void;
 
@@ -294,6 +297,7 @@ export const useChartStore = create<ChartState>()(
       selectedDrawingId: null,
       drawingColor: DRAWING_COLORS[0],
       keepToolActive: false,
+      legendCollapsed: false,
 
       runV1MigrationIfNeeded: () =>
         set((s) => {
@@ -384,6 +388,8 @@ export const useChartStore = create<ChartState>()(
           ),
         })),
 
+      toggleLegendCollapsed: () => set((s) => ({ legendCollapsed: !s.legendCollapsed })),
+
       clearIndicators: () => set({ appliedIndicators: [] }),
 
       resetIndicatorToDefaults: (instanceId) =>
@@ -454,6 +460,7 @@ export const useChartStore = create<ChartState>()(
         drawings: s.drawings,
         drawingColor: s.drawingColor,
         keepToolActive: s.keepToolActive,
+        legendCollapsed: s.legendCollapsed,
       }),
       merge: (persisted, current) => mergeChartState(persisted, current),
     }

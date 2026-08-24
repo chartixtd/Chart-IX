@@ -310,6 +310,8 @@
       "show": "Show",
       "settings": "Settings",
       "remove": "Remove",
+      "legend_collapse": "Collapse indicators",
+      "legend_expand": "Expand indicators",
       "title": "Indicators",
       "search_placeholder": "Search indicators…",
       "no_results": "No matching indicators",

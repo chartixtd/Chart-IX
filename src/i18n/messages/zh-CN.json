@@ -310,6 +310,8 @@
       "show": "显示",
       "settings": "参数设置",
       "remove": "移除",
+      "legend_collapse": "折叠指标",
+      "legend_expand": "展开指标",
       "title": "指标",
       "search_placeholder": "搜索指标…",
       "no_results": "没有匹配的指标",

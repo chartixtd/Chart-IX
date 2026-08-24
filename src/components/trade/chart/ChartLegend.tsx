@@ -24,12 +24,47 @@ export function ChartLegend({
   const applied = useChartStore((s) => s.appliedIndicators);
   const toggleVisible = useChartStore((s) => s.toggleIndicatorVisible);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
+  const collapsed = useChartStore((s) => s.legendCollapsed);
+  const toggleCollapsed = useChartStore((s) => s.toggleLegendCollapsed);
 
   if (applied.length === 0) return null;
 
+  // 折叠态：整组图例塌成一行——只留下各指标的颜色点和数量，
+  // 让出左上角那块 K 线。展开态里折叠按钮占第一行行首的固定槽位，
+  // 其余行留同宽的空槽，颜色点才不会错位。
+  if (collapsed) {
+    return (
+      <div className="pointer-events-none absolute left-2 top-10 z-[6] flex max-w-[60%] flex-col items-start gap-0.5">
+        <button
+          onClick={toggleCollapsed}
+          title={t("legend_expand")}
+          aria-label={t("legend_expand")}
+          aria-expanded={false}
+          className="pointer-events-auto flex items-center gap-1.5 rounded-xs bg-bg-primary/85 px-2 py-1.5 text-text-muted hover:text-text-primary"
+        >
+          <Icon name="chevronDown" className="h-3.5 w-3.5 shrink-0" />
+          <span className="flex items-center gap-1">
+            {applied.map((a) => {
+              const def = resolveDef(a);
+              if (!def) return null;
+              return (
+                <span
+                  key={a.instanceId}
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: def.plots[0]?.color, opacity: a.visible ? 1 : 0.3 }}
+                />
+              );
+            })}
+          </span>
+          <span className="font-mono text-xs leading-none">{applied.length}</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="pointer-events-none absolute left-2 top-10 z-[6] flex max-w-[60%] flex-col items-start gap-0.5">
-      {applied.map((a) => {
+      {applied.map((a, i) => {
         const def = resolveDef(a);
         if (!def) return null;
         // 外部数据指标：把「周期不支持 / 加载中 / 不可用」直接写在图例上，
@@ -50,6 +85,19 @@ export function ChartLegend({
             key={a.instanceId}
             className="pointer-events-auto group flex items-center gap-2 rounded-xs bg-bg-primary/85 px-2.5 py-1.5"
           >
+            {i === 0 ? (
+              <button
+                onClick={toggleCollapsed}
+                title={t("legend_collapse")}
+                aria-label={t("legend_collapse")}
+                aria-expanded
+                className="-ml-1 shrink-0 leading-none text-text-muted hover:text-text-primary"
+              >
+                <Icon name="chevronUp" className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <span aria-hidden className="-ml-1 h-3.5 w-3.5 shrink-0" />
+            )}
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full"
               style={{ background: def.plots[0]?.color, opacity: a.visible ? 1 : 0.3 }}

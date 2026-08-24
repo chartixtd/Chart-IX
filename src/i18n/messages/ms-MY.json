@@ -288,7 +288,9 @@
     "mobile_symbol_picker": "Pilih pasangan",
     "offline_disabled": "Anda luar talian — pesanan tidak boleh dibuat",
     "indicators": {
-      "no_data": "Tiada data buat masa ini — pasaran instrumen ini mungkin tutup."
+      "no_data": "Tiada data buat masa ini — pasaran instrumen ini mungkin tutup.",
+      "legend_collapse": "Kuncupkan penunjuk",
+      "legend_expand": "Kembangkan penunjuk"
     },
     "stat_high": "24j Tinggi",
     "stat_low": "24j Rendah",

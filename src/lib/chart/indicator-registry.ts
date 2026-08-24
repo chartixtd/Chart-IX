@@ -714,7 +714,9 @@ export const INDICATORS: IndicatorDef[] = [
           { value: "all", label: "All (no exchange filter)", labelZh: "全部（不可筛交易所）" },
         ],
       },
-      CG_UNIT,
+      // 按保证金分的两个端点没有 unit 参数，控件放出来也不起作用，所以只在
+      // 「全部」那一档显示（见 coinglass/chart-series.ts 顶部）。
+      { ...CG_UNIT, showWhen: { key: "margin", in: ["all"] } },
       { ...CG_EXCHANGE_MODE, showWhen: { key: "margin", in: ["coin", "stablecoin"] } },
       { ...CG_EXCHANGES, options: toOptions(FUTURES_EXCHANGE_CHOICES) },
       CG_DISPLAY, CG_LINE_SOURCE,

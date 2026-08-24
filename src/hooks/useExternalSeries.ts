@@ -23,15 +23,23 @@ export interface UseExternalSeriesResult {
   payload: ExternalSeriesPayload;
   /** 每个 key 的状态，图例用它显示「周期不支持 / 加载中 / 不可用」。 */
   status: Record<string, ExternalSeriesStatus>;
+  /**
+   * 出错时上游给的错误码（如 COINGLASS_404 / COINGLASS_401 / UPSTREAM_ERROR）。
+   * 图例会把它显示出来——「数据暂不可用」这五个字本身没法诊断，而端点路径写错
+   * （404）、套餐不够（401）、参数不对（400）需要的处置完全不同。
+   */
+  errors: Record<string, string>;
 }
 
 async function fetchSeries(r: ExternalSeriesRequest): Promise<ExternalSeriesBars> {
   const url = new URL("/api/coinglass/series", window.location.origin);
   for (const [k, v] of Object.entries(externalRequestToQuery(r))) url.searchParams.set(k, v);
   const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-  const json = await res.json();
-  if (!json.success) throw new Error(json.error?.message || "API error");
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.success) {
+    // 错误码比人话更有用，放在最前面让图例直接显示
+    throw new Error(json?.error?.code || `HTTP_${res.status}`);
+  }
   return json.data.bars as ExternalSeriesBars;
 }
 
@@ -93,8 +101,10 @@ export function useExternalSeries(
   }
 
   const status: Record<string, ExternalSeriesStatus> = {};
+  const errors: Record<string, string> = {};
   unique.forEach(({ key, request }, i) => {
     const r = results[i];
+    if (r.isError && r.error instanceof Error && r.error.message) errors[key] = r.error.message;
     status[key] = !enabled
       ? "idle"
       : !isExternalIntervalSupported(request.interval)
@@ -106,7 +116,7 @@ export function useExternalSeries(
             : "loading";
   });
 
-  return { payload, status };
+  return { payload, status, errors };
 }
 
 // 给数据引用一个稳定的 id，用来拼签名；WeakMap 不会阻止旧数据被回收。

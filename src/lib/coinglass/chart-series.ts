@@ -15,9 +15,18 @@ import {
  * （时间戳转成秒）。
  *
  * 端点一览（docs.coinglass.com，2026-08-23 核对；STARTUP 全部 ≥30m 可用）：
- *   oi  margin=all         /api/futures/open-interest/aggregated-history            无 exchange_list
- *   oi  margin=stablecoin  /api/futures/open-interest/aggregated-stablecoin-margin-history  exchange_list 必填
- *   oi  margin=coin        /api/futures/open-interest/aggregated-coin-margin-history        exchange_list 必填
+ *   oi  margin=all         /api/futures/open-interest/aggregated-history         无 exchange_list，有 unit
+ *   oi  margin=stablecoin  /api/futures/open-interest/aggregated-stablecoin-history  exchange_list 必填，无 unit
+ *   oi  margin=coin        /api/futures/open-interest/aggregated-coin-margin-history exchange_list 必填，无 unit
+ *
+ * 注意 U 本位那个是 `aggregated-stablecoin-history`，**不是**
+ * `aggregated-stablecoin-margin-history`——币本位那个才带 `-margin`。当初按币本位
+ * 的写法类比推出来，多写了一段 `-margin`，结果 U 本位一上线就是「CoinGlass 数据
+ * 暂不可用」。这一族端点的命名不对称，只能逐个照抄文档，不能类比。
+ *
+ * 另外这两个按保证金分的端点**没有 `unit` 参数**（只有不分保证金的
+ * aggregated-history 有）。多传一个未定义的参数即使被忽略也是噪音，
+ * 而且会让「单位」这个设置看起来能用其实不起作用——所以只在支持的那个端点上传。
  *   cvd market=futures     /api/futures/aggregated-cvd/history                             exchange_list 必填
  *   cvd market=spot        /api/spot/aggregated-cvd/history                                exchange_list 必填
  * 全部支持 unit=usd|coin、start_time/end_time；**limit 上限两族不同**：
@@ -73,9 +82,12 @@ export function externalRequestToUpstream(r: ExternalSeriesRequest): UpstreamCal
     const path =
       r.margin === "coin"
         ? "/api/futures/open-interest/aggregated-coin-margin-history"
-        : "/api/futures/open-interest/aggregated-stablecoin-margin-history";
+        : "/api/futures/open-interest/aggregated-stablecoin-history";
     const fallback = r.margin === "coin" ? DEFAULT_EXCHANGES.oiCoin : DEFAULT_EXCHANGES.oiStablecoin;
-    return { path, params: { ...base, exchange_list: (r.exchanges ?? fallback).join(",") } };
+    // 这两个端点没有 unit 参数，见文件顶部说明
+    const { unit: _unit, ...noUnit } = base;
+    void _unit;
+    return { path, params: { ...noUnit, exchange_list: (r.exchanges ?? fallback).join(",") } };
   }
 
   const spot = r.market === "spot";

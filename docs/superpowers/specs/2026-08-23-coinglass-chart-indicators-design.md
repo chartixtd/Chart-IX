@@ -233,6 +233,36 @@ Crypto.com / Bitunix / Hyperliquid / MEXC / KuCoin / LBank / WhiteBIT）看不�
 合约 CVD 的默认里是有 Hyperliquid 的，OI 有没有需要滚动确认；有的话改
 `DEFAULT_EXCHANGES` 一行即可。
 
+## U 本位端点路径推错了（第七轮）
+
+OI 默认切到 U 本位后，图例直接显示「CoinGlass 数据暂不可用」。原因是路径是我
+**按币本位类比推的**，没照抄文档：
+
+    币本位   /api/futures/open-interest/aggregated-coin-margin-history      ← 带 -margin
+    U 本位   /api/futures/open-interest/aggregated-stablecoin-history       ← 不带 -margin
+
+这一族端点的命名不对称。教训很直接：**端点路径只能逐个照抄文档，不能类比**。
+借这次把五个端点全部逐字核对了一遍（此前只核对过三个，另两个靠类比）：
+
+    /api/futures/open-interest/aggregated-history              ✓
+    /api/futures/open-interest/aggregated-coin-margin-history  ✓
+    /api/futures/open-interest/aggregated-stablecoin-history   ✓（本轮修正）
+    /api/futures/aggregated-cvd/history                        ✓
+    /api/spot/aggregated-cvd/history                           ✓
+
+顺带发现按保证金分的那两个 OI 端点**没有 `unit` 参数**（只有不分保证金的
+aggregated-history 有）。所以：只在支持的端点上传 unit；「单位」控件也只在
+「全部」那一档显示（放出来却不起作用比没有更糟）；request 里的 unit 对这两档
+归一成 usd，免得同一份数据因为 unit 不同被当成两个缓存条目。
+
+### 报错信息改成可自诊断
+
+「CoinGlass 数据暂不可用」这五个字没法诊断——路径写错（404）、套餐不够（401）、
+参数不对（400）需要的处置完全不同，而这一轮正是因为提示笼统才多花了一个来回。
+现在把上游错误码一路带到图例上显示：
+
+    CoinGlass 数据暂不可用 (COINGLASS_404)
+
 ## 分层
 
 ```

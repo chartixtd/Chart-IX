@@ -17,9 +17,19 @@ describe("externalRequestToUpstream", () => {
     expect(coin.path).toBe("/api/futures/open-interest/aggregated-coin-margin-history");
     expect(coin.params.exchange_list).toBe(DEFAULT_EXCHANGES.oiCoin.join(","));
 
+    // U 本位那个**没有** `-margin`，命名和币本位不对称。按类比推错过一次，
+    // 表现是 U 本位一用就「CoinGlass 数据暂不可用」。
     const stable = externalRequestToUpstream(REQ({ margin: "stablecoin", exchanges: ["OKX", "Bybit"] }));
-    expect(stable.path).toBe("/api/futures/open-interest/aggregated-stablecoin-margin-history");
+    expect(stable.path).toBe("/api/futures/open-interest/aggregated-stablecoin-history");
     expect(stable.params.exchange_list).toBe("OKX,Bybit");
+  });
+
+  // 只有不分保证金的那个端点有 unit 参数，另外两个没有。
+  it("sends unit only to the endpoint that documents it", () => {
+    expect(externalRequestToUpstream(REQ({ margin: "all" })).params.unit).toBe("usd");
+    expect(externalRequestToUpstream(REQ({ margin: "coin" })).params.unit).toBeUndefined();
+    expect(externalRequestToUpstream(REQ({ margin: "stablecoin" })).params.unit).toBeUndefined();
+    expect(externalRequestToUpstream(REQ({ kind: "cvd" })).params.unit).toBe("usd");
   });
 
   it("routes CVD to the dedicated aggregated-cvd endpoints (the ones that return cum_vol_delta)", () => {

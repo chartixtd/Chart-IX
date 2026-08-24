@@ -264,6 +264,15 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
     return out;
   }, [extRequests, external.status]);
 
+  const legendErrors = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [id, { key }] of extRequests.byInstance) {
+      const code = external.errors[key];
+      if (code) out[id] = code;
+    }
+    return out;
+  }, [extRequests, external.errors]);
+
   const bars = useMemo(() => {
     if (!klines?.length) return null;
     const valid = klines
@@ -1054,7 +1063,11 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
           )}
         </div>
 
-        <ChartLegend onOpenSettings={() => setIndicatorsOpen(true)} externalStatus={legendStatus} />
+        <ChartLegend
+          onOpenSettings={() => setIndicatorsOpen(true)}
+          externalStatus={legendStatus}
+          externalErrors={legendErrors}
+        />
 
         <div ref={chartRef} className="h-full w-full" />
 

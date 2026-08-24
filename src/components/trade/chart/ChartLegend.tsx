@@ -15,10 +15,13 @@ import { Icon } from "@/components/ui/Icon";
 export function ChartLegend({
   onOpenSettings,
   externalStatus,
+  externalErrors,
 }: {
   onOpenSettings: () => void;
   /** CoinGlass 序列的加载状态，按实例 id。声明了 `requires` 的指标据此显示提示。 */
   externalStatus?: Record<string, ExternalSeriesStatus | "invalid">;
+  /** 出错时的上游错误码，按实例 id。跟在「数据暂不可用」后面显示，便于自诊断。 */
+  externalErrors?: Record<string, string>;
 }) {
   const t = useTranslations("trade.indicators");
   const applied = useChartStore((s) => s.appliedIndicators);
@@ -76,7 +79,7 @@ export function ChartLegend({
             : extState === "loading"
               ? t("ext_loading")
               : extState === "error"
-                ? t("ext_error")
+                ? `${t("ext_error")}${externalErrors?.[a.instanceId] ? ` (${externalErrors[a.instanceId]})` : ""}`
                 : extState === "invalid"
                   ? t("ext_invalid_symbol")
                   : null;

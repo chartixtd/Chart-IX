@@ -249,7 +249,9 @@ export function buildExternalRequest(
     interval,
     market,
     margin,
-    unit: pick(s.unit, EXTERNAL_UNITS, "usd"),
+    // 按保证金分的两个 OI 端点没有 unit 参数（见 coinglass/chart-series.ts），
+    // 归一成 usd，免得同一份数据因为 unit 不同被当成两个缓存条目。
+    unit: kind === "oi" && margin !== "all" ? "usd" : pick(s.unit, EXTERNAL_UNITS, "usd"),
     // 不分保证金的 OI 端点没有 exchange_list 参数，筛选在这里就没有意义
     exchanges: exchanges && exchanges.length && !(kind === "oi" && margin === "all") ? exchanges : null,
   };
@@ -342,7 +344,7 @@ export function parseExternalSeriesQuery(get: (name: string) => string | null): 
       interval,
       market,
       margin,
-      unit: unitRaw as ExternalUnit,
+      unit: kind === "oi" && margin !== "all" ? "usd" : (unitRaw as ExternalUnit),
       exchanges: kind === "oi" && margin === "all" ? null : exchanges,
     },
   };

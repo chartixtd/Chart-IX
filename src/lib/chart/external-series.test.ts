@@ -115,6 +115,16 @@ describe("buildExternalRequest", () => {
     expect(buildExternalRequest("cvd", { symbolMode: "custom", symbol: "??" }, "BTC-USDT", "30m")).toBeNull();
   });
 
+  it("forces unit=usd on margin-specific OI (those endpoints have no unit param)", () => {
+    expect(buildExternalRequest("oi", { margin: "stablecoin", unit: "coin" }, "BTC-USDT", "30m")!.unit).toBe("usd");
+    expect(buildExternalRequest("oi", { margin: "coin", unit: "coin" }, "BTC-USDT", "30m")!.unit).toBe("usd");
+    expect(buildExternalRequest("oi", { margin: "all", unit: "coin" }, "BTC-USDT", "30m")!.unit).toBe("coin");
+    expect(buildExternalRequest("cvd", { unit: "coin" }, "BTC-USDT", "30m")!.unit).toBe("coin");
+    // 服务端入口同样归一，否则同一份数据会被当成两个缓存条目
+    const q = parseExternalSeriesQuery((k) => ({ kind: "oi", coin: "BTC", interval: "30m", margin: "coin", unit: "coin" } as Record<string, string>)[k] ?? null);
+    expect(q.ok && q.request.unit).toBe("usd");
+  });
+
   it("applies market/margin/unit and ignores keys that don't belong to the kind", () => {
     const cvd = buildExternalRequest("cvd", { market: "spot", margin: "coin", unit: "coin" }, "BTC-USDT", "30m")!;
     expect(cvd.market).toBe("spot");

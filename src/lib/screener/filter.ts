@@ -35,7 +35,7 @@ export function sortRows(rows: ScannerRow[], key: SortKey, dir: 1 | -1): Scanner
     // 它们的分数/方向是缺失回退值，混进任何一列的排序里都会误导：
     // 按分数降序时它们会插在中段（回退分合计 40），按升序时又会跑到最前，
     // 两种都在暗示一个它们没有的结论。
-    const gapDiff = a.dataGaps.length - b.dataGaps.length;
+    const gapDiff = (a.dataGaps?.length ?? 0) - (b.dataGaps?.length ?? 0);
     if (gapDiff !== 0) return gapDiff;
 
     const av = a[key];

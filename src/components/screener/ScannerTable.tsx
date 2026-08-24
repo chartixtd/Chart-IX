@@ -116,7 +116,7 @@ export const ScannerTable = memo(function ScannerTable({
       header: t("columns.total"),
       sortable: true,
       render: (r) =>
-        r.dataGaps.length > 0 ? (
+        r.dataGaps?.length ? (
           // 数据不全时显示「—」而不是分数：两个因子在缺数据时都会退回中性分
           // （OI 30 + CVD 10 = 40），显示成 40 会让「上游挂了」看起来像
           // 「信号平平」，而这两件事读者要做的反应完全不同。
@@ -147,7 +147,7 @@ export const ScannerTable = memo(function ScannerTable({
       // 无从复核的黑箱数字。手机上柱子旁边补两个读数——那里横向有空间，
       // 而 5px 宽的柱子单独看确实读不出高低。
       render: (r) =>
-        r.dataGaps.length > 0 ? (
+        r.dataGaps?.length ? (
           <span className="text-sm text-text-muted">—</span>
         ) : (
         // FactorStack 本身整个是 aria-hidden（它只是两根装饰柱），
@@ -180,7 +180,7 @@ export const ScannerTable = memo(function ScannerTable({
       key: "ignition",
       header: t("columns.ignition"),
       render: (r) =>
-        r.ignition === null ? (
+        !r.ignition ? (
           <span className="text-text-muted">—</span>
         ) : (
           <span

@@ -218,7 +218,26 @@ export interface ScannerRow {
   sourceExchange: string;
 }
 
+/**
+ * 扫描结果的**形状**版本。给 ScannerRow / ScannerPayload 加删字段时必须 +1。
+ *
+ * 存在的理由是一次真实的生产崩溃：给 ScannerRow 加了 `ignition` 字段之后，
+ * DB 缓存里还躺着上一版算出来的 payload——那些行没有这个 key，读出来是
+ * `undefined` 而不是 `null`，前端 `=== null` 的判断拦不住，直接读
+ * `.direction` 就白屏了（TypeError: Cannot read properties of undefined）。
+ *
+ * **类型系统在这里帮不上忙**：payload 从 DB 读出来时是 `any`，一句
+ * `as ScannerPayload` 就把它当成了当前版本的形状，而它其实是上一版的。
+ * 同样的隐患 `dataGaps`（`r.dataGaps.length`）、`cards`、`newCards` 全都有。
+ *
+ * 版本对不上就当缓存不存在，下一个请求重算一遍——代价是一轮扫描，
+ * 比白屏便宜太多。
+ */
+export const SCANNER_PAYLOAD_VERSION = 2;
+
 export interface ScannerPayload {
+  /** 见 SCANNER_PAYLOAD_VERSION —— 形状对不上的缓存一律丢弃 */
+  version: number;
   rows: ScannerRow[];
   /**
    * 六场景卡片，按总分从高到低。**它是 rows 的视图，不是独立的实体**

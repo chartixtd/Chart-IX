@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { formatScannerMessage } from "./telegram-push";
 import type { TelegramPushSettings } from "./telegram-push";
 import type { ScannerPayload, ScannerRow } from "./screener/types";
+import { SCANNER_PAYLOAD_VERSION } from "./screener/types";
 import type { Scenario } from "./screener/factors/scenario";
 
 function scenario(overrides: Partial<Scenario> = {}): Scenario {
@@ -63,7 +64,7 @@ function row(o: Partial<ScannerRow> = {}): ScannerRow {
   };
 }
 
-const payload: ScannerPayload = { rows: [row()], cards: [], newCards: [], computedAt: Date.UTC(2026, 7, 18, 12, 0) };
+const payload: ScannerPayload = { version: SCANNER_PAYLOAD_VERSION, rows: [row()], cards: [], newCards: [], computedAt: Date.UTC(2026, 7, 18, 12, 0) };
 
 describe("formatScannerMessage", () => {
   it("做多与做空分成两组，各带自己的标题", () => {
@@ -116,12 +117,13 @@ describe("formatScannerMessage", () => {
   });
 
   it("空榜单给一句明确的话，不给一张空表", () => {
-    const msg = formatScannerMessage({ rows: [], cards: [], newCards: [], computedAt: 0 }, settings, "zh");
+    const msg = formatScannerMessage({ version: SCANNER_PAYLOAD_VERSION, rows: [], cards: [], newCards: [], computedAt: 0 }, settings, "zh");
     expect(msg).toContain("暂无");
   });
 
   it("每组最多列 8 行——两组加起来仍要留在 Telegram 单条消息的长度上限内", () => {
     const many: ScannerPayload = {
+      version: SCANNER_PAYLOAD_VERSION,
       rows: Array.from({ length: 40 }, (_, i) => row({ symbol: `C${i}-USDT`, coin: `C${i}` })),
       cards: [],
       newCards: [],

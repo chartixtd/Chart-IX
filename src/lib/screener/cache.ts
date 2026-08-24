@@ -1,7 +1,7 @@
 import { createTtlCache } from "@/lib/ttl-cache";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { runScan } from "./pipeline";
-import { SCAN_INTERVAL_MS } from "./types";
+import { SCAN_INTERVAL_MS, SCANNER_PAYLOAD_VERSION } from "./types";
 import type { ScannerPayload } from "./types";
 
 /**
@@ -20,7 +20,18 @@ export async function readScannerCache(): Promise<ScannerPayload | null> {
     if (!data) return null;
     const age = Date.now() - new Date(data.computed_at).getTime();
     if (age < 0 || age >= SCAN_INTERVAL_MS) return null;
-    return data.payload as ScannerPayload;
+
+    // 形状版本对不上就当缓存不存在。**这不是洁癖，是修过的一次生产崩溃**：
+    // 部署了带新字段的代码之后，缓存里还躺着上一版的 payload，那些行缺
+    // 新字段、读出来是 undefined，前端直接白屏。见 SCANNER_PAYLOAD_VERSION。
+    const payload = data.payload as Partial<ScannerPayload> | null;
+    if (!payload || payload.version !== SCANNER_PAYLOAD_VERSION) {
+      console.warn(
+        `[screener] 缓存形状版本不符（缓存 ${payload?.version ?? "无"} / 当前 ${SCANNER_PAYLOAD_VERSION}），丢弃并重算`
+      );
+      return null;
+    }
+    return payload as ScannerPayload;
   } catch {
     return null;
   }

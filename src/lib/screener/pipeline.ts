@@ -26,7 +26,7 @@ import { classifyScenario } from "./factors/scenario";
 import { scenarioInvalidated } from "./invalidation";
 import { detectIgnition } from "./ignition";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
-import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS } from "./types";
+import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS, SCANNER_PAYLOAD_VERSION } from "./types";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -392,6 +392,7 @@ export async function runScan(): Promise<ScannerPayload> {
 
   const newKeys = new Set(newMemos.map((m) => m.key));
   return {
+    version: SCANNER_PAYLOAD_VERSION,
     rows,
     cards: sortCards(cards),
     newCards: cards.filter((c) => newKeys.has(c.key)),

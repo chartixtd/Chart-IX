@@ -124,12 +124,15 @@ export function ChartLegend({
               </span>
             )}
 
-            <span className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+            {/* 触屏没有 hover：opacity-0 的按钮永远看不见、却仍能命中——
+                用户点图例右侧会莫名删掉指标。coarse pointer 下常显；
+                键盘用户靠 focus-within 也能显出来。 */}
+            <span className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100">
               <button
                 onClick={() => toggleVisible(a.instanceId)}
                 title={a.visible ? t("hide") : t("show")}
                 aria-label={a.visible ? t("hide") : t("show")}
-                className="leading-none text-text-muted hover:text-text-primary"
+                className="-m-1 p-1 leading-none text-text-muted hover:text-text-primary"
               >
                 <Icon name={a.visible ? "eye" : "eye-off"} className="h-3.5 w-3.5" />
               </button>
@@ -137,7 +140,7 @@ export function ChartLegend({
                 onClick={onOpenSettings}
                 title={t("settings")}
                 aria-label={t("settings")}
-                className="leading-none text-text-muted hover:text-gold"
+                className="-m-1 p-1 leading-none text-text-muted hover:text-gold"
               >
                 <Icon name="settings" className="h-3.5 w-3.5" />
               </button>
@@ -145,7 +148,7 @@ export function ChartLegend({
                 onClick={() => removeIndicator(a.instanceId)}
                 title={t("remove")}
                 aria-label={t("remove")}
-                className="leading-none text-text-muted hover:text-danger"
+                className="-m-1 p-1 leading-none text-text-muted hover:text-danger"
               >
                 <Icon name="x" className="h-3.5 w-3.5" strokeWidth={2.2} />
               </button>

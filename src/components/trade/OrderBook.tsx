@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { useOrderBook } from "@/hooks/useMarketData";
 import { formatPrice } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 interface OrderBookProps {
   symbol: string;
@@ -22,7 +23,7 @@ export const OrderBook = memo(function OrderBook({ symbol, onPriceClick, market 
     return (
       <div className="space-y-1 p-2">
         {Array.from({ length: 16 }).map((_, i) => (
-          <div key={i} className="h-4 animate-pulse rounded-sm bg-bg-tertiary" />
+          <Skeleton key={i} className="h-4" />
         ))}
       </div>
     );
@@ -47,7 +48,8 @@ export const OrderBook = memo(function OrderBook({ symbol, onPriceClick, market 
     );
 
     return (
-      <div key={`${side}-${i}`} className="grid grid-cols-3 gap-1 px-2 py-0.5 relative">
+      // font-mono tnum：每 tick 重绘的数字列必须等宽，否则刷新时列宽跳动
+      <div key={`${side}-${i}`} className="grid grid-cols-3 gap-1 px-2 py-0.5 relative font-mono tnum">
         <div className={cn("absolute inset-y-0 right-0", barColor)} style={{ width: `${widthPercent}%` }} />
         {onPriceClick ? (
           <button

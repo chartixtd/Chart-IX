@@ -10,6 +10,7 @@ import { purgePageCache } from "@/stores/pwa";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/lib/utils";
 
 // Signed-out visitors only see Home — the product nav (videos/articles/news/trade/screener)
@@ -135,7 +136,7 @@ export function Navbar() {
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
           {auth.loading ? (
-            <div className="h-8 w-20 animate-pulse rounded bg-bg-tertiary" />
+            <Skeleton className="h-8 w-20" />
           ) : auth.userId ? (
             <>
               <Link href={`/${locale}/settings`}>

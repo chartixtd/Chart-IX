@@ -14,7 +14,9 @@ export function UpdateBanner() {
   if (!updateReady || hasPendingOrder) return null;
 
   return (
-    <div className="fixed inset-x-0 top-0 z-[60] flex items-center justify-between gap-3 border-b border-gold/35 bg-bg-secondary px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))]">
+    // 挂在底栏上方而不是盖住顶部 header：fixed top-0 会压住返回按钮/Logo，
+    // 不点「更新」就没法导航。桌面没有底栏，贴底即可。
+    <div className="fixed inset-x-0 bottom-tabbar z-[60] flex items-center justify-between gap-3 border-y border-gold/35 bg-bg-secondary px-4 py-2 lg:bottom-0 lg:border-b-0">
       <span className="text-xs text-text-secondary">{t("update_available")}</span>
       <button
         onClick={applyUpdate}

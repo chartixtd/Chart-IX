@@ -19,6 +19,7 @@
     "copied": "Copied",
     "success": "Operation succeeded",
     "error": "Operation failed",
+    "retry": "Retry",
     "go_home": "Go to Home",
     "view_all": "View All",
     "show_more": "Show More",
@@ -239,6 +240,7 @@
     },
     "orders": {
       "title": "Order History",
+      "subtitle": "Your live and simulated orders, fills, and history",
       "all": "All",
       "pending": "Pending",
       "filled": "Filled",
@@ -257,6 +259,11 @@
       "time": "Time",
       "cancel_order": "Cancel Order",
       "no_orders": "No order history",
+      "empty_all_desc": "Once you place orders, they will show up here",
+      "empty_pending_desc": "No orders are currently awaiting execution",
+      "empty_filled_desc": "No filled orders yet",
+      "empty_canceled_desc": "No canceled orders",
+      "empty_rejected_desc": "No rejected orders",
       "export_csv": "Export CSV"
     },
     "mobile_buy": "Buy",
@@ -349,6 +356,7 @@
     },
     "drawing": {
       "select_tool": "Selection tool (Esc)",
+      "toolbar_toggle": "Drawing tools",
       "line_color": "Line color",
       "keep_tool_on": "Continuous drawing: on (keeps the tool after drawing)",
       "keep_tool_off": "Continuous drawing: off (returns to selection after drawing)",
@@ -391,6 +399,8 @@
     "per_year": "/year",
     "contact_admin": "Please contact the administrator to upgrade",
     "loading": "Loading...",
+    "plans_error": "Failed to load pricing",
+    "plans_empty": "Pricing plans are not available yet",
     "already_pro": "You are already a Pro user",
     "already_pro_desc": "You have unlocked all Pro-exclusive features, including futures trading, advanced charts, and more. Enjoy!",
     "admin_contact_email": "Email",
@@ -916,7 +926,9 @@
     "favorites_empty": "No favorite pairs yet",
     "favorites_cta": "Add some",
     "latest_videos_title": "Latest Videos",
+    "latest_videos_empty": "No videos published yet — check back soon.",
     "latest_articles_title": "Latest Articles",
+    "latest_articles_empty": "No articles published yet — check back soon.",
     "achievements_title": "My Achievements",
     "statement_period": "Statement period · {period}",
     "live_account": "Live Account",
@@ -972,7 +984,7 @@
       "dir_all": "All",
       "dir_long": "Long",
       "dir_short": "Short",
-      "amplitude_rank": "Top {n} by rank"
+      "quiet_rank": "Quietest {n}"
     },
     "columns": {
       "symbol": "Symbol",
@@ -985,7 +997,9 @@
       "market_cap": "Mkt Cap",
       "updated": "Updated",
       "actions": "Actions",
-      "data_missing": "Data unavailable"
+      "data_missing": "Data unavailable",
+      "ignition": "Ignition",
+      "ignition_hint": "Just broke the prior 6h range ({level}) — the only signal with no confirmation lag"
     },
     "table_title": "Scan results",
     "table_hint": "Ranked by score · click a row for details",

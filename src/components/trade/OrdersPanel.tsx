@@ -236,7 +236,7 @@ export function OrdersPanel({ symbol }: OrdersPanelProps) {
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") handleAmend(order); }}
-                      className="flex-1 bg-bg-tertiary border border-border-default rounded px-2 py-0.5 text-xs text-text-primary focus:outline-none focus:border-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className="flex-1 bg-bg-tertiary border border-border-default rounded-sm px-2 py-0.5 text-xs text-text-primary focus:outline-none focus:border-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       autoFocus
                     />
                     <button

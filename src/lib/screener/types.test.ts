@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/limits";
-import { DEEP_SCAN_LIMIT, AMPLITUDE_RANK_TAKE } from "./types";
+import { DEEP_SCAN_LIMIT, QUIET_RANK_TAKE } from "./types";
 
 describe("配额不等式", () => {
   it("1（批量层）+ 3 × DEEP_SCAN_LIMIT（明细层）必须不超过限流器的真实配额", () => {
@@ -23,12 +23,12 @@ describe("配额不等式", () => {
   });
 
   it("实际取的行数不能超过配额允许的上限", () => {
-    // AMPLITUDE_RANK_TAKE 是产品选择（想看几行），DEEP_SCAN_LIMIT 是配额上限，
+    // QUIET_RANK_TAKE 是产品选择（想看几行），DEEP_SCAN_LIMIT 是配额上限，
     // 两个数各自会因为完全不同的理由被改动：前者因为「想多看/少看几行」，
     // 后者因为「配额变了」或「每个币的调用次数变了」。它们之间唯一的
     // 约束就是这一条，而它不写下来就没人会记得——把 take 调到 30 不会报错，
     // 只会让最后几个币的调用撞上限流器等待，一轮跑过 60 秒被 Vercel 掐断，
     // 症状是「扫描偶尔失败」，离真正的原因隔着好几层。
-    expect(AMPLITUDE_RANK_TAKE).toBeLessThanOrEqual(DEEP_SCAN_LIMIT);
+    expect(QUIET_RANK_TAKE).toBeLessThanOrEqual(DEEP_SCAN_LIMIT);
   });
 });

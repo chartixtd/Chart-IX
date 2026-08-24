@@ -24,8 +24,9 @@ import { pickDirection, amplitudeFromBars } from "./score";
 import { pickFundingRate } from "./funding";
 import { classifyScenario } from "./factors/scenario";
 import { scenarioInvalidated } from "./invalidation";
+import { detectIgnition } from "./ignition";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
-import { AMPLITUDE_RANK_TAKE, CARD_RESERVE_SLOTS } from "./types";
+import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS } from "./types";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -127,12 +128,15 @@ export function buildScanTargets(
     });
   }
 
-  // 振幅从高到低。并列时按 symbol 排，只是为了让结果稳定可复现。
+  // 振幅**从低到高**——挑最安静的，不是最吵的。方向反过来的完整依据见
+  // types.ts 的 QUIET_RANK_TAKE 注释（实测：高振幅档捕获率只有 33%，
+  // 且 61% 的情况回吐大于延续；低振幅档捕获率 56%，延续是回吐的 3.5 倍）。
+  // 并列时按 symbol 排，只是为了让结果稳定可复现。
   targets.sort(
-    (a, b) => b.amplitude - a.amplitude || a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol)
+    (a, b) => a.amplitude - b.amplitude || a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol)
   );
 
-  const picked = targets.slice(0, AMPLITUDE_RANK_TAKE);
+  const picked = targets.slice(0, QUIET_RANK_TAKE);
 
   // 已有卡片但这轮掉出前 20 的币，坐配额里空着的那几个名额继续扫。
   // 不这么做的话，它们这一轮算不出场景，卡片会因为「排名掉了」而消失
@@ -148,7 +152,7 @@ export function buildScanTargets(
 }
 
 /**
- * 服务端一次算出整池榜单。四段式，一轮固定 `1 + AMPLITUDE_RANK_TAKE × 3` 次
+ * 服务端一次算出整池榜单。四段式，一轮固定 `1 + QUIET_RANK_TAKE × 3` 次
  * CoinGlass 调用（当前 61 次）：
  *
  *   ① 批量层（1 次调用）：BingX ticker（0 次）+ CoinGecko 市值（0 次）+
@@ -156,8 +160,8 @@ export function buildScanTargets(
  *   ② 粗筛 `preselect()`：0 次调用，只用批量层已有的数据。
  *   ③ 选币 `buildScanTargets()`：0 次调用。成交量门槛读 screener_volume_cache
  *      （由 cron 空转的 tick 轮转刷新，见 volume-cache.ts），振幅排名取前
- *      `AMPLITUDE_RANK_TAKE` 个。
- *   ④ 明细层（`AMPLITUDE_RANK_TAKE × 3` 次）：open-interest/aggregated-history +
+ *      `QUIET_RANK_TAKE` 个（**最安静的**，不是最吵的）。
+ *   ④ 明细层（`QUIET_RANK_TAKE × 3` 次）：open-interest/aggregated-history +
  *      price/history + 聚合版 taker-buy-sell-volume。
  *
  * `BATCH_LAYER_CALLS + DETAIL_CALLS_PER_COIN × DEEP_SCAN_LIMIT ≤ RATE_LIMIT_PER_MIN`
@@ -166,7 +170,7 @@ export function buildScanTargets(
  * 等待，一轮跑到 60.7 秒，撞破 Vercel Hobby 的 60 秒函数上限。所以那个上限
  * 至今是从限流器配额推导的，不是写死的整数。
  *
- * 注意 `AMPLITUDE_RANK_TAKE`（想看几行，20）与 `DEEP_SCAN_LIMIT`（配额允许的
+ * 注意 `QUIET_RANK_TAKE`（想看几行，20）与 `DEEP_SCAN_LIMIT`（配额允许的
  * 上限，24）是两个不同的数，不要合并——理由见 types.ts 那两个常量的注释。
  *
  * **T24 相对上一版的三处结构性改动：**
@@ -318,6 +322,10 @@ export async function runScan(): Promise<ScannerPayload> {
     //
     // 置 null 而不是加个标记：一个已经被价格证伪的结构，不该出现在
     // 「现在是哪种局面」这个问题的答案里，表格和卡片都不该。
+    // 点火：当根收盘突破前 6 小时区间。**这是唯一没有确认延迟的信号**——
+    // 六场景要等摆动点确认（2.5 小时），等到了就不叫「刚启动」了。
+    const ignition = detectIgnition(priceBars);
+
     const raw = classifyScenario(priceBars, oiBars, taker);
     const scenario = raw && !scenarioInvalidated(raw, priceBars) ? raw : null;
 
@@ -336,6 +344,7 @@ export async function runScan(): Promise<ScannerPayload> {
       total,
       factors,
       dataGaps,
+      ignition,
       scenario,
       price,
       change24h: s.change24h,

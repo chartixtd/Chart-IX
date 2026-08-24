@@ -207,7 +207,9 @@ export default function OrdersPage() {
           <div className="border-b border-border-default px-4 py-3">
             <div className="flex gap-4">
               {[...Array(9)].map((_, i) => (
-                <div key={i} className="h-4 animate-pulse rounded bg-bg-tertiary" style={{ width: `${60 + i * 15}px` }} />
+                <div key={i} style={{ width: `${60 + i * 15}px` }}>
+                  <Skeleton className="h-4 w-full" />
+                </div>
               ))}
             </div>
           </div>
@@ -215,7 +217,9 @@ export default function OrdersPage() {
             <div key={i} className="border-b border-border-default px-4 py-4 last:border-0">
               <div className="flex gap-4">
                 {[...Array(9)].map((_, j) => (
-                  <div key={j} className="h-4 animate-pulse rounded bg-bg-tertiary" style={{ width: `${50 + j * 20}px` }} />
+                  <div key={j} style={{ width: `${50 + j * 20}px` }}>
+                    <Skeleton className="h-4 w-full" />
+                  </div>
                 ))}
               </div>
             </div>
@@ -242,7 +246,7 @@ export default function OrdersPage() {
         <div className="text-center py-24">
           <p className="text-danger">{(query.error as Error).message}</p>
           <Button variant="outline" className="mt-4" onClick={() => query.refetch()}>
-            {tCommon("error")}
+            {tCommon("retry")}
           </Button>
         </div>
       </div>
@@ -253,7 +257,7 @@ export default function OrdersPage() {
     <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
-        <p className="mt-1 text-sm text-text-secondary">{t("no_orders")}</p>
+        <p className="mt-1 text-sm text-text-secondary">{t("subtitle")}</p>
       </div>
 
       {query.error && !!query.data?.length && (
@@ -270,7 +274,7 @@ export default function OrdersPage() {
             onClick={() => setActiveTab(tab)}
             className={`rounded-sm px-4 py-2 text-sm font-medium transition-colors ${
               activeTab === tab
-                ? "bg-gold text-black"
+                ? "foil-sm border border-transparent text-bg-primary"
                 : "bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-hover border border-border-default"
             }`}
           >
@@ -292,7 +296,7 @@ export default function OrdersPage() {
       {filteredOrders.length === 0 ? (
         <EmptyState
           title={t("no_orders")}
-          description={activeTab !== "all" ? t(activeTab) : undefined}
+          description={t(`empty_${activeTab}_desc`)}
         />
       ) : (
         <RecordList rows={filteredOrders} columns={columns} rowKey={(order) => order.id} />

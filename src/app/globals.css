@@ -149,13 +149,15 @@
     font-feature-settings: "tnum";
   }
 
-  /* PWA：禁用页面级双指缩放。
-     iOS 只有在安装到主屏的 standalone 模式下才真正生效，浏览器标签页里
-     Safari 会忽略——这是系统行为，不是这里写错了。
-     touch-action 不是继承属性，所以设在 html 上不会波及 K 线图容器。 */
   html {
-    touch-action: pan-x pan-y;
     overscroll-behavior-y: none;
+  }
+
+  /* PWA：禁用页面级双指缩放——只在 standalone（ZoomGuard 打的类）下。
+     浏览器标签页里必须放行缩放（WCAG 1.4.4，长文本要能放大）。
+     touch-action 不是继承属性，所以设在 html 上不会波及 K 线图容器。 */
+  html.standalone {
+    touch-action: pan-x pan-y;
   }
 
   /* 双击缩放会带来 300ms 点击延迟，交互元素统一去掉 */
@@ -177,7 +179,10 @@
     --tabbar-h: 50px;
   }
 
-  html.keyboard-open nav[aria-label] {
+  /* 只收起底部 tab bar 本尊。以前写的是 nav[aria-label]——站内任何新增的
+     面包屑/分页 nav 都会在键盘弹出时莫名消失，锚点改成 data-tabbar 后
+     与上面 :has() 的选择器共用同一个标记。 */
+  html.keyboard-open nav[data-tabbar] {
     display: none;
   }
 }
@@ -420,7 +425,15 @@
     pointer-events: none;
     border-radius: 9999px;
     filter: blur(80px);
-    will-change: transform;
+  }
+
+  /* will-change 只在动画真的会跑时提层。写死在 .aura 上的话，
+     prefers-reduced-motion 停掉动画之后，DPR3 手机上仍然常驻两张
+     ~1700px² 的合成层——白占显存。 */
+  @media (prefers-reduced-motion: no-preference) {
+    .aura {
+      will-change: transform;
+    }
   }
 
   .aura-gold {
@@ -439,6 +452,13 @@
       rgba(235, 208, 138, 0) 70%
     );
     opacity: 0.12;
+  }
+
+  /* 金箔细条：给 2–3px 的指示条/分隔条用。只取金箔的渐变，不带 --bevel——
+     细条上斜面读不出来，以前的写法是 .foil + shadow-none，等于教人
+     「.foil 上的 shadow-* 禁令可以随便破」。 */
+  .foil-hairline {
+    background-image: var(--foil);
   }
 
   /* Hairline gold divider */

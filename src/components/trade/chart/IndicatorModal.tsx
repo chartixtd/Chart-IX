@@ -68,7 +68,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
   }, [applied]);
 
   return (
-    <Modal open={open} onClose={onClose} title={t("title")} className="max-w-3xl" >
+    <Modal open={open} onClose={onClose} title={t("title")} className="max-w-3xl" surface="panel">
       <div className="grid gap-5 md:grid-cols-[1fr_1fr]">
         {/* ---- Browse / search ---- */}
         <div className="flex min-h-0 flex-col">
@@ -119,7 +119,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       {count > 0 && (
-                        <span className="rounded-full bg-gold/15 px-1.5 py-0.5 font-mono text-[10px] text-gold">
+                        <span className="rounded-full bg-gold/15 px-1.5 py-0.5 font-mono text-[11px] lg:text-[10px] text-gold">
                           ×{count}
                         </span>
                       )}
@@ -268,7 +268,7 @@ export function IndicatorModal({ open, onClose }: { open: boolean; onClose: () =
                             ))}
 
                         {editTab === "inputs" && def.requires?.length ? (
-                          <p className="text-[10px] leading-snug text-text-muted">{t("ext_settings_note")}</p>
+                          <p className="text-[11px] lg:text-[10px] leading-snug text-text-muted">{t("ext_settings_note")}</p>
                         ) : null}
 
                         {editTab === "style" && def.plots.filter((p) => p.kind === "candles").map((plot) => (

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildScanTargets } from "./pipeline";
 import { SERVER_GATE } from "./universe";
-import { AMPLITUDE_RANK_TAKE } from "./types";
+import { QUIET_RANK_TAKE } from "./types";
 import type { PreselectCandidate } from "./universe";
 import type { CachedVolume } from "./volume-cache";
 import type { BingXTicker } from "@/types/bingx";
@@ -41,13 +41,20 @@ function build(specs: Array<{ coin: string; amp: number; volumeUsd?: number | nu
 }
 
 describe("buildScanTargets", () => {
-  it("按振幅从高到低取，不是按成交量或币名", () => {
+  it("按振幅从低到高取——挑最安静的，不是最吵的", () => {
+    // 方向是反的，而且是实测逼出来的：高振幅档捕获率只有 33%、六成情况
+    // 回吐大于延续；低振幅档捕获率 56%、延续是回吐的 3.5 倍。叠加点火后
+    // 差距更极端（延续占比 85% vs 21%）。完整数据见 types.ts 的
+    // QUIET_RANK_TAKE 注释。
+    //
+    // 这条用例是这次改动的核心断言——写反了不会报错，只会让整个扫描器
+    // 悄悄退回「专挑已经跑完的币」，而榜单看上去一切正常。
     const out = build([
-      { coin: "LOW", amp: 2 },
-      { coin: "HIGH", amp: 30 },
+      { coin: "LOUD", amp: 30 },
+      { coin: "QUIET", amp: 2 },
       { coin: "MID", amp: 10 },
     ]);
-    expect(out.map((t) => t.candidate.coin)).toEqual(["HIGH", "MID", "LOW"]);
+    expect(out.map((t) => t.candidate.coin)).toEqual(["QUIET", "MID", "LOUD"]);
   });
 
   it("成交量不达标的直接排除", () => {
@@ -69,12 +76,12 @@ describe("buildScanTargets", () => {
     expect(out.map((t) => t.candidate.coin)).toEqual(["KNOWN"]);
   });
 
-  it("最多取 AMPLITUDE_RANK_TAKE 个", () => {
-    const specs = Array.from({ length: AMPLITUDE_RANK_TAKE + 7 }, (_, i) => ({
+  it("最多取 QUIET_RANK_TAKE 个", () => {
+    const specs = Array.from({ length: QUIET_RANK_TAKE + 7 }, (_, i) => ({
       coin: `C${String(i).padStart(2, "0")}`,
       amp: i + 1,
     }));
-    expect(build(specs)).toHaveLength(AMPLITUDE_RANK_TAKE);
+    expect(build(specs)).toHaveLength(QUIET_RANK_TAKE);
   });
 
   it("振幅并列时按 symbol 排，结果可复现", () => {

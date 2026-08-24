@@ -1,5 +1,6 @@
 import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/limits";
 import type { ScenarioCard } from "./cards";
+import type { Ignition } from "./ignition";
 import type { Scenario, ScenarioDirection } from "./factors/scenario";
 
 export type Direction = "long" | "short";
@@ -82,24 +83,32 @@ const DETAIL_CALLS_PER_COIN = 3;
 export const DEEP_SCAN_LIMIT = Math.floor((RATE_LIMIT_PER_MIN - BATCH_LAYER_CALLS) / DETAIL_CALLS_PER_COIN);
 
 /**
- * 实际送进明细层的币数：按 24h 振幅排名取前这么多。
+ * 实际送进明细层的币数：按 24h 振幅**从低到高**排名取前这么多——挑最安静的。
  *
- * 与 `DEEP_SCAN_LIMIT` 是两个不同的数，不要合并：
- *   · `DEEP_SCAN_LIMIT`（24）是**配额允许的上限**，由限流器推导；
- *   · `AMPLITUDE_RANK_TAKE`（20）是**产品上想看几行**，是个选择。
- * 合成一个数会让「想少看几行」这个决定意外地被配额常量绑架，
- * 也会让「配额变了」和「口味变了」这两种完全不同的改动挤在同一个数字上。
+ * **方向是反的，这是刻意的，而且是实测逼出来的。**
  *
- * 为什么用排名而不是振幅门槛：固定门槛在不同行情下筛掉的比例天差地别
- * （同样一条 8%，过去七天有 76% 的时点在它之下，而大行情日只有 27%），
- * 候选池大小会自己漂；排名则不管行情如何都稳定输出这么多行。
+ * 曾经这里取振幅最高的 20 个。那样确实能选到「会大动」的币（高振幅档
+ * 未来 12h 大动作率 18.2%，是基准的 1.92 倍），但它回答错了问题：
+ * 我们要的不是「哪个币会动」，是「哪个币**刚要开始**动」。
  *
- * **注意这个数还没有被真实数据验证过。** 它来自「振幅越高越容易大动」
- * 这个方向性结论，而支撑那个结论的回测样本很薄、且我们自己的三轮测量
- * 基准率从 0.2% 到 4.78% 不等（抽样方法主导了结果）。取 20 是个占位选择，
- * 等回测台建好后应当重新定。
+ * 实测（45 个币 / 418 个不重叠时点）把这个区别量了出来——「捕获率」=
+ * 进场后还能吃到的那段 ÷ 整段行情：
+ *
+ *   振幅最低 1/3   已走 2.2%  还能延续 2.8%  会回吐 0.8%  捕获率 56%
+ *   振幅中间 1/3   已走 6.1%  还能延续 4.7%  会回吐 2.1%  捕获率 43%
+ *   振幅最高 1/3   已走 7.8%  还能延续 3.9%  会回吐 5.3%  捕获率 33%   ← 曾经选这一档
+ *
+ * 高振幅那一档里 61% 的情况「回吐 > 延续」——**选中之后更可能是往回走**。
+ * 换句话说旧口径系统性地在行情尾部进场。
+ *
+ * 叠加点火（detectIgnition）之后差距更极端（50 个币 / 84 次点火）：
+ *   振幅最低 1/3 + 点火   延续 6.6% / 回吐 1.1%   延续占比 85%   胜率 83%
+ *   振幅最高 1/3 + 点火   延续 2.4% / 回吐 8.9%   延续占比 21%   胜率 36%
+ *
+ * 顺带排除过一个更"讲究"的方案：用压缩比（6h振幅÷24h振幅）选币。实测它
+ * **比不筛选还差**（延续占比 59% vs 不筛选的 82%），已放弃——别再试了。
  */
-export const AMPLITUDE_RANK_TAKE = 20;
+export const QUIET_RANK_TAKE = 20;
 
 /**
  * 留给「已有卡片但这轮掉出振幅前 20」的币的名额。
@@ -114,7 +123,7 @@ export const AMPLITUDE_RANK_TAKE = 20;
  * 本来就在前 20 里（高振幅），4 个名额绰绰有余。发现新机会的 20 个名额
  * 一个都不占。
  */
-export const CARD_RESERVE_SLOTS = DEEP_SCAN_LIMIT - AMPLITUDE_RANK_TAKE;
+export const CARD_RESERVE_SLOTS = DEEP_SCAN_LIMIT - QUIET_RANK_TAKE;
 
 /**
  * 两因子权重：OI 60 / CVD 40。保持退役前 Zone/Sweep/OI/CVD = 30/20/30/20
@@ -167,6 +176,15 @@ export interface ScannerRow {
    * 从来不会因为缺数据而误触发。
    */
   dataGaps: Array<"oi" | "cvd">;
+  /**
+   * 点火：当根收盘刚突破前 6 小时区间，null = 还在区间里。
+   *
+   * 这是这套系统里**唯一没有确认延迟**的信号（六场景要等摆动点确认，
+   * 2.5 小时）。实测它本身就是主要信号：只要点火，未来 12 小时延续中位
+   * 6.1% / 回吐 1.3%，延续占比 82%——而选币的作用是「别把它毁掉」
+   * （最安静那档 85%，最吵那档塌到 21%）。完整数据见 ignition.ts。
+   */
+  ignition: Ignition | null;
   /** 六场景判定结果（factors/scenario.ts），无场景为 null。警报改成场景驱动之后，这是警报状态机的判据。 */
   scenario: Scenario | null;
   /**

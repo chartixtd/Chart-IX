@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { usePathname } from "next/navigation";
 import { readPlatform, type Platform } from "@/lib/pwa/platform";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -15,6 +16,7 @@ interface BeforeInstallPromptEvent extends Event {
 
 export function InstallPrompt() {
   const t = useTranslations("pwa");
+  const pathname = usePathname();
   const [platform, setPlatform] = useState<Platform | null>(null);
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [open, setOpen] = useState(false);
@@ -44,6 +46,9 @@ export function InstallPrompt() {
 
   if (!platform || platform.isStandalone) return null;
   if (platform.os === "other") return null;
+  // 交易页不渲染：浮动药丸的位置（bottom-tabbar right-4）正压在
+  // MobileTradeBar 的「卖出」按钮上。安装引导是低频提示，让位给下单。
+  if (/^\/[^/]+\/trade(\/|$)/.test(pathname)) return null;
 
   const isInApp = platform.inAppBrowser !== null;
   // iOS 不触发 beforeinstallprompt，只能给图文说明

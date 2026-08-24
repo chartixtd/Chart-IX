@@ -49,6 +49,7 @@ function row(o: Partial<ScannerRow> = {}): ScannerRow {
     total: 85,
     factors: { oi: 25, cvd: 14 },
     dataGaps: [],
+    ignition: null,
     scenario: null,
     price: 0.296,
     change24h: -1.92,

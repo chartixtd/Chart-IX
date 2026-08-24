@@ -6,6 +6,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { useScannerData } from "@/hooks/useScreenerData";
 import { ScanCountdown } from "@/components/screener/ScanCountdown";
 import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import { SCENARIO_KINDS, TRAP_KINDS, TONE_CLASSES } from "@/components/screener/scenario-ui";
 
@@ -54,37 +55,43 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
         </div>
       </div>
 
-      <nav className="mb-4 flex items-center gap-1 border-b border-border-default">
-        {tabs.map((tab) => {
-          // 精确匹配而不是 startsWith：/screener 是 /screener/alerts 的前缀，
-          // 用 startsWith 会让两个 tab 在卡片页上同时高亮。
-          const active = pathname === tab.href;
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={cn(
-                "-mb-px border-b-2 px-3 py-2 text-sm transition-colors",
-                active
-                  ? "border-gold text-gold"
-                  : "border-transparent text-text-secondary hover:text-text-primary"
-              )}
-            >
-              {tab.label}
-              {tab.badge !== null && tab.badge > 0 && (
-                <span className="tnum ml-1.5 rounded-sm bg-gold/15 px-1 py-px text-[10px] font-semibold text-gold">
-                  {tab.badge}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-        <Link
-          href={`/${locale}/tools/position-size`}
-          className="ml-auto px-3 py-2 text-sm text-text-secondary transition-colors hover:text-gold"
-        >
-          {tCalc("title")} →
-        </Link>
+      {/* 下划线 tab 靠 -mb-px 压在 nav 的底线上；横向滚动包在内层 div 上而
+          不是 nav 本身，否则那 1px 的负外边距会在滚动容器里触发一条竖向
+          滚动条。en-US / ms-MY 文案在 375px 下放不下时横向滚，不许折行——
+          折行会把下划线 tab 撑成两层。 */}
+      <nav className="mb-4 border-b border-border-default">
+        <div className="custom-scrollbar -mb-px flex items-center gap-1 overflow-x-auto">
+          {tabs.map((tab) => {
+            // 精确匹配而不是 startsWith：/screener 是 /screener/alerts 的前缀，
+            // 用 startsWith 会让两个 tab 在卡片页上同时高亮。
+            const active = pathname === tab.href;
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={cn(
+                  "inline-flex min-h-[44px] items-center whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors lg:min-h-0",
+                  active
+                    ? "border-gold text-gold"
+                    : "border-transparent text-text-secondary hover:text-text-primary"
+                )}
+              >
+                {tab.label}
+                {tab.badge !== null && tab.badge > 0 && (
+                  <span className="tnum ml-1.5 rounded-sm bg-gold/15 px-1 py-px text-[11px] font-semibold text-gold lg:text-[10px]">
+                    {tab.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+          <Link
+            href={`/${locale}/tools/position-size`}
+            className="ml-auto inline-flex min-h-[44px] items-center whitespace-nowrap px-3 py-2 text-sm text-text-secondary transition-colors hover:text-gold lg:min-h-0"
+          >
+            {tCalc("title")} →
+          </Link>
+        </div>
       </nav>
 
       <details className="mb-4 rounded-lg panel">
@@ -96,14 +103,14 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
           <p>{t("guide.cvd")}</p>
           <p className="rounded-sm bg-bg-tertiary px-3 py-2">{t("guide.alert")}</p>
           <div>
-            <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-text-muted lg:text-[10px]">
               {t("guide.scenarios_title")}
             </p>
             <ul className="space-y-1">
               {SCENARIO_KINDS.map((kind) => (
                 <li key={kind} className="flex items-baseline gap-1.5">
-                  <span className={cn("font-medium", TONE_CLASSES[kind].text)}>
-                    {TRAP_KINDS.has(kind) && <span aria-hidden>⚠ </span>}
+                  <span className={cn("inline-flex items-center gap-1 font-medium", TONE_CLASSES[kind].text)}>
+                    {TRAP_KINDS.has(kind) && <Icon name="alert" className="h-3 w-3" />}
                     {t(`scenarios.${kind}.name`)}
                   </span>
                   <span>— {t(`scenarios.${kind}.action`)}</span>

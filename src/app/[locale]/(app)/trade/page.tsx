@@ -19,14 +19,9 @@ import { MobileTradeBar } from "./MobileTradeBar";
 // chunk instead of shipping it in the initial /trade bundle.
 const KlineChart = dynamic(
   () => import("@/components/trade/KlineChart").then((m) => m.KlineChart),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full w-full items-center justify-center text-sm text-text-muted">
-        Loading chart…
-      </div>
-    ),
-  }
+  // 与本文件其余 8 个 dynamic 一致走骨架流光——此前这里是一句硬编码英文
+  // "Loading chart…"，既没走 i18n，也是全页唯一不是骨架的加载态。
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> }
 );
 // Trade panels below aren't needed for the first paint (they render behind the
 // hydration skeleton / after layout choice) and pull in their own weight —
@@ -77,6 +72,7 @@ import { useTradePrefsStore, type TradeMarketType } from "@/stores/tradePrefs";
 import { formatPrice, formatPercent, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/ui/Icon";
+import { TRADE_SHELL_HEIGHT } from "./shell";
 
 // Mirrors BingX's supported kline intervals minus "1M" (monthly), which
 // KlineChart's live-candle bucketing can't represent as a fixed-duration window.
@@ -111,7 +107,7 @@ function MarketSwitch({
       <button
         onClick={() => onMarketChange("spot")}
         className={cn(
-          "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
+          "min-h-[44px] rounded-xs px-3 text-xs font-medium transition-colors lg:min-h-0 lg:py-1",
           market === "spot" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
         )}
       >
@@ -122,7 +118,7 @@ function MarketSwitch({
           <button
             onClick={() => onMarketChange("paper")}
             className={cn(
-              "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
+              "min-h-[44px] rounded-xs px-3 text-xs font-medium transition-colors lg:min-h-0 lg:py-1",
               market === "paper" ? "bg-bg-primary text-gold" : "text-text-muted hover:text-text-secondary"
             )}
           >
@@ -131,11 +127,11 @@ function MarketSwitch({
         ) : (
           <Link
             href={`/${locale}/login`}
-            className="rounded-xs px-3 py-1 text-xs font-medium text-text-muted hover:text-gold transition-colors"
+            className="inline-flex min-h-[44px] items-center rounded-xs px-3 text-xs font-medium text-text-muted hover:text-gold transition-colors lg:min-h-0 lg:py-1"
             title={t("paper_trading_locked")}
           >
             {t("paper_trading")}
-            <span className="ml-1 opacity-60">&#x1F512;</span>
+            <Icon name="lock" className="ml-1 h-3 w-3 opacity-60" />
           </Link>
         )
       )}
@@ -144,7 +140,7 @@ function MarketSwitch({
           <button
             onClick={() => onMarketChange("futures")}
             className={cn(
-              "rounded-xs px-3 py-1 text-xs font-medium transition-colors",
+              "min-h-[44px] rounded-xs px-3 text-xs font-medium transition-colors lg:min-h-0 lg:py-1",
               market === "futures" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
@@ -153,11 +149,11 @@ function MarketSwitch({
         ) : (
           <Link
             href={`/${locale}/upgrade`}
-            className="rounded-xs px-3 py-1 text-xs font-medium text-text-muted hover:text-gold transition-colors"
+            className="inline-flex min-h-[44px] items-center rounded-xs px-3 text-xs font-medium text-text-muted hover:text-gold transition-colors lg:min-h-0 lg:py-1"
             title={t("futures.pro_required")}
           >
             Futures
-            <span className="ml-1 opacity-60">&#x1F512;</span>
+            <Icon name="lock" className="ml-1 h-3 w-3 opacity-60" />
           </Link>
         )
       )}
@@ -230,7 +226,7 @@ const TickerBar = memo(function TickerBar({
           {t("market_overview.closed")}
         </span>
       )}
-      {onPickSymbol && <span className="text-xs text-text-muted lg:hidden">▾</span>}
+      {onPickSymbol && <Icon name="chevronDown" className="h-3.5 w-3.5 text-text-muted lg:hidden" />}
     </button>
   );
 
@@ -371,7 +367,7 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
           <path d="M13.7 21a2 2 0 01-3.4 0" />
         </svg>
       </button>
-      <Modal open={open} onClose={() => setOpen(false)} title={t("alerts.modal_title", { symbol })} size="sm">
+      <Modal open={open} onClose={() => setOpen(false)} title={t("alerts.modal_title", { symbol })} size="sm" surface="panel">
         <div className="space-y-3">
           <div className="flex rounded-xs bg-bg-tertiary p-0.5 text-xs">
             <button
@@ -443,11 +439,12 @@ const IntervalBar = memo(function IntervalBar({
         <button
           onClick={() => setMoreOpen((o) => !o)}
           className={cn(
-            "min-h-[44px] rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
+            "inline-flex min-h-[44px] items-center gap-0.5 rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
             !isPinned ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
           )}
         >
-          {!isPinned ? interval : t("more_intervals")} ▾
+          {!isPinned ? interval : t("more_intervals")}
+          <Icon name="chevronDown" className="h-3 w-3" />
         </button>
       </div>
 
@@ -502,7 +499,7 @@ function ResizeHandle() {
   return (
     <PanelResizeHandle className="group relative w-1 shrink-0 bg-border-default transition-colors hover:bg-gold/50 active:bg-gold">
       <div className="pointer-events-none absolute left-1/2 top-1/2 flex h-8 w-2.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-xs bg-bg-tertiary opacity-0 transition-opacity group-hover:opacity-100">
-        <span className="text-[8px] leading-none text-text-muted">⋮</span>
+        <Icon name="dots-v" className="h-2.5 w-2.5 text-text-muted" />
       </div>
     </PanelResizeHandle>
   );
@@ -580,7 +577,7 @@ export default function TradePage() {
   // 树——不会先挂手机布局再在下一帧换成桌面布局，KlineChart 也只初始化一次。
   if (!hydrated) {
     return (
-      <div className="flex h-[calc(100dvh-4rem)] flex-col gap-2 p-2">
+      <div className={cn("flex flex-col gap-2 p-2", TRADE_SHELL_HEIGHT)}>
         <Skeleton className="h-10 w-full" />
         <Skeleton className="min-h-0 flex-1" />
         <Skeleton className="h-40 w-full lg:h-56" />
@@ -629,12 +626,9 @@ export default function TradePage() {
   );
 
   return (
-    // 手机上 100vh 会被 Safari 的地址栏高度算错，用 dvh；
-    // 底部还要给手机 header 的顶部安全区和 L1 tab bar（含其底部安全区）让位——
-    // desktop 分支的 4rem 不受影响，因为 <main> 在 lg 断点上没有这两块 padding。
-    // tab bar 的高度走 --tabbar-h（与 pb-tabbar 同源）而不是写死 70px：
-    // 访客底栏没有中央凸起、矮 20px，写死的话图表底下会空出一条死带。
-    <div className="flex h-[calc(100dvh-3rem-env(safe-area-inset-top)-var(--tabbar-h,70px)-env(safe-area-inset-bottom))] flex-col lg:h-[calc(100dvh-4rem)]">
+    // 高度公式见 ./shell.ts——水合骨架、loading.tsx 与这里三处共用一条，
+    // 谁单独改谁就会把「进入交易页跳一次布局」的 bug 改回来。
+    <div className={cn("flex flex-col", TRADE_SHELL_HEIGHT)}>
       <TickerBar
         symbol={symbol}
         market={market}
@@ -676,7 +670,7 @@ export default function TradePage() {
 
               <PanelResizeHandle className="group relative h-1 shrink-0 bg-border-default transition-colors hover:bg-gold/50 active:bg-gold">
                 <div className="pointer-events-none absolute left-1/2 top-1/2 flex h-2.5 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-xs bg-bg-tertiary opacity-0 transition-opacity group-hover:opacity-100">
-                  <span className="text-[8px] leading-none text-text-muted">⋯</span>
+                  <Icon name="dots-h" className="h-2.5 w-2.5 text-text-muted" />
                 </div>
               </PanelResizeHandle>
 
@@ -751,11 +745,14 @@ export default function TradePage() {
         </div>
       )}
 
+      {/* 交易终端的弹窗一律 surface="panel"：obsidian-glass 的 backdrop-filter
+          会叠在每 tick 重绘的 K 线画布上，低端安卓直接掉帧（DESIGN.md 禁令） */}
       <Modal
         open={orderSheetOpen}
         onClose={() => setOrderSheetOpen(false)}
         title={t("mobile_order_sheet")}
         variant="sheet"
+        surface="panel"
       >
         <div className="-mx-6 -mt-6">
           {tradePanel}
@@ -768,6 +765,7 @@ export default function TradePage() {
         onClose={() => setPositionsSheetOpen(false)}
         title={t("mobile_positions")}
         variant="sheet"
+        surface="panel"
       >
         <div className="-mx-6 -mt-6 min-h-[40dvh]">{ordersPanel}</div>
       </Modal>
@@ -779,6 +777,7 @@ export default function TradePage() {
         title={t("mobile_symbol_picker")}
         size="sm"
         variant="sheet"
+        surface="panel"
         className="lg:hidden"
       >
         <div className="-mx-6 -mt-6 h-[70dvh]">

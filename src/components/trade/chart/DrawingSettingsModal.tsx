@@ -30,7 +30,7 @@ export function DrawingSettingsModal({
   const showFontSize = drawing.tool === "text";
 
   return (
-    <Modal open onClose={onClose} title={t("settings_title")} size="sm">
+    <Modal open onClose={onClose} title={t("settings_title")} size="sm" surface="panel">
       <div className="space-y-4">
         <div>
           <p className="mb-1.5 text-xs text-text-muted">{t("color")}</p>

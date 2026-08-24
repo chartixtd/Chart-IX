@@ -65,7 +65,7 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div className="flex min-h-dvh items-center justify-center px-4">
       <Card tone="data" className="w-full max-w-sm" padding="lg">
         <h1 className="text-center text-2xl font-bold font-display tracking-tight">
           <span className="gold-text">Chart</span>

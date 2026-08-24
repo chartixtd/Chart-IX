@@ -3,6 +3,7 @@
 import { memo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { cn, formatBySpec } from "@/lib/utils";
+import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { useFuturesContracts, type FuturesPosition } from "@/hooks/useTradingAccount";
 
@@ -250,7 +251,7 @@ export const FuturesPositionRow = memo(function FuturesPositionRow({
 
       {actionError && <p className="mt-1.5 text-xs text-danger">{actionError}</p>}
 
-      <Modal open={editingTpSl} onClose={() => setEditingTpSl(false)} title={`TP / SL · ${pos.symbol}`} size="sm">
+      <Modal open={editingTpSl} onClose={() => setEditingTpSl(false)} title={`TP / SL · ${pos.symbol}`} size="sm" surface="panel">
         <div className="space-y-3">
           <div>
             <div className="mb-1 flex items-center justify-between">
@@ -272,7 +273,7 @@ export const FuturesPositionRow = memo(function FuturesPositionRow({
               onChange={(e) => setTpValue(e.target.value)}
               placeholder={mark.toFixed(4)}
               className={cn(
-                "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted",
+                "w-full rounded-sm border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted",
                 tpValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-tertiary text-text-primary"
               )}
             />
@@ -297,24 +298,27 @@ export const FuturesPositionRow = memo(function FuturesPositionRow({
               onChange={(e) => setSlValue(e.target.value)}
               placeholder={mark.toFixed(4)}
               className={cn(
-                "w-full rounded border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted",
+                "w-full rounded-sm border px-2.5 py-1.5 text-sm font-medium placeholder:font-normal placeholder:text-text-muted",
                 slValue ? "border-gold bg-gold/10 text-text-primary" : "border-border-default bg-bg-tertiary text-text-primary"
               )}
             />
           </div>
           {tpSlError && <p className="text-xs text-danger">{tpSlError}</p>}
-          <button
+          {/* Button primary = 金箔材质，取代平涂 bg-gold + 纯黑文字的双重违规 */}
+          <Button
+            variant="primary"
+            size="md"
             onClick={saveTpSl}
             disabled={savingTpSl}
-            className="w-full rounded bg-gold py-2 text-sm font-medium text-black transition-colors hover:bg-gold-hover disabled:opacity-50"
+            className="w-full"
           >
             {savingTpSl ? "…" : t("trading.set_tp_sl")}
-          </button>
+          </Button>
         </div>
       </Modal>
 
       {reverseConfirmOpen && (
-        <div className="mt-2 space-y-1.5 rounded border border-gold/40 bg-gold/5 p-2">
+        <div className="mt-2 space-y-1.5 rounded-sm border border-gold/40 bg-gold/5 p-2">
           <p className="text-xs text-text-secondary">
             Reverse position: this is two separate orders (market close, then market open the opposite side at the same size). Price may move between the two — the reopened size could differ slightly. Continue?
           </p>
@@ -322,13 +326,14 @@ export const FuturesPositionRow = memo(function FuturesPositionRow({
             <button onClick={() => setReverseConfirmOpen(false)} className="text-xs text-text-muted hover:text-text-primary">
               Cancel
             </button>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={handleReverse}
               disabled={closing || reducingPct !== null || reversing}
-              className="rounded bg-gold px-2 py-1 text-xs font-medium text-black disabled:opacity-50"
             >
               {reversing ? "..." : "Confirm Reverse"}
-            </button>
+            </Button>
           </div>
         </div>
       )}

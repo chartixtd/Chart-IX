@@ -71,7 +71,9 @@ export default function ScreenerTablePage() {
   return (
     <>
       <ScreenerFilters value={filters} onChange={setFilters} count={visible.length} />
-      <section className="overflow-hidden rounded-lg border border-border-default bg-bg-primary">
+      {/* rounded-md 而不是 rounded-lg：扫描表是数据面，圆角走 2/4/6px 族，
+          与 orders 页的表格容器对齐。 */}
+      <section className="overflow-hidden rounded-md border border-border-default bg-bg-primary">
         <div className="flex items-baseline gap-2 border-b border-border-default px-3 py-2">
           <h2 className="font-display text-sm font-semibold tracking-tight text-text-primary">
             {t("table_title")}

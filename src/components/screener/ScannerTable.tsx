@@ -2,11 +2,12 @@
 
 import { memo } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { RecordList, type RecordColumn } from "@/components/ui/RecordList";
-import { formatPercent, cn } from "@/lib/utils";
+import { formatPercent, formatPrice, cn } from "@/lib/utils";
 import { formatCompactUsd } from "@/lib/market-cap";
 import type { ScannerRow } from "@/lib/screener/types";
 import type { SortKey } from "@/lib/screener/filter";
@@ -29,6 +30,7 @@ export const ScannerTable = memo(function ScannerTable({
   selectedSymbol: string | null;
 }) {
   const t = useTranslations("screener");
+  const locale = useLocale();
 
   if (isLoading) {
     return (
@@ -49,7 +51,7 @@ export const ScannerTable = memo(function ScannerTable({
       render: (r) => (
         <span className="inline-flex items-baseline gap-1.5">
           <span className="font-display text-sm font-semibold text-text-primary">{r.coin}</span>
-          <span className="text-[10px] uppercase tracking-wider text-text-muted">
+          <span className="text-[11px] uppercase tracking-wider text-text-muted lg:text-[10px]">
             {r.sourceExchange}
           </span>
         </span>
@@ -68,7 +70,7 @@ export const ScannerTable = memo(function ScannerTable({
         return (
           <span
             className={cn(
-              "inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
+              "inline-flex rounded-xs px-1.5 py-0.5 text-[11px] font-semibold tracking-wider lg:text-[10px]",
               isManage
                 ? "bg-text-secondary/15 text-text-secondary"
                 : r.direction === "long"
@@ -91,15 +93,15 @@ export const ScannerTable = memo(function ScannerTable({
         return (
           <span
             className={cn(
-              "inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
+              "inline-flex rounded-xs px-1.5 py-0.5 text-[11px] font-semibold tracking-wider lg:text-[10px]",
               cls.badgeBg,
               cls.text
             )}
           >
             {/* 视觉上的 ⚠+名称对屏幕阅读器隐藏，换成一句连贯的 sr-only
                 文案（陷阱信号+场景名），避免"⚠"被单独读成一个孤立符号。 */}
-            <span aria-hidden>
-              {r.scenario.trap ? "⚠ " : ""}
+            <span aria-hidden className="inline-flex items-center gap-0.5">
+              {r.scenario.trap && <Icon name="alert" className="h-3 w-3" />}
               {name}
             </span>
             <span className="sr-only">
@@ -153,7 +155,7 @@ export const ScannerTable = memo(function ScannerTable({
         // 警报卡不需要这个 —— 它每根柱子旁边已经有文字标签和分数。
         <span className="inline-flex items-center gap-1.5" title={`OI ${r.factors.oi} / CVD ${r.factors.cvd}`}>
           <FactorStack factors={r.factors} />
-          <span className="tnum text-[10px] text-text-muted lg:hidden" aria-hidden>
+          <span className="tnum text-[11px] text-text-muted lg:hidden" aria-hidden>
             {r.factors.oi}/{r.factors.cvd}
           </span>
           <span className="sr-only">
@@ -171,10 +173,33 @@ export const ScannerTable = memo(function ScannerTable({
       ),
     },
     {
+      // 点火：当根收盘刚突破前 6 小时区间。**这是这张表上最该先看的一列**
+      // ——它是唯一没有确认延迟的信号（六场景要等摆动点确认，2.5 小时）。
+      // 实测只要点火，未来 12 小时延续中位 6.1% / 回吐 1.3%，延续占比 82%。
+      // 完整数据见 ignition.ts。
+      key: "ignition",
+      header: t("columns.ignition"),
+      render: (r) =>
+        r.ignition === null ? (
+          <span className="text-text-muted">—</span>
+        ) : (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-xs px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
+              r.ignition.direction === "up"
+                ? "bg-success/15 text-success"
+                : "bg-danger/15 text-danger"
+            )}
+            title={t("columns.ignition_hint", { level: formatPrice(r.ignition.level) })}
+          >
+            {r.ignition.direction === "up" ? "▲" : "▼"} {r.ignition.distancePct.toFixed(1)}%
+          </span>
+        ),
+    },
+    {
       // 只显示 24h 涨跌，不并排显示振幅。振幅仍然在数据里（而且现在正是
-      // 选币的排序依据），只是不占表格宽度——两个百分数并排时读者每次都要
-      // 先分辨哪个是哪个，而真正要一眼看的是涨跌方向。
-      // 想知道振幅门槛是什么，筛选栏上有只读说明「按排名取前 N」。
+      // 选币的排序依据——取的是**最安静**的那些），只是不占表格宽度：
+      // 两个百分数并排时读者每次都要先分辨哪个是哪个。
       key: "change24h",
       header: t("columns.change"),
       sortable: true,
@@ -214,7 +239,7 @@ export const ScannerTable = memo(function ScannerTable({
         // 默认方向。
         if (r.scenario?.direction === "manage") {
           return (
-            <Link href={`/trade?symbol=${r.symbol}&market=futures`} className="block lg:inline-block">
+            <Link href={`/${locale}/trade?symbol=${r.symbol}&market=futures`} className="block lg:inline-block">
               <Button variant="secondary" size="sm" className="min-h-[44px] w-full px-2 text-xs lg:h-6 lg:w-auto">
                 {t("action_view")}
               </Button>
@@ -222,7 +247,7 @@ export const ScannerTable = memo(function ScannerTable({
           );
         }
         return (
-          <Link href={`/trade?symbol=${r.symbol}&side=${r.direction}&market=futures`} className="block lg:inline-block">
+          <Link href={`/${locale}/trade?symbol=${r.symbol}&side=${r.direction}&market=futures`} className="block lg:inline-block">
             <Button
               variant={r.direction === "long" ? "green" : "red"}
               size="sm"

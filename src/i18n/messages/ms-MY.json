@@ -19,6 +19,7 @@
     "copied": "Disalin",
     "success": "Operasi berjaya",
     "error": "Operasi gagal",
+    "retry": "Cuba semula",
     "go_home": "Ke Laman Utama",
     "view_all": "Lihat Semua",
     "show_more": "Tunjukkan Lagi",
@@ -259,6 +260,7 @@
     },
     "orders": {
       "title": "Sejarah Dagangan",
+      "subtitle": "Pesanan, pelaksanaan dan sejarah dagangan langsung serta simulasi anda",
       "all": "Semua",
       "pending": "Menunggu",
       "filled": "Dilaksana",
@@ -277,6 +279,11 @@
       "time": "Masa",
       "cancel_order": "Batalkan Pesanan",
       "no_orders": "Tiada sejarah dagangan",
+      "empty_all_desc": "Selepas anda membuat pesanan, ia akan dipaparkan di sini",
+      "empty_pending_desc": "Tiada pesanan yang sedang menunggu pelaksanaan",
+      "empty_filled_desc": "Belum ada pesanan yang dilaksanakan",
+      "empty_canceled_desc": "Tiada pesanan yang dibatalkan",
+      "empty_rejected_desc": "Tiada pesanan yang ditolak",
       "export_csv": "Eksport CSV"
     },
     "mobile_buy": "Beli",
@@ -291,6 +298,9 @@
       "no_data": "Tiada data buat masa ini — pasaran instrumen ini mungkin tutup.",
       "legend_collapse": "Kuncupkan penunjuk",
       "legend_expand": "Kembangkan penunjuk"
+    },
+    "drawing": {
+      "toolbar_toggle": "Alat lukisan"
     },
     "stat_high": "24j Tinggi",
     "stat_low": "24j Rendah",
@@ -313,6 +323,8 @@
     "per_year": "/tahun",
     "contact_admin": "Sila hubungi pentadbir untuk naik taraf",
     "loading": "Memuatkan...",
+    "plans_error": "Gagal memuatkan harga",
+    "plans_empty": "Pelan harga belum tersedia",
     "already_pro": "Anda sudah menjadi pengguna Pro",
     "already_pro_desc": "Anda telah membuka semua ciri eksklusif Pro, termasuk dagangan niaga hadapan, carta lanjutan, dan banyak lagi. Nikmatinya!",
     "admin_contact_email": "Emel",
@@ -838,7 +850,9 @@
     "favorites_empty": "Belum ada pasangan kegemaran",
     "favorites_cta": "Tambah sekarang",
     "latest_videos_title": "Video Terkini",
+    "latest_videos_empty": "Belum ada video diterbitkan — sila kembali nanti.",
     "latest_articles_title": "Artikel Terkini",
+    "latest_articles_empty": "Belum ada artikel diterbitkan — sila kembali nanti.",
     "achievements_title": "Pencapaian Saya",
     "statement_period": "Tempoh penyata · {period}",
     "live_account": "Akaun Sebenar",
@@ -894,7 +908,7 @@
       "dir_all": "Semua",
       "dir_long": "Long",
       "dir_short": "Short",
-      "amplitude_rank": "{n} teratas mengikut kedudukan"
+      "quiet_rank": "{n} paling senyap"
     },
     "columns": {
       "symbol": "Simbol",
@@ -907,7 +921,9 @@
       "market_cap": "Permodalan",
       "updated": "Dikemas kini",
       "actions": "Tindakan",
-      "data_missing": "Data tiada"
+      "data_missing": "Data tiada",
+      "ignition": "Pencetus",
+      "ignition_hint": "Baru menembusi julat 6j sebelumnya ({level}) — satu-satunya isyarat tanpa lengah pengesahan"
     },
     "table_title": "Keputusan imbasan",
     "table_hint": "Disusun mengikut skor · klik baris untuk butiran",

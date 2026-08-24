@@ -33,7 +33,7 @@ export function AdminLocaleProvider({ children }: { children: ReactNode }) {
 
   if (!messages) {
     // Short loading state while messages are fetched
-    return <div className="min-h-screen bg-bg-primary" />;
+    return <div className="min-h-dvh bg-bg-primary" />;
   }
 
   return (

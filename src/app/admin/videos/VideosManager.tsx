@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
@@ -425,13 +426,13 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
     return (
       <div>
         <div className="mb-4 flex items-center justify-between">
-          <div className="h-5 w-32 animate-pulse rounded bg-bg-tertiary" />
-          <div className="h-9 w-28 animate-pulse rounded bg-bg-tertiary" />
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-9 w-28" />
         </div>
-        <div className="overflow-x-auto rounded-lg border border-border-default">
-          <div className="animate-pulse space-y-3 p-4">
+        <div className="overflow-x-auto rounded-md border border-border-default">
+          <div className="space-y-3 p-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-10 rounded bg-bg-tertiary" />
+              <Skeleton key={i} className="h-10" />
             ))}
           </div>
         </div>

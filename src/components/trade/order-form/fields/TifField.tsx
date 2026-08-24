@@ -26,7 +26,8 @@ export function TifField({ value, onChange }: TifFieldProps) {
             type="button"
             onClick={() => onChange(opt)}
             className={cn(
-              "rounded-xs py-1 text-xs font-medium",
+              // min-h-[44px]：手机下单主路径上的触控目标补到 44px；桌面保持密度
+              "rounded-xs py-1 text-xs font-medium min-h-[44px] lg:min-h-0",
               value === opt ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >

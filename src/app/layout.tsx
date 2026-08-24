@@ -45,11 +45,13 @@ export const metadata: Metadata = {
   },
 };
 
+// 不再写 maximumScale:1 / userScalable:false——那会把浏览器标签页里的
+// 放大功能一并禁掉（WCAG 1.4.4：文章/风险声明在手机上无法放大）。
+// 「安装后像原生应用一样不缩放」由 ZoomGuard 在 standalone 模式下负责，
+// 输入框聚焦自动放大的问题另有 globals.css 的 16px 硬下限兜着。
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
   themeColor: "#0B0A08",
 };
@@ -115,24 +117,27 @@ export default function RootLayout({
         </noscript>
         <meta name="view-transition" content="same-origin" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
-        {/* iOS 启动图：只覆盖主流 iPhone 尺寸，其余机型冷启动会短暂白屏 */}
+        {/* iOS 启动图：覆盖主流 3x iPhone 与 2x 存量机型（SE/8、XR/11——
+            东南亚仍是主力），其余机型与横屏冷启动会短暂白屏 */}
         {[
-          { w: 1170, h: 2532 },
-          { w: 1179, h: 2556 },
-          { w: 1284, h: 2778 },
-          { w: 1290, h: 2796 },
-          { w: 1206, h: 2622 },
-          { w: 1320, h: 2868 },
-        ].map(({ w, h }) => (
+          { w: 1170, h: 2532, r: 3 },
+          { w: 1179, h: 2556, r: 3 },
+          { w: 1284, h: 2778, r: 3 },
+          { w: 1290, h: 2796, r: 3 },
+          { w: 1206, h: 2622, r: 3 },
+          { w: 1320, h: 2868, r: 3 },
+          { w: 750, h: 1334, r: 2 },
+          { w: 828, h: 1792, r: 2 },
+        ].map(({ w, h, r }) => (
           <link
             key={`${w}x${h}`}
             rel="apple-touch-startup-image"
             href={`/icons/splash/splash-${w}x${h}.png`}
-            media={`(device-width: ${w / 3}px) and (device-height: ${h / 3}px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)`}
+            media={`(device-width: ${w / r}px) and (device-height: ${h / r}px) and (-webkit-device-pixel-ratio: ${r}) and (orientation: portrait)`}
           />
         ))}
       </head>
-      <body className="min-h-screen bg-bg-primary text-text-primary antialiased">
+      <body className="min-h-dvh bg-bg-primary text-text-primary antialiased">
         {children}
       </body>
     </html>

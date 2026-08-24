@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { sentimentColor } from "@/lib/chart-theme";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 interface FearGreedResponse {
   data: {
@@ -113,7 +114,7 @@ export function FearGreedIndex({ compact = false }: FearGreedIndexProps) {
       >
         <SentimentIcon className="h-4 w-4" />
         {isLoading ? (
-          <span className="h-3 w-8 animate-pulse rounded bg-bg-tertiary" />
+          <Skeleton className="h-3 w-8" />
         ) : isError ? (
           <span className="text-text-muted">--</span>
         ) : (
@@ -147,10 +148,10 @@ export function FearGreedIndex({ compact = false }: FearGreedIndexProps) {
 
       {isLoading ? (
         <div className="flex items-center gap-2">
-          <div className="h-10 w-10 animate-pulse rounded-full bg-bg-tertiary" />
+          <Skeleton className="h-10 w-10 rounded-full" />
           <div className="space-y-1">
-            <div className="h-3 w-16 animate-pulse rounded bg-bg-tertiary" />
-            <div className="h-2 w-12 animate-pulse rounded bg-bg-tertiary" />
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-2 w-12" />
           </div>
         </div>
       ) : isError ? (

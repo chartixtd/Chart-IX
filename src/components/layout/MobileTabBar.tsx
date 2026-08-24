@@ -107,7 +107,9 @@ export function MobileTabBar() {
       // data-tabbar 供 globals.css 的 :has() 判断该给内容区留多少底部空间——
       // 访客底栏没有中央凸起，不需要为它让位
       data-tabbar={isGuest ? "guest" : "user"}
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border-default bg-bg-secondary/95 backdrop-blur-md pb-safe-b lg:hidden"
+      // 不透明底：fixed 底栏在交易页正压着 K 线画布，backdrop-blur 会让
+      // 低端安卓掉帧（DESIGN.md 的 Operate 面禁令）。
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border-default bg-bg-secondary pb-safe-b lg:hidden"
       aria-label={t("tab_more")}
     >
       <div className="flex items-stretch">
@@ -156,7 +158,7 @@ export function MobileTabBar() {
               {isActive && (
                 <span
                   aria-hidden
-                  className="foil absolute inset-x-0 top-0 mx-auto h-[2px] w-8 rounded-none shadow-none"
+                  className="foil-hairline absolute inset-x-0 top-0 mx-auto h-[2px] w-8"
                 />
               )}
               <TabIcon tab={tab.key} className="h-5 w-5" />

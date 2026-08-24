@@ -9,6 +9,7 @@ import { markLargeTrades } from "@/lib/trading/trade-tape";
 import { canViewTradeTape } from "@/lib/access";
 import { formatPrice } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 interface RecentTradesProps {
   symbol: string;
@@ -50,7 +51,7 @@ export const RecentTrades = memo(function RecentTrades({ symbol, active, market 
     return (
       <div className="space-y-1 p-2">
         {Array.from({ length: 16 }).map((_, i) => (
-          <div key={i} className="h-4 animate-pulse rounded-sm bg-bg-tertiary" />
+          <Skeleton key={i} className="h-4" />
         ))}
       </div>
     );
@@ -76,7 +77,8 @@ export const RecentTrades = memo(function RecentTrades({ symbol, active, market 
             <div
               key={`${trade.id}-${trade.time}-${index}`}
               className={cn(
-                "grid grid-cols-3 gap-1 px-2 py-0.5",
+                // font-mono tnum：每 tick 重绘的数字列必须等宽，否则刷新时列宽跳动
+                "grid grid-cols-3 gap-1 px-2 py-0.5 font-mono tnum",
                 trade.isLarge && (isBuy ? "bg-success/10 font-semibold" : "bg-danger/10 font-semibold")
               )}
             >

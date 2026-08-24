@@ -42,8 +42,11 @@ export function MobileHeader() {
 
   return (
     // 状态栏样式是 black-translucent，内容会顶到状态栏下方，
-    // 所以必须吃掉 safe-area-inset-top
-    <header className="sticky top-0 z-30 border-b border-border-default bg-bg-primary/85 pt-safe-t backdrop-blur-md lg:hidden">
+    // 所以必须吃掉 safe-area-inset-top。
+    // 底色是不透明的：这个 header 挂在所有 (app) 路由上，包括交易页——
+    // 半透明 + backdrop-blur 压在每 tick 重绘的 K 线画布上，正是 DESIGN.md
+    // 点名的低端安卓掉帧场景。玻璃感由边框线承担，不靠 blur。
+    <header className="sticky top-0 z-30 border-b border-border-default bg-bg-primary pt-safe-t lg:hidden">
       <div className="flex h-12 items-center justify-between px-4">
         {showBack ? (
           // -ml-2 px-2 让文字仍与原 logo 左缘对齐，同时把命中区向左右各撑开

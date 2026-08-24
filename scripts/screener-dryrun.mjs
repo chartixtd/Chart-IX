@@ -16,7 +16,7 @@
  *   COINGLASS_API_KEY=... npx tsx scripts/screener-dryrun.mjs
  */
 import { runScan } from "../src/lib/screener/pipeline.ts";
-import { FACTOR_MAX, AMPLITUDE_RANK_TAKE } from "../src/lib/screener/types.ts";
+import { FACTOR_MAX, QUIET_RANK_TAKE } from "../src/lib/screener/types.ts";
 import { readVolumeCache } from "../src/lib/screener/volume-cache.ts";
 
 // 成交量缓存是选币的前置条件：缓存空 = 没有任何币能证明成交量达标 = 空榜。
@@ -51,6 +51,7 @@ console.log(
   ` OI/${FACTOR_MAX.oi} CVD/${FACTOR_MAX.cvd}`,
   " VOL(M)",
   " AMP%",
+  "  点火",
   " CAP(M)",
   "场景"
 );
@@ -65,6 +66,7 @@ for (const r of payload.rows.slice(0, 40)) {
     String(f.cvd).padStart(6),
     (r.volumeUsd / 1e6).toFixed(1).padStart(7),
     r.amplitude.toFixed(1).padStart(5),
+    (r.ignition ? (r.ignition.direction==="up"?"▲":"▼") + r.ignition.distancePct.toFixed(1) : "—").padStart(7),
     (r.marketCap / 1e6).toFixed(0).padStart(7),
     scen(r)
   );

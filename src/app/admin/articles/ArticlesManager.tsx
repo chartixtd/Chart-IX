@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -24,7 +25,7 @@ const ArticleEditors = dynamic(
   () => import("./ArticleEditors").then((m) => m.ArticleEditors),
   {
     ssr: false,
-    loading: () => <div className="h-[240px] w-full animate-pulse rounded-sm bg-bg-tertiary" />,
+    loading: () => <Skeleton className="h-[240px] w-full" />,
   }
 );
 

@@ -17,6 +17,7 @@ import type { TradeMarketType } from "@/stores/tradePrefs";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { OrderBook } from "@/components/trade/OrderBook";
 import { RecentTrades } from "@/components/trade/RecentTrades";
 import {
@@ -108,14 +109,16 @@ const TickerRow = memo(function TickerRow({
       onClick={handleClick}
       onKeyDown={(e) => { if (e.key === "Enter") handleClick(); }}
       className={cn(
-        "grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-1 px-3 py-1.5 text-xs transition-colors hover:bg-bg-tertiary cursor-pointer",
+        // min-h-[44px]：手机下单主路径上的选币行，触控目标补到 44px；桌面保持密度
+        "grid w-full min-h-[44px] lg:min-h-0 grid-cols-[auto_1fr_auto_auto] items-center gap-1 px-3 py-1.5 text-xs transition-colors hover:bg-bg-tertiary cursor-pointer",
         isActive && "bg-gold/10 border-l-2 border-l-gold"
       )}
     >
       <button
         onClick={handleStarClick}
         className={cn(
-          "shrink-0 text-sm leading-none",
+          // p-2 -m-2：16px 星标图标的命中区外扩，负外边距抵消掉 padding，布局与视觉不变
+          "shrink-0 p-2 -m-2 text-sm leading-none",
           isFavorite ? "text-gold" : "text-text-muted/70 hover:text-text-muted"
         )}
         aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
@@ -162,7 +165,7 @@ const LoadingDummy = memo(function LoadingDummy() {
   return (
     <div className="space-y-1 px-3">
       {Array.from({ length: 10 }).map((_, i) => (
-        <div key={i} className="h-8 animate-pulse rounded-sm bg-bg-tertiary" />
+        <Skeleton key={i} className="h-8" />
       ))}
     </div>
   );
@@ -337,7 +340,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
           <button
             onClick={() => setViewMode("list")}
             className={cn(
-              "flex-1 rounded-xs py-1 text-xs font-medium transition-colors",
+              "flex-1 rounded-xs py-1 text-xs font-medium transition-colors min-h-[44px] lg:min-h-0",
               viewMode === "list" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
@@ -346,7 +349,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
           <button
             onClick={() => setViewMode("orderbook")}
             className={cn(
-              "flex-1 rounded-xs py-1 text-xs font-medium transition-colors",
+              "flex-1 rounded-xs py-1 text-xs font-medium transition-colors min-h-[44px] lg:min-h-0",
               viewMode === "orderbook" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
@@ -355,7 +358,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
           <button
             onClick={() => setViewMode("trades")}
             className={cn(
-              "flex-1 rounded-xs py-1 text-xs font-medium transition-colors",
+              "flex-1 rounded-xs py-1 text-xs font-medium transition-colors min-h-[44px] lg:min-h-0",
               viewMode === "trades" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
@@ -369,7 +372,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
                 key={c}
                 onClick={() => setCategory(c)}
                 className={cn(
-                  "shrink-0 rounded-xs px-2 py-1 text-xs font-medium transition-colors",
+                  "shrink-0 rounded-xs px-2 py-1 text-xs font-medium transition-colors min-h-[44px] lg:min-h-0",
                   category === c ? "bg-gold/20 text-gold" : "bg-bg-tertiary text-text-muted hover:text-text-secondary"
                 )}
               >

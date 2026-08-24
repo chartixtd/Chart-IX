@@ -196,14 +196,14 @@ export function OrderLineOverlay({ chart, series, lines, containerRef }: Props) 
               x={pane.width - 40}
               y={yNum + 4}
               fill={CHART.ink}
-              fontSize={10}
+              fontSize={11}
               fontFamily={MONO_FONT}
               textAnchor="middle"
             >
               {price.toPrecision(6)}
             </text>
             {isDragging && (
-              <text x={6} y={yNum - 4} fill={line.color} fontSize={10} fontFamily={MONO_FONT}>
+              <text x={6} y={yNum - 4} fill={line.color} fontSize={11} fontFamily={MONO_FONT}>
                 {line.title} → {price.toPrecision(6)}
               </text>
             )}

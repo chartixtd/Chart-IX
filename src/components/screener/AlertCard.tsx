@@ -7,6 +7,7 @@ import type { ScenarioCard } from "@/lib/screener/cards";
 import { signedPct } from "@/lib/screener/cards";
 import { isInvalidated } from "@/lib/screener/invalidation";
 import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { FactorMeter } from "./FactorMeter";
 import { readingKey, TONE_CLASSES, DIRECTION_CLASSES } from "./scenario-ui";
 
@@ -96,7 +97,7 @@ export function AlertCard({
   return (
     <div
       className={cn(
-        "rounded-lg panel border-l-2 p-3.5 transition-opacity",
+        "rounded-md panel border-l-2 p-3.5 transition-opacity",
         toneCls.border,
         dead && "opacity-50"
       )}
@@ -105,7 +106,7 @@ export function AlertCard({
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              "rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
+              "rounded-xs px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
               dirCls.pillBg,
               dirCls.pillText
             )}
@@ -118,12 +119,12 @@ export function AlertCard({
         </div>
         <span className="flex items-center gap-1.5 text-[11px] text-text-muted">
           {fresh === "fresh" && (
-            <span className="rounded-sm bg-gold/15 px-1 py-px text-[9px] font-semibold tracking-wider text-gold">
+            <span className="rounded-xs bg-gold/15 px-1 py-px text-[9px] font-semibold tracking-wider text-gold">
               {t("alerts.fresh_new")}
             </span>
           )}
           {fresh === "stale" && (
-            <span className="rounded-sm bg-text-muted/15 px-1 py-px text-[9px] font-semibold tracking-wider text-text-muted">
+            <span className="rounded-xs bg-text-muted/15 px-1 py-px text-[9px] font-semibold tracking-wider text-text-muted">
               {t("alerts.fresh_stale")}
             </span>
           )}
@@ -137,21 +138,23 @@ export function AlertCard({
             徽章给了基调一块真正的surface，一眼就能认出这是哪一类场景。 */}
         <span
           className={cn(
-            "rounded px-1.5 py-0.5 font-display text-[12px] font-bold",
+            "rounded-xs px-1.5 py-0.5 font-display text-[12px] font-bold",
             toneCls.badgeBg,
             toneCls.text
           )}
         >
           {t(`scenarios.${scenario.kind}.name`)}
         </span>
+        {/* 陷阱标签跟着场景自身的基调色走（假顶=紫 / 假底=品红），
+            写死一个紫会让品红卡片上出现两个对不上的"陷阱色"。 */}
         {scenario.trap && (
-          <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-purple-400">
-            <span aria-hidden>⚠</span>
+          <span className={cn("inline-flex items-center gap-0.5 text-[11px] font-semibold", toneCls.text)}>
+            <Icon name="alert" className="h-3 w-3" />
             {t("scenarios.trap_label")}
           </span>
         )}
         {dead && (
-          <span className="ml-auto rounded-sm bg-danger/15 px-1.5 py-px text-[10px] font-semibold text-danger">
+          <span className="ml-auto rounded-xs bg-danger/15 px-1.5 py-px text-[10px] font-semibold text-danger">
             {t("alerts.invalidated")}
           </span>
         )}
@@ -159,7 +162,7 @@ export function AlertCard({
 
       <p
         className={cn(
-          "mb-3 rounded-md border bg-bg-tertiary px-2.5 py-2 text-[11px] leading-relaxed text-text-secondary",
+          "mb-3 rounded-sm border bg-bg-tertiary px-2.5 py-2 text-[11px] leading-relaxed text-text-secondary",
           toneCls.borderTint
         )}
       >
@@ -168,7 +171,7 @@ export function AlertCard({
 
       <div
         className={cn(
-          "mb-3 rounded-md px-2.5 py-2 text-xs font-semibold",
+          "mb-3 rounded-sm px-2.5 py-2 text-xs font-semibold",
           dirCls.actionBg,
           dirCls.actionText,
           dead && "line-through"
@@ -180,7 +183,7 @@ export function AlertCard({
       {/* 涨跌与价格并成一组：左边是「赚了多少」，右边是三个价格。
           原来大涨跌数字独占一整块、价格另占一块，两者其实回答的是同一个
           问题（这单现在怎么样了），拆成两块反而要读者来回看。 */}
-      <div className="mb-3 flex items-end justify-between gap-3 rounded-md bg-bg-tertiary px-3 py-2.5">
+      <div className="mb-3 flex items-end justify-between gap-3 rounded-sm bg-bg-tertiary px-3 py-2.5">
         <div>
           <div className={cn("tnum text-2xl font-bold leading-none", pct >= 0 ? "text-success" : "text-danger")}>
             {pct >= 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(2)}%

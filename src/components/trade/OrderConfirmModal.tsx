@@ -48,7 +48,7 @@ export function OrderConfirmModal({
     availableUsdt && availableUsdt > 0 ? (requiredMarginUsdt / availableUsdt) * 100 : null;
 
   return (
-    <Modal open={open} onClose={loading ? () => {} : onClose} title={t("trading.confirm_title")} size="sm">
+    <Modal open={open} onClose={loading ? () => {} : onClose} title={t("trading.confirm_title")} size="sm" surface="panel">
       <div className="space-y-4">
         {isPaper && (
           <div className="rounded-xs bg-gold/10 px-3 py-1.5 text-center text-xs font-medium text-gold">

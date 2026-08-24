@@ -46,11 +46,11 @@ export const TONE_CLASSES: Record<
   // 健康趋势：青。最常见的场景，此前是「无色」（白边框+白字），
   // 导致大多数卡片看上去没有基调。
   healthy_trend: {
-    border: "border-l-teal-400",
-    text: "text-teal-400",
-    badgeBg: "bg-teal-400/15",
-    borderTint: "border-teal-400/20",
-    fill: "bg-teal-400",
+    border: "border-l-accent-teal",
+    text: "text-accent-teal",
+    badgeBg: "bg-accent-teal/15",
+    borderTint: "border-accent-teal/20",
+    fill: "bg-accent-teal",
   },
   // 存量清算：蓝。与操作指令条的 info 蓝呼应——两处都在说「该管理仓位了」。
   inventory_flush: {
@@ -70,27 +70,27 @@ export const TONE_CLASSES: Record<
   },
   // 真底背离：橙。与金同属暖色（同一家族），但更鲜亮，分得开顶与底。
   true_bottom_div: {
-    border: "border-l-orange-400",
-    text: "text-orange-400",
-    badgeBg: "bg-orange-400/15",
-    borderTint: "border-orange-400/20",
-    fill: "bg-orange-400",
+    border: "border-l-accent-orange",
+    text: "text-accent-orange",
+    badgeBg: "bg-accent-orange/15",
+    borderTint: "border-accent-orange/20",
+    fill: "bg-accent-orange",
   },
   // 假顶背离：紫。陷阱家族。
   false_top_div: {
-    border: "border-l-purple-400",
-    text: "text-purple-400",
-    badgeBg: "bg-purple-400/15",
-    borderTint: "border-purple-400/20",
-    fill: "bg-purple-400",
+    border: "border-l-accent-violet",
+    text: "text-accent-violet",
+    badgeBg: "bg-accent-violet/15",
+    borderTint: "border-accent-violet/20",
+    fill: "bg-accent-violet",
   },
   // 假底背离：品红。与紫同族，色相再推一档。
   false_bottom_div: {
-    border: "border-l-fuchsia-400",
-    text: "text-fuchsia-400",
-    badgeBg: "bg-fuchsia-400/15",
-    borderTint: "border-fuchsia-400/20",
-    fill: "bg-fuchsia-400",
+    border: "border-l-accent-magenta",
+    text: "text-accent-magenta",
+    badgeBg: "bg-accent-magenta/15",
+    borderTint: "border-accent-magenta/20",
+    fill: "bg-accent-magenta",
   },
 };
 

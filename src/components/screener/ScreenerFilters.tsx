@@ -3,7 +3,7 @@
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { SERVER_GATE } from "@/lib/screener/universe";
-import { AMPLITUDE_RANK_TAKE } from "@/lib/screener/types";
+import { QUIET_RANK_TAKE } from "@/lib/screener/types";
 // FilterState / DEFAULT_FILTERS / DirectionFilter 的唯一定义放在 src/lib/screener/filter.ts
 // （不能在组件里再声明一份 —— 两份定义漂移之后控件和过滤逻辑会对不上，TS 不会报错；
 // 且 vitest 只收集 src/lib 下的测试文件，筛选逻辑必须住在 src/lib 才测得到）。
@@ -38,15 +38,17 @@ export function ScreenerFilters({
         </span>
       </div>
 
-      {/* 振幅曾经是这里唯一可调的滑块。选币改成「按振幅排名取前 N 个」之后
-          它就失效了——能进榜的行振幅实测都在 14% 以上，而滑块范围是 1.5–3%，
-          拉到头也筛不掉任何一行。换成和成交量/市值一样的只读说明。 */}
+      {/* 振幅曾经是这里唯一可调的滑块，后来变成只读说明。现在连含义都变了：
+          选币取的是**最安静**的 N 个，不是最吵的——所以这里说的是
+          「取最安静的 20 个」，而不是某个门槛值。理由见 types.ts 的
+          QUIET_RANK_TAKE 注释（高振幅档捕获率只有 33%，且六成情况回吐
+          大于延续）。 */}
       <div className="flex flex-col gap-1.5">
         <span className="text-[11px] uppercase tracking-wider text-text-muted">
           {t("filters.amplitude")}
         </span>
         <span className="tnum text-xs text-text-secondary">
-          {t("filters.amplitude_rank", { n: AMPLITUDE_RANK_TAKE })}
+          {t("filters.quiet_rank", { n: QUIET_RANK_TAKE })}
         </span>
       </div>
 
@@ -70,7 +72,7 @@ export function ScreenerFilters({
               type="button"
               onClick={() => onChange({ ...value, direction: d })}
               className={cn(
-                "px-3 py-1.5 text-xs transition-colors",
+                "min-h-[44px] px-3 py-1.5 text-xs transition-colors lg:min-h-0",
                 value.direction === d
                   ? "bg-gold/15 text-gold"
                   : "text-text-secondary hover:text-text-primary"

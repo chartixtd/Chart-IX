@@ -7,7 +7,7 @@ export default function OfflinePage() {
   const t = useTranslations("pwa");
 
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col items-center justify-center px-6 text-center">
+    <div className="mx-auto flex min-h-[70dvh] max-w-md flex-col items-center justify-center px-6 text-center">
       <div className="mb-6 h-px w-16 bg-gold/35" />
       <h1 className="font-display text-2xl tracking-tighter text-text-primary">
         {t("offline_title")}

@@ -140,7 +140,7 @@ export function OcoTicket({ symbol, direction }: OcoTicketProps) {
         </div>
       )}
 
-      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={`OCO · ${symbol}`} size="sm">
+      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={`OCO · ${symbol}`} size="sm" surface="panel">
         <div className="space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
             <span className="text-text-muted">{t("trade.orders.side")}</span>

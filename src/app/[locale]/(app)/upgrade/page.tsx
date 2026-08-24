@@ -5,6 +5,8 @@ import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/ui/Icon";
 import { AuraField } from "@/components/motion/AuraField";
@@ -21,11 +23,12 @@ interface PricingPlan {
 
 export default function UpgradePage() {
   const t = useTranslations("upgrade");
+  const tCommon = useTranslations("common");
   const auth = useAuth();
 
   const isPro = auth.tier === "pro";
 
-  const { data } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["upgrade", "pricing"],
     queryFn: async () => {
       const supabase = createClient();
@@ -95,7 +98,29 @@ export default function UpgradePage() {
             </div>
 
             <div className="mx-auto mt-16 grid max-w-3xl gap-6 md:grid-cols-2">
-              {plans.length > 0 ? (
+              {isPending ? (
+                // 与定价卡同形的骨架：标题 / 大字价格 / 划线原价 / 发丝线 / 说明行
+                [0, 1].map((i) => (
+                  <div key={i} className="obsidian-glass rounded-2xl p-8">
+                    <Skeleton className="mx-auto h-6 w-24" />
+                    <Skeleton className="mx-auto mt-6 h-12 w-40" />
+                    <Skeleton className="mx-auto mt-3 h-4 w-20" />
+                    <div className="hairline-gold mx-auto mt-6 w-12 opacity-60" />
+                    <Skeleton className="mx-auto mt-6 h-4 w-36" />
+                  </div>
+                ))
+              ) : isError ? (
+                <div className="md:col-span-2">
+                  <EmptyState
+                    title={t("plans_error")}
+                    action={
+                      <Button variant="outline" onClick={() => refetch()}>
+                        {tCommon("retry")}
+                      </Button>
+                    }
+                  />
+                </div>
+              ) : plans.length > 0 ? (
                 plans.map((plan) => {
                   const d = discount(plan);
                   const featured = plan.plan_type === "yearly";
@@ -110,7 +135,7 @@ export default function UpgradePage() {
                       )}
                     >
                       {featured && (
-                        <span aria-hidden className="foil absolute inset-x-0 top-0 h-[3px] rounded-none shadow-none" />
+                        <span aria-hidden className="foil-hairline absolute inset-x-0 top-0 h-[3px]" />
                       )}
                       {d && (
                         <span className="absolute right-4 top-4 inline-block foil-sm rounded-full px-3 py-1 text-xs font-semibold">
@@ -137,18 +162,9 @@ export default function UpgradePage() {
                   );
                 })
               ) : (
-                <>
-                  <div className="obsidian-glass rounded-2xl p-8 text-center">
-                    <h3 className="font-display text-xl font-semibold tracking-tight text-text-primary">{t("monthly")}</h3>
-                    <div className="mt-6 font-display text-5xl text-text-muted font-bold">—</div>
-                    <p className="mt-6 text-sm text-text-secondary">{t("loading")}</p>
-                  </div>
-                  <div className="obsidian-glass rounded-2xl p-8 text-center">
-                    <h3 className="font-display text-xl font-semibold tracking-tight text-text-primary">{t("yearly")}</h3>
-                    <div className="mt-6 font-display text-5xl text-text-muted font-bold">—</div>
-                    <p className="mt-6 text-sm text-text-secondary">{t("loading")}</p>
-                  </div>
-                </>
+                <div className="md:col-span-2">
+                  <EmptyState title={t("plans_empty")} description={t("contact_admin")} />
+                </div>
               )}
             </div>
 

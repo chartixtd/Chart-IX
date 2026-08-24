@@ -13,6 +13,13 @@ interface ModalProps {
    * 手机上居中弹窗要么够不着关闭按钮，要么被键盘顶掉一半。
    */
   variant?: "dialog" | "sheet";
+  /**
+   * 面板材质。默认 "glass"（黑曜石玻璃，backdrop-filter），是 Persuade/Read
+   * 面的语言；交易终端等 Operate 面必须传 "panel"——DESIGN.md 明令那里
+   * 零 backdrop-filter：blur 叠在每 tick 重绘的 K 线画布上，低端安卓会
+   * 掉到 30fps 以下。panel 用同一套边缘语言（顶边金色棱线），只是不透明。
+   */
+  surface?: "glass" | "panel";
 }
 
 const sizeClasses = {
@@ -31,6 +38,7 @@ export function Modal({
   className,
   size = "md",
   variant = "dialog",
+  surface = "glass",
 }: ModalProps) {
   const titleId = useId();
 
@@ -64,9 +72,13 @@ export function Modal({
         isSheet ? "items-end justify-center lg:items-center lg:p-4" : "items-center justify-center p-4"
       )}
     >
-      {/* 遮罩：blur 是"背景可被拨走"的语义提示，不是装饰。60% 黑保证前景可读。 */}
+      {/* 遮罩：blur 是"背景可被拨走"的语义提示，不是装饰。60% 黑保证前景可读。
+          panel 材质下连遮罩的 blur 也一并去掉——它同样会叠在图表画布上。 */}
       <div
-        className="absolute inset-0 animate-fade-in bg-black/65 backdrop-blur-sm"
+        className={cn(
+          "absolute inset-0 animate-fade-in bg-black/65",
+          surface === "glass" && "backdrop-blur-sm"
+        )}
         onClick={onClose}
       />
       <div
@@ -74,7 +86,8 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         className={cn(
-          "obsidian-glass relative z-10 w-full",
+          surface === "glass" ? "obsidian-glass" : "panel-raised",
+          "relative z-10 w-full",
           isSheet
             ? [
                 // 底部 sheet：只有上方两角圆润，底部留出系统安全区

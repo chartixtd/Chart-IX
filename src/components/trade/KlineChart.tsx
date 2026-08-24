@@ -132,6 +132,7 @@ function lineSource(a: AppliedIndicator): keyof CandlePoint {
 export function KlineChart({ symbol, interval = "1h", className, market = "spot", tradeMarkers, priceLines }: KlineChartProps) {
   const locale = useLocale();
   const t = useTranslations("trade.indicators");
+  const tDraw = useTranslations("trade.drawing");
   const chartRef = useRef<HTMLDivElement>(null);
   const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
@@ -162,6 +163,9 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
 
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [upsellOpen, setUpsellOpen] = useState(false);
+  // 手机上绘图工具栏默认收起：44px 竖栏在 375px 屏上吃掉 12% 图表宽度，
+  // 而大多数手机会话只看图不画图。点浮动画笔按钮再展开。
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
 
   // Last candle state, kept in sync so ticker updates can mutate it live
   const lastCandleRef = useRef<{
@@ -999,7 +1003,11 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
 
   return (
     <div data-allow-zoom className={cn("relative flex", className)}>
-      {hasAdvancedChart && <DrawingToolbar symbol={symbol} />}
+      {hasAdvancedChart && (
+        <div className={cn("h-full", mobileToolsOpen ? "flex" : "hidden lg:flex")}>
+          <DrawingToolbar symbol={symbol} />
+        </div>
+      )}
 
       <div className="relative min-w-0 flex-1">
         {isLoading && (
@@ -1068,6 +1076,24 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
           externalStatus={legendStatus}
           externalErrors={legendErrors}
         />
+
+        {/* 手机端绘图工具栏的开关（桌面上工具栏常驻，不需要它） */}
+        {hasAdvancedChart && (
+          <button
+            onClick={() => setMobileToolsOpen((v) => !v)}
+            aria-pressed={mobileToolsOpen}
+            aria-label={tDraw("toolbar_toggle")}
+            className={cn(
+              "absolute bottom-2 left-2 z-[7] flex h-11 w-11 items-center justify-center rounded-sm panel transition-colors lg:hidden",
+              mobileToolsOpen ? "text-gold" : "text-text-muted"
+            )}
+          >
+            <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 3l3 3L7 16l-4 1 1-4z" />
+              <path d="M12 5l3 3" />
+            </svg>
+          </button>
+        )}
 
         <div ref={chartRef} className="h-full w-full" />
 

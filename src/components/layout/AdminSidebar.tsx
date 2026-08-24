@@ -40,7 +40,7 @@ export function AdminSidebar({ open, onClose }: { open: boolean; onClose: () => 
 
       <aside
         className={cn(
-          "glass fixed left-0 top-14 z-50 flex h-[calc(100vh-3.5rem)] w-56 flex-col overflow-y-auto border-r border-border-default transition-transform lg:translate-x-0",
+          "glass fixed left-0 top-14 z-50 flex h-[calc(100dvh-3.5rem)] w-56 flex-col overflow-y-auto border-r border-border-default transition-transform lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >

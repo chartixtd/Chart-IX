@@ -187,6 +187,50 @@ const PATHS = {
   ),
   chevronUp: <path d="m6 15 6-6 6 6" />,
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  // —— 成就徽章（仪表盘）。此前直接渲染数据库里的 emoji，跨平台字形
+  // 不一致也跟不了 currentColor，未解锁态只能靠 grayscale 滤镜硬调 ——
+  trophy: (
+    <>
+      <path d="M8 4h8v5a4 4 0 0 1-8 0z" />
+      <path d="M8 5.5H5.5c0 2.5 1 4 2.8 4.4M16 5.5h2.5c0 2.5-1 4-2.8 4.4" />
+      <path d="M12 13v3.5M8.5 20.5h7M10 20.5v-2a2 2 0 0 1 4 0v2" />
+    </>
+  ),
+  seedling: (
+    <>
+      <path d="M12 20.5V11" />
+      <path d="M12 11C12 7 9.5 4.5 4.5 4.5c0 5 2.5 7.5 7.5 6.5" />
+      <path d="M12 13c0-3 2-5 6.5-5 0 4.5-2 6.5-6.5 5" />
+    </>
+  ),
+  book: (
+    <>
+      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z" />
+      <path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z" />
+    </>
+  ),
+  graduation: (
+    <>
+      <path d="m12 4 10 4.5-10 4.5L2 8.5z" />
+      <path d="M6.5 10.8v4.7c0 1.4 2.5 2.8 5.5 2.8s5.5-1.4 5.5-2.8v-4.7" />
+      <path d="M22 8.5v5" />
+    </>
+  ),
+  // —— 更多/溢出菜单。以前用 ⋮ / ⋯ 文本字符，基线与字形随字体回落漂移 ——
+  "dots-v": (
+    <>
+      <circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none" />
+    </>
+  ),
+  "dots-h": (
+    <>
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof PATHS;

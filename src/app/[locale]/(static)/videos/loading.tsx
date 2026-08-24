@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 export default function VideosLoading() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-12">
-      <div className="h-9 w-48 animate-pulse rounded-sm bg-bg-tertiary" />
+      <Skeleton className="h-9 w-48" />
       <div className="mt-6 flex flex-wrap gap-2">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-8 w-24 rounded-sm" />

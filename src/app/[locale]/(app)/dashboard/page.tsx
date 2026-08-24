@@ -45,7 +45,25 @@ import { ShareCardModal } from "@/components/dashboard/ShareCardModal";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { Locale, Order } from "@/types";
-import { Icon } from "@/components/ui/Icon";
+import { Icon, type IconName } from "@/components/ui/Icon";
+
+/**
+ * 成就图标：数据库里存的是 emoji（012_quizzes_achievements.sql 的默认值），
+ * 但 emoji 跨平台字形不一致、跟不了 currentColor——渲染前映射成站内
+ * 线性图标。库里出现新 emoji 时回落到奖杯，不至于渲染出豆腐块。
+ */
+const ACHIEVEMENT_ICONS: Record<string, IconName> = {
+  "\u{1F3C6}": "trophy", // 🏆
+  "\u{1F331}": "seedling", // 🌱
+  "\u{1F4DA}": "book", // 📚
+  "\u{1F393}": "graduation", // 🎓
+  "\u{1F4C8}": "candles", // 📈
+  "✅": "check", // ✅
+};
+
+function achievementIcon(emoji: string): IconName {
+  return ACHIEVEMENT_ICONS[emoji?.trim()] ?? "trophy";
+}
 
 type LedgerEntry =
   | { kind: "trade"; id: string; date: string; order: Order }
@@ -434,13 +452,16 @@ export default function DashboardPage() {
 
       <div className="hairline-gold mt-10" />
 
-      {/* 继续学习 + 自选行情 —— Bento 起点 */}
+      {/* 继续学习 + 自选行情 —— Bento 起点。
+          材质是 panel-raised 而不是 obsidian-glass：仪表盘是 Operate 面，
+          DESIGN.md 明令零 backdrop-filter——手机上四块整宽玻璃在滚动时
+          全程重算 blur(20px)。同一套边缘语言，只是不透明。 */}
       <section className="mt-10 grid gap-4 sm:grid-cols-2">
-        <div className="obsidian-glass min-w-0 rounded-xl p-5">
+        <div className="panel-raised min-w-0 rounded-xl p-5">
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("continue_learning_title")}</h2>
             {/* 纯箭头图标链接，视觉上很小；移动端补足到 44px 触控高度，桌面端不变 */}
-            <Link href={`/${locale}/videos`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
+            <Link href={`/${locale}/videos`} aria-label={t("continue_learning_cta")} className="inline-flex min-h-[44px] items-center px-1 text-text-muted hover:text-gold lg:min-h-0 lg:px-0"><Icon name="arrowRight" className="h-4 w-4" /></Link>
           </div>
           <div className="mt-4 border-t border-border-default/70">
             {continueWatchingPending ? (
@@ -480,10 +501,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="obsidian-glass min-w-0 rounded-xl p-5">
+        <div className="panel-raised min-w-0 rounded-xl p-5">
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("favorites_title")}</h2>
-            <Link href={`/${locale}/trade`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
+            <Link href={`/${locale}/trade`} aria-label={t("favorites_cta")} className="inline-flex min-h-[44px] items-center px-1 text-text-muted hover:text-gold lg:min-h-0 lg:px-0"><Icon name="arrowRight" className="h-4 w-4" /></Link>
           </div>
           <div className="mt-4 border-t border-border-default/70">
             {favorites.length === 0 ? (
@@ -504,18 +525,22 @@ export default function DashboardPage() {
 
       <div className="hairline-gold mt-10" />
 
-      {/* 最新内容 */}
-      <section className="mt-6 grid gap-4 sm:grid-cols-2">
-        <div className="obsidian-glass min-w-0 rounded-xl p-5">
+      {/* 最新内容。间距与其余区段一致走 mt-10——此前这一段是 mt-6，
+          五段里唯独它窄 16px，节奏不齐。 */}
+      <section className="mt-10 grid gap-4 sm:grid-cols-2">
+        <div className="panel-raised min-w-0 rounded-xl p-5">
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("latest_videos_title")}</h2>
-            <Link href={`/${locale}/videos`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
+            <Link href={`/${locale}/videos`} aria-label={t("latest_videos_title")} className="inline-flex min-h-[44px] items-center px-1 text-text-muted hover:text-gold lg:min-h-0 lg:px-0"><Icon name="arrowRight" className="h-4 w-4" /></Link>
           </div>
           <div className="mt-4 border-t border-border-default/70">
             {latestVideosPending ? (
               <Skeleton className="mt-4 h-24" />
+            ) : !latestVideos || latestVideos.length === 0 ? (
+              // 与左上两格同形的空态：空数组时这一格不能只剩标题和一条线
+              <p className="pt-4 text-xs text-text-muted">{t("latest_videos_empty")}</p>
             ) : (
-              (latestVideos ?? []).map((video) => (
+              latestVideos.map((video) => (
                 <Link
                   key={video.id}
                   href={`/${locale}/videos/${video.id}`}
@@ -542,16 +567,18 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="obsidian-glass min-w-0 rounded-xl p-5">
+        <div className="panel-raised min-w-0 rounded-xl p-5">
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("latest_articles_title")}</h2>
-            <Link href={`/${locale}/articles`} className="inline-flex min-h-[44px] items-center px-1 text-xs text-text-muted hover:text-gold lg:min-h-0 lg:px-0">→</Link>
+            <Link href={`/${locale}/articles`} aria-label={t("latest_articles_title")} className="inline-flex min-h-[44px] items-center px-1 text-text-muted hover:text-gold lg:min-h-0 lg:px-0"><Icon name="arrowRight" className="h-4 w-4" /></Link>
           </div>
           <div className="mt-4 border-t border-border-default/70">
             {latestArticlesPending ? (
               <Skeleton className="mt-4 h-24" />
+            ) : !latestArticles || latestArticles.length === 0 ? (
+              <p className="pt-4 text-xs text-text-muted">{t("latest_articles_empty")}</p>
             ) : (
-              (latestArticles ?? []).map((article) => (
+              latestArticles.map((article) => (
                 <Link
                   key={article.id}
                   href={`/${locale}/articles/${article.slug}`}
@@ -587,13 +614,13 @@ export default function DashboardPage() {
                 >
                   <span
                     className={cn(
-                      "flex h-11 w-11 items-center justify-center rounded-full border text-base",
+                      "flex h-11 w-11 items-center justify-center rounded-full border",
                       a.earned
-                        ? "border-gold/50 bg-gold/10 shadow-[0_0_0_1px_rgba(201,162,75,0.15)]"
-                        : "border-border-default text-text-muted grayscale opacity-35"
+                        ? "border-gold/50 bg-gold/10 text-gold"
+                        : "border-border-default text-text-muted opacity-40"
                     )}
                   >
-                    {a.icon}
+                    <Icon name={achievementIcon(a.icon)} className="h-5 w-5" />
                   </span>
                   <span className={cn("text-[11px] leading-tight", a.earned ? "text-text-secondary" : "text-text-muted")}>
                     {a.title[locale] ?? a.title["en-US"]}

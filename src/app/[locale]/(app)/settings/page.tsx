@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { LANGUAGE_LABELS, PUBLIC_LOCALES } from "@/lib/constants";
 
@@ -97,7 +98,9 @@ export default function SettingsPage() {
     router.refresh();
   };
 
-  if (auth.loading) {
+  // profileQuery.isPending 也并入骨架分支：否则昵称/角色/等级会先渲染
+  // 空占位再跳变成真实值。查询依赖 userId（enabled），所以只在已登录时看它。
+  if (auth.loading || (!!auth.userId && profileQuery.isPending)) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-6 lg:py-12">
         <Skeleton className="h-8 w-40" />
@@ -122,35 +125,38 @@ export default function SettingsPage() {
       <Card className="mt-6 lg:mt-8" padding="lg">
         <h2 className="text-lg font-semibold text-text-primary font-display tracking-tight">{t("profile")}</h2>
         <div className="mt-4 space-y-4">
+          {/* 只读展示行：不是表单控件，不用 <label>；label 样式与 Input 的 label 规范对齐 */}
           <div>
-            <label className="text-sm text-text-muted">{t("email")}</label>
-            <p className="break-all text-text-primary">{auth.email ?? ""}</p>
+            <span className="block text-xs font-medium uppercase tracking-wider text-text-secondary">
+              {t("email")}
+            </span>
+            <p className="mt-2 break-all text-text-primary">{auth.email ?? ""}</p>
           </div>
           <div>
-            <label className="text-sm text-text-muted">{t("role")}</label>
-            <p className="text-text-primary capitalize">{profileQuery.data?.role ?? "-"}</p>
+            <span className="block text-xs font-medium uppercase tracking-wider text-text-secondary">
+              {t("role")}
+            </span>
+            <p className="mt-2 text-text-primary capitalize">{profileQuery.data?.role ?? "-"}</p>
           </div>
           <div>
-            <label className="text-sm text-text-muted">{t("tier")}</label>
-            <p className="text-text-primary">
+            <span className="block text-xs font-medium uppercase tracking-wider text-text-secondary">
+              {t("tier")}
+            </span>
+            <p className="mt-2 text-text-primary">
               <span className={profileQuery.data?.tier === "pro" ? "text-gold" : ""}>
                 {profileQuery.data?.tier ?? "-"}
               </span>
             </p>
           </div>
-          <div>
-            <label htmlFor="displayName" className="text-sm text-text-muted">
-              {t("display_name")}
-            </label>
-            <input
-              id="displayName"
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="mt-1 w-full rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:border-gold focus:outline-none lg:max-w-sm"
-              placeholder={(auth.email ?? "").split("@")[0]}
-            />
-          </div>
+          <Input
+            id="displayName"
+            type="text"
+            label={t("display_name")}
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            className="lg:max-w-sm"
+            placeholder={(auth.email ?? "").split("@")[0]}
+          />
           {message && (
             <p className={message === t("saved") ? "text-success" : "text-danger"}>
               {message}

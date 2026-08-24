@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
 
 export interface RecordColumn<T> {
   key: string;
@@ -59,6 +60,9 @@ export function RecordList<T>({
   );
 
   // 可点击的行必须能用键盘到达并触发，否则整张表对键盘用户是死的。
+  // 只用于桌面表格的 <tr>；手机卡片的键盘可达改由卡片内的显式 <button>
+  // 承载（见下），不再给整个 <li> 挂 role="button"——action 列里通常有
+  // <Link>，button 里嵌 link 是非法嵌套，读屏会把整张卡读成一个按钮。
   const interactiveProps = (row: T) =>
     onRowClick
       ? {
@@ -81,17 +85,34 @@ export function RecordList<T>({
         {rows.map((row) => (
           <li
             key={rowKey(row)}
-            {...interactiveProps(row)}
+            // 整卡点击只是给指针用户的放大命中区；语义与键盘可达由下面
+            // primary 位置的 <button> 承载，这里不挂 role / tabIndex。
+            onClick={onRowClick ? () => onRowClick(row) : undefined}
             className={cn(
               "px-1 py-3.5",
-              onRowClick &&
-                "cursor-pointer transition-colors active:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold/60",
+              onRowClick && "cursor-pointer transition-colors active:bg-bg-tertiary",
               rowClassName?.(row)
             )}
           >
             {(primary || secondary) && (
               <div className="mb-2 flex items-baseline justify-between gap-3">
-                {primary && <div className="min-w-0 text-sm text-text-primary">{primary.render(row)}</div>}
+                {primary &&
+                  (onRowClick ? (
+                    // 行点击的显式可聚焦载体：真 <button> 原生响应 Enter/Space。
+                    // stopPropagation 防止冒泡到 <li> 的 onClick 触发两次。
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRowClick(row);
+                      }}
+                      className="min-w-0 text-left text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold/60"
+                    >
+                      {primary.render(row)}
+                    </button>
+                  ) : (
+                    <div className="min-w-0 text-sm text-text-primary">{primary.render(row)}</div>
+                  ))}
                 {secondary && (
                   <div className="tnum shrink-0 text-[11px] text-text-muted">{secondary.render(row)}</div>
                 )}
@@ -105,7 +126,13 @@ export function RecordList<T>({
                 </div>
               ))}
             </dl>
-            {action && <div className="mt-3">{action.render(row)}</div>}
+            {/* action 区里是 <Link>/<Button>，点击必须只触发它自己，
+                不能同时触发整卡的行点击。 */}
+            {action && (
+              <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                {action.render(row)}
+              </div>
+            )}
           </li>
         ))}
       </ul>
@@ -135,7 +162,10 @@ export function RecordList<T>({
                     >
                       {col.header}
                       {sort?.key === col.key && (
-                        <span aria-hidden>{sort.dir === -1 ? "▼" : "▲"}</span>
+                        <Icon
+                          name={sort.dir === -1 ? "chevronDown" : "chevronUp"}
+                          className="h-3 w-3"
+                        />
                       )}
                     </button>
                   ) : (
@@ -160,6 +190,9 @@ export function RecordList<T>({
                 {columns.map((col) => (
                   <td
                     key={col.key}
+                    // 桌面表格的 action 单元格同样要拦下冒泡：
+                    // 点「做多/做空」不该顺带触发行点击。
+                    onClick={onRowClick && col.action ? (e) => e.stopPropagation() : undefined}
                     className={cn(
                       "px-3 py-2.5 text-sm text-text-secondary",
                       col.align === "right" ? "text-right" : "text-left"

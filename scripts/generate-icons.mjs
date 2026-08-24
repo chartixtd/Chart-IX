@@ -56,6 +56,9 @@ const SPLASH = [
   { w: 1290, h: 2796, name: "splash-1290x2796" }, // iPhone 14 Pro Max/15 Pro Max
   { w: 1206, h: 2622, name: "splash-1206x2622" }, // iPhone 16 Pro
   { w: 1320, h: 2868, name: "splash-1320x2868" }, // iPhone 16 Pro Max
+  // 2x 机型：SE/8 与 XR/11 在东南亚仍是主力存量，缺了它们冷启动就是白屏
+  { w: 750, h: 1334, name: "splash-750x1334" }, // iPhone SE 2/3、8
+  { w: 828, h: 1792, name: "splash-828x1792" }, // iPhone XR/11
 ];
 
 const SPLASH_DIR = join(OUT_DIR, "splash");

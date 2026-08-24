@@ -19,6 +19,7 @@
     "copied": "已复制",
     "success": "操作成功",
     "error": "操作失败",
+    "retry": "重试",
     "go_home": "回到首页",
     "view_all": "查看全部",
     "show_more": "展开更多",
@@ -239,6 +240,7 @@
     },
     "orders": {
       "title": "交易历史",
+      "subtitle": "实盘与模拟交易的委托、成交与历史记录",
       "all": "全部",
       "pending": "等待成交",
       "filled": "已成交",
@@ -257,6 +259,11 @@
       "time": "时间",
       "cancel_order": "撤单",
       "no_orders": "暂无交易记录",
+      "empty_all_desc": "下单后，您的委托与成交记录会显示在这里",
+      "empty_pending_desc": "当前没有等待成交的委托",
+      "empty_filled_desc": "还没有已成交的订单记录",
+      "empty_canceled_desc": "没有已取消的订单",
+      "empty_rejected_desc": "没有被拒绝的订单",
       "export_csv": "导出 CSV"
     },
     "mobile_buy": "买入",
@@ -349,6 +356,7 @@
     },
     "drawing": {
       "select_tool": "选择工具（Esc）",
+      "toolbar_toggle": "绘图工具",
       "line_color": "线条颜色",
       "keep_tool_on": "连续绘制：开（画完保持工具）",
       "keep_tool_off": "连续绘制：关（画完回到选择）",
@@ -391,6 +399,8 @@
     "per_year": "/年",
     "contact_admin": "请联系管理员升级",
     "loading": "加载中...",
+    "plans_error": "定价信息加载失败",
+    "plans_empty": "定价方案暂未开放",
     "already_pro": "您已经是 Pro 用户",
     "already_pro_desc": "您已解锁所有 Pro 专属功能，包括合约交易、高级图表等。尽情使用吧！",
     "admin_contact_email": "联系邮箱",
@@ -916,7 +926,9 @@
     "favorites_empty": "还没有自选交易对",
     "favorites_cta": "去添加",
     "latest_videos_title": "最新视频",
+    "latest_videos_empty": "还没有发布视频，敬请期待。",
     "latest_articles_title": "最新文章",
+    "latest_articles_empty": "还没有发布文章，敬请期待。",
     "achievements_title": "我的成就",
     "statement_period": "对账区间 · {period}",
     "live_account": "实盘账户",
@@ -972,7 +984,7 @@
       "dir_all": "全部",
       "dir_long": "Long",
       "dir_short": "Short",
-      "amplitude_rank": "按排名取前 {n}"
+      "quiet_rank": "取最安静的 {n} 个"
     },
     "columns": {
       "symbol": "Symbol",
@@ -985,7 +997,9 @@
       "market_cap": "市值",
       "updated": "更新",
       "actions": "操作",
-      "data_missing": "数据缺失"
+      "data_missing": "数据缺失",
+      "ignition": "点火",
+      "ignition_hint": "刚突破前 6 小时区间（{level}）——唯一没有确认延迟的信号"
     },
     "table_title": "主扫描表",
     "table_hint": "按总分排序 · 点击行查看详情",

@@ -5,6 +5,7 @@ import { useSpotTicker } from "@/hooks/useMarketData";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 const HOT_SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT"] as const;
 
@@ -28,7 +29,7 @@ function HotQuote({ symbol }: { symbol: string }) {
           </span>
         </>
       ) : (
-        <span className="h-3 w-16 animate-pulse rounded-xs bg-bg-tertiary" />
+        <Skeleton className="h-3 w-16 rounded-xs" />
       )}
     </div>
   );

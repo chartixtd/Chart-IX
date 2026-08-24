@@ -318,7 +318,11 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
                 key={m}
                 type="button"
                 onClick={() => setUiMode(m)}
-                className={cn("rounded-xs px-2 py-0.5", uiMode === m ? "bg-bg-primary text-text-primary" : "text-text-muted")}
+                className={cn(
+                  // min-h-[44px]：手机下单主路径上的触控目标补到 44px；桌面保持密度
+                  "rounded-xs px-2 py-0.5 min-h-[44px] lg:min-h-0",
+                  uiMode === m ? "bg-bg-primary text-text-primary" : "text-text-muted"
+                )}
               >
                 {t(`trading.ui_mode.${m}`)}
               </button>
@@ -335,7 +339,7 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
                 type="button"
                 onClick={() => setOrderType(k)}
                 className={cn(
-                  "rounded-xs py-1 text-xs font-medium",
+                  "rounded-xs py-1 text-xs font-medium min-h-[44px] lg:min-h-0",
                   orderType === k ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary"
                 )}
               >

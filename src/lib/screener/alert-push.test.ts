@@ -76,32 +76,24 @@ const alert: AlertCardData = {
 };
 
 describe("formatAlertMessage", () => {
-  it("带上锁定价——这是整条警报的基准，缺了它后续的累计涨跌无从谈起", () => {
+  const ignition = (direction: "up" | "down"): AlertCardData["trigger"] => ({
+    type: "ignition",
+    ignition: { direction, level: 1, distancePct: 1.2, ignitedAt: 1, barsAgo: 0 },
+  });
+
+  it("带上触发价——这是整条警报的基准，缺了它后续的累计涨跌无从谈起", () => {
     expect(formatAlertMessage([alert], "zh")).toContain("0.2961");
   });
 
   it("带上两因子构成", () => {
-    const msg = formatAlertMessage([alert], "en");
-    expect(msg).toMatch(/OI26.*CVD13/);
+    expect(formatAlertMessage([alert], "en")).toMatch(/OI26.*CVD13/);
   });
 
-  it("方向用文字标出", () => {
-    expect(formatAlertMessage([alert], "zh")).toContain("做多");
-  });
-
-  it("带上场景名与操作文案", () => {
-    const msg = formatAlertMessage([alert], "zh");
-    expect(msg).toContain("健康趋势");
-    expect(msg).toContain("顺势，回调进场");
-  });
-
-  it("陷阱场景加 ⚠ 前缀，非陷阱场景不加", () => {
-    const trapAlert: AlertCardData = {
-      ...alert,
-      trigger: { type: "scenario", scenario: scenario({ kind: "false_top_div", trap: true, direction: "long" }) },
-    };
-    expect(formatAlertMessage([trapAlert], "zh")).toContain("⚠");
-    expect(formatAlertMessage([alert], "zh")).not.toContain("⚠");
+  it("方向、场景名与操作文案都在分组标题上", () => {
+    const head = formatAlertMessage([alert], "zh").split(/\r?\n/)[2];
+    expect(head).toContain("做多");
+    expect(head).toContain("健康趋势");
+    expect(head).toContain("顺势，回调进场");
   });
 
   it("manage 场景显示为「观望」而不是做多/做空", () => {
@@ -113,15 +105,109 @@ describe("formatAlertMessage", () => {
     expect(formatAlertMessage([manageAlert], "zh")).toContain("观望");
   });
 
-  it("多条警报合并成一条消息，而不是刷屏", () => {
-    const msg = formatAlertMessage([alert, { ...alert, symbol: "JTO-USDT" }], "en");
-    expect(msg).toContain("TIA");
-    expect(msg).toContain("JTO");
-    expect(msg.split("\n").filter((l) => l.includes("OI26")).length).toBe(2);
-  });
-
   it("转义 HTML", () => {
     expect(formatAlertMessage([{ ...alert, symbol: "<i>-USDT" }], "en")).toContain("&lt;i&gt;");
+  });
+
+  /* ── 分组：这条消息可读性的全部 ── */
+
+  // 线上真实的一条：15 张点火卡各占一行，"Ignition Up · Just broke range —
+  // follow it" 印了 15 遍，每行都因此折行，真正有区别的三样东西被挤到换行之后。
+  it("同一种触发的重复文案只印一次，不再每行一遍", () => {
+    const cards = ["A", "B", "C"].map((c) => ({
+      ...alert,
+      key: c,
+      symbol: `${c}-USDT`,
+      trigger: ignition("up"),
+      direction: "long" as const,
+    }));
+
+    const msg = formatAlertMessage(cards, "en");
+
+    expect(msg.match(/Just broke range/g)).toHaveLength(1);
+    expect(msg.match(/Ignition Up/g)).toHaveLength(1);
+  });
+
+  it("每张卡仍然各占一行，只留自己独有的信息", () => {
+    const cards = ["A", "B"].map((c, i) => ({
+      ...alert,
+      key: c,
+      symbol: `${c}-USDT`,
+      firstPrice: 1 + i,
+      trigger: ignition("up"),
+      direction: "long" as const,
+    }));
+
+    const rows = formatAlertMessage(cards, "en")
+      .split(/\r?\n/)
+      .filter((l) => l.startsWith("<b>"));
+
+    expect(rows).toEqual(["<b>A</b> @1 · OI26/CVD13", "<b>B</b> @2 · OI26/CVD13"]);
+  });
+
+  it("不同触发分成不同组，各自带自己的标题", () => {
+    const up = { ...alert, key: "U", symbol: "U-USDT", trigger: ignition("up"), direction: "long" as const };
+    const down = { ...alert, key: "D", symbol: "D-USDT", trigger: ignition("down"), direction: "short" as const };
+
+    const msg = formatAlertMessage([up, down], "zh");
+
+    expect(msg).toContain("向上点火");
+    expect(msg).toContain("向下点火");
+  });
+
+  // healthy_trend 既可能 long 也可能 short，合成一组的话标题上那个方向就是错的
+  it("同一场景不同方向不合并——否则标题上的方向会指错", () => {
+    const long = { ...alert, key: "L", symbol: "L-USDT" };
+    const short: AlertCardData = {
+      ...alert,
+      key: "S",
+      symbol: "S-USDT",
+      trigger: { type: "scenario", scenario: scenario({ direction: "short", side: "low" }) },
+      direction: "short",
+    };
+
+    const msg = formatAlertMessage([long, short], "zh");
+
+    expect(msg.match(/健康趋势/g)).toHaveLength(2);
+    expect(msg).toContain("做多");
+    expect(msg).toContain("做空");
+  });
+
+  it("组的先后跟随入参的总分降序——最强的一组排在最前面", () => {
+    const weakIgnition = { ...alert, key: "W", symbol: "W-USDT", trigger: ignition("up"), direction: "long" as const };
+
+    const msg = formatAlertMessage([alert, weakIgnition], "zh");
+
+    expect(msg.indexOf("健康趋势")).toBeLessThan(msg.indexOf("向上点火"));
+  });
+
+  it("陷阱场景用 ⚠️ 顶掉方向圆点，非陷阱场景用圆点", () => {
+    const trapAlert: AlertCardData = {
+      ...alert,
+      trigger: { type: "scenario", scenario: scenario({ kind: "false_top_div", trap: true, direction: "long" }) },
+    };
+    const trapHead = formatAlertMessage([trapAlert], "zh").split(/\r?\n/)[2];
+
+    expect(trapHead.startsWith("⚠️")).toBe(true);
+    // 方向没有因此丢掉——它就在紧接着那一格
+    expect(trapHead).toContain("做多");
+    expect(formatAlertMessage([alert], "zh").split(/\r?\n/)[2].startsWith("🟢")).toBe(true);
+  });
+
+  it("标题带上信号总数", () => {
+    const two = [alert, { ...alert, key: "X", symbol: "X-USDT" }];
+    expect(formatAlertMessage(two, "zh").split(/\r?\n/)[0]).toContain("2 个信号");
+    expect(formatAlertMessage([alert], "en").split(/\r?\n/)[0]).toContain("1 signal");
+  });
+
+  // 2369 读起来像编号，2,369 才一眼是价格；而一美元以下的币必须留够小数位，
+  // 统一取 2 位会把 0.09426 压成 0.09——那个数字对使用者毫无意义
+  it("触发价加千分位，且小数位按量级给", () => {
+    const big = formatAlertMessage([{ ...alert, firstPrice: 2369 }], "zh");
+    const small = formatAlertMessage([{ ...alert, firstPrice: 0.09426 }], "zh");
+
+    expect(big).toContain("@2,369");
+    expect(small).toContain("@0.09426");
   });
 });
 

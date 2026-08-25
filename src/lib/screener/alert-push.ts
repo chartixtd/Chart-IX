@@ -36,10 +36,22 @@ export const MAX_ALERTS_PER_MESSAGE = 20;
 
 const STRINGS: Record<
   TelegramMessageLang,
-  { title: string; long: string; short: string; manage: string; at: string }
+  { title: string; long: string; short: string; manage: string; count: (n: number) => string }
 > = {
-  en: { title: "🚨 Scanner Alert", long: "LONG", short: "SHORT", manage: "MANAGE", at: "locked at" },
-  zh: { title: "🚨 扫描器警报", long: "做多", short: "做空", manage: "观望", at: "锁定价" },
+  en: {
+    title: "🚨 Scanner Alert",
+    long: "LONG",
+    short: "SHORT",
+    manage: "MANAGE",
+    count: (n) => `${n} signal${n === 1 ? "" : "s"}`,
+  },
+  zh: {
+    title: "🚨 扫描器警报",
+    long: "做多",
+    short: "做空",
+    manage: "观望",
+    count: (n) => `${n} 个信号`,
+  },
 };
 
 /** 场景名，跟 brief 里六场景速查表用的中文名一一对应，英文是直译。 */
@@ -89,39 +101,94 @@ const IGNITION_LABELS: Record<TelegramMessageLang, { up: string; down: string; a
   en: { up: "Ignition Up", down: "Ignition Down", action: "Just broke range — follow it" },
 };
 
+/** 方向对应的圆点。分组标题上有它，行内就不必再写一遍方向 */
+const DIRECTION_DOT = { long: "🟢", short: "🔴", manage: "🟡" } as const;
+
 /**
- * 多条警报合并成**一条**消息。一轮扫描同时触发五六个币是常有的事，
- * 一条一发就是刷屏，而 Telegram 对同一个 chat 的连发也有速率限制。
+ * 触发价。加千分位，`2369` 读起来像编号，`2,369` 才一眼是价格。
  *
- * 每一行带场景名与操作文案（T22 新增）：警报已经是场景驱动的了，
- * 光看方向/分数不知道"现在是哪种局面、该怎么办"，这两样信息补上
- * 这道空。陷阱场景（false_top_div/false_bottom_div）在行首加 ⚠ 前缀——
- * 这类场景的操作方向跟直觉相反（背离却要顺势），不额外提醒容易被
- * 看错成普通背离。
+ * 小数位按量级给：一美元以下的币（0.09426、0.01467 这种）必须留够 6 位，
+ * 统一取 2 位会把它们全压成 0.09 —— 那个数字对使用者毫无意义。
+ */
+function fmtTriggerPrice(n: number): string {
+  return n.toLocaleString("en-US", { maximumFractionDigits: n < 1 ? 6 : 4 });
+}
+
+/**
+ * 一张卡属于哪一组。同一种触发 + 同一个方向 = 同一组。
+ *
+ * 方向必须进 key：healthy_trend 既可能是 long 也可能是 short，合成一组的话
+ * 标题上那个方向就是错的。
+ */
+function groupKey(a: AlertCardData): string {
+  const tr = a.trigger;
+  return tr.type === "scenario"
+    ? `s:${tr.scenario.kind}:${a.direction}`
+    : `i:${tr.ignition.direction}`;
+}
+
+function groupHeading(a: AlertCardData, lang: TelegramMessageLang): string {
+  const s = STRINGS[lang];
+  const dir = a.direction === "long" ? s.long : a.direction === "short" ? s.short : s.manage;
+  // 直接在 trigger 上分支，不抽成布尔量——抽出来 TypeScript 就不再收窄
+  // 这个联合类型，两支都会去访问对方没有的字段。
+  const tr = a.trigger;
+  const name =
+    tr.type === "scenario"
+      ? SCENARIO_LABELS[lang][tr.scenario.kind]
+      : IGNITION_LABELS[lang][tr.ignition.direction];
+  const action =
+    tr.type === "scenario" ? SCENARIO_ACTIONS[lang][tr.scenario.kind] : IGNITION_LABELS[lang].action;
+  // 陷阱场景用 ⚠️ **顶掉**方向圆点，而不是排在它前面：两个 emoji 并排既挤又
+  // 分不清主次，而对这类场景「这是个陷阱」本来就比「往哪个方向」更该先看到。
+  // 方向没有丢——紧接着的 dir 那一格就是。
+  // 陷阱场景的操作方向跟直觉相反（背离却要顺势），不提醒容易被看错成普通背离。
+  const trap = tr.type === "scenario" && tr.scenario.trap;
+  return `${trap ? "⚠️" : DIRECTION_DOT[a.direction]} <b>${name}</b> · ${dir} · ${action}`;
+}
+
+/**
+ * 多条警报合并成**一条**消息，按触发类型分组。
+ *
+ * 分组不是排版偏好，是这条消息**可读性的全部**。上一版每张卡自成一行，行里
+ * 依次是 币种·方向·场景名·操作文案·因子·锁定价——而一轮扫描触发的卡片
+ * 绝大多数是同一种触发（点火尤其如此：区间突破往往是全市场同时发生的）。
+ * 线上真实的一条：15 行里 "Ignition Up · Just broke range — follow it" 印了
+ * 15 遍，每行都因此折行，真正有区别的三样东西（币种、触发价、因子）被挤到
+ * 换行之后。读者要在重复文本里找不重复的部分，而那正好是反过来的。
+ *
+ * 现在重复的话在组标题上说一次，行内只留每张卡**独有**的信息，一行装得下：
+ *
+ *   🚨 扫描器警报 · 15 个信号
+ *
+ *   🟢 <b>向上点火</b> · 做多 · 刚突破区间，顺势跟
+ *   <b>PENDLE</b> @1.8305 · OI60/CVD9
+ *   <b>ICP</b> @2.455 · OI44/CVD10
+ *
+ * 组的先后按各组第一张卡在入参里的位置，而入参是按总分降序的——于是最强的
+ * 那一组排在最前面，组内也仍然是降序。
  */
 export function formatAlertMessage(alerts: AlertCardData[], lang: TelegramMessageLang): string {
   const s = STRINGS[lang];
-  const lines = alerts.map((a) => {
-    const dir = a.direction === "long" ? s.long : a.direction === "short" ? s.short : s.manage;
-    const coin = escapeHtml(a.symbol.replace(/-USDT$/, ""));
-    const f = a.factors;
-    // 直接在 trigger 上分支，不抽成布尔量——抽出来 TypeScript 就不再收窄
-    // 这个联合类型，两支都会去访问对方没有的字段。
-    const tr = a.trigger;
-    const name =
-      tr.type === "scenario"
-        ? SCENARIO_LABELS[lang][tr.scenario.kind]
-        : IGNITION_LABELS[lang][tr.ignition.direction];
-    const action =
-      tr.type === "scenario" ? SCENARIO_ACTIONS[lang][tr.scenario.kind] : IGNITION_LABELS[lang].action;
-    const trapPrefix = tr.type === "scenario" && tr.scenario.trap ? "⚠ " : "";
-    return (
-      `${trapPrefix}<b>${coin}</b> ${dir} · ${name} · ${action} · ` +
-      `OI${f.oi}/CVD${f.cvd} · ` +
-      `${s.at} ${a.firstPrice}`
-    );
+  // Map 保插入顺序，分组因此天然继承入参的总分降序
+  const groups = new Map<string, AlertCardData[]>();
+  for (const a of alerts) {
+    const key = groupKey(a);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(a);
+    else groups.set(key, [a]);
+  }
+
+  const blocks = [...groups.values()].map((cards) => {
+    const rows = cards.map((a) => {
+      const coin = escapeHtml(a.symbol.replace(/-USDT$/, ""));
+      return `<b>${coin}</b> @${fmtTriggerPrice(a.firstPrice)} · OI${a.factors.oi}/CVD${a.factors.cvd}`;
+    });
+    return [groupHeading(cards[0], lang), ...rows].join("\n");
   });
-  return `${s.title}\n\n${lines.join("\n")}`;
+
+  // 组与组之间空一行——Telegram 不渲染任何分隔线，空行是唯一能用的分组信号
+  return [`${s.title} · ${s.count(alerts.length)}`, ...blocks].join("\n\n");
 }
 
 /**

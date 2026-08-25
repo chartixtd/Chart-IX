@@ -14,10 +14,10 @@ import { checkRateLimit } from "@/lib/trading/rate-limit";
  *
  * 1. 带 CRON_SECRET 的请求（Vercel Cron 自动附带；pg_cron 手动配置）——
  *    直接放行，不限流。
- * 2. 匿名 tick —— 也放行，但走全站共享限流桶。tick 本身是安全的：
- *    是否真的推送由 isPushDue 按后台配置的间隔门控，未到期时只有一次
- *    单行 DB 读；到期时触发的推送正是这个功能本来就该做的事。匿名放行
- *    的最坏情况是「功能按预期运行」，限流挡住的是刷量烧配额。
+ * 2. 匿名 tick —— 也放行，但走全站共享限流桶。tick 本身是安全的：每条 tick
+ *    真正会做的事都自带收敛条件——早报补投只补今天那篇且成功过就不再发，
+ *    扫描按 isScanDue 门控，警报推送要求「本轮真的有新卡片」。匿名放行的
+ *    最坏情况是「功能按预期运行」，限流挡住的是刷量烧配额。
  */
 
 function safeEqual(a: string, b: string): boolean {

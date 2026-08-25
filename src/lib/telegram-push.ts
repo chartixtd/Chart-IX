@@ -1,13 +1,10 @@
 import { encrypt, decrypt } from "@/lib/crypto";
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
-import { getScannerPayload } from "@/lib/screener/cache";
 import {
   sendTelegramMessage,
   type TelegramSendOptions,
   type TelegramSendResult,
 } from "@/lib/telegram-send";
-import type { ScannerRow, ScannerPayload, Direction } from "@/lib/screener/types";
-import type { ScenarioKind } from "@/lib/screener/factors/scenario";
 
 export type TelegramMessageLang = "en" | "zh";
 export type PushTrigger = "cron" | "manual" | "test" | "briefing";
@@ -27,27 +24,18 @@ export interface TelegramPushSettings {
   chatId: string | null;
   /** Language the pushed message text itself is written in — independent of the admin UI's language */
   messageLang: TelegramMessageLang;
+  /**
+   * 两次警报推送之间的**最小**间隔。
+   *
+   * 语义在 T25 变过：它原先是「每隔多久发一次榜单」——一个定时器。榜单推送
+   * 删掉之后，推送改由「扫描出新警报卡」这个事件驱动，定时器没有了意义，
+   * 这个数字降级成一道节流闸：距上次成功推送不足这么久时，新卡片**攒起来**
+   * （只存 key，见 alert-push.ts），下一次够钟了连同当轮的一起发。
+   *
+   * 0 = 不节流，有新卡就发。默认就是 0——警报的价值高度依赖时效，
+   * 而一轮扫描的全部新卡本来就合并成一条消息，最多 15 分钟一条，不会刷屏。
+   */
   pushIntervalMinutes: number;
-  showPrice: boolean;
-  showChange24h: boolean;
-  showAmplitude: boolean;
-  showMarketCap: boolean;
-  showVolume: boolean;
-  /**
-   * 方向标记。DB 列仍叫 show_oi_ratio —— 四因子模型里没有 OI/量比这个字段了，
-   * 但这一列的语义（"表格里多显示一栏"）可以原样承接，为一个纯展示开关
-   * 加一次迁移不值得。改名只发生在 TS 这一侧，读写映射见 getTelegramPushSettings。
-   */
-  showDirection: boolean;
-  showFunding: boolean;
-  showScore: boolean;
-  /**
-   * 因子构成。DB 列仍叫 show_edge，理由同上——edge 这个概念随
-   * 6 维模型一起退役了，这一列先后承接过"显示 Zone/Sweep/OI/CVD 明细"
-   * （四因子模型）与现在的"显示 OI/CVD 明细"（T21 退役 Zone/Sweep 后的
-   * 两因子模型），列名本身不再改。
-   */
-  showFactors: boolean;
   lastPushedAt: string | null;
   lastAttemptAt: string | null;
   lastError: string | null;
@@ -87,15 +75,6 @@ interface TelegramPushRow {
   chat_id: string | null;
   message_lang: TelegramMessageLang;
   push_interval_minutes: number;
-  show_price: boolean;
-  show_change_24h: boolean;
-  show_amplitude: boolean;
-  show_market_cap: boolean;
-  show_volume: boolean;
-  show_oi_ratio: boolean;
-  show_funding: boolean;
-  show_score: boolean;
-  show_edge: boolean;
   last_pushed_at: string | null;
   last_attempt_at: string | null;
   last_error: string | null;
@@ -127,15 +106,6 @@ function rowToSettings(row: TelegramPushRow): TelegramPushSettings {
     chatId: row.chat_id,
     messageLang: row.message_lang,
     pushIntervalMinutes: row.push_interval_minutes,
-    showPrice: row.show_price,
-    showChange24h: row.show_change_24h,
-    showAmplitude: row.show_amplitude,
-    showMarketCap: row.show_market_cap,
-    showVolume: row.show_volume,
-    showDirection: row.show_oi_ratio,
-    showFunding: row.show_funding,
-    showScore: row.show_score,
-    showFactors: row.show_edge,
     lastPushedAt: row.last_pushed_at,
     lastAttemptAt: row.last_attempt_at,
     lastError: row.last_error,
@@ -212,18 +182,16 @@ export interface TelegramPushUpdate {
   botToken?: string;
   messageLang?: TelegramMessageLang;
   pushIntervalMinutes?: number;
-  showPrice?: boolean;
-  showChange24h?: boolean;
-  showAmplitude?: boolean;
-  showMarketCap?: boolean;
-  showVolume?: boolean;
-  showDirection?: boolean;
-  showFunding?: boolean;
-  showScore?: boolean;
-  showFactors?: boolean;
 }
 
-export const MIN_PUSH_INTERVAL_MINUTES = 15;
+/**
+ * 0 = 不节流。
+ *
+ * 下限曾经是 15：那时这个数字是「多久发一次榜单」，0 意味着每个 tick 都发。
+ * 现在它是警报推送的最小间隔，0 的含义变成「有新卡就发」——那正是绝大多数
+ * 人想要的默认，也是这个功能的意义所在，没有理由把它挡在配置之外。
+ */
+export const MIN_PUSH_INTERVAL_MINUTES = 0;
 export const MAX_PUSH_INTERVAL_MINUTES = 10080; // one week
 
 export async function updateTelegramPushSettings(
@@ -247,15 +215,6 @@ export async function updateTelegramPushSettings(
     }
     patch.push_interval_minutes = n;
   }
-  if (update.showPrice !== undefined) patch.show_price = update.showPrice;
-  if (update.showChange24h !== undefined) patch.show_change_24h = update.showChange24h;
-  if (update.showAmplitude !== undefined) patch.show_amplitude = update.showAmplitude;
-  if (update.showMarketCap !== undefined) patch.show_market_cap = update.showMarketCap;
-  if (update.showVolume !== undefined) patch.show_volume = update.showVolume;
-  if (update.showDirection !== undefined) patch.show_oi_ratio = update.showDirection;
-  if (update.showFunding !== undefined) patch.show_funding = update.showFunding;
-  if (update.showScore !== undefined) patch.show_score = update.showScore;
-  if (update.showFactors !== undefined) patch.show_edge = update.showFactors;
 
   const { data, error } = await client
     .from("telegram_push_settings")
@@ -358,194 +317,23 @@ export async function deleteTelegramTarget(id: string): Promise<void> {
 // Message formatting
 // ---------------------------------------------------------------------------
 
-function fmtPrice(n: number): string {
-  return n.toLocaleString("en-US", { maximumFractionDigits: n < 1 ? 6 : 2 });
-}
-
-function fmtPercent(n: number): string {
-  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
-}
-
 /** Telegram's HTML parse_mode only needs these three escaped. */
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-const MESSAGE_STRINGS: Record<
-  TelegramMessageLang,
-  {
-    title: string;
-    empty: string;
-    long: string;
-    short: string;
-    price: string;
-    change24h: string;
-    amplitude: string;
-    marketCap: string;
-    volume: string;
-    funding: string;
-    score: string;
-  }
-> = {
-  en: {
-    title: "Chart-IX Scanner",
-    empty: "(no candidates right now)",
-    long: "LONG",
-    short: "SHORT",
-    price: "Price",
-    change24h: "24h",
-    amplitude: "Amp",
-    marketCap: "MCap",
-    volume: "Vol",
-    funding: "Funding",
-    score: "Score",
-  },
-  zh: {
-    title: "Chart-IX 扫描器",
-    empty: "（当前暂无符合条件的品种）",
-    long: "做多",
-    short: "做空",
-    price: "价格",
-    change24h: "24h",
-    amplitude: "振幅",
-    marketCap: "市值",
-    volume: "成交量",
-    funding: "费率",
-    score: "总分",
-  },
-};
-
-/**
- * 场景中文/英文名，跟 alert-push.ts 里给警报推送用的同一份名称保持一致。
- * 不能反过来从 alert-push.ts import——那边已经 import 了 telegram-push.ts
- * 的 deliverToTargets 等，import 反过来会成环，所以这里维护第二份定义。
- */
-const SCANNER_SCENARIO_LABELS: Record<TelegramMessageLang, Record<ScenarioKind, string>> = {
-  zh: {
-    healthy_trend: "健康趋势",
-    inventory_flush: "存量清算",
-    true_top_div: "真顶背离",
-    true_bottom_div: "真底背离",
-    false_top_div: "假顶背离",
-    false_bottom_div: "假底背离",
-  },
-  en: {
-    healthy_trend: "Healthy Trend",
-    inventory_flush: "Inventory Flush",
-    true_top_div: "True Top Divergence",
-    true_bottom_div: "True Bottom Divergence",
-    false_top_div: "False Top Divergence",
-    false_bottom_div: "False Bottom Divergence",
-  },
-};
-
-/**
- * Telegram 单条消息有 4096 字符上限，一条 15 行的表离上限还有余量。
- * 榜单已按总分降序排好，截断只会丢掉分数最低的那些。
- */
-function formatScannerRow(
-  r: ScannerRow,
-  settings: TelegramPushSettings,
-  lang: TelegramMessageLang
-): string {
-  const s = MESSAGE_STRINGS[lang];
-  const symbol = escapeHtml(r.coin);
-  const parts: string[] = [];
-
-  if (settings.showDirection) parts.push(r.direction === "long" ? s.long : s.short);
-  // 场景名不受任何 show* 开关控制——它不是一个可关的展示字段，是这一行
-  // 为什么会出现在榜单里的判据本身（跟警报推送 formatAlertMessage 同一
-  // 个原则）。陷阱场景加 ⚠ 前缀，理由同 alert-push.ts：陷阱场景的操作
-  // 方向跟直觉相反，不提醒容易被看错成普通背离。
-  if (r.scenario) {
-    const label = SCANNER_SCENARIO_LABELS[lang][r.scenario.kind];
-    parts.push(`${r.scenario.trap ? "⚠ " : ""}${label}`);
-  }
-  if (settings.showScore) parts.push(`${s.score} ${r.total}`);
-  if (settings.showFactors) {
-    parts.push(`OI${r.factors.oi}/CVD${r.factors.cvd}`);
-  }
-  if (settings.showPrice) parts.push(`${s.price} ${fmtPrice(r.price)}`);
-  if (settings.showChange24h && r.change24h !== null) {
-    parts.push(`${s.change24h} ${fmtPercent(r.change24h)}`);
-  }
-  if (settings.showAmplitude) parts.push(`${s.amplitude} ${r.amplitude.toFixed(1)}%`);
-  if (settings.showMarketCap) parts.push(`${s.marketCap} $${(r.marketCap / 1_000_000).toFixed(1)}M`);
-  if (settings.showVolume) parts.push(`${s.volume} $${(r.volumeUsd / 1_000_000).toFixed(1)}M`);
-  // null 与 0 必须区分开：0 是一个完全真实的资金费率，
-  // 拿它显示"没数据"会让人以为这个币此刻不收费率。
-  if (settings.showFunding && r.fundingRate !== null) {
-    parts.push(`${s.funding} ${fmtPercent(r.fundingRate * 100)}`);
-  }
-
-  return parts.length > 0 ? `<b>${symbol}</b> — ${parts.join(" · ")}` : `<b>${symbol}</b>`;
-}
-
 /*
- * 这里曾经有一个 `PUSH_MIN_AMPLITUDE`（= 界面滑块的最小值 1.5%）。
- * T24 删除，理由和删掉那个滑块一样：选币改成「按振幅排名取前 N 个」之后，
- * payload 里的行振幅实测都在 14% 以上，1.5% 的门槛筛不掉任何一行。
+ * 这里曾经住着整套**榜单**消息的格式化：MESSAGE_STRINGS、场景名表、
+ * formatScannerRow / formatScannerGroup / formatScannerMessage，以及一组
+ * show* 展示开关（价格、24h、振幅、市值、成交量、方向、费率、总分、因子）。
  *
- * 成交量与市值同样不在这里过滤——三条门槛全部由服务端执行完了，
- * payload 里的行必然已经达标。推送与界面看到的是同一批币，
- * 这一点现在由「两边都不过滤」保证，比两边各写一个数字更难漂。
+ * T25 全部删除。scanner 的 Telegram 推送从「每 4 小时发一张排行榜」改成
+ * 「扫描出新警报卡就发那几张卡」——榜单本身仍然在网页上，但它不再是一条
+ * 推送内容，那么为它维护一套跨三语的表格排版和九个列开关就没有对应的产出了。
+ *
+ * telegram_push_settings 上的 show_* 列**没有删**，跟 chat_id 一样留作回滚，
+ * 只是 TS 这一侧不再读写它们。要恢复榜单推送，翻 git 比重写便宜。
  */
-
-/** 每一组最多列几行。两组加起来仍要留在 Telegram 单条消息 4096 字符以内。 */
-const MAX_PUSH_ROWS_PER_GROUP = 8;
-
-function formatScannerGroup(
-  direction: Direction,
-  rows: ScannerRow[],
-  settings: TelegramPushSettings,
-  lang: TelegramMessageLang
-): string {
-  const s = MESSAGE_STRINGS[lang];
-  const emoji = direction === "long" ? "🟢" : "🔴";
-  const label = direction === "long" ? s.long : s.short;
-  if (rows.length === 0) return `${emoji} <b>${label}</b>\n${s.empty}`;
-
-  const lines = rows
-    .slice(0, MAX_PUSH_ROWS_PER_GROUP)
-    .map((r, i) => `${i + 1}. ${formatScannerRow(r, settings, lang)}`);
-  return `${emoji} <b>${label}</b>\n${lines.join("\n")}`;
-}
-
-/**
- * 做多与做空**分成两组**，不混在一张表里。
- *
- * 一份混排的榜单要求读者自己在每一行里找方向标记，而看盘时的问题
- * 从来都是「现在有什么可以做多的」或「有什么可以做空的」，不是
- * 「按分数从高到低都有什么」。分组之后每一行的方向由所在分组决定，
- * 行内那个方向标记就成了冗余——但仍然保留，因为 showDirection
- * 是用户可关的开关，关掉之后分组标题就是唯一的方向信息。
- *
- * 每个币只会出现在一组里（四因子模型给每个币定死一个方向），
- * 所以分组不会把同一批币印两遍。
- */
-export function formatScannerMessage(
-  payload: ScannerPayload,
-  settings: TelegramPushSettings,
-  lang: TelegramMessageLang = settings.messageLang
-): string {
-  const s = MESSAGE_STRINGS[lang];
-  const timestamp = new Date(payload.computedAt).toISOString().replace("T", " ").slice(0, 16);
-  const head = `📊 <b>${s.title}</b> · ${timestamp} UTC`;
-
-  const eligible = payload.rows;
-  if (eligible.length === 0) return `${head}\n\n${s.empty}`;
-
-  const longs = eligible.filter((r) => r.direction === "long");
-  const shorts = eligible.filter((r) => r.direction === "short");
-
-  return [
-    head,
-    "",
-    formatScannerGroup("long", longs, settings, lang),
-    "",
-    formatScannerGroup("short", shorts, settings, lang),
-  ].join("\n");
-}
 
 // ---------------------------------------------------------------------------
 // Delivery
@@ -583,14 +371,6 @@ export interface TargetDeliveryResult {
   attempts: number;
   durationMs: number;
   error?: string;
-}
-
-export interface PushOutcome {
-  /** True when at least one target accepted the message. */
-  delivered: boolean;
-  skippedReason?: "disabled" | "not_due" | "no_targets" | "no_token";
-  results: TargetDeliveryResult[];
-  lastPushedAt: string | null;
 }
 
 async function recordDelivery(
@@ -707,7 +487,21 @@ export async function deliverToTargets(
   return results;
 }
 
-async function markAttempt(delivered: boolean, error: string | null): Promise<string | null> {
+/**
+ * 把一次推送尝试记进 telegram_push_settings 的健康字段。
+ *
+ * 从私有改成导出：榜单推送删掉之后，唯一会真正发消息的调用方是
+ * screener/alert-push.ts，而后台那张健康卡（上次推送时间、连续失败次数、
+ * 最后一条错误）读的就是这几列。不记的话，后台会永远显示「从未推送」，
+ * 而机器人其实一直在发——一个永远绿或永远灰的健康指示等于没有。
+ *
+ * last_pushed_at 同时是节流闸的基准（见 isPushDue 与 pushIntervalMinutes），
+ * 所以它必须只在**投递成功**时前进，失败不能顶掉下一次的机会。
+ */
+export async function markPushAttempt(
+  delivered: boolean,
+  error: string | null
+): Promise<string | null> {
   const client = createServiceRoleClient();
   const nowIso = new Date().toISOString();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -726,65 +520,6 @@ async function markAttempt(delivered: boolean, error: string | null): Promise<st
     await client.rpc("increment_telegram_settings_failure", { p_error: error ?? "unknown" });
   }
   return delivered ? nowIso : null;
-}
-
-/**
- * Called by the cron. Honours the enabled flag and the configured interval,
- * and reports why it did nothing so the caller can log something useful.
- */
-export async function pushScreenerToTelegram(
-  payload: ScannerPayload,
-  opts: { force?: boolean; trigger?: PushTrigger } = {}
-): Promise<PushOutcome> {
-  const trigger = opts.trigger ?? "cron";
-  const settings = await getTelegramPushSettings();
-
-  if (!opts.force && !settings.enabled) {
-    return { delivered: false, skippedReason: "disabled", results: [], lastPushedAt: settings.lastPushedAt };
-  }
-  if (!opts.force && !isPushDue(settings.lastPushedAt, settings.pushIntervalMinutes)) {
-    return { delivered: false, skippedReason: "not_due", results: [], lastPushedAt: settings.lastPushedAt };
-  }
-
-  // Only the destinations subscribed to the screener. A group that exists purely
-  // to receive the daily briefing link must not get a screener table every 4h.
-  const targets = await listTargetsFor("screener");
-  if (targets.length === 0) {
-    return { delivered: false, skippedReason: "no_targets", results: [], lastPushedAt: settings.lastPushedAt };
-  }
-  if (!settings.botToken && targets.every((t) => !t.botToken)) {
-    return { delivered: false, skippedReason: "no_token", results: [], lastPushedAt: settings.lastPushedAt };
-  }
-
-  const results = await deliverToTargets(
-    settings,
-    targets,
-    (lang) => formatScannerMessage(payload, settings, lang),
-    trigger
-  );
-
-  const delivered = results.some((r) => r.ok);
-  const failedSummary = results
-    .filter((r) => !r.ok)
-    .map((r) => `${r.label}: ${r.error ?? "unknown"}`)
-    .join("; ");
-
-  const lastPushedAt = await markAttempt(delivered, failedSummary ? failedSummary.slice(0, 1000) : null);
-
-  return {
-    delivered,
-    results,
-    lastPushedAt: lastPushedAt ?? settings.lastPushedAt,
-  };
-}
-
-/**
- * Admin-triggered "push now" — bypasses both the `enabled` flag and the
- * interval, since an explicit click is explicit intent.
- */
-export async function pushScreenerNow(): Promise<PushOutcome> {
-  const payload = await getScannerPayload();
-  return pushScreenerToTelegram(payload, { force: true, trigger: "manual" });
 }
 
 /** Send a one-off test message to a single target (or all, when no id is given). */

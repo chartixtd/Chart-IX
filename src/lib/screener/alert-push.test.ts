@@ -1,28 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { formatAlertMessage, parseAlertPushConfig, pushNewAlerts } from "./alert-push";
-import { getTelegramPushSettings, listTargetsFor, deliverToTargets } from "@/lib/telegram-push";
+import {
+  formatAlertMessage,
+  pushNewAlerts,
+  pushActiveAlertsNow,
+  MAX_ALERTS_PER_MESSAGE,
+} from "./alert-push";
+import {
+  getTelegramPushSettings,
+  listTargetsFor,
+  deliverToTargets,
+  markPushAttempt,
+} from "@/lib/telegram-push";
 import type { AlertCardData } from "./cards";
 import type { Scenario } from "./factors/scenario";
 
 // pushNewAlerts 的编排逻辑要靠 mock 掉外部依赖来测——真实实现会打 Supabase
-// 和 Telegram API。这里只 mock 三层：telegram-push（总开关/targets/投递）、
-// supabase/middleware（getAlertPushConfig 读配置用）。
-vi.mock("@/lib/telegram-push", () => ({
+// 和 Telegram API。isPushDue 用真实实现（它是纯函数，正是节流那几条用例要验的东西）。
+vi.mock("@/lib/telegram-push", async (importOriginal) => ({
   getTelegramPushSettings: vi.fn(),
   listTargetsFor: vi.fn(),
   deliverToTargets: vi.fn(),
+  markPushAttempt: vi.fn(async () => null),
+  isPushDue: (await importOriginal<typeof import("@/lib/telegram-push")>()).isPushDue,
   escapeHtml: (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
 }));
+
+/**
+ * admin_settings 的内存替身，只认 pending 那一行。
+ *
+ * 攒起来的卡片 key 存在这里，而「攒着不丢」正是节流这条路径的全部要点——
+ * 用一个只读的固定桩替代它，节流的用例就只能验到「没发」，验不到「下一轮补发」。
+ */
+const store = { pending: null as unknown };
 vi.mock("@/lib/supabase/middleware", () => ({
-  // getAlertPushConfig 走这条链路读 admin_settings.screener_alert_push；
-  // 固定返回「开启」，这样测试的重点——总开关检查——不会被这一层配置挡在前面。
   createServiceRoleClient: () => ({
     from: () => ({
       select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: { value: { enabled: true } } }),
-        }),
+        eq: () => ({ maybeSingle: async () => ({ data: { value: store.pending } }) }),
       }),
+      upsert: async (row: { value: unknown }) => {
+        store.pending = row.value;
+        return { error: null };
+      },
     }),
   }),
 }));
@@ -55,26 +74,6 @@ const alert: AlertCardData = {
   peakPct: 0,
   invalidation: { price: 0.28, breach: "below" },
 };
-
-describe("parseAlertPushConfig", () => {
-  it("解析后台存的 JSON", () => {
-    expect(parseAlertPushConfig({ enabled: true })).toEqual({ enabled: true });
-  });
-
-  it("没配置过时默认关闭——新功能不该自己开始往群里发消息", () => {
-    expect(parseAlertPushConfig(null)).toEqual({ enabled: false });
-  });
-
-  it("字段类型不对时退回默认值而不是抛错", () => {
-    expect(parseAlertPushConfig({ enabled: "yes" })).toEqual({ enabled: false });
-  });
-
-  it("旧配置里残留的 minScore 字段被直接忽略，不报错也不参与判断", () => {
-    // T22 删除了 minScore 这个概念（触发条件已经不是总分），后台存量配置
-    // 里可能还留着这个字段，不能因为多了一个陌生字段就解析失败。
-    expect(parseAlertPushConfig({ enabled: true, minScore: 80 })).toEqual({ enabled: true });
-  });
-});
 
 describe("formatAlertMessage", () => {
   it("带上锁定价——这是整条警报的基准，缺了它后续的累计涨跌无从谈起", () => {
@@ -126,32 +125,183 @@ describe("formatAlertMessage", () => {
   });
 });
 
+/* ── 编排：有新卡就推、节流、失败不丢 ── */
+
+const OK_SETTINGS = { enabled: true, botToken: "tok", pushIntervalMinutes: 0, lastPushedAt: null };
+
+/** 一张有效卡片 = 同时出现在 cards 与（可选的）newCards 里 */
+function input(cards: AlertCardData[], newCards: AlertCardData[] = cards) {
+  return { cards, newCards };
+}
+
+function card(key: string): AlertCardData {
+  return { ...alert, key, symbol: `${key}-USDT`, coin: key };
+}
+
+function useSettings(over: Record<string, unknown> = {}) {
+  vi.mocked(getTelegramPushSettings).mockResolvedValue({ ...OK_SETTINGS, ...over } as never);
+  vi.mocked(listTargetsFor).mockResolvedValue([{ id: "t1", enabled: true, botToken: null } as never]);
+}
+
 describe("pushNewAlerts", () => {
   beforeEach(() => {
+    store.pending = null;
     vi.mocked(getTelegramPushSettings).mockReset();
     vi.mocked(listTargetsFor).mockReset();
-    vi.mocked(deliverToTargets).mockReset();
+    vi.mocked(deliverToTargets).mockReset().mockResolvedValue([{ ok: true } as never]);
+    vi.mocked(markPushAttempt).mockClear();
   });
 
   it("Telegram 推送总开关关闭时一条都不发——运营关的是「机器人静音」，警报不该绕过", async () => {
-    vi.mocked(getTelegramPushSettings).mockResolvedValue({ enabled: false, botToken: "tok" } as never);
+    useSettings({ enabled: false });
 
-    const result = await pushNewAlerts([alert]);
+    const out = await pushNewAlerts(input([alert]));
 
-    expect(result).toBe(0);
+    expect(out.skippedReason).toBe("disabled");
     expect(deliverToTargets).not.toHaveBeenCalled();
   });
 
-  it("总开关打开且有可用 target 时正常推送，不再按分数过滤", async () => {
-    vi.mocked(getTelegramPushSettings).mockResolvedValue({ enabled: true, botToken: "tok" } as never);
-    vi.mocked(listTargetsFor).mockResolvedValue([
-      { id: "t1", enabled: true, botToken: null } as never,
-    ]);
-    vi.mocked(deliverToTargets).mockResolvedValue([{ ok: true } as never]);
+  // 这是这次改动的核心：新卡片出现就推，不再等定时窗口
+  it("有新警报卡就立刻推送", async () => {
+    useSettings();
 
-    const result = await pushNewAlerts([alert]);
+    const out = await pushNewAlerts(input([alert]));
 
     expect(deliverToTargets).toHaveBeenCalledTimes(1);
-    expect(result).toBe(1);
+    expect(out.pushed).toBe(1);
+    expect(out.delivered).toBe(true);
+  });
+
+  it("本轮没有新卡片时不打扰——卡片还在不等于有新事", async () => {
+    useSettings();
+
+    const out = await pushNewAlerts(input([alert], []));
+
+    expect(deliverToTargets).not.toHaveBeenCalled();
+    expect(out.skippedReason).toBe("nothing_new");
+  });
+
+  it("没有订阅 screener 的目标时不发", async () => {
+    vi.mocked(getTelegramPushSettings).mockResolvedValue(OK_SETTINGS as never);
+    vi.mocked(listTargetsFor).mockResolvedValue([]);
+
+    expect((await pushNewAlerts(input([alert]))).skippedReason).toBe("no_targets");
+  });
+
+  it("推送成功后记一次健康，节流基准跟着前进", async () => {
+    useSettings();
+    await pushNewAlerts(input([alert]));
+    expect(markPushAttempt).toHaveBeenCalledWith(true, null);
+  });
+
+  /* ── 节流：攒起来，不丢 ── */
+
+  it("距上次推送不足最小间隔时攒起来，不发", async () => {
+    useSettings({ pushIntervalMinutes: 30, lastPushedAt: new Date().toISOString() });
+
+    const out = await pushNewAlerts(input([alert]));
+
+    expect(deliverToTargets).not.toHaveBeenCalled();
+    expect(out.skippedReason).toBe("throttled");
+    expect(out.held).toBe(1);
+    expect(store.pending).toEqual([alert.key]);
+  });
+
+  it("攒着的卡片在下一轮够钟时补发出去——节流是延后，不是丢弃", async () => {
+    store.pending = [alert.key];
+    useSettings();
+    // 本轮没有新卡片，全靠攒着的那张
+    const out = await pushNewAlerts(input([alert], []));
+
+    expect(out.pushed).toBe(1);
+    expect(store.pending).toEqual([]);
+  });
+
+  // 只存 key 的全部意义：攒着的期间事件结束了，就不该再推一条过期警报
+  it("攒着的卡片已经失效时直接丢掉，不会推一条过期警报", async () => {
+    store.pending = ["GONE"];
+    useSettings();
+
+    const out = await pushNewAlerts(input([], []));
+
+    expect(deliverToTargets).not.toHaveBeenCalled();
+    expect(out.skippedReason).toBe("nothing_new");
+    expect(store.pending).toEqual([]);
+  });
+
+  it("同一张卡既在攒着的里、又是本轮新出的，只发一条", async () => {
+    store.pending = [alert.key];
+    useSettings();
+
+    await pushNewAlerts(input([alert]));
+
+    const rendered = vi.mocked(deliverToTargets).mock.calls[0][2]("zh");
+    expect(rendered.split(/\r?\n/).filter((l) => l.includes("TIA")).length).toBe(1);
+  });
+
+  /* ── 投递失败 ── */
+
+  it("投递失败时整批留到下一轮重试——一次 Telegram 抖动不该让事件消失", async () => {
+    useSettings();
+    vi.mocked(deliverToTargets).mockResolvedValue([{ ok: false, label: "群", error: "429" } as never]);
+
+    const out = await pushNewAlerts(input([alert]));
+
+    expect(out.pushed).toBe(0);
+    expect(out.delivered).toBe(false);
+    expect(store.pending).toEqual([alert.key]);
+    expect(markPushAttempt).toHaveBeenCalledWith(false, expect.stringContaining("429"));
+  });
+
+  /* ── 单条消息上限 ── */
+
+  it("超过单条上限的部分留到下一轮，而不是让整条消息发不出去", async () => {
+    const many = Array.from({ length: MAX_ALERTS_PER_MESSAGE + 3 }, (_, i) => card(`C${i}`));
+    useSettings();
+
+    const out = await pushNewAlerts(input(many));
+
+    expect(out.pushed).toBe(MAX_ALERTS_PER_MESSAGE);
+    expect(out.held).toBe(3);
+    expect(store.pending).toHaveLength(3);
+  });
+});
+
+describe("pushActiveAlertsNow", () => {
+  beforeEach(() => {
+    store.pending = null;
+    vi.mocked(getTelegramPushSettings).mockReset();
+    vi.mocked(listTargetsFor).mockReset();
+    vi.mocked(deliverToTargets).mockReset().mockResolvedValue([{ ok: true } as never]);
+    vi.mocked(markPushAttempt).mockClear();
+  });
+
+  // 手动点一下就是明确的意图：总开关和节流都不该挡住它，否则这个按钮
+  // 在最需要它的时候（排查「为什么没收到」）恰好用不了
+  it("绕过总开关与节流", async () => {
+    useSettings({ enabled: false, pushIntervalMinutes: 999, lastPushedAt: new Date().toISOString() });
+
+    const out = await pushActiveAlertsNow(input([alert], []));
+
+    expect(out.pushed).toBe(1);
+  });
+
+  it("推的是当前所有有效卡片，不是「本轮新出的」——否则手动点通常没反应", async () => {
+    useSettings();
+
+    await pushActiveAlertsNow(input([alert, card("JTO")], []));
+
+    const rendered = vi.mocked(deliverToTargets).mock.calls[0][2]("zh");
+    expect(rendered).toContain("TIA");
+    expect(rendered).toContain("JTO");
+  });
+
+  it("当前一张有效卡都没有时明确说清楚，而不是发一条空消息", async () => {
+    useSettings();
+
+    const out = await pushActiveAlertsNow(input([], []));
+
+    expect(out.skippedReason).toBe("nothing_new");
+    expect(deliverToTargets).not.toHaveBeenCalled();
   });
 });

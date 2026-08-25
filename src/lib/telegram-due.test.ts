@@ -46,3 +46,24 @@ describe("isPushDue", () => {
     expect(isPushDue(iso(15 * MIN), 15, NOW)).toBe(true);
   });
 });
+
+/**
+ * T25：这个函数的**调用方**变了，判据本身没变。
+ *
+ * 它原先回答「离上次发榜单够不够 N 分钟」——一个定时器。榜单推送删掉之后，
+ * scanner 改成「扫到新警报卡就推」，它降级成一道节流闸：不够久就把新卡片攒
+ * 起来（见 screener/alert-push.ts），下一轮一起发。
+ *
+ * 于是 0 这个入参第一次有了意义——「不节流」是新的默认值，而在定时器语义下
+ * 它等于「每个 tick 都发」，从来没被允许过（下限曾经硬编码成 15）。
+ */
+describe("isPushDue — 0 间隔（警报默认不节流）", () => {
+  it("间隔为 0 时永远放行，哪怕上一条是同一毫秒发的", () => {
+    expect(isPushDue(iso(0), 0, NOW)).toBe(true);
+  });
+
+  it("间隔为 0 时也不受「从未推送过」以外的状态影响", () => {
+    expect(isPushDue(iso(1), 0, NOW)).toBe(true);
+    expect(isPushDue(null, 0, NOW)).toBe(true);
+  });
+});

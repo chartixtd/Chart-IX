@@ -16,15 +16,6 @@ interface PublicSettings {
   botTokenConfigured: boolean;
   messageLang: MessageLang;
   pushIntervalMinutes: number;
-  showPrice: boolean;
-  showChange24h: boolean;
-  showAmplitude: boolean;
-  showMarketCap: boolean;
-  showVolume: boolean;
-  showDirection: boolean;
-  showFunding: boolean;
-  showScore: boolean;
-  showFactors: boolean;
   lastPushedAt: string | null;
   lastAttemptAt: string | null;
   lastError: string | null;
@@ -56,19 +47,12 @@ const CONTENT_KINDS = [
 
 type ContentKey = (typeof CONTENT_KINDS)[number]["key"];
 
-const FIELD_TOGGLES = [
-  { key: "showPrice", labelKey: "field_price" },
-  { key: "showChange24h", labelKey: "field_change_24h" },
-  { key: "showAmplitude", labelKey: "field_amplitude" },
-  { key: "showMarketCap", labelKey: "field_market_cap" },
-  { key: "showVolume", labelKey: "field_volume" },
-  { key: "showDirection", labelKey: "field_direction" },
-  { key: "showFunding", labelKey: "field_funding" },
-  { key: "showScore", labelKey: "field_score" },
-  { key: "showFactors", labelKey: "field_factors" },
-] as const;
-
-type FieldKey = (typeof FIELD_TOGGLES)[number]["key"];
+/*
+ * 这里曾经有一组 FIELD_TOGGLES（价格/24h/振幅/市值/成交量/方向/费率/总分/因子），
+ * 用来挑**榜单表格**要显示哪几列。榜单推送在 T25 删除，推送内容换成警报卡，
+ * 那九个开关就没有对应的产出了，一并删掉——留着就是九个改了也不会有任何
+ * 变化的按钮。DB 列还在（见 telegram-push.ts），要回滚翻 git。
+ */
 
 const INPUT_CLASS =
   "w-full rounded border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary " +
@@ -115,11 +99,6 @@ export function TelegramPushEditor({
   const [botTokenConfigured, setBotTokenConfigured] = useState(initialSettings.botTokenConfigured);
   const [messageLang, setMessageLang] = useState<MessageLang>(initialSettings.messageLang);
   const [interval, setIntervalMinutes] = useState(String(initialSettings.pushIntervalMinutes));
-  const [fields, setFields] = useState<Record<FieldKey, boolean>>(() => {
-    const f = {} as Record<FieldKey, boolean>;
-    for (const { key } of FIELD_TOGGLES) f[key] = initialSettings[key];
-    return f;
-  });
   const [health, setHealth] = useState({
     lastPushedAt: initialSettings.lastPushedAt,
     lastAttemptAt: initialSettings.lastAttemptAt,
@@ -138,8 +117,6 @@ export function TelegramPushEditor({
   const [testing, setTesting] = useState(false);
   const [pushingNow, setPushingNow] = useState(false);
 
-  const toggleField = (key: FieldKey) => setFields((prev) => ({ ...prev, [key]: !prev[key] }));
-
   const errText = (data: { error?: string } | null, fallback: string) => {
     if (data?.error === "duplicate_chat_id") return t("telegram_push_list.duplicate_chat_id");
     if (data?.error === "invalid_thread_id") return t("telegram_push_list.invalid_thread_id");
@@ -147,13 +124,19 @@ export function TelegramPushEditor({
     return data?.error ?? fallback;
   };
 
-  // “下次自动推送”按当前生效的间隔估算——这正是这个页面最该回答的问题：
-  // 自动推送到底还活着没有、下一条什么时候来。
+  /**
+   * 「最早下一条」= 节流闸什么时候放行。
+   *
+   * 语义随推送本身变了：以前它是「下次自动推送」，因为推送是定时的，那个时刻
+   * 就是消息到达的时刻。现在推送由「扫到新警报卡」触发，没人能预告下一条什么
+   * 时候来——这里能回答的只是「就算此刻有新卡，最早也要等到几点才发得出去」。
+   * 间隔为 0（默认）时根本没有闸，直接说清不节流。
+   */
   const nextPushLabel = useMemo(() => {
     if (!enabled) return "—";
-    if (!health.lastPushedAt) return t("telegram_push_list.next_push_due");
     const minutes = Number(interval);
     const base = Number.isFinite(minutes) ? minutes : initialSettings.pushIntervalMinutes;
+    if (base <= 0 || !health.lastPushedAt) return t("telegram_push_list.next_push_due");
     const next = new Date(health.lastPushedAt).getTime() + base * 60_000;
     if (!Number.isFinite(next) || next <= Date.now()) return t("telegram_push_list.next_push_due");
     return fmtTime(new Date(next).toISOString());
@@ -191,7 +174,9 @@ export function TelegramPushEditor({
 
   const save = async () => {
     const minutes = Number(interval);
-    if (!Number.isFinite(minutes) || minutes < 15 || minutes > 10080) {
+    // 下限是 0 而不是 15：这个字段现在是「警报的最小间隔」，0 = 有新卡就发，
+    // 那正是默认值，不该被表单挡住。
+    if (!Number.isFinite(minutes) || minutes < 0 || minutes > 10080) {
       toast(t("telegram_push_list.interval_invalid"), "error");
       return;
     }
@@ -201,7 +186,6 @@ export function TelegramPushEditor({
         enabled,
         messageLang,
         pushIntervalMinutes: minutes,
-        ...fields,
       };
       // Only send botToken if the admin actually typed a new one — an empty
       // field means "leave the stored token alone", not "clear it".
@@ -437,9 +421,9 @@ export function TelegramPushEditor({
         )}
       </Card>
 
-      {/* ── Bot config + message content ── */}
-      <div className="grid items-start gap-6 lg:grid-cols-5">
-        <Card tone="data" padding="md" className="lg:col-span-3">
+      {/* ── Bot config ── */}
+      <div className="grid items-start gap-6">
+        <Card tone="data" padding="md">
           <h2 className="mb-1 text-sm font-semibold text-text-primary font-display tracking-tight">
             {t("telegram_push_list.bot_title")}
           </h2>
@@ -480,7 +464,7 @@ export function TelegramPushEditor({
                 <label className={LABEL_CLASS}>{t("telegram_push_list.interval_label")}</label>
                 <input
                   type="number"
-                  min={15}
+                  min={0}
                   max={10080}
                   step={5}
                   value={interval}
@@ -491,37 +475,10 @@ export function TelegramPushEditor({
               </div>
             </div>
           </div>
-
-        </Card>
-
-        <Card tone="data" padding="md" className="lg:col-span-2">
-          <h2 className="mb-1 text-sm font-semibold text-text-primary font-display tracking-tight">
-            {t("telegram_push_list.fields_title")}
-          </h2>
-          <p className="mb-4 text-xs text-text-muted">{t("telegram_push_list.fields_desc")}</p>
-
-          <div className="flex flex-wrap gap-2">
-            {FIELD_TOGGLES.map(({ key, labelKey }) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={fields[key]}
-                onClick={() => toggleField(key)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs transition-colors",
-                  fields[key]
-                    ? "border-gold/60 bg-gold/10 text-gold"
-                    : "border-border-default bg-bg-tertiary text-text-secondary hover:border-border-hover hover:text-text-primary"
-                )}
-              >
-                {t(`telegram_push_list.${labelKey}`)}
-              </button>
-            ))}
-          </div>
         </Card>
       </div>
 
-      {/* 设置区（机器人配置 + 推送内容）共用一个保存动作 */}
+      {/* 机器人配置与节流间隔共用一个保存动作 */}
       <div className="flex justify-end">
         <Button variant="primary" size="sm" loading={saving} onClick={save}>
           {t("telegram_push_list.save")}

@@ -3,6 +3,8 @@ import { authorizeCronTick } from "@/lib/cron-auth";
 import { runScan, listVolumeRefreshCoins } from "@/lib/screener/pipeline";
 import { isScanDue, writeScannerCache } from "@/lib/screener/cache";
 import { pushNewAlerts } from "@/lib/screener/alert-push";
+import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
+import { buildScreenerMessage } from "@/lib/push/messages";
 import { readVolumeCache, pickStaleCoins, refreshVolumeBatch, VOLUME_REFRESH_BATCH } from "@/lib/screener/volume-cache";
 
 export const runtime = "nodejs";
@@ -48,18 +50,50 @@ export async function GET(request: NextRequest) {
 
     // 推送失败不该让整轮扫描记成失败——榜单已经算好并落库了，
     // 那才是这个路由的主产出。推送是附加动作。
-    let pushed = 0;
+    //
+    // T25 起这里是 scanner 唯一的推送出口：原先「每 4 小时发一张排行榜」那条
+    // 走 telegram-push cron 的路已经删掉，改成「扫描出新警报卡就发那几张卡」。
+    // 触发点必须落在扫描这一步——只有这里知道哪些卡片是**这一轮新出现的**。
+    let push: Awaited<ReturnType<typeof pushNewAlerts>> = {
+      pushed: 0,
+      held: 0,
+      delivered: false,
+      skippedReason: "nothing_new",
+    };
     try {
-      pushed = await pushNewAlerts(payload.newCards);
+      push = await pushNewAlerts(payload);
     } catch (err) {
       console.error("[cron/screener-scan] alert push failed", err);
+    }
+
+    // Web Push 扇出：只发给自己勾了 screener 的订阅者，跟 Telegram 的群配置
+    // 是两套东西。它原先挂在 telegram-push cron 的定时窗口上，那个窗口随榜单
+    // 推送一起删了，所以搬到同一个事件上来——「有新警报卡就通知」对两个通道
+    // 是同一句话。失败不影响扫描结果，也不影响 Telegram 那一路。
+    try {
+      if (payload.newCards.length > 0) {
+        const subscriptions = await getOptedInSubscriptions("screener");
+        await Promise.all(
+          subscriptions.map((row) =>
+            sendToSubscriptions([row], {
+              ...buildScreenerMessage(row.locale),
+              url: `/${row.locale}/screener`,
+              tag: "screener",
+            })
+          )
+        );
+      }
+    } catch (err) {
+      console.error("[cron/screener-scan] web push fan-out failed", err);
     }
 
     return NextResponse.json({
       rows: payload.rows.length,
       cards: payload.cards.length,
       newCards: payload.newCards.length,
-      pushed,
+      pushed: push.pushed,
+      held: push.held,
+      skipped: push.skippedReason,
     });
   } catch (error) {
     console.error("[cron/screener-scan]", error);

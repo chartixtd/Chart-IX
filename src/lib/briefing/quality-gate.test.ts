@@ -906,6 +906,97 @@ describe("parseBriefingJson — 结构漂移", () => {
     expect(parseBriefingJson(raw)!.headlines[0].points).toEqual(["比特币在六万四千美元上方震荡"]);
   });
 
+  // 2026-08-25 的第一次生成死在 analysis.watchlist 上，白烧 8.9 秒。下面三种是
+  // 「语义完整、只是形状不对」的其余常见形态——它们都不该再烧掉一次模型调用。
+  it("整张 watchlist 被多包一层数组时拆掉外层", () => {
+    const raw = JSON.stringify({
+      ...validJson(),
+      analysis: {
+        ...validJson().analysis,
+        watchlist: [["关注美联储官员本周的公开讲话", "关注黄金能否站稳当前阶段高位"]],
+      },
+    });
+    const parsed = parseBriefingJson(raw)!;
+    expect(parsed.analysis.watchlist).toEqual([
+      "关注美联储官员本周的公开讲话",
+      "关注黄金能否站稳当前阶段高位",
+    ]);
+    expect(check(parsed).ok).toBe(true);
+  });
+
+  it("编号对象当数组用时取 values", () => {
+    const raw = JSON.stringify({
+      ...validJson(),
+      analysis: {
+        ...validJson().analysis,
+        watchlist: { "1": "关注美联储官员本周的公开讲话", "2": "关注黄金能否站稳当前阶段高位" },
+      },
+    });
+    expect(parseBriefingJson(raw)!.analysis.watchlist).toEqual([
+      "关注美联储官员本周的公开讲话",
+      "关注黄金能否站稳当前阶段高位",
+    ]);
+  });
+
+  // prompt 把 watchlist 画在 analysis 里，模型有时按平铺习惯输出到顶层
+  it("watchlist 被提到顶层时收回 analysis 内", () => {
+    const j = validJson();
+    const raw = JSON.stringify({
+      ...j,
+      analysis: { overview: j.analysis.overview, crypto: j.analysis.crypto, gold: j.analysis.gold },
+      watchlist: j.analysis.watchlist,
+    });
+    const parsed = parseBriefingJson(raw)!;
+    expect(parsed.analysis.watchlist).toEqual(j.analysis.watchlist);
+    expect(check(parsed).ok).toBe(true);
+  });
+
+  it("模型写在正确位置上的 watchlist 不会被顶层那份覆盖", () => {
+    const j = validJson();
+    const raw = JSON.stringify({ ...j, watchlist: ["顶层的那份不该赢"] });
+    expect(parseBriefingJson(raw)!.analysis.watchlist).toEqual(j.analysis.watchlist);
+  });
+
+  it("夹在中间的 null 元素被丢掉，而不是拖垮整篇", () => {
+    const j = validJson();
+    const raw = JSON.stringify({
+      ...j,
+      analysis: { ...j.analysis, watchlist: [j.analysis.watchlist[0], null, "  "] },
+    });
+    const parsed = parseBriefingJson(raw)!;
+    expect(parsed.analysis.watchlist).toEqual([j.analysis.watchlist[0]]);
+    expect(check(parsed).ok).toBe(true);
+  });
+
+  it("全是空值时结果为空数组，仍然被拒——展平不发明内容", () => {
+    const raw = JSON.stringify({
+      ...validJson(),
+      analysis: { ...validJson().analysis, watchlist: [null, "", "   "] },
+    });
+    expect(check(parseBriefingJson(raw)).ok).toBe(false);
+  });
+
+  // 展平能覆盖的形状总是有限的。下一次遇到新形状时，诊断里必须直接看得到它
+  // 长什么样——否则又是一轮「该补哪种形状」的猜测。
+  it("拒稿时把出问题的那个值带进诊断", () => {
+    const raw = JSON.stringify({
+      ...validJson(),
+      analysis: { ...validJson().analysis, watchlist: [{ note: "" }] },
+    });
+    const r = check(parseBriefingJson(raw));
+    expect(r.ok).toBe(false);
+    const detail = r.failures.find((f) => f.detail.includes("watchlist"))!.detail;
+    expect(detail).toContain('{"note":""}');
+  });
+
+  it("诊断里的值会截断，不会把整篇稿子灌进告警", () => {
+    const j = validJson();
+    const r = check({ ...j, title: { long: "x".repeat(500) } as unknown as string });
+    const detail = r.failures.find((f) => f.detail.startsWith("title"))!.detail;
+    expect(detail).toContain("…");
+    expect(detail.length).toBeLessThan(220);
+  });
+
   it("展平不了的形状仍然被结构规则拒掉", () => {
     const raw = JSON.stringify({
       ...validJson(),

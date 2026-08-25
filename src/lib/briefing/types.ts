@@ -33,3 +33,15 @@ export interface BriefingJson {
     watchlist: string[];
   };
 }
+
+/**
+ * 一次「把主语言稿翻成另一语」的结果。
+ *
+ * 用带 reason 的结果而不是 `BriefingJson | null`：翻译是英文版唯一的来源，
+ * 它一失败整语就掉到零 AI 兜底稿，而此前诊断里只留下一行「en-US 翻译失败」——
+ * 端点被封、预算不够、译文语种不对、模型少译了一条要点，处置完全不同的故障
+ * 长得一模一样。reason 会一路带进 admin 的运行记录里。
+ */
+export type BriefingTranslateOutcome =
+  | { ok: true; json: BriefingJson }
+  | { ok: false; reason: string };

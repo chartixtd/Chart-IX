@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/middleware";
 import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
 import { buildContentMessage } from "@/lib/push/messages";
 import { translateBriefingJson } from "@/lib/briefing/translate-json";
+import { translateBriefingJsonViaModel } from "@/lib/briefing/translate-model";
 import { briefingSlug, utcPlus8DateString, utcPlus8Hour } from "@/lib/briefing/date";
 import { fetchBriefingSources, MIN_SOURCE_ITEMS } from "@/lib/briefing/sources";
 import { fetchArticleBodies, MAX_BODIES } from "@/lib/briefing/extract";
@@ -24,7 +25,12 @@ import {
 } from "@/lib/briefing/publish-state";
 import { revalidateArticleLists } from "@/lib/articles-revalidate";
 import type { SourceWithBody } from "@/lib/briefing/extract";
-import type { BriefingJson, BriefingLocale, MarketFact } from "@/lib/briefing/types";
+import type {
+  BriefingJson,
+  BriefingLocale,
+  BriefingTranslateOutcome,
+  MarketFact,
+} from "@/lib/briefing/types";
 
 const JOB_NAME = "daily-briefing";
 const LOCALES: BriefingLocale[] = ["zh-CN", "en-US"];
@@ -91,6 +97,17 @@ export const MIN_CALL_BUDGET_MS = 20_000;
  * 会在生成偏慢的日子白白放弃一次本来来得及的翻译，把英文版无谓地降级成兜底稿。
  */
 const MIN_TRANSLATE_BUDGET_MS = 8_000;
+
+/**
+ * 模型翻译（L3a，主路）的预算门槛。
+ *
+ * 这一路是一次真正的模型调用，量级和生成同级——实测一次生成约 9 秒。剩余预算
+ * 低于这个数就直接让位给 gtx 备胎：起一次注定超时的调用，只会把留给备胎、落库
+ * 与推送的时间一起烧掉，最后什么都没写。
+ *
+ * 取 14 秒：够一次正常翻译跑完，且失败后仍有余量走 8 秒门槛的备胎。
+ */
+const MIN_MODEL_TRANSLATE_BUDGET_MS = 14_000;
 
 /**
  * 发布时间窗（UTC+8 小时，闭区间）。
@@ -426,27 +443,84 @@ async function runPipeline(
       title[PRIMARY_LOCALE] = normalizeBriefingTitle(primary.title, dateStr, PRIMARY_LOCALE);
       content[PRIMARY_LOCALE] = renderBriefingHtml(primary, facts, PRIMARY_LOCALE);
 
-      // 翻译同样受墙钟预算约束，但门槛比模型调用低得多：它是十几个并发的短
-      // 请求，几秒就能跑完，用 MIN_CALL_BUDGET_MS(20s) 卡它会在生成偏慢的
-      // 日子白白放弃一次本来来得及的翻译。
-      let translated =
-        deadlineMs - Date.now() >= MIN_TRANSLATE_BUDGET_MS
-          ? await translateBriefingJson(primary, from, to, badLocale)
-          : null;
+      // 翻译通道按**可靠性**排序，逐个试到有一个既产出又过门槛为止。
+      //
+      // 主路是模型（L3a）。此前唯一的通道是 gtx 免费端点（现在的 L3b），而它是
+      // 英文版反复降级的根因：Google 对数据中心 IP 段整体拦截，命中时返回
+      // "Sorry..." 拦截页（HTTP 429），且**与频率无关**——本地复现时间隔 1.5 秒的
+      // 单条串行请求同样条条 429。Vercel 的 serverless 出口正是这类 IP，所以只要
+      // 落进被封的段，英文当天必然掉兜底稿，重试和降并发都救不回来。
+      // 详见 translate-model.ts 顶部。
+      //
+      // gtx 保留在后面是因为它免费、失败也只花一两秒；模型那一路真出问题时
+      // （余额、限流）它仍有机会兜住。
+      const channels: {
+        name: string;
+        minBudgetMs: number;
+        run: () => Promise<BriefingTranslateOutcome>;
+      }[] = [
+        {
+          name: "模型翻译",
+          // 翻译一次的输出量与生成相当（实测生成约 9 秒），预算不到这个数就别起头，
+          // 免得起了一次注定超时的调用、把留给备胎和落库的时间也烧掉。
+          minBudgetMs: MIN_MODEL_TRANSLATE_BUDGET_MS,
+          run: () =>
+            translateBriefingJsonViaModel({
+              json: primary,
+              targetLocale: badLocale,
+              apiKey: process.env.DEEPSEEK_API_KEY!,
+              // 同模型重试一次（空内容是 DeepSeek 明示的偶发问题），再换备用模型。
+              // 后两次能不能跑得成由内部的预算闸门决定，跑不成就自然让位给 gtx。
+              models: [
+                process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
+                process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
+                process.env.DEEPSEEK_FALLBACK_MODEL || "deepseek-v4-pro",
+              ],
+              deadlineMs,
+              minCallBudgetMs: MIN_MODEL_TRANSLATE_BUDGET_MS,
+              onAttempt: (m) => trace(diag, m),
+            }),
+        },
+        {
+          name: "翻译端点",
+          // 十几个短请求、小并发跑完只要一两秒，用 MIN_CALL_BUDGET_MS(20s) 卡它
+          // 会在生成偏慢的日子白白放弃一次本来来得及的翻译。
+          minBudgetMs: MIN_TRANSLATE_BUDGET_MS,
+          run: () => translateBriefingJson(primary, from, to, badLocale),
+        },
+      ];
 
-      // 机器翻译产物必须重跑**同一把尺子**。translateBriefingJson 内部只查了
-      // 语种占比，而 TITLE_MAX(60) 与 BANNED_PHRASES（含 "price target"、
-      // "guaranteed" 等英文条目）从未作用于翻译结果：中文标题译成英文很容易
-      // 超长，中文的合规表述也可能被译成禁用短语，于是一篇本该被拦下的稿子
-      // 会绕过门槛直接发布。不过就当作翻译失败，落到 L4。
-      if (translated) {
+      let translated: BriefingJson | null = null;
+      // 每条通道为什么没成，全部收集起来一次性上报。此前这里只有一句
+      // 「en-US 翻译失败」，运维要回答「今天为什么又降级了」只能去翻 Sentry，
+      // 而端点被封、预算不够、译文语种不对在那里长得一模一样。
+      const whyNot: string[] = [];
+
+      for (const ch of channels) {
+        const remaining = deadlineMs - Date.now();
+        if (remaining < ch.minBudgetMs) {
+          whyNot.push(`${ch.name}: 剩余预算 ${Math.max(0, remaining)}ms 不足`);
+          continue;
+        }
+        const out = await ch.run();
+        if (!out.ok) {
+          whyNot.push(`${ch.name}: ${out.reason}`);
+          continue;
+        }
+
+        // 机器翻译产物必须重跑**同一把尺子**。两条通道内部都只查了语种占比，
+        // 而 TITLE_MAX(60) 与 BANNED_PHRASES（含 "price target"、"guaranteed"
+        // 等英文条目）从未作用于翻译结果：中文标题译成英文很容易超长，中文的
+        // 合规表述也可能被译成禁用短语，于是一篇本该被拦下的稿子会绕过门槛
+        // 直接发布。不过就当作这条通道失败，换下一条。
+        //
         // 必须传 withBodies，不能传外层的 sources（不含正文）。
         // 生成阶段模型读的是 withBodies——它能从正文里读出「150万美元」这类
         // 数字。若这里退回不含正文的 sources，白名单就只看得到 RSS 的标题和
         // 摘要，找不到这个数字，把刚翻译好、内容完全正确的英文版错判为编造，
         // 落到兜底稿。线上真实发生过一次，就是这里的变量传错了。
         const gate = checkBriefing({
-          json: translated,
+          json: out.json,
           facts,
           sources: withBodies,
           locale: badLocale,
@@ -457,13 +531,16 @@ async function runPipeline(
           baseline: primary,
         });
         if (!gate.ok) {
-          note(
-            diag,
-            `${badLocale} 翻译结果未过质量门槛: ` +
+          whyNot.push(
+            `${ch.name}: 翻译结果未过质量门槛 ` +
               gate.failures.map((f) => `${f.rule}/${f.detail}`).join("; ")
           );
-          translated = null;
+          continue;
         }
+
+        translated = out.json;
+        trace(diag, `${badLocale} 已由 ${PRIMARY_LOCALE} 翻译生成（${ch.name}）`);
+        break;
       }
 
       if (translated) {
@@ -473,10 +550,11 @@ async function runPipeline(
         // 日期也可能被写成 August 10 —— 同样归一到英文侧的标准格式
         title[badLocale] = normalizeBriefingTitle(translated.title, dateStr, badLocale);
         content[badLocale] = renderBriefingHtml(translated, facts, badLocale);
-        trace(diag, `${badLocale} 已由 ${PRIMARY_LOCALE} 翻译生成`);
+        // 通道有降级时留一条痕迹：主路一旦长期靠备胎兜着，这里是唯一看得见的地方
+        if (whyNot.length > 0) note(diag, `${badLocale} 翻译主路未成: ${whyNot.join(" | ")}`);
       } else {
         degraded = true;
-        note(diag, `${badLocale} 翻译失败，${badLocale} 改发零 AI 兜底稿`);
+        note(diag, `${badLocale} 翻译失败，全部通道未成（${whyNot.join(" | ")}），改发零 AI 兜底稿`);
       }
     }
   }

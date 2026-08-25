@@ -389,10 +389,32 @@ function flattenToString(v: unknown): unknown {
   return `${parts[0]}${joiner}${parts.slice(1).join(" ")}`;
 }
 
-/** 该是字符串数组的字段：单个字符串补成单元素数组，元素逐个展平 */
+/**
+ * 该是字符串数组的字段：归一成字符串数组。
+ *
+ * 覆盖的四种漂移，都是「语义完整、只是形状不对」：
+ * - 单个字符串           `"关注美联储"`            → `["关注美联储"]`
+ * - 外面多包一层数组     `[["关注美联储", "关注黄金"]]` → 拆掉外层再处理
+ * - 编号对象当数组用     `{"1": "…", "2": "…"}`     → 取 values
+ * - 元素多包一层对象     `[{title, detail}]`        → 由 flattenToString 展平
+ *
+ * 最后把展不平的空值（null、空串、空对象）**丢掉**。丢弃看似有损，实则相反：
+ * 一个 null 元素本来就不携带内容，留着只保证整篇被拒、白烧一次模型调用；
+ * 而全是空值时结果是空数组，checkStructure 照样会拒——不会因此发出一篇空稿。
+ */
 function toStringArray(v: unknown): unknown {
   if (isNonEmptyString(v)) return [v];
-  return Array.isArray(v) ? v.map(flattenToString) : v;
+  // 编号对象：`{"1": "…"}`。数组走下面的分支，null 不是对象要先挡掉
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    v = Object.values(v as Record<string, unknown>);
+  }
+  if (!Array.isArray(v)) return v;
+  // 只拆**唯一**元素是数组的情形。那是「整张列表被多包了一层」，语义明确；
+  // 若多个元素都是数组，含义就说不准了（拆开？还是各自 join？），留给门槛拒掉。
+  const arr = v.length === 1 && Array.isArray(v[0]) ? (v[0] as unknown[]) : v;
+  return arr
+    .map(flattenToString)
+    .filter((x) => x !== null && x !== undefined && !(typeof x === "string" && !x.trim()));
 }
 
 function coerceBriefingShape(json: object): object {
@@ -409,7 +431,12 @@ function coerceBriefingShape(json: object): object {
   const a = b.analysis;
   if (a && typeof a === "object" && !Array.isArray(a)) {
     const analysis = a as Record<string, unknown>;
-    analysis.watchlist = toStringArray(analysis.watchlist);
+    // watchlist 被提到顶层是另一种「语义完整、位置不对」的漂移：prompt 把它画在
+    // analysis 里，而模型有时按 title/summary/headlines/watchlist 的平铺习惯输出。
+    // analysis 里那份为空时才认顶层的，绝不覆盖模型真的写在正确位置上的内容。
+    const hoisted = toStringArray(analysis.watchlist);
+    analysis.watchlist =
+      Array.isArray(hoisted) && hoisted.length > 0 ? hoisted : toStringArray(b.watchlist);
   }
 
   return b;
@@ -433,8 +460,12 @@ function checkStructure(json: unknown): { failures: GateFailure[]; briefing: Bri
   if (!b || typeof b !== "object") {
     return { failures: [{ rule: "structure", detail: "不是对象" }], briefing: null };
   }
-  if (!isNonEmptyString(b.title)) failures.push({ rule: "structure", detail: "title 缺失或为空" });
-  if (!isNonEmptyString(b.summary)) failures.push({ rule: "structure", detail: "summary 缺失或为空" });
+  if (!isNonEmptyString(b.title)) {
+    failures.push({ rule: "structure", detail: `title 缺失或为空: ${preview(b.title)}` });
+  }
+  if (!isNonEmptyString(b.summary)) {
+    failures.push({ rule: "structure", detail: `summary 缺失或为空: ${preview(b.summary)}` });
+  }
 
   if (!Array.isArray(b.headlines) || b.headlines.length < 2) {
     failures.push({ rule: "structure", detail: "headlines 少于 2 个主题" });
@@ -463,7 +494,7 @@ function checkStructure(json: unknown): { failures: GateFailure[]; briefing: Bri
   } else {
     for (const key of ["overview", "crypto", "gold"] as const) {
       if (!isNonEmptyString(a[key])) {
-        failures.push({ rule: "structure", detail: `analysis.${key} 缺失或为空` });
+        failures.push({ rule: "structure", detail: `analysis.${key} 缺失或为空: ${preview(a[key])}` });
       }
     }
     // 同上：watchlist: [{title, detail}, …] 是模型最常见的漂移形态，
@@ -473,11 +504,34 @@ function checkStructure(json: unknown): { failures: GateFailure[]; briefing: Bri
       a.watchlist.length === 0 ||
       !a.watchlist.every(isNonEmptyString)
     ) {
-      failures.push({ rule: "structure", detail: "analysis.watchlist 缺失、为空或含非字符串元素" });
+      failures.push({
+        rule: "structure",
+        detail: `analysis.watchlist 缺失、为空或含非字符串元素: ${preview(a.watchlist)}`,
+      });
     }
   }
 
   return { failures, briefing: failures.length === 0 ? b : null };
+}
+
+/**
+ * 把出问题的那个值截一段放进诊断。
+ *
+ * 2026-08-25 的第一次生成死在「analysis.watchlist 缺失、为空或含非字符串元素」上，
+ * 而这句话对着三种完全不同的输入（字段没给、给了空数组、给了对象数组）是同一句，
+ * 于是「该往展平里补哪一种形状」只能靠猜。展平能覆盖的形状是有限的，下一次
+ * 遇到新形状时，诊断里必须直接看得到它长什么样。
+ *
+ * 截断到 160 字符：够认出形状，又不会把整篇稿子灌进 Telegram 告警。
+ */
+function preview(v: unknown): string {
+  let s: string;
+  try {
+    s = JSON.stringify(v) ?? String(v);
+  } catch {
+    s = String(v);
+  }
+  return s.length > 160 ? `${s.slice(0, 160)}…` : s;
 }
 
 function checkLengths(b: BriefingJson, locale: BriefingLocale): GateFailure[] {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { translateText } from "./translate";
+import { translateText, translateTextDetailed } from "./translate";
 
 /**
  * 这里只测「请求被超时约束住」这一件事。
@@ -67,5 +67,58 @@ describe("translateText", () => {
   it("非 2xx 返回 null", async () => {
     vi.stubGlobal("fetch", vi.fn<FetchFn>(async () => new Response("rate limited", { status: 429 })));
     expect(await translateText("你好", "zh", "en")).toBeNull();
+  });
+});
+
+/**
+ * 失败原因必须能落进诊断。
+ *
+ * 早报英文版曾连着降级成兜底稿，而运行记录里只有一句「翻译失败」——端点被封
+ * （429 拦截页）、超时、返回体形状变了，三种处置完全不同的故障长得一模一样，
+ * 每次排查都得从头猜。gtx 无鉴权、对数据中心 IP 段整体拦截，429 是这里最常见
+ * 的一种，必须一眼认得出来。
+ */
+describe("translateTextDetailed", () => {
+  type FetchStub = (url: string, init?: RequestInit) => Promise<Response>;
+
+  it("非 2xx 时带上状态码", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchStub>(async () => new Response("<html>Sorry...</html>", { status: 429 }))
+    );
+    const out = await translateTextDetailed("你好", "zh", "en");
+    expect(out).toEqual({ ok: false, reason: "HTTP 429" });
+  });
+
+  it("超时时带上错误名，区别于「端点回了但内容不对」", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchStub>(async () => {
+        throw new DOMException("The operation was aborted", "TimeoutError");
+      })
+    );
+    const out = await translateTextDetailed("你好", "zh", "en");
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.reason).toContain("TimeoutError");
+  });
+
+  it("返回体形状变了时说清是形状问题，而不是笼统的失败", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchStub>(async () => new Response(JSON.stringify({ error: "nope" }), { status: 200 }))
+    );
+    const out = await translateTextDetailed("你好", "zh", "en");
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.reason).toContain("形状");
+  });
+
+  it("成功时给出译文", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchStub>(async () => new Response(JSON.stringify([[["hello", "你好", null, null, 10]]]), { status: 200 }))
+    );
+    expect(await translateTextDetailed("你好", "zh", "en")).toEqual({ ok: true, text: "hello" });
   });
 });

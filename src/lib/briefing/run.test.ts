@@ -99,8 +99,15 @@ vi.mock("@/lib/briefing/telegram", () => ({
   pushBriefingToTelegram: (slug: string, titles: Record<string, string>) =>
     pushBriefingToTelegram(slug, titles),
 }));
+// translateBriefingJson 现在用的是带失败原因的 translateTextDetailed。替身仍然
+// 复用同一个 translateText mock（用例里到处都是 `mockResolvedValue(null)` 这种
+// 写法），只在这里把 string|null 包成结果对象——改签名不该让每条用例重写一遍。
 vi.mock("@/lib/translate", () => ({
   translateText: (text: string, from: string, to: string) => translateText(text, from, to),
+  translateTextDetailed: async (text: string, from: string, to: string) => {
+    const out = await translateText(text, from, to);
+    return out === null ? { ok: false, reason: "stub: null" } : { ok: true, text: out };
+  },
 }));
 // revalidatePath 只能在真实请求上下文里调用，测试里会打印
 // "static generation store missing" 的报错噪音——测试输出必须干净
@@ -267,6 +274,52 @@ function isEnglishPrompt(opts: { prompt: string }) {
 }
 
 /**
+ * 翻译 prompt 与生成 prompt 走的是同一个 callDeepSeek，替身必须能分开它们。
+ *
+ * 分不开的话，`callDeepSeek.mockResolvedValue(ok(ZH_JSON))` 会让「翻译」也返回
+ * 中文原稿——那恰好是 L3a 的语种自检要拦的东西，于是每条用例都在悄悄走备胎，
+ * 测的东西和以为在测的东西对不上。
+ */
+function isTranslatePrompt(opts: { prompt: string }) {
+  return opts.prompt.includes("professional financial translator");
+}
+
+/** 生成调用（不含翻译调用）的次数 */
+function generationCalls() {
+  return callDeepSeek.mock.calls.filter((c) => !isTranslatePrompt(c[0]));
+}
+
+/** 把一篇中文稿逐字段换成长度相当的英文占位，模拟一次成功的模型翻译 */
+function toFakeEnglishJson(b: BriefingJson): BriefingJson {
+  return {
+    title: fakeEnglish(b.title),
+    summary: fakeEnglish(b.summary),
+    headlines: b.headlines.map((h) => ({
+      topic: fakeEnglish(h.topic),
+      points: h.points.map(fakeEnglish),
+    })),
+    analysis: {
+      overview: fakeEnglish(b.analysis.overview),
+      crypto: fakeEnglish(b.analysis.crypto),
+      gold: fakeEnglish(b.analysis.gold),
+      watchlist: b.analysis.watchlist.map(fakeEnglish),
+    },
+  };
+}
+
+/**
+ * 生产形态的模型替身：生成 prompt 出中文稿，翻译 prompt 出等价英文稿。
+ *
+ * 只写 `callDeepSeek.mockResolvedValue(ok(ZH_JSON))` 的用例，翻译那一路拿到的
+ * 也是中文——L3a 的语种自检会拒掉它，于是实际走的是 gtx 备胎。那对「专测备胎」
+ * 的用例正合适，但「正常发布」必须走主路，否则测的是降级路径却以为是正常路径。
+ */
+function modelWithTranslation(zh: BriefingJson = ZH_JSON) {
+  return async (opts: CallOpts): Promise<CallResult> =>
+    isTranslatePrompt(opts) ? ok(toFakeEnglishJson(zh)) : ok(zh);
+}
+
+/**
  * 长度相当的英文占位译文。
  *
  * 替身不能只吐一个短标记：翻译产物现在要重跑 checkBriefing（见「L3 翻译结果
@@ -344,12 +397,15 @@ describe("runDailyBriefing — 正常路径", () => {
   });
 
   // 这是改成「单次生成 + 翻译」的全部理由：英文原生生成要 24 秒以上还常返回空，
-  // 而承载路由只有 60 秒硬上限。只打一次模型，预算才有余量。
-  it("只对主语言调用一次模型，不再为英文单独生成", async () => {
+  // 而承载路由只有 60 秒硬上限。生成只打一次，预算才有余量。
+  //
+  // 注意「生成一次」不等于「调用模型一次」：翻译现在也走模型（L3a），但那是
+  // 一次照抄式的短调用，与「用同一批素材再写一遍英文稿」完全不是一回事。
+  it("只对主语言生成一次，不再为英文单独生成", async () => {
     callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     await runDailyBriefing(NOW);
-    expect(callDeepSeek).toHaveBeenCalledTimes(1);
-    expect(isEnglishPrompt(callDeepSeek.mock.calls[0][0])).toBe(false);
+    expect(generationCalls()).toHaveLength(1);
+    expect(isEnglishPrompt(generationCalls()[0][0])).toBe(false);
   });
 
   it("英文正文不含 CJK——翻译真的发生了，不是把中文塞进 en-US", async () => {
@@ -391,7 +447,7 @@ describe("runDailyBriefing — 降级诊断", () => {
   });
 
   it("正常发布时只留成功记录，不含任何失败原因", async () => {
-    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+    callDeepSeek.mockImplementation(modelWithTranslation());
     const r = await runDailyBriefing(NOW);
     expect(r.status).toBe("published");
     const log = (r.reasons ?? []).join("\n");
@@ -408,7 +464,7 @@ describe("runDailyBriefing — 降级诊断", () => {
   });
 
   it("成功记录不触发告警——一次正常发布不该发 Telegram", async () => {
-    callDeepSeek.mockResolvedValue(ok(ZH_JSON));
+    callDeepSeek.mockImplementation(modelWithTranslation());
     await runDailyBriefing(NOW);
     expect(alertBriefing).not.toHaveBeenCalled();
   });
@@ -514,6 +570,69 @@ describe("runDailyBriefing — 强制重跑", () => {
 
 // ── C3：一语失败时的翻译通道 ──
 describe("runDailyBriefing — L3 翻译通道", () => {
+  /**
+   * ── 通道顺序：模型是主路，免费端点是备胎 ──
+   *
+   * 这组用例钉住的是英文版反复降级的**根因**修复。此前英文唯一的来源是
+   * translate.googleapis.com 的 gtx 端点：无鉴权、免费，Google 对数据中心 IP 段
+   * 整体拦截，命中即 HTTP 429 且**与请求频率无关**（本地复现：间隔 1.5 秒的单条
+   * 串行请求同样条条 429）。Vercel 的 serverless 出口正是这类 IP，所以只要落进
+   * 被封的段，英文当天必然掉零 AI 兜底稿，重试、降并发、加退避一概无效。
+   */
+  it("免费翻译端点整段 429 时，英文照样出 AI 稿——这正是线上反复降级的那一天", async () => {
+    callDeepSeek.mockImplementation(modelWithTranslation());
+    // 端点对每一条都返回失败，模拟 IP 被封
+    translateText.mockResolvedValue(null);
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("published");
+    const en = db.inserted[0].content["en-US"];
+    // 不含兜底稿的小标题 = 走的是 AI 稿而不是零 AI 兜底稿
+    expect(en).not.toContain("24-Hour News Roundup");
+    expect(en).toContain("Market Read");
+    expect(CJK_RE.test(en)).toBe(false);
+  });
+
+  it("模型翻译成功时根本不去打免费端点", async () => {
+    callDeepSeek.mockImplementation(modelWithTranslation());
+    await runDailyBriefing(NOW);
+    expect(translateText).not.toHaveBeenCalled();
+  });
+
+  it("模型翻译失败时回落到免费端点，而不是直接兜底", async () => {
+    // 翻译 prompt 一律失败，生成 prompt 正常
+    callDeepSeek.mockImplementation(async (opts) =>
+      isTranslatePrompt(opts) ? FAIL : ok(ZH_JSON)
+    );
+    translateText.mockImplementation(realisticTranslator());
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("published");
+    expect(translateText).toHaveBeenCalled();
+    expect(db.inserted[0].content["en-US"]).toContain("Market Read");
+    // 主路失败必须留下痕迹，否则「一直靠备胎兜着」是看不见的
+    expect((r.reasons ?? []).join(" | ")).toContain("翻译主路未成");
+  });
+
+  it("两条通道都失败才落兜底稿，诊断里两条原因都在", async () => {
+    callDeepSeek.mockImplementation(async (opts) =>
+      isTranslatePrompt(opts) ? { ok: false, error: "HTTP 402 余额不足" } : ok(ZH_JSON)
+    );
+    translateText.mockResolvedValue(null);
+
+    const r = await runDailyBriefing(NOW);
+
+    expect(r.status).toBe("fallback");
+    const log = (r.reasons ?? []).join(" | ");
+    // 「今天为什么又降级了」必须能一眼看完，不用去翻 Sentry
+    expect(log).toContain("模型翻译");
+    expect(log).toContain("HTTP 402");
+    expect(log).toContain("翻译端点");
+    expect(log).toMatch(/翻译端点失败 (\d+)\/\1 字段/);
+  });
+
   it("en-US 三次尝试全失败时，content['en-US'] 必须不含 CJK", async () => {
     callDeepSeek.mockImplementation(async (opts) => (isEnglishPrompt(opts) ? FAIL : ok(ZH_JSON)));
     // 打桩成一个真的会把中文换掉的翻译器

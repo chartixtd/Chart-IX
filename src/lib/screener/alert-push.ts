@@ -8,7 +8,12 @@ import {
   type TelegramMessageLang,
 } from "@/lib/telegram-push";
 import type { AlertCardData } from "./cards";
-import type { ScenarioKind } from "./factors/scenario";
+import {
+  SCENARIO_LABELS,
+  SCENARIO_ACTIONS,
+  IGNITION_LABELS,
+  fmtTriggerPrice,
+} from "./alert-copy";
 
 /**
  * 没发成的卡片 key。
@@ -57,65 +62,8 @@ const STRINGS: Record<
   },
 };
 
-/** 场景名，跟 brief 里六场景速查表用的中文名一一对应，英文是直译。 */
-const SCENARIO_LABELS: Record<TelegramMessageLang, Record<ScenarioKind, string>> = {
-  zh: {
-    healthy_trend: "健康趋势",
-    inventory_flush: "存量清算",
-    true_top_div: "真顶背离",
-    true_bottom_div: "真底背离",
-    false_top_div: "假顶背离",
-    false_bottom_div: "假底背离",
-  },
-  en: {
-    healthy_trend: "Healthy Trend",
-    inventory_flush: "Inventory Flush",
-    true_top_div: "True Top Divergence",
-    true_bottom_div: "True Bottom Divergence",
-    false_top_div: "False Top Divergence",
-    false_bottom_div: "False Bottom Divergence",
-  },
-};
-
-/** 操作文案，原样取自 brief 六场景速查表最后一列——不重新措辞，避免文案与判定表脱节。 */
-const SCENARIO_ACTIONS: Record<TelegramMessageLang, Record<ScenarioKind, string>> = {
-  zh: {
-    healthy_trend: "顺势，回调进场",
-    inventory_flush: "分批止盈，等反手",
-    true_top_div: "反手做空",
-    true_bottom_div: "反手做多",
-    false_top_div: "禁止做空，顺势做多",
-    false_bottom_div: "禁止做多，顺势做空",
-  },
-  en: {
-    healthy_trend: "Follow the trend, enter on pullback",
-    inventory_flush: "Scale out, wait for reversal",
-    true_top_div: "Reverse to short",
-    true_bottom_div: "Reverse to long",
-    false_top_div: "Do not short — follow trend, go long",
-    false_bottom_div: "Do not long — follow trend, go short",
-  },
-};
-
-/** 点火卡的名称与操作文案。两种触发源共用一条消息格式，这里只是把
- *  「场景名 · 操作」那两格换成点火自己的说法。 */
-const IGNITION_LABELS: Record<TelegramMessageLang, { up: string; down: string; action: string }> = {
-  zh: { up: "向上点火", down: "向下点火", action: "刚突破区间，顺势跟" },
-  en: { up: "Ignition Up", down: "Ignition Down", action: "Just broke range — follow it" },
-};
-
 /** 方向对应的圆点。分组标题上有它，行内就不必再写一遍方向 */
 const DIRECTION_DOT = { long: "🟢", short: "🔴", manage: "🟡" } as const;
-
-/**
- * 触发价。加千分位，`2369` 读起来像编号，`2,369` 才一眼是价格。
- *
- * 小数位按量级给：一美元以下的币（0.09426、0.01467 这种）必须留够 6 位，
- * 统一取 2 位会把它们全压成 0.09 —— 那个数字对使用者毫无意义。
- */
-function fmtTriggerPrice(n: number): string {
-  return n.toLocaleString("en-US", { maximumFractionDigits: n < 1 ? 6 : 4 });
-}
 
 /**
  * 一张卡属于哪一组。同一种触发 + 同一个方向 = 同一组。

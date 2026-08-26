@@ -4,7 +4,7 @@ import { runScan, listVolumeRefreshCoins } from "@/lib/screener/pipeline";
 import { isScanDue, writeScannerCache } from "@/lib/screener/cache";
 import { pushNewAlerts } from "@/lib/screener/alert-push";
 import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
-import { buildScreenerMessage } from "@/lib/push/messages";
+import { buildScreenerAlertMessage } from "@/lib/push/messages";
 import { readVolumeCache, pickStaleCoins, refreshVolumeBatch, VOLUME_REFRESH_BATCH } from "@/lib/screener/volume-cache";
 
 export const runtime = "nodejs";
@@ -73,10 +73,12 @@ export async function GET(request: NextRequest) {
     try {
       if (payload.newCards.length > 0) {
         const subscriptions = await getOptedInSubscriptions("screener");
+        // 逐行发而不是一次群发：文案要按每台设备订阅时存下的 locale 生成，
+        // 而推送在用户看不见页面时弹出，没法临时问客户端要语言
         await Promise.all(
           subscriptions.map((row) =>
             sendToSubscriptions([row], {
-              ...buildScreenerMessage(row.locale),
+              ...buildScreenerAlertMessage(row.locale, payload.newCards),
               url: `/${row.locale}/screener`,
               tag: "screener",
             })

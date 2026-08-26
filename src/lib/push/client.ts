@@ -1,5 +1,7 @@
 "use client";
 
+import { readPlatform } from "@/lib/pwa/platform";
+
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const normalized = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -109,4 +111,101 @@ export async function resubscribeIfNeeded(locale: string): Promise<void> {
     return;
   }
   await subscribeToPush(locale);
+}
+
+/**
+ * 这台设备现在到底能不能收到推送。
+ *
+ * 用判别联合而不是一堆布尔：调用方必须穷尽分支，将来加一种降级情况时
+ * TypeScript 会把所有没处理的地方指出来。
+ */
+export type PushState =
+  | { kind: "ready"; subscribed: boolean }
+  | { kind: "ios-install-first" }
+  | { kind: "denied" }
+  | { kind: "unsupported" };
+
+export interface PushEnvironment {
+  /** serviceWorker / PushManager / Notification 三个 API 都在 */
+  hasApis: boolean;
+  /** 真的有一个已激活的 service worker registration，不只是 API 存在 */
+  hasActiveWorker: boolean;
+  hasVapidKey: boolean;
+  /** null = Notification API 不存在，问不出权限 */
+  permission: NotificationPermission | null;
+  isIos: boolean;
+  isStandalone: boolean;
+  hasSubscription: boolean;
+}
+
+/**
+ * 纯判定。异步取值在 readPushState 里，这里只做分支——于是它可以在 node
+ * 环境下直接单测，不用 stub navigator。沿用 pwa/platform.ts 的 detectPlatform
+ * / readPlatform 那一对的做法。
+ *
+ * **分支顺序有意义。** iOS 未装到主屏必须排在 unsupported 前面：那种情况下
+ * Notification 与 PushManager 本来就不存在，hasApis 是 false，先判它的话用户
+ * 看到的是「当前浏览器不支持推送通知」——一句死路文案，而真相是「再点两下
+ * 就能用」。
+ */
+export function derivePushState(env: PushEnvironment): PushState {
+  if (env.isIos && !env.isStandalone) return { kind: "ios-install-first" };
+  if (!env.hasApis || !env.hasActiveWorker || !env.hasVapidKey) return { kind: "unsupported" };
+  if (env.permission === "denied") return { kind: "denied" };
+  return { kind: "ready", subscribed: env.hasSubscription };
+}
+
+/**
+ * navigator.serviceWorker.ready 在从未注册过 SW 时**永不 resolve**——不是
+ * reject，是挂起。而 ServiceWorkerRegistrar 有 `NODE_ENV !== "production"`
+ * 的早退，所以 npm run dev 下压根没有 SW：不加这道超时，设置页的通知区块
+ * 在本地开发中会永远停在加载态，这个功能没法被开发。
+ *
+ * 超时后按「没有可用的 SW」处理，落到 unsupported——那正是事实。
+ */
+const SW_READY_TIMEOUT_MS = 3000;
+
+async function activeRegistration(): Promise<ServiceWorkerRegistration | null> {
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), SW_READY_TIMEOUT_MS)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+/** 浏览器侧的薄封装。纯函数留给单测，这里只负责取值。 */
+export async function readPushState(): Promise<PushState> {
+  if (typeof window === "undefined") return { kind: "unsupported" };
+
+  const platform = readPlatform();
+  const hasApis =
+    "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+  let hasActiveWorker = false;
+  let hasSubscription = false;
+  if (hasApis) {
+    const registration = await activeRegistration();
+    hasActiveWorker = registration !== null;
+    if (registration) {
+      try {
+        hasSubscription = (await registration.pushManager.getSubscription()) !== null;
+      } catch {
+        // 取不到订阅就按没有处理——显示为「关」，用户点一下会走完整的订阅流程
+        hasSubscription = false;
+      }
+    }
+  }
+
+  return derivePushState({
+    hasApis,
+    hasActiveWorker,
+    hasVapidKey: Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+    permission: hasApis ? Notification.permission : null,
+    isIos: platform.os === "ios",
+    isStandalone: platform.isStandalone,
+    hasSubscription,
+  });
 }

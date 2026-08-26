@@ -189,14 +189,21 @@ export function NotificationSettings() {
             disabled={!interactive || busy}
             className={cn(
               "relative h-7 w-12 shrink-0 rounded-full transition-colors",
-              "disabled:cursor-not-allowed disabled:opacity-40",
+              // 与 Button 的 disabled 保持一致；40 在这个深色轨道上压得太狠
+              "disabled:cursor-not-allowed disabled:opacity-50",
               on ? "bg-gold" : "bg-bg-hover"
             )}
           >
+            {/* 滑块颜色必须跟着状态走，不能两态共用一个色值。
+                轨道打开时是金色 #C9A24B、关闭时是 #262117，两者一亮一暗：
+                深色滑块 #0B0A08 在金色上有 8.25:1，在深色轨道上只有 1.24:1
+                （字面意义的看不见——这就是它此前的样子）；反过来浅色滑块
+                在深色轨道上 6.10:1，在金色上却只有 1.09:1。没有哪个单一颜色
+                能同时站住，所以两态各用各的。 */}
             <span
               className={cn(
-                "absolute top-1 h-5 w-5 rounded-full bg-bg-primary transition-transform",
-                on ? "translate-x-6" : "translate-x-1"
+                "absolute top-1 h-5 w-5 rounded-full transition-transform",
+                on ? "translate-x-6 bg-bg-primary" : "translate-x-1 bg-text-secondary"
               )}
             />
           </button>

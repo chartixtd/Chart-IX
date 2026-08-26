@@ -430,7 +430,13 @@
     "tier": "Tier",
     "please_login": "Please login first",
     "api_keys": "API Keys",
-    "api_keys_desc": "Manage your BingX API keys for trading"
+    "api_keys_desc": "Manage your BingX API keys for trading",
+    "notifications": "Notifications",
+    "notifications_scanner": "Scanner alerts",
+    "notifications_scanner_desc": "Get notified when the scanner surfaces a new alert card, even when Chart-IX isn't open.",
+    "notifications_test": "Send a test notification",
+    "notifications_test_sent": "Sent — it should arrive within a few seconds.",
+    "notifications_test_stale": "This device's subscription has expired. Turn the switch off and on again."
   },
   "api_keys": {
     "title": "API Key Management",

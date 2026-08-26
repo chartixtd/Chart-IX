@@ -1127,6 +1127,8 @@
     "push_denied": "通知已被浏览器阻止。请在浏览器的站点设置中重新允许通知后再试。",
     "push_ios_install_first": "在 iOS 上需要先把 Chart-IX 添加到主屏幕，才能接收通知。",
     "push_unsupported": "当前浏览器不支持推送通知。",
+    "push_no_vapid": "推送服务尚未配置（服务端缺少 VAPID 公钥），暂时无法开启。",
+    "push_no_service_worker": "推送服务尚未就绪。请刷新页面重试；若这是本地开发环境，dev 模式不会注册 Service Worker，需用生产构建测试。",
     "push_error": "订阅保存失败，请检查网络后重试。",
     "service_status_ok": "提醒服务：正常",
     "service_status_stale": "提醒服务：异常，提醒可能不会触发"

@@ -132,6 +132,11 @@ export type PushState =
   | { kind: "ready"; subscribed: boolean }
   | { kind: "ios-install-first" }
   | { kind: "denied" }
+  /** 服务端没配 VAPID 公钥。跟浏览器无关，用户什么都做不了，但运维能修 */
+  | { kind: "no-vapid-key" }
+  /** 浏览器支持推送，但这个页面没有已激活的 service worker */
+  | { kind: "no-service-worker" }
+  /** 浏览器真的没有这些 API */
   | { kind: "unsupported" };
 
 export interface PushEnvironment {
@@ -156,10 +161,26 @@ export interface PushEnvironment {
  * Notification 与 PushManager 本来就不存在，hasApis 是 false，先判它的话用户
  * 看到的是「当前浏览器不支持推送通知」——一句死路文案，而真相是「再点两下
  * 就能用」。
+ *
+ * **三种「用不了」必须分开说，不能合成一句「不支持」。** 早先的版本把
+ * `!hasApis || !hasActiveWorker || !hasVapidKey` 合成一个 unsupported 分支，
+ * 于是三件处置完全不同的事对着同一句话：
+ *
+ *   - 浏览器真的没有这些 API   → 用户换个浏览器，或在 iOS 上装到主屏
+ *   - 没配 VAPID 公钥          → 运维去补环境变量，用户做什么都没用
+ *   - 没有已激活的 service worker → 刷新，或（开发时）改用生产构建
+ *
+ * 合并的代价是真实发生过的：漏配 NEXT_PUBLIC_VAPID_PUBLIC_KEY 时页面显示
+ * 「当前浏览器不支持推送通知」，看起来像浏览器的问题，实际是构建配置的问题，
+ * 而这是这个功能最容易误诊的一条。分开之后页面自己就把原因说出来了。
  */
 export function derivePushState(env: PushEnvironment): PushState {
   if (env.isIos && !env.isStandalone) return { kind: "ios-install-first" };
-  if (!env.hasApis || !env.hasActiveWorker || !env.hasVapidKey) return { kind: "unsupported" };
+  // 浏览器本身的能力排在最前：另外两个是环境问题，而在一个连 API 都没有的
+  // 浏览器上报「服务端没配置」只会把人引向错误的方向
+  if (!env.hasApis) return { kind: "unsupported" };
+  if (!env.hasVapidKey) return { kind: "no-vapid-key" };
+  if (!env.hasActiveWorker) return { kind: "no-service-worker" };
   if (env.permission === "denied") return { kind: "denied" };
   return { kind: "ready", subscribed: env.hasSubscription };
 }
@@ -170,7 +191,9 @@ export function derivePushState(env: PushEnvironment): PushState {
  * 的早退，所以 npm run dev 下压根没有 SW：不加这道超时，设置页的通知区块
  * 在本地开发中会永远停在加载态，这个功能没法被开发。
  *
- * 超时后按「没有可用的 SW」处理，落到 unsupported——那正是事实。
+ * 超时后按「没有可用的 SW」处理，落到 no-service-worker——那正是事实，而且
+ * 那个分支的文案会明说「本地开发不注册 SW，请用生产构建测试」，不再让人以为
+ * 是浏览器的问题。
  */
 const SW_READY_TIMEOUT_MS = 3000;
 

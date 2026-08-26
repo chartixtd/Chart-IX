@@ -1127,6 +1127,8 @@
     "push_denied": "Notifications are blocked by your browser. Re-allow them in site settings and try again.",
     "push_ios_install_first": "On iOS, add Chart-IX to your home screen first to receive notifications.",
     "push_unsupported": "This browser doesn't support push notifications.",
+    "push_no_vapid": "Push isn't configured on the server yet (missing VAPID public key).",
+    "push_no_service_worker": "Push isn't ready yet. Try reloading. In local development the service worker isn't registered — test with a production build.",
     "push_error": "Couldn't save your subscription. Please check your connection and try again.",
     "service_status_ok": "Alert service: running",
     "service_status_stale": "Alert service: degraded — alerts may not fire"

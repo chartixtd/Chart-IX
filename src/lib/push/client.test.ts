@@ -42,16 +42,30 @@ describe("derivePushState", () => {
     });
   });
 
-  it("缺 API 时 unsupported", () => {
+  it("浏览器真的缺 API 时才叫 unsupported", () => {
     expect(derivePushState(env({ hasApis: false }))).toEqual({ kind: "unsupported" });
   });
 
-  it("没有已激活的 service worker 时 unsupported——没有 SW 就收不到推送", () => {
-    expect(derivePushState(env({ hasActiveWorker: false }))).toEqual({ kind: "unsupported" });
+  it("VAPID 公钥缺失时是 no-vapid-key，不是 unsupported——这是运维问题不是浏览器问题", () => {
+    expect(derivePushState(env({ hasVapidKey: false }))).toEqual({ kind: "no-vapid-key" });
   });
 
-  it("VAPID 公钥缺失时 unsupported——环境变量没配，浏览器再新也订阅不了", () => {
-    expect(derivePushState(env({ hasVapidKey: false }))).toEqual({ kind: "unsupported" });
+  it("没有已激活的 service worker 时是 no-service-worker——刷新或改用生产构建能修", () => {
+    expect(derivePushState(env({ hasActiveWorker: false }))).toEqual({
+      kind: "no-service-worker",
+    });
+  });
+
+  it("三种「用不了」互不冒名顶替：浏览器能力排最前，其后才是两种环境问题", () => {
+    // 一个连 API 都没有的浏览器上报「服务端没配置」，只会把人引向错误的方向
+    expect(
+      derivePushState(env({ hasApis: false, hasVapidKey: false, hasActiveWorker: false }))
+    ).toEqual({ kind: "unsupported" });
+    // 反过来：浏览器完全够用，两个环境条件都缺时，先报更根本的那个（没公钥
+    // 的话，就算 SW 装好了也订阅不了）
+    expect(derivePushState(env({ hasVapidKey: false, hasActiveWorker: false }))).toEqual({
+      kind: "no-vapid-key",
+    });
   });
 
   it("权限被拒时 denied，且不能伪装成「未订阅」——那会让用户白点一次", () => {

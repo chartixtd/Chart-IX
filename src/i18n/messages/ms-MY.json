@@ -1051,6 +1051,8 @@
     "push_denied": "Pemberitahuan disekat oleh pelayar anda. Benarkan semula dalam tetapan tapak dan cuba lagi.",
     "push_ios_install_first": "Pada iOS, tambah Chart-IX ke skrin utama dahulu untuk menerima pemberitahuan.",
     "push_unsupported": "Pelayar ini tidak menyokong pemberitahuan tolak.",
+    "push_no_vapid": "Tolakan belum dikonfigurasikan pada pelayan (kunci awam VAPID tiada).",
+    "push_no_service_worker": "Tolakan belum sedia. Cuba muat semula. Dalam pembangunan tempatan service worker tidak didaftarkan — uji dengan binaan produksi.",
     "push_error": "Gagal menyimpan langganan. Sila semak sambungan anda dan cuba lagi.",
     "service_status_ok": "Perkhidmatan amaran: berjalan",
     "service_status_stale": "Perkhidmatan amaran: terjejas — amaran mungkin tidak berbunyi"

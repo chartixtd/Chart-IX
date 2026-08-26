@@ -220,6 +220,20 @@ export function NotificationSettings() {
           </p>
         )}
 
+        {/* 三种「用不了」各说各的。合成一句「浏览器不支持」的代价是真实发生过的：
+            漏配 VAPID 公钥时，看起来像浏览器的问题而实际是构建配置的问题。 */}
+        {state?.kind === "no-vapid-key" && (
+          <p className="rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-relaxed text-warning">
+            {tPwa("push_no_vapid")}
+          </p>
+        )}
+
+        {state?.kind === "no-service-worker" && (
+          <p className="rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-relaxed text-warning">
+            {tPwa("push_no_service_worker")}
+          </p>
+        )}
+
         {state?.kind === "unsupported" && (
           <p className="text-xs leading-relaxed text-text-muted">{tPwa("push_unsupported")}</p>
         )}

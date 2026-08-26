@@ -24,7 +24,6 @@ export interface DashboardData {
     lastPushedAt: string | null;
     lastError: string | null;
     consecutiveFailures: number;
-    intervalMinutes: number | null;
     heartbeatAt: string | null;
     heartbeatStatus: string | null;
   };
@@ -117,10 +116,10 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
       ? { label: t("dash.push_failing"), color: "text-danger", dot: "bg-danger" }
       : { label: t("dash.push_healthy"), color: "text-success", dot: "bg-success" };
 
-  const nextPush =
-    push.enabled && push.lastPushedAt && push.intervalMinutes
-      ? new Date(new Date(push.lastPushedAt).getTime() + push.intervalMinutes * 60_000)
-      : null;
+  // 这里曾经算「下次推送」= 上次推送 + 推送间隔。scanner 推送改成事件驱动之后
+  // 没有下一次可言：下一条什么时候来，取决于市场什么时候再出一张新警报卡。
+  // 与其显示一个猜的时刻，不如不显示——「上次推送」加下面那行调度器心跳，
+  // 已经回答了这个面板真正该回答的问题：这套东西还活着没有。
 
   return (
     <div className="space-y-8">
@@ -192,14 +191,6 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
                   {fmtTime(push.lastPushedAt)}
                 </dd>
               </div>
-              {nextPush && (
-                <div className="flex items-center gap-2">
-                  <dt className="text-text-muted">{t("dash.next_push")}</dt>
-                  <dd className="font-mono tabular-nums text-text-primary">
-                    {fmtTime(nextPush.toISOString())}
-                  </dd>
-                </div>
-              )}
               <div className="flex items-center gap-2">
                 <dt className="text-text-muted">{t("dash.scheduler")}</dt>
                 <dd

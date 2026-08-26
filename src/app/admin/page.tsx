@@ -46,7 +46,7 @@ export default async function AdminDashboard() {
 
     client
       .from("telegram_push_settings")
-      .select("enabled, last_pushed_at, last_error, consecutive_failures, push_interval_minutes")
+      .select("enabled, last_pushed_at, last_error, consecutive_failures")
       .eq("id", 1)
       .maybeSingle(),
     client
@@ -87,7 +87,6 @@ export default async function AdminDashboard() {
       lastPushedAt: push?.last_pushed_at ?? null,
       lastError: push?.last_error ?? null,
       consecutiveFailures: push?.consecutive_failures ?? 0,
-      intervalMinutes: push?.push_interval_minutes ?? null,
       heartbeatAt: heartbeat.data?.last_run_at ?? null,
       heartbeatStatus: heartbeat.data?.last_status ?? null,
     },

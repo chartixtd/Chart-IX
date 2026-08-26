@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
@@ -15,7 +15,6 @@ interface PublicSettings {
   chatId: string | null;
   botTokenConfigured: boolean;
   messageLang: MessageLang;
-  pushIntervalMinutes: number;
   lastPushedAt: string | null;
   lastAttemptAt: string | null;
   lastError: string | null;
@@ -98,7 +97,6 @@ export function TelegramPushEditor({
   const [botToken, setBotToken] = useState("");
   const [botTokenConfigured, setBotTokenConfigured] = useState(initialSettings.botTokenConfigured);
   const [messageLang, setMessageLang] = useState<MessageLang>(initialSettings.messageLang);
-  const [interval, setIntervalMinutes] = useState(String(initialSettings.pushIntervalMinutes));
   const [health, setHealth] = useState({
     lastPushedAt: initialSettings.lastPushedAt,
     lastAttemptAt: initialSettings.lastAttemptAt,
@@ -123,24 +121,6 @@ export function TelegramPushEditor({
     if (data?.error === "no_targets") return t("telegram_push_list.no_targets");
     return data?.error ?? fallback;
   };
-
-  /**
-   * 「最早下一条」= 节流闸什么时候放行。
-   *
-   * 语义随推送本身变了：以前它是「下次自动推送」，因为推送是定时的，那个时刻
-   * 就是消息到达的时刻。现在推送由「扫到新警报卡」触发，没人能预告下一条什么
-   * 时候来——这里能回答的只是「就算此刻有新卡，最早也要等到几点才发得出去」。
-   * 间隔为 0（默认）时根本没有闸，直接说清不节流。
-   */
-  const nextPushLabel = useMemo(() => {
-    if (!enabled) return "—";
-    const minutes = Number(interval);
-    const base = Number.isFinite(minutes) ? minutes : initialSettings.pushIntervalMinutes;
-    if (base <= 0 || !health.lastPushedAt) return t("telegram_push_list.next_push_due");
-    const next = new Date(health.lastPushedAt).getTime() + base * 60_000;
-    if (!Number.isFinite(next) || next <= Date.now()) return t("telegram_push_list.next_push_due");
-    return fmtTime(new Date(next).toISOString());
-  }, [enabled, health.lastPushedAt, interval, initialSettings.pushIntervalMinutes, t]);
 
   // ── Settings ────────────────────────────────────────────
   const patchSettings = async (body: Record<string, unknown>) => {
@@ -173,19 +153,11 @@ export function TelegramPushEditor({
   };
 
   const save = async () => {
-    const minutes = Number(interval);
-    // 下限是 0 而不是 15：这个字段现在是「警报的最小间隔」，0 = 有新卡就发，
-    // 那正是默认值，不该被表单挡住。
-    if (!Number.isFinite(minutes) || minutes < 0 || minutes > 10080) {
-      toast(t("telegram_push_list.interval_invalid"), "error");
-      return;
-    }
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
         enabled,
         messageLang,
-        pushIntervalMinutes: minutes,
       };
       // Only send botToken if the admin actually typed a new one — an empty
       // field means "leave the stored token alone", not "clear it".
@@ -332,7 +304,6 @@ export function TelegramPushEditor({
 
   const stats: { label: string; value: string; danger?: boolean }[] = [
     { label: t("telegram_push_list.last_pushed"), value: fmtTime(health.lastPushedAt) },
-    { label: t("telegram_push_list.next_push"), value: nextPushLabel },
     { label: t("telegram_push_list.health_last_attempt"), value: fmtTime(health.lastAttemptAt) },
     {
       label: t("telegram_push_list.health_consecutive_failures"),
@@ -447,38 +418,22 @@ export function TelegramPushEditor({
               <p className="mt-1 text-xs text-text-muted">{t("telegram_push_list.bot_token_hint")}</p>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className={LABEL_CLASS}>{t("telegram_push_list.message_lang")}</label>
-                <select
-                  value={messageLang}
-                  onChange={(e) => setMessageLang(e.target.value as MessageLang)}
-                  className={INPUT_CLASS}
-                >
-                  <option value="en">{t("telegram_push_list.message_lang_en")}</option>
-                  <option value="zh">{t("telegram_push_list.message_lang_zh")}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className={LABEL_CLASS}>{t("telegram_push_list.interval_label")}</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={10080}
-                  step={5}
-                  value={interval}
-                  onChange={(e) => setIntervalMinutes(e.target.value)}
-                  className={cn(INPUT_CLASS, "font-mono tabular-nums")}
-                />
-                <p className="mt-1 text-xs text-text-muted">{t("telegram_push_list.interval_hint")}</p>
-              </div>
+            <div>
+              <label className={LABEL_CLASS}>{t("telegram_push_list.message_lang")}</label>
+              <select
+                value={messageLang}
+                onChange={(e) => setMessageLang(e.target.value as MessageLang)}
+                className={INPUT_CLASS}
+              >
+                <option value="en">{t("telegram_push_list.message_lang_en")}</option>
+                <option value="zh">{t("telegram_push_list.message_lang_zh")}</option>
+              </select>
             </div>
           </div>
         </Card>
       </div>
 
-      {/* 机器人配置与节流间隔共用一个保存动作 */}
+      {/* 机器人配置共用一个保存动作 */}
       <div className="flex justify-end">
         <Button variant="primary" size="sm" loading={saving} onClick={save}>
           {t("telegram_push_list.save")}

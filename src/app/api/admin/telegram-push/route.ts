@@ -53,13 +53,10 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: toPublicShape(settings) });
   } catch (err) {
-    // The interval validator throws a message the admin needs to see verbatim;
-    // everything else is an internal detail.
-    const message =
-      err instanceof Error && err.message.startsWith("pushIntervalMinutes")
-        ? err.message
-        : "Failed to save settings";
-    if (message === "Failed to save settings") console.error("[admin/telegram-push PATCH]", err);
-    return NextResponse.json({ error: message }, { status: 400 });
+    // 这里曾经把 pushIntervalMinutes 的校验错误原样透出去给管理员看。
+    // 那个字段随「推送间隔」一起删了（推送改成事件驱动），现在这个 PATCH
+    // 已经没有任何需要管理员逐字看到的校验错误。
+    console.error("[admin/telegram-push PATCH]", err);
+    return NextResponse.json({ error: "Failed to save settings" }, { status: 400 });
   }
 }

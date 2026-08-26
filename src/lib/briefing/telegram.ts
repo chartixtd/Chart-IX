@@ -56,9 +56,9 @@ export interface BriefingPushOutcome {
  * 跳过——文章发了、链接没发，而且**没有任何机制会再试一次**，只能等人发现、
  * 手动补。
  *
- * 榜单推送早就没有这个毛病：cron 打得比推送间隔密得多，漏掉的一轮由下一轮
- * 自动补上（见 telegram-push.ts 的 isPushDue）。这里把同一条原则搬过来——
- * 记下「哪篇的链接已经发了」，让高频 tick 去补没发成的那些。
+ * 项目里其它定时任务都没有这个毛病：触发器打得比它们各自的门控密得多，
+ * 漏掉的一轮由下一轮自动补上（扫描的 isScanDue 就是这么做的）。这里把同一条
+ * 原则搬过来——记下「哪篇的链接已经发了」，让高频 tick 去补没发成的那些。
  */
 const DELIVERY_STATE_KEY = "daily_briefing_telegram_delivery";
 

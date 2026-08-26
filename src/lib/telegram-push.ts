@@ -24,18 +24,6 @@ export interface TelegramPushSettings {
   chatId: string | null;
   /** Language the pushed message text itself is written in — independent of the admin UI's language */
   messageLang: TelegramMessageLang;
-  /**
-   * 两次警报推送之间的**最小**间隔。
-   *
-   * 语义在 T25 变过：它原先是「每隔多久发一次榜单」——一个定时器。榜单推送
-   * 删掉之后，推送改由「扫描出新警报卡」这个事件驱动，定时器没有了意义，
-   * 这个数字降级成一道节流闸：距上次成功推送不足这么久时，新卡片**攒起来**
-   * （只存 key，见 alert-push.ts），下一次够钟了连同当轮的一起发。
-   *
-   * 0 = 不节流，有新卡就发。默认就是 0——警报的价值高度依赖时效，
-   * 而一轮扫描的全部新卡本来就合并成一条消息，最多 15 分钟一条，不会刷屏。
-   */
-  pushIntervalMinutes: number;
   lastPushedAt: string | null;
   lastAttemptAt: string | null;
   lastError: string | null;
@@ -74,7 +62,6 @@ interface TelegramPushRow {
   bot_token_encrypted: string | null;
   chat_id: string | null;
   message_lang: TelegramMessageLang;
-  push_interval_minutes: number;
   last_pushed_at: string | null;
   last_attempt_at: string | null;
   last_error: string | null;
@@ -105,7 +92,6 @@ function rowToSettings(row: TelegramPushRow): TelegramPushSettings {
     botToken: row.bot_token_encrypted ? decrypt(row.bot_token_encrypted) : null,
     chatId: row.chat_id,
     messageLang: row.message_lang,
-    pushIntervalMinutes: row.push_interval_minutes,
     lastPushedAt: row.last_pushed_at,
     lastAttemptAt: row.last_attempt_at,
     lastError: row.last_error,
@@ -181,18 +167,8 @@ export interface TelegramPushUpdate {
   /** Pass to rotate the stored token; omit to leave it untouched. */
   botToken?: string;
   messageLang?: TelegramMessageLang;
-  pushIntervalMinutes?: number;
 }
 
-/**
- * 0 = 不节流。
- *
- * 下限曾经是 15：那时这个数字是「多久发一次榜单」，0 意味着每个 tick 都发。
- * 现在它是警报推送的最小间隔，0 的含义变成「有新卡就发」——那正是绝大多数
- * 人想要的默认，也是这个功能的意义所在，没有理由把它挡在配置之外。
- */
-export const MIN_PUSH_INTERVAL_MINUTES = 0;
-export const MAX_PUSH_INTERVAL_MINUTES = 10080; // one week
 
 export async function updateTelegramPushSettings(
   update: TelegramPushUpdate
@@ -206,15 +182,6 @@ export async function updateTelegramPushSettings(
     patch.bot_token_encrypted = update.botToken.trim() ? encrypt(update.botToken.trim()) : null;
   }
   if (update.messageLang !== undefined) patch.message_lang = update.messageLang;
-  if (update.pushIntervalMinutes !== undefined) {
-    const n = Math.round(update.pushIntervalMinutes);
-    if (!Number.isFinite(n) || n < MIN_PUSH_INTERVAL_MINUTES || n > MAX_PUSH_INTERVAL_MINUTES) {
-      throw new Error(
-        `pushIntervalMinutes must be between ${MIN_PUSH_INTERVAL_MINUTES} and ${MAX_PUSH_INTERVAL_MINUTES}`
-      );
-    }
-    patch.push_interval_minutes = n;
-  }
 
   const { data, error } = await client
     .from("telegram_push_settings")
@@ -339,28 +306,18 @@ export function escapeHtml(s: string): string {
 // Delivery
 // ---------------------------------------------------------------------------
 
-/**
- * Whether enough time has passed since the last *successful* push.
+/*
+ * 这里曾经有 isPushDue —— 「距上次成功推送够不够 N 分钟」。
  *
- * Gating in application code rather than in the cron expression is what makes
- * a missed run self-healing: the schedule ticks far more often than the
- * interval, so if one tick dies (timeout, cold start, Telegram outage) the
- * next tick still sees "overdue" and pushes. It also lets an admin change the
- * interval from the UI without editing pg_cron.
+ * 它是**时间驱动**留下的最后一块：先是榜单每 4 小时发一次的定时器，榜单删掉
+ * 后被留成警报推送的「最小间隔」节流闸。两者是同一件事换了个名字：够不够钟
+ * 仍然由时钟说了算，一条刚触发的警报会被压到下一个窗口——而警报的全部价值
+ * 就在时效上。现在推送完全由「扫描产出了新卡片」这个事件驱动，没有任何一处
+ * 再需要问「现在几点」。
+ *
+ * telegram_push_settings.push_interval_minutes 这一列没删（见 054 迁移），
+ * 跟 chat_id、show_* 一样留作回滚。
  */
-export function isPushDue(
-  lastPushedAt: string | null,
-  intervalMinutes: number,
-  now: number = Date.now()
-): boolean {
-  if (!lastPushedAt) return true;
-  const last = new Date(lastPushedAt).getTime();
-  if (!Number.isFinite(last)) return true;
-  // A clock skew that puts the last push in the future shouldn't wedge pushes
-  // shut forever; treat it as due.
-  if (last > now) return true;
-  return now - last >= intervalMinutes * 60_000;
-}
 
 export interface TargetDeliveryResult {
   targetId: string;

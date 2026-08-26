@@ -4,7 +4,6 @@ import {
   listTargetsFor,
   deliverToTargets,
   escapeHtml,
-  isPushDue,
   markPushAttempt,
   type TelegramMessageLang,
 } from "@/lib/telegram-push";
@@ -12,7 +11,11 @@ import type { AlertCardData } from "./cards";
 import type { ScenarioKind } from "./factors/scenario";
 
 /**
- * 攒起来还没发的卡片 key。
+ * 没发成的卡片 key。
+ *
+ * 推送本身不排队——有新卡就发。这里攒的只有两种：投递失败（Telegram 抖动、
+ * 429）整批留到下一轮重试，以及超过单条消息上限被切下来的那部分。两种都是
+ * 「发不出去」而不是「不该发」，所以下一轮扫描会连同当轮的新卡一起再试。
  *
  * 只存 key，不存卡片本身。发的时候拿 key 去当轮的 `cards` 里取——于是
  * 1) 发出去的永远是**此刻**的数据（现价、峰值），不是攒进去那一刻的快照；
@@ -194,17 +197,17 @@ export function formatAlertMessage(alerts: AlertCardData[], lang: TelegramMessag
 /**
  * 一次警报推送的结果。
  *
- * 不再只返回一个数字：`pushed=0` 可以是「总开关关着」「没有目标群」「被节流
- * 攒起来了」「本轮没有新事」——处置完全不同，而路由日志里只看得到那个 0。
+ * 不再只返回一个数字：`pushed=0` 可以是「总开关关着」「没有目标群」「没配 token」
+ * 「本轮没有新事」——处置完全不同，而路由日志里只看得到那个 0。
  */
 export interface AlertPushOutcome {
   /** 实际发出去的卡片数 */
   pushed: number;
-  /** 被节流或被单条上限挡下、留到下一轮的卡片数 */
+  /** 投递失败或被单条上限挡下、留到下一轮的卡片数 */
   held: number;
   /** 至少一个目标收到了 */
   delivered: boolean;
-  skippedReason?: "disabled" | "no_targets" | "no_token" | "throttled" | "nothing_new";
+  skippedReason?: "disabled" | "no_targets" | "no_token" | "nothing_new";
 }
 
 const NOTHING = (reason: AlertPushOutcome["skippedReason"]): AlertPushOutcome => ({
@@ -223,12 +226,18 @@ export interface AlertPushInput {
 }
 
 /**
- * 有新警报卡就推（T25 起，scanner 唯一的 Telegram 推送）。
+ * 有新警报卡就推。**纯事件驱动，没有任何时间闸。**
  *
  * 此前 scanner 推的是「每 4 小时一张排行榜」，由 telegram-push 那条 cron 按
  * 间隔触发。改成事件驱动的理由很直接：榜单挑的是**还没动**的币，本来就没有
  * 时效可言，隔多久发一次都行；而警报卡是「某个币刚刚发生了结构事件」，
  * 它的全部价值都在时效上，等下一个四小时窗口等于没有。
+ *
+ * 中间版本还留过一道「最小推送间隔」的节流闸（复用 push_interval_minutes），
+ * 也一并拆掉了。它是把时间驱动换了个名字留下来：够不够钟仍然由时钟说了算，
+ * 一条刚触发的警报会被压到下一个窗口——而那恰恰是这次改造要消除的东西。
+ * 刷屏的顾虑本来就不成立：一轮扫描的全部新卡合并成**一条**消息，而扫描
+ * 自己有 15 分钟门控（SCAN_INTERVAL_MS），上限就是每 15 分钟一条。
  *
  * 开关沿用同一套，没有新增：`telegram_push_settings.enabled` 是总静音，
  * 目标群按 content=screener 订阅。原先那个默认关闭、后台又没有 UI 的
@@ -242,7 +251,7 @@ export interface AlertPushInput {
 export async function pushNewAlerts(payload: AlertPushInput): Promise<AlertPushOutcome> {
   const settings = await getTelegramPushSettings();
   // 总开关关掉时一条都不发，也**不动** pending：运营关掉的意思是「让机器人
-  // 静音」，不是「把这段时间的事件删掉」。重新打开时 pending 里过期的那些
+  // 静音」，不是「把没发成的那些删掉」。重新打开时 pending 里过期的那些
   // 会在下面跟当轮 cards 求交集时自然消失，不会倒出一堆几天前的旧警报。
   if (!settings.enabled) return NOTHING("disabled");
 
@@ -250,7 +259,7 @@ export async function pushNewAlerts(payload: AlertPushInput): Promise<AlertPushO
   if (targets.length === 0) return NOTHING("no_targets");
   if (!settings.botToken && targets.every((t) => !t.botToken)) return NOTHING("no_token");
 
-  // 候选 = 攒着的 + 当轮新出的，再跟当轮仍然成立的卡片求交集。
+  // 候选 = 上一轮没发成的 + 当轮新出的，再跟当轮仍然成立的卡片求交集。
   // 交集这一步同时做掉三件事：剔除已经失效的旧 key、去重、把顺序统一成
   // cards 的排序（总分降序），于是消息里最强的排在最前面。
   const valid = new Map(payload.cards.map((c) => [c.key, c]));
@@ -263,18 +272,12 @@ export async function pushNewAlerts(payload: AlertPushInput): Promise<AlertPushO
     return NOTHING("nothing_new");
   }
 
-  // 节流闸。距上次**成功**推送不够久时整批攒起来，不发也不丢。
-  // 默认间隔是 0（不节流）——见 telegram-push.ts 的 pushIntervalMinutes。
-  if (!isPushDue(settings.lastPushedAt, settings.pushIntervalMinutes)) {
-    await writePendingKeys(queue.map((c) => c.key));
-    return { pushed: 0, held: queue.length, delivered: false, skippedReason: "throttled" };
-  }
-
+  // 到这里就发，不看表。
   return deliverAlerts(queue, settings, targets, "cron");
 }
 
 /**
- * 后台「立即推送」：把**当前所有有效警报卡**发一遍，绕过总开关与节流。
+ * 后台「立即推送」：把**当前所有有效警报卡**发一遍，绕过总开关。
  *
  * 绕过是有意的，跟原先的 pushScreenerNow 同一个理由——手动点一下就是明确
  * 的意图。它发的是 cards 而不是 newCards：手动触发时「这一轮有没有新事」
@@ -316,6 +319,7 @@ async function deliverAlerts(
 
   // 投递失败时整批留在 pending 下一轮重试；成功时只留溢出的那些。
   // 这是「警报不能丢」的最后一道：一次 Telegram 抖动不该让这批事件消失。
+  // 注意这不是节流——没发出去才留，发出去的当场就清掉。
   const keep = delivered ? overflow : queue;
   await writePendingKeys(keep.map((c) => c.key));
 

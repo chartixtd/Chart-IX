@@ -15,21 +15,20 @@ import type { AlertCardData } from "./cards";
 import type { Scenario } from "./factors/scenario";
 
 // pushNewAlerts 的编排逻辑要靠 mock 掉外部依赖来测——真实实现会打 Supabase
-// 和 Telegram API。isPushDue 用真实实现（它是纯函数，正是节流那几条用例要验的东西）。
-vi.mock("@/lib/telegram-push", async (importOriginal) => ({
+// 和 Telegram API。
+vi.mock("@/lib/telegram-push", () => ({
   getTelegramPushSettings: vi.fn(),
   listTargetsFor: vi.fn(),
   deliverToTargets: vi.fn(),
   markPushAttempt: vi.fn(async () => null),
-  isPushDue: (await importOriginal<typeof import("@/lib/telegram-push")>()).isPushDue,
   escapeHtml: (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
 }));
 
 /**
  * admin_settings 的内存替身，只认 pending 那一行。
  *
- * 攒起来的卡片 key 存在这里，而「攒着不丢」正是节流这条路径的全部要点——
- * 用一个只读的固定桩替代它，节流的用例就只能验到「没发」，验不到「下一轮补发」。
+ * 没发成的卡片 key 存在这里，而「发不出去也不丢」正是这条路径的要点——
+ * 用一个只读的固定桩替代它，就只能验到「这一轮没发」，验不到「下一轮重试」。
  */
 const store = { pending: null as unknown };
 vi.mock("@/lib/supabase/middleware", () => ({
@@ -211,9 +210,9 @@ describe("formatAlertMessage", () => {
   });
 });
 
-/* ── 编排：有新卡就推、节流、失败不丢 ── */
+/* ── 编排：有新卡就推、失败不丢 ── */
 
-const OK_SETTINGS = { enabled: true, botToken: "tok", pushIntervalMinutes: 0, lastPushedAt: null };
+const OK_SETTINGS = { enabled: true, botToken: "tok", lastPushedAt: null };
 
 /** 一张有效卡片 = 同时出现在 cards 与（可选的）newCards 里 */
 function input(cards: AlertCardData[], newCards: AlertCardData[] = cards) {
@@ -274,29 +273,38 @@ describe("pushNewAlerts", () => {
     expect((await pushNewAlerts(input([alert]))).skippedReason).toBe("no_targets");
   });
 
-  it("推送成功后记一次健康，节流基准跟着前进", async () => {
+  it("推送成功后记一次健康——后台那张健康卡读的就是这几列", async () => {
     useSettings();
     await pushNewAlerts(input([alert]));
     expect(markPushAttempt).toHaveBeenCalledWith(true, null);
   });
 
-  /* ── 节流：攒起来，不丢 ── */
+  /* ── 纯事件驱动：不看表 ── */
 
-  it("距上次推送不足最小间隔时攒起来，不发", async () => {
-    useSettings({ pushIntervalMinutes: 30, lastPushedAt: new Date().toISOString() });
+  // 中间版本留过一道「最小推送间隔」的节流闸，那是把时间驱动换了个名字：
+  // 够不够钟仍然由时钟说了算，一条刚触发的警报会被压到下一个窗口。
+  it("上一条刚发完，紧接着又出新卡，照样立刻发", async () => {
+    useSettings({ lastPushedAt: new Date().toISOString() });
 
     const out = await pushNewAlerts(input([alert]));
 
-    expect(deliverToTargets).not.toHaveBeenCalled();
-    expect(out.skippedReason).toBe("throttled");
-    expect(out.held).toBe(1);
-    expect(store.pending).toEqual([alert.key]);
+    expect(deliverToTargets).toHaveBeenCalledTimes(1);
+    expect(out.pushed).toBe(1);
+    expect(out.held).toBe(0);
   });
 
-  it("攒着的卡片在下一轮够钟时补发出去——节流是延后，不是丢弃", async () => {
+  it("连续两轮各有新卡时两条都发得出去，没有任何窗口概念", async () => {
+    useSettings({ lastPushedAt: new Date().toISOString() });
+    await pushNewAlerts(input([alert]));
+    await pushNewAlerts(input([card("JTO")]));
+
+    expect(deliverToTargets).toHaveBeenCalledTimes(2);
+  });
+
+  it("上一轮没发成的卡片，下一轮连同新卡一起重试", async () => {
     store.pending = [alert.key];
     useSettings();
-    // 本轮没有新卡片，全靠攒着的那张
+    // 本轮没有新卡片，全靠上一轮没发成的那张
     const out = await pushNewAlerts(input([alert], []));
 
     expect(out.pushed).toBe(1);
@@ -304,7 +312,7 @@ describe("pushNewAlerts", () => {
   });
 
   // 只存 key 的全部意义：攒着的期间事件结束了，就不该再推一条过期警报
-  it("攒着的卡片已经失效时直接丢掉，不会推一条过期警报", async () => {
+  it("没发成的卡片已经失效时直接丢掉，不会推一条过期警报", async () => {
     store.pending = ["GONE"];
     useSettings();
 
@@ -315,7 +323,7 @@ describe("pushNewAlerts", () => {
     expect(store.pending).toEqual([]);
   });
 
-  it("同一张卡既在攒着的里、又是本轮新出的，只发一条", async () => {
+  it("同一张卡既在待重试的里、又是本轮新出的，只发一条", async () => {
     store.pending = [alert.key];
     useSettings();
 
@@ -364,8 +372,8 @@ describe("pushActiveAlertsNow", () => {
 
   // 手动点一下就是明确的意图：总开关和节流都不该挡住它，否则这个按钮
   // 在最需要它的时候（排查「为什么没收到」）恰好用不了
-  it("绕过总开关与节流", async () => {
-    useSettings({ enabled: false, pushIntervalMinutes: 999, lastPushedAt: new Date().toISOString() });
+  it("绕过总开关", async () => {
+    useSettings({ enabled: false });
 
     const out = await pushActiveAlertsNow(input([alert], []));
 

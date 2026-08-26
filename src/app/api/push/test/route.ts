@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { sendToSubscriptions, type SubscriptionRow } from "@/lib/push/send";
 import { buildTestMessage } from "@/lib/push/messages";
+import { checkRateLimit } from "@/lib/trading/rate-limit";
 
 // web-push 需要 node:crypto，不能跑在 Edge runtime 上
 export const runtime = "nodejs";
@@ -18,8 +19,11 @@ export const dynamic = "force-dynamic";
  * 没有它，验证要等下一轮扫描真的出新卡：扫描间隔 15 分钟，而且不保证
  * 那一轮有新卡。
  *
- * 不做服务端限流：这是登录用户给**自己**发通知，滥用面就是自己吵自己。
- * 连点由前端的 30 秒冷却挡住。
+ * 服务端限流挡的是**配额**，不是吵人——吵人那一面前端 30 秒冷却已经够了，
+ * 但那是纯客户端状态，curl 绕开前端循环 POST 完全不受影响，会烧掉
+ * Vercel 函数调用与 CPU 预算（Hobby 每月只有 4 CPU-小时，见
+ * src/app/api/cron/price-alerts/route.ts 的注释）。max: 2 / 60s 与前端
+ * 冷却对齐，正常使用永远够，循环刷不动。
  */
 export async function POST() {
   const supabase = await createClient();
@@ -27,6 +31,15 @@ export async function POST() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // 放在鉴权之后、查订阅行之前：未登录就不该消耗限流预算
+  const limit = await checkRateLimit(`push-test:${user.id}`, { windowMs: 60_000, max: 2 });
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "rate_limited", retryAfterMs: limit.retryAfterMs },
+      { status: 429 }
+    );
+  }
 
   const { data } = await supabase
     .from("push_subscriptions")

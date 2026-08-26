@@ -55,12 +55,26 @@ export function NotificationSettings() {
       await resubscribeIfNeeded(locale);
       const next = await readPushState();
       if (!alive) return;
-      if (json?.prefs) setPrefs(json.prefs);
+      if (json?.prefs) {
+        setPrefs(json.prefs);
+      } else {
+        // GET 失败时不能把 prefs 留在 null——interactive 恒为 false，开关
+        // 永久禁用，而 state 多半是 ready，三块降级说明一条都不触发，用户
+        // 面对一个死掉的开关、零文案。退回与服务端 GET 无行分支逐字一致的
+        // 默认值兜底，开关至少可点：点了会走完整订阅 + PUT，PUT 自己会把
+        // 偏好行建出来。同时用 notice 明说这次没读到偏好，不能悄悄挺过去。
+        setPrefs({ price_alerts: true, screener: false, new_content: true });
+        setNotice({ tone: "bad", text: tPwa("push_error") });
+      }
       setState(next);
     })();
     return () => {
       alive = false;
     };
+    // tPwa 故意不进依赖数组：这是一次挂载 + locale 变化时才跑的效果，
+    // next-intl 的 translator 函数每次渲染都可能拿到新引用，纳入依赖会让
+    // 这个效果在每次 setNotice/setState 触发的重渲染后又跑一遍。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locale]);
 
   useEffect(() => {
@@ -135,7 +149,16 @@ export function NotificationSettings() {
       );
     } else if (json?.error === "no_subscription") {
       setNotice({ tone: "bad", text: t("notifications_test_stale") });
+    } else if (res?.status === 401) {
+      // 内部错误码，不能原样显示给用户
+      setNotice({ tone: "bad", text: t("please_login") });
+    } else if (res?.status === 429) {
+      // 服务端限流的内部错误码（"rate_limited"），同样不能原样显示
+      setNotice({ tone: "bad", text: t("notifications_test_cooldown") });
     } else {
+      // 其余情况原样回显服务端消息——VAPID 变量缺失时 sendToSubscriptions
+      // 抛的是一句明确的中文错误，那是「为什么收不到」最有用的答案，
+      // 这个兜底是有意的，不要连它一起改掉
       setNotice({ tone: "bad", text: json?.error ?? tPwa("push_error") });
     }
 

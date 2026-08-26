@@ -435,7 +435,8 @@
     "notifications_scanner_desc": "扫描器出现新的警报卡时通知你，即使 Chart-IX 没有打开。",
     "notifications_test": "发送测试通知",
     "notifications_test_sent": "已发送，几秒内应该会收到。",
-    "notifications_test_stale": "这台设备的订阅已失效。请关掉开关再打开一次。"
+    "notifications_test_stale": "这台设备的订阅已失效。请关掉开关再打开一次。",
+    "notifications_test_cooldown": "刚发过一条，等一会儿再试。"
   },
   "api_keys": {
     "title": "API 密钥管理",

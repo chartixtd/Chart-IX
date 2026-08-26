@@ -435,7 +435,8 @@
     "notifications_scanner_desc": "Get notified when the scanner surfaces a new alert card, even when Chart-IX isn't open.",
     "notifications_test": "Send a test notification",
     "notifications_test_sent": "Sent — it should arrive within a few seconds.",
-    "notifications_test_stale": "This device's subscription has expired. Turn the switch off and on again."
+    "notifications_test_stale": "This device's subscription has expired. Turn the switch off and on again.",
+    "notifications_test_cooldown": "Just sent one — give it a moment before trying again."
   },
   "api_keys": {
     "title": "API Key Management",

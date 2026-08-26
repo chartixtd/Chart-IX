@@ -359,7 +359,8 @@
     "notifications_scanner_desc": "Dapat pemberitahuan apabila penapis menemui kad amaran baharu, walaupun Chart-IX tidak dibuka.",
     "notifications_test": "Hantar pemberitahuan ujian",
     "notifications_test_sent": "Dihantar — sepatutnya tiba dalam beberapa saat.",
-    "notifications_test_stale": "Langganan peranti ini telah tamat. Tutup suis dan hidupkan semula."
+    "notifications_test_stale": "Langganan peranti ini telah tamat. Tutup suis dan hidupkan semula.",
+    "notifications_test_cooldown": "Baru sahaja dihantar — tunggu sebentar sebelum cuba lagi."
   },
   "api_keys": {
     "title": "Pengurusan Kunci API",

@@ -58,7 +58,13 @@ export async function subscribeToPush(
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return "denied";
 
-  const registration = await navigator.serviceWorker.ready;
+  // 必须走 activeRegistration()，不能裸 await navigator.serviceWorker.ready：
+  // 从未注册过 SW 时它永不 resolve（不是 reject，是挂起），拖累的不只是
+  // 这一个函数——resubscribeIfNeeded 在没有既有订阅时会回落到这里，
+  // NotificationSettings 挂载效果里 resubscribeIfNeeded 又排在 readPushState
+  // 前面，一挂就没人能再往下走。null 时诚实返回 unsupported。
+  const registration = await activeRegistration();
+  if (!registration) return "unsupported";
   const existing = await registration.pushManager.getSubscription();
   const subscription =
     existing ??
@@ -104,7 +110,10 @@ export async function resubscribeIfNeeded(locale: string): Promise<void> {
     return;
   if (Notification.permission !== "granted") return;
 
-  const registration = await navigator.serviceWorker.ready;
+  // 同样必须走 activeRegistration()——见上面 subscribeToPush 里的注释。
+  // 没有可用的 SW 就没什么可续订的，直接返回。
+  const registration = await activeRegistration();
+  if (!registration) return;
   const existing = await registration.pushManager.getSubscription();
   if (existing) {
     await postSubscription(existing, locale);

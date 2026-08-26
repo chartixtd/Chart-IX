@@ -268,7 +268,6 @@ describe("resolveBackTarget", () => {
 
   it("更多 tab 收编的页面都退回更多", () => {
     expect(resolveBackTarget("/zh-CN/more/alerts", "zh-CN")).toBe("/zh-CN/more");
-    expect(resolveBackTarget("/zh-CN/more/notifications", "zh-CN")).toBe("/zh-CN/more");
     expect(resolveBackTarget("/zh-CN/orders", "zh-CN")).toBe("/zh-CN/more");
     expect(resolveBackTarget("/zh-CN/upgrade", "zh-CN")).toBe("/zh-CN/more");
   });

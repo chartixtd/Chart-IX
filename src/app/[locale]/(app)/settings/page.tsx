@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { LANGUAGE_LABELS, PUBLIC_LOCALES } from "@/lib/constants";
+import { NotificationSettings } from "@/components/settings/NotificationSettings";
 
 export default function SettingsPage() {
   const t = useTranslations("settings");
@@ -201,6 +202,8 @@ export default function SettingsPage() {
           </Button>
         </div>
       </Card>
+
+      <NotificationSettings />
     </div>
   );
 }

@@ -241,3 +241,44 @@ export async function readPushState(): Promise<PushState> {
     hasSubscription,
   });
 }
+
+/** 通知开关此刻该长什么样。见 deriveSwitchState。 */
+export interface SwitchState {
+  /** 开关的位置。**反映用户意愿，不反映设备能力** */
+  on: boolean;
+  /** 这一下点得动吗 */
+  interactive: boolean;
+  /** 意愿之外的另一半：这台设备现在真的送得到吗 */
+  deliverable: boolean;
+}
+
+/**
+ * 把「用户想不想要」和「这台设备能不能收到」分开。
+ *
+ * 这两件事此前在组件里被揉成一个布尔（`pref && ready && subscribed`），代价是
+ * 线上真实发生过的一个死结：用户在系统里拒了通知权限之后，push 状态变成 denied，
+ * 于是开关**同时**显示成关、又被禁用——他看到一个已经是「关」的开关，点它想
+ * 确认关掉，而它根本不响应。偏好永远卡在 true，哪天权限恢复推送就自己复活。
+ *
+ * 拆开之后的规则只有两条：
+ *
+ *   - 开关位置 = 偏好。设备送不送得到是另一件事，由 deliverable 单独说，
+ *     配合上层的原因文案（denied / no-vapid-key / no-service-worker / …）。
+ *   - **关掉永远点得动**，它只是一次偏好写入，不需要任何浏览器能力；
+ *     只有**打开**需要 kind === "ready"，因为那一步真的要去拿浏览器订阅。
+ *
+ * prefs 还没加载完（prefsLoaded=false）时两个方向都不能点——不知道当前偏好是
+ * 什么就去写，会把用户没碰过的值覆盖掉。
+ */
+export function deriveSwitchState(
+  prefEnabled: boolean,
+  push: PushState | null,
+  prefsLoaded: boolean
+): SwitchState {
+  const ready = push?.kind === "ready";
+  return {
+    on: prefEnabled,
+    interactive: prefsLoaded && (prefEnabled || ready),
+    deliverable: push?.kind === "ready" && push.subscribed,
+  };
+}

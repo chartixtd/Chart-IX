@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import {
+  deriveSwitchState,
   readPushState,
   resubscribeIfNeeded,
   subscribeToPush,
@@ -83,12 +84,19 @@ export function NotificationSettings() {
     return () => clearTimeout(id);
   }, [cooling]);
 
-  // 三段全通才算开。偏好开着但权限被撤或订阅丢了，显示为开就是在骗人。
-  const on = Boolean(prefs?.screener) && state?.kind === "ready" && state.subscribed;
-  const interactive = state?.kind === "ready" && prefs !== null;
+  // 意愿与设备能力的拆分规则住在 lib/push/client.ts 的 deriveSwitchState 里，
+  // 那里是纯函数、有单测——这段逻辑刚在线上把一个开关变成了点不动的死结，
+  // 值得被钉住而不是散在组件里
+  const { on, interactive, deliverable } = deriveSwitchState(
+    Boolean(prefs?.screener),
+    state,
+    prefs !== null
+  );
 
   const toggle = useCallback(async () => {
-    if (!prefs || state?.kind !== "ready" || busy) return;
+    if (!prefs || busy) return;
+    // 只有打开这个方向需要设备能力
+    if (!on && state?.kind !== "ready") return;
     setBusy(true);
     setNotice(null);
 
@@ -245,6 +253,16 @@ export function NotificationSettings() {
           <p className="text-xs leading-relaxed text-text-muted">{tPwa("push_unsupported")}</p>
         )}
 
+        {/* 偏好开着、设备也够格，却没有浏览器订阅。resubscribeIfNeeded 在挂载时
+            会静默补，补不上才会走到这里（上一次 POST 失败等）。上面那些分支都
+            不成立，不给这一句的话开关就是「开着但什么都不会来」——正是这个组件
+            要消灭的那种沉默。关掉再打开会走完整的重新订阅，用户自己能修。 */}
+        {on && state?.kind === "ready" && !state.subscribed && (
+          <p className="rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-relaxed text-warning">
+            {t("notifications_test_stale")}
+          </p>
+        )}
+
         {notice && (
           <p
             className={cn(
@@ -258,8 +276,9 @@ export function NotificationSettings() {
           </p>
         )}
 
-        {/* 只在真的订阅上了才显示——开关是关的时候，这个按钮必然报错 */}
-        {on && (
+        {/* 按 deliverable 而不是 on：偏好开着但设备送不到时，这个按钮必然报错，
+            而它报的错解释不了真正的原因——那句原因已经在上面的分支里说了 */}
+        {deliverable && (
           <Button
             variant="outline"
             size="sm"

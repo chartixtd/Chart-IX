@@ -16,7 +16,7 @@ import { readingKey, toneFor, DIRECTION_CLASSES } from "./scenario-ui";
 //
 // 三条文案各自是**完整的一句话**（「35分钟前触发」），不是「时长」+
 // 「触发」两段拼起来的。拼接会拼出「刚刚前触发」这种病句，而且英文与
-// 马来语的语序跟中文不同（fired 35m ago / dicetuskan 35m lalu），
+// 马来语的语序跟中文不同（triggered 35m ago / dicetuskan 35m lalu），
 // 靠拼接根本排不对。
 function triggeredLabel(iso: string, t: ReturnType<typeof useTranslations>): string {
   const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));

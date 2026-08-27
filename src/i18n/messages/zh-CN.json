@@ -1091,8 +1091,8 @@
         "action": "顺势做空，涨回区间就走"
       },
       "reading": {
-        "up": "收盘站上前 6 小时区间顶 {level}，已越出 {distancePct}。跌回 {level} 之下即失效。",
-        "down": "收盘跌破前 6 小时区间底 {level}，已越出 {distancePct}。涨回 {level} 之上即失效。"
+        "up": "收盘站上前 6 小时区间顶 {level}（已越出 {distancePct}）。收盘跌回 {invalid} 之下即失效——这条线在区间顶下方约 1 个 ATR，画在区间顶上会被日内噪音打穿。",
+        "down": "收盘跌破前 6 小时区间底 {level}（已越出 {distancePct}）。收盘涨回 {invalid} 之上即失效——这条线在区间底上方约 1 个 ATR，画在区间底上会被日内噪音打穿。"
       }
     }
   },

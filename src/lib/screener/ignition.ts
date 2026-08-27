@@ -36,17 +36,78 @@ export const IGNITION_LOOKBACK_BARS = 12;
  */
 export const IGNITION_MAX_AGE_BARS = 8;
 
+/** ATR 的回看根数。14 根 30 分钟 = 7 小时，跟点火自己的 6 小时窗口是同一个量级。 */
+export const IGNITION_ATR_BARS = 14;
+
+/**
+ * 失效线在区间边界之外让多少个 ATR。
+ *
+ * **这个缓冲不是"留点余量"的直觉，是量出来的。** 773 个真实点火事件
+ * （50 个币、30m K 线、前瞻 6 小时、不重叠窗口）：
+ *
+ *   失效线放在区间边界上   6h 内被打穿 84%   实际吃到的 MFE 中位 0.00%
+ *   往外让 1.0×ATR         被打穿 53%        MFE 中位 1.47%
+ *   往外让 1.5×ATR         被打穿 40%        MFE 中位 1.77%
+ *
+ * 「吃到 0.00%」那一格是关键：把线画在边界上，一半以上的情况价格在走出
+ * 任何东西之前就先回来碰一下，信号当场作废。而被打穿的事件里有 37% 后来
+ * 仍然走到了 ≥2%——那些全是被一条画得太紧的线白白丢掉的。
+ *
+ * 放宽的代价接近于零：中位「因为线更远而少吃到的幅度」是 0.00%。
+ *
+ * 取 1.0 而不是 1.5：1.5 能再少 13 个百分点的误杀，但它同时会让真正走坏
+ * 的信号多挂一阵子——这套系统撤卡撤得快是有价值的（收盘站回区间的卡
+ * MFE 中位 1.34%，没站回去的 3.47%，2.6 倍的区分度）。1.0 是这两件事的
+ * 折中，而且它正好落在「点火当下的距离中位 0.38%」的三倍左右，
+ * 足够跨过日内噪音。
+ *
+ * 注意**点火的判定线仍然是区间边界本身**（收盘越过才算突破），只有失效线
+ * 往外让。两者本来就是两件事：一个问「启动了没」，一个问「还成立吗」。
+ */
+export const IGNITION_STOP_ATR_MULT = 1.0;
+
 export interface Ignition {
   /** 突破方向：向上突破前高 / 向下跌破前低 */
   direction: "up" | "down";
-  /** 被突破的那个区间边界价——它天然就是这次点火的失效位 */
+  /** 被突破的那个区间边界价。这是**点火线**，不是失效线 */
   level: number;
+  /**
+   * 失效价：区间边界往外让 IGNITION_STOP_ATR_MULT 个 ATR。
+   *
+   * 曾经直接用 level 当失效线，实测下来那条线 84% 会被打穿、而且中位情况下
+   * 你在行情走出任何东西之前就已经作废了（见 IGNITION_STOP_ATR_MULT）。
+   *
+   * 在点火那一根就算好并固定下来，不随后续 K 线滚动——一条会自己移动的
+   * 失效线没法当判据，也没法让人照着操作。
+   */
+  invalidationPrice: number;
   /** 现价相对 level 的突破幅度，% —— 刚越过线和暴力拉穿是两回事 */
   distancePct: number;
   /** 点火那根 K 线的时刻，ms epoch */
   ignitedAt: number;
   /** 点火到现在过了几根 K 线。0 = 就是当前这根 */
   barsAgo: number;
+}
+
+/**
+ * 截至第 i 根（不含）的 ATR，以**价格百分比**返回。
+ *
+ * 用百分比而不是绝对值，是因为这个池子里的币价差着好几个数量级
+ * （BTC 八万、PEPE 0.00001），绝对值没法跨币比较，也没法写进一个常量。
+ */
+function atrPctBefore(bars: CoinGlassPriceBar[], i: number, period: number, ref: number): number {
+  let sum = 0;
+  let n = 0;
+  for (let k = Math.max(1, i - period); k < i; k++) {
+    const h = parseFloat(bars[k].high);
+    const l = parseFloat(bars[k].low);
+    const pc = parseFloat(bars[k - 1].close);
+    if (!Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(pc)) continue;
+    sum += Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    n++;
+  }
+  if (n === 0 || !Number.isFinite(ref) || ref <= 0) return 0;
+  return (sum / n / ref) * 100;
 }
 
 /** 单根 K 线相对它**之前** lookback 根的突破判定。不含自己，否则永远突破不了。 */
@@ -146,11 +207,23 @@ export function detectIgnition(
     level = prev.level;
   }
 
-  // ③ 现价还守着那条线吗
+  // ③ 现价还守着失效线吗。
+  //
+  // **守的是失效线，不是区间边界。** 这里曾经用 level 本身，实测 773 个真实
+  // 点火事件里那条线 84% 会被打穿，而且中位情况下你在行情走出任何东西之前
+  // 就已经作废（吃到的 MFE 中位 0.00%）。完整数据见 IGNITION_STOP_ATR_MULT。
   const close = parseFloat(bars[last].close);
   if (!Number.isFinite(close) || close <= 0) return null;
   if (!Number.isFinite(level) || level <= 0) return null;
-  const alive = hit.direction === "up" ? close > level : close < level;
+
+  // 失效线在点火那一根就固定下来，用的也是那一刻的 ATR——一条会随每根新
+  // K 线移动的失效线没法当判据，也没法让人照着操作。
+  const atr = atrPctBefore(bars, origin, IGNITION_ATR_BARS, level);
+  const buffer = (level * atr * IGNITION_STOP_ATR_MULT) / 100;
+  const invalidationPrice = hit.direction === "up" ? level - buffer : level + buffer;
+  if (!Number.isFinite(invalidationPrice) || invalidationPrice <= 0) return null;
+
+  const alive = hit.direction === "up" ? close > invalidationPrice : close < invalidationPrice;
   if (!alive) return null;
 
   const ignitedAt = bars[origin].time;
@@ -169,6 +242,7 @@ export function detectIgnition(
   return {
     direction: hit.direction,
     level,
+    invalidationPrice,
     distancePct: (Math.abs(close - level) / level) * 100,
     ignitedAt,
     barsAgo,

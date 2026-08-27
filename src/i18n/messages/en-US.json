@@ -1091,8 +1091,8 @@
         "action": "Go short with it — exit if it climbs back in"
       },
       "reading": {
-        "up": "Closed above the prior 6h range top {level}, now {distancePct} beyond it. Invalid if it falls back below {level}.",
-        "down": "Closed below the prior 6h range bottom {level}, now {distancePct} beyond it. Invalid if it climbs back above {level}."
+        "up": "Closed above the prior 6h range top {level} ({distancePct} beyond). Invalid on a close back below {invalid} — about 1 ATR under the range top, since the top itself gets cut by intraday noise.",
+        "down": "Closed below the prior 6h range bottom {level} ({distancePct} beyond). Invalid on a close back above {invalid} — about 1 ATR over the range bottom, since the bottom itself gets cut by intraday noise."
       }
     }
   },

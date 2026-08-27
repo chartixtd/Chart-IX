@@ -117,7 +117,10 @@ export function AlertCard({
     action = t(`ignition.${ig.direction}.action`);
     verdict = t(`ignition.reading.${ig.direction}`, {
       level: formatPrice(ig.level),
-      distancePct: formatPercent(ig.distancePct),
+      invalid: formatPrice(ig.invalidationPrice),
+      // 突破幅度恒为正，不走 formatPercent——那个会加正负号，
+      // 写出来是「已越出 +0.51%」，那个加号没有任何含义。
+      distancePct: `${ig.distancePct.toFixed(2)}%`,
     });
   }
 

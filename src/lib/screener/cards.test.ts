@@ -24,7 +24,15 @@ function scenario(o: Partial<Scenario> = {}): Scenario {
 }
 
 function ignition(o: Partial<Ignition> = {}): Ignition {
-  return { direction: "up", level: 100, distancePct: 2, ignitedAt: T0 - 3_600_000, barsAgo: 2, ...o };
+  return {
+    direction: "up",
+    level: 100,
+    invalidationPrice: 98,
+    distancePct: 2,
+    ignitedAt: T0 - 3_600_000,
+    barsAgo: 2,
+    ...o,
+  };
 }
 
 function row(o: Partial<ScannerRow> = {}): ScannerRow {
@@ -249,22 +257,27 @@ describe("buildCard —— 点火卡", () => {
     expect(r.card?.direction).toBe("short");
   });
 
-  it("失效线就是被突破的那条边界，方向相反", () => {
+  it("卡片上的失效价用 invalidationPrice，不是被突破的那条边界", () => {
+    // 边界本身太近了：773 个真实事件里点火当下离边界的距离中位只有 0.38%，
+    // 61% 在 0.5% 以内。照那个位置判，84% 会被打穿。
     const up = buildCard({
-      row: row({ scenario: null, ignition: ignition({ direction: "up", level: 100 }) }),
+      row: row({ scenario: null, ignition: ignition({ direction: "up", level: 100, invalidationPrice: 98 }) }),
       priceBars: [],
       memo: undefined,
       now: T0,
     }).card!;
-    expect(up.invalidation).toEqual({ price: 100, breach: "below" });
+    expect(up.invalidation).toEqual({ price: 98, breach: "below" });
 
     const down = buildCard({
-      row: row({ scenario: null, ignition: ignition({ direction: "down", level: 120 }) }),
+      row: row({
+        scenario: null,
+        ignition: ignition({ direction: "down", level: 120, invalidationPrice: 122 }),
+      }),
       priceBars: [],
       memo: undefined,
       now: T0,
     }).card!;
-    expect(down.invalidation).toEqual({ price: 120, breach: "above" });
+    expect(down.invalidation).toEqual({ price: 122, breach: "above" });
   });
 
   it("场景优先于点火——两个都有时只出场景卡，不出两张", () => {

@@ -49,7 +49,7 @@ describe("buildScreenerAlertMessage", () => {
         firstPrice: 1.8305,
         trigger: {
           type: "ignition",
-          ignition: { direction: "up", level: 1.82, distancePct: 0.6, ignitedAt: 0, barsAgo: 0 },
+          ignition: { direction: "up", level: 1.82, invalidationPrice: 1.8, distancePct: 0.6, ignitedAt: 0, barsAgo: 0 },
         },
       }),
     ]);

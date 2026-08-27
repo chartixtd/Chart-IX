@@ -1015,8 +1015,8 @@
         "action": "Ikut arah — keluar jika naik semula ke dalam julat"
       },
       "reading": {
-        "up": "Ditutup di atas puncak julat 6j {level}, kini {distancePct} melepasinya. Tidak sah jika jatuh semula di bawah {level}.",
-        "down": "Ditutup di bawah dasar julat 6j {level}, kini {distancePct} melepasinya. Tidak sah jika naik semula di atas {level}."
+        "up": "Ditutup di atas puncak julat 6j {level} ({distancePct} melepasinya). Tidak sah apabila ditutup semula di bawah {invalid} — kira-kira 1 ATR di bawah puncak julat, kerana puncak itu sendiri mudah ditembusi bunyi intrahari.",
+        "down": "Ditutup di bawah dasar julat 6j {level} ({distancePct} melepasinya). Tidak sah apabila ditutup semula di atas {invalid} — kira-kira 1 ATR di atas dasar julat, kerana dasar itu sendiri mudah ditembusi bunyi intrahari."
       }
     }
   },

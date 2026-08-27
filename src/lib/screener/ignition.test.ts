@@ -20,14 +20,40 @@ function withHistory(last: [number, number, number], n = IGNITION_LOOKBACK_BARS)
 }
 
 describe("detectIgnition", () => {
-  it("收盘越过前 6 小时高点 = 向上点火，失效位就是那个高点", () => {
+  it("收盘越过前 6 小时高点 = 向上点火，点火线是那个高点，失效线在它下方 1×ATR", () => {
+    // 历史 12 根都是 [110, 100]，真实波幅恒为 10，ATR = 10（相对 level 110
+    // 是 9.09%），所以失效线 = 110 − 10 = 100。
     expect(detectIgnition(withHistory([115, 108, 112]))).toEqual({
       direction: "up",
       level: 110,
+      invalidationPrice: expect.closeTo(100, 6),
       distancePct: expect.closeTo(1.818, 2),
       ignitedAt: IGNITION_LOOKBACK_BARS * 1_800_000,
       barsAgo: 0,
     });
+  });
+
+  it("失效线在区间边界之外，不在边界上", () => {
+    // 这条单独钉一下方向：向上点火的失效线必须**低于**被突破的高点，
+    // 向下点火的必须**高于**被跌破的低点。写反了会让每张卡一出生就失效。
+    const up = detectIgnition(withHistory([115, 108, 112]))!;
+    expect(up.invalidationPrice).toBeLessThan(up.level);
+    const down = detectIgnition(withHistory([102, 95, 98]))!;
+    expect(down.invalidationPrice).toBeGreaterThan(down.level);
+  });
+
+  it("价格收回区间内、但还没碰到失效线 = 点火仍然成立", () => {
+    // 这是加缓冲的全部意义。实测 773 个事件，失效线画在区间边界上时 84%
+    // 会被打穿，而且中位情况下在行情走出任何东西之前就作废了（吃到的
+    // MFE 中位 0.00%），其中 37% 后来仍然走到 ≥2%——全是白丢的。
+    const b = bars([
+      ...Array.from({ length: 12 }, () => [110, 100, 105] as [number, number, number]),
+      [115, 108, 112],
+      [113, 104, 105], // 收回 110 之下，但仍在失效线 100 之上
+    ]);
+    const r = detectIgnition(b);
+    expect(r).not.toBeNull();
+    expect(r!.level).toBe(110);
   });
 
   it("收盘跌破前 6 小时低点 = 向下点火", () => {
@@ -84,11 +110,20 @@ describe("detectIgnition", () => {
     expect(r.barsAgo).toBe(2);
   });
 
-  it("价格收回区间内 = 点火熄灭", () => {
+  it("跌破失效线 = 点火熄灭", () => {
+    // 这里不能用 withHistory 那组「每根都横跨整个区间」的 K 线：它的 ATR
+    // 等于区间宽度本身，失效线正好落在区间底上，于是「跌破失效线」和
+    // 「向下突破」变成同一件事——函数会判出一次新的向下点火而不是 null，
+    // 测的就不是想测的东西了。用一段缓慢上行、单根波幅很小的历史。
+    const hist = Array.from({ length: 12 }, (_, i) => {
+      const h = 100 + i * 0.9;
+      return [h, h - 1, h - 0.5] as [number, number, number];
+    });
+    const level = 100 + 11 * 0.9; // 109.9 = 历史区间顶
     const b = bars([
-      ...Array.from({ length: 12 }, () => [110, 100, 105] as [number, number, number]),
-      [115, 108, 112],
-      [113, 104, 106], // 收回 110 之下
+      ...hist,
+      [level + 2, level, level + 1], // 收 110.9 > 109.9 → 向上点火，ATR≈1.4，失效线≈108.5
+      [level - 1, level - 3, level - 2.5], // 收 107.4，跌破失效线；离区间底 99 还远，不构成向下点火
     ]);
     expect(detectIgnition(b)).toBeNull();
   });

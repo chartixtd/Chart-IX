@@ -119,7 +119,12 @@ export function scenarioInvalidated(scenario: Scenario, bars: CoinGlassPriceBar[
  * 点火的失效线：**被突破的那条区间边界**。
  *
  * 不需要像六场景那样分情况讨论——点火的论点只有一句「站上/跌破了前 6 小时
- * 的区间」，价格收回区间内，这句话就不成立了。所以失效位就是 level 本身。
+ * 的区间」，价格走回来够深，这句话就不成立了。
+ *
+ * 「够深」不是区间边界本身。实测 773 个事件，线画在边界上 84% 会被打穿，
+ * 而且中位情况下你在行情走出任何东西之前就已经作废——见
+ * ignition.ts 的 IGNITION_STOP_ATR_MULT。所以用的是 invalidationPrice
+ * （边界往外让 1×ATR），不是 level。
  *
  * 判据用**收盘价 / 现价**，不用区间极值——这跟六场景刻意相反。六场景的
  * 失效是「止损被扫了就是被扫了」，插针也算数；点火的失效是「这次突破没
@@ -128,9 +133,9 @@ export function scenarioInvalidated(scenario: Scenario, bars: CoinGlassPriceBar[
  * 两边同一个口径。
  */
 export function ignitionLine(ignition: Ignition): InvalidationLine | null {
-  if (!Number.isFinite(ignition.level) || ignition.level <= 0) return null;
+  if (!Number.isFinite(ignition.invalidationPrice) || ignition.invalidationPrice <= 0) return null;
   return {
-    price: ignition.level,
+    price: ignition.invalidationPrice,
     breach: ignition.direction === "up" ? "below" : "above",
   };
 }

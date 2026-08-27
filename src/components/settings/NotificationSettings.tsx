@@ -219,7 +219,18 @@ export function NotificationSettings() {
                   能同时站住，所以两态各用各的。 */}
               <span
                 className={cn(
-                  "absolute top-1 h-5 w-5 rounded-full transition-transform",
+                  // left-0 不能省：<button> 浏览器默认 text-align: center，
+                  // 绝对定位元素没写 left 时会退回按这个居中的「静态位置」
+                  // 计算落点，叠加 translate-x 之后滑块会跑到偏离预期的地方。
+                  // 必须是 left-0 而不是 left-1——水平方向靠位移产生边距：
+                  // translate-x-1（关，4px）与 translate-x-6（开，24px）已经
+                  // 是以 left:0 为基准算出来的对称值（关态离左 4px，开态离右
+                  // 48-24-20=4px，跟 top-1 的垂直 4px 边距一致）。left-1 会把
+                  // 这 4px 边距在关态叠加成 8px，跑偏只是换了个地方。
+                  // 这套写法是从更早就存在的旧页面原样搬过来的（该页面从未
+                  // 有过入口，所以这个 bug 从来没被人看见过），仓库里另一处
+                  // 开关（TelegramPushEditor.tsx）写对了、显式给了 left。
+                  "absolute left-0 top-1 h-5 w-5 rounded-full transition-transform",
                   on ? "translate-x-6 bg-bg-primary" : "translate-x-1 bg-text-secondary"
                 )}
               />

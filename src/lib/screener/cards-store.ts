@@ -56,9 +56,16 @@ export async function readMemos(): Promise<Map<string, ScenarioMemo>> {
 /**
  * 写入新备忘，并顺手清掉过期的。
  *
- * 用 ignoreDuplicates 而不是 upsert 覆盖：备忘的全部意义就是「第一次」，
+ * 用 `ignoreDuplicates` 而不是覆盖式 upsert：备忘的全部意义就是「第一次」，
  * 覆盖等于把首次价改成现在的价——那正是这张表存在要防止的事。两个实例
  * 同时扫描时也靠它保证先写的那份赢。
+ *
+ * **这句话以前只写在注释里，代码是 `.insert()`。** 两者的差别不是风格：
+ * 批量 insert 撞上唯一约束会整批失败，于是那一轮**所有**新备忘一条都没写进去，
+ * 下一轮它们全部被当成「第一次看到」——Telegram 把已经推过的卡片再推一遍。
+ * 而并发扫描是常态而非意外：pg_cron 每 5 分钟打一次 screener-scan，同时
+ * 任何人打开 /screener 都可能因为 DB 缓存过期而触发一次 runScan
+ * （见 cache.ts 的 computeWithDbCache）。两者撞在一起，这批就全丢了。
  *
  * 失败只记录不抛出：这一轮的卡片已经算好了，存不进备忘的后果只是下一轮
  * 它们会被当成新的，不该让整轮扫描记成失败。
@@ -68,17 +75,20 @@ export async function saveMemos(memos: ScenarioMemo[], now: number): Promise<voi
 
   if (memos.length > 0) {
     try {
-      await client.from("screener_scenario_memo").insert(
+      const { error } = await client.from("screener_scenario_memo").upsert(
         memos.map((m) => ({
           key: m.key,
           symbol: m.symbol,
           first_seen_at: m.firstSeenAt,
           first_price: m.firstPrice,
         })),
-        { count: "exact" }
+        { onConflict: "key", ignoreDuplicates: true }
       );
+      // supabase-js 把写失败放在返回值里，不抛异常——只包 try/catch 的话
+      // 「整批没写进去」是完全静默的，而它的后果正是重复推送。
+      if (error) throw new Error(error.message);
     } catch (err) {
-      console.error("[screener] memo insert failed", err);
+      console.error("[screener] memo upsert failed", err);
     }
   }
 

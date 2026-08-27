@@ -122,10 +122,24 @@ export function detectIgnition(
   }
   if (!hit || at < 0) return null;
 
-  // ② 往回走到这一串连续同向突破的头一根
+  // ② 往回走到这一串连续同向突破的头一根。
+  //
+  // **边界是 lookback，不是 oldest。** 这里曾经也用 oldest 收边，而 oldest 是
+  // 随最后一根一起往前爬的（last - maxAgeBars），于是一串长过 maxAge 的连续
+  // 突破里，origin 会被顶在 oldest 上、跟着每根新 K 线往前挪一格——ignitedAt
+  // 每 30 分钟换一个值。
+  //
+  // 后果不在这个函数里，而在它下游：备忘钥匙是 `symbol|ignition|方向|ignitedAt`
+  // （见 cards.ts 的 ignitionMemoKey），钥匙一变，这张卡在系统眼里就是全新的
+  // 结构事件——首次价与计时重置，Telegram 每半小时把同一次点火重推一遍，
+  // 而下面第 ④ 步那道 4 小时上限因为 barsAgo 被永远钉在 maxAgeBars 上，
+  // 一次都不会生效。ignitionMemoKey 顶上那段注释说「锚在 ignitedAt 钥匙才稳
+  // 得住」，而这一行让它并没有稳住。
+  //
+  // 走到 lookback 为止：再往前 breakoutAt 算不出来（它需要之前 lookback 根）。
   let origin = at;
   let level = hit.level;
-  while (origin - 1 >= oldest) {
+  while (origin - 1 >= lookback) {
     const prev = breakoutAt(bars, origin - 1, lookback);
     if (!prev || prev.direction !== hit.direction) break;
     origin -= 1;
@@ -142,11 +156,21 @@ export function detectIgnition(
   const ignitedAt = bars[origin].time;
   if (!Number.isFinite(ignitedAt)) return null;
 
+  // ④ 点火本身有多老。
+  //
+  // 必须拿**真实的** origin 来量，而不是被 oldest 截过的那个。第 ① 步的 oldest
+  // 只回答「最近一次突破是不是还在 maxAge 之内」，对一路创新高的行情它永远为真；
+  // 真正该被这道上限拦下的正是这种——突破 4 小时之后它已经从「入场信号」退化成
+  // 「趋势确认」，还挂在警报栏里只会让人照着一个过期的位置进场（见
+  // IGNITION_MAX_AGE_BARS 顶上那段）。
+  const barsAgo = last - origin;
+  if (barsAgo > maxAgeBars) return null;
+
   return {
     direction: hit.direction,
     level,
     distancePct: (Math.abs(close - level) / level) * 100,
     ignitedAt,
-    barsAgo: last - origin,
+    barsAgo,
   };
 }

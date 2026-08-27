@@ -8,6 +8,7 @@ import {
   type TelegramMessageLang,
 } from "@/lib/telegram-push";
 import type { AlertCardData } from "./cards";
+import { MEMO_TTL_MS } from "./cards-store";
 import {
   SCENARIO_LABELS,
   SCENARIO_ACTIONS,
@@ -32,6 +33,38 @@ import {
  * 是一个最多几十个字符串的数组。
  */
 const PENDING_KEY = "screener_alert_pending";
+
+/**
+ * 已经推送过的卡片 key —— 一张卡这辈子只推一次的**唯一保证**。
+ *
+ * 在此之前，「不重复推」完全依赖 newCards 是对的，而 newCards 的定义是
+ * 「这一轮在备忘表里刚建的那些」。那份推断在三种情况下会静默塌掉，全都会
+ * 表现成「已经推过的卡片又推了一遍」：
+ *
+ * 1. readMemos() 读失败 → 返回空 Map，那一轮**每张**卡都是「第一次看到」，
+ *    整块警报栏重推一遍（cards-store.ts 自己的注释就写着这个后果）；
+ * 2. saveMemos() 写失败 → 下一轮它们又是新的；
+ * 3. 钥匙漂移 → 同一个事件换了个 key，凭什么也认不出来。
+ *
+ * 1 和 2 是有意吞掉错误的降级路径（备忘表故障不该影响扫描本身），所以它们
+ * 不会消失，只会偶发。台账把「推过没有」从推断变成**记录**：出问题时最坏是
+ * 漏推（key 记进去了但其实没发出去，下面只在投递成功后才写），而不是刷屏。
+ *
+ * 保留期比备忘长一天：备忘一过期，同一个事件就会以「新卡」身份回来，台账
+ * 必须活得比它久，否则正好在交接的那一刻漏出一条重复推送。
+ */
+const PUSHED_KEY = "screener_alert_pushed";
+
+/** 台账保留期。MEMO_TTL_MS 是 8 天，这里给 9 天——必须严格长于备忘 */
+const PUSHED_TTL_MS = MEMO_TTL_MS + 24 * 60 * 60 * 1000;
+
+/**
+ * 台账最多留多少条。
+ *
+ * 同时存在的结构事件是几十个量级，9 天的量级在几百条以内，2000 是留足余量的
+ * 上限而不是预期值。撞到上限时丢最旧的：最旧的那些本来也最接近过期。
+ */
+const PUSHED_MAX = 2000;
 
 /**
  * 一条消息最多列几张卡。
@@ -213,7 +246,12 @@ export async function pushNewAlerts(payload: AlertPushInput): Promise<AlertPushO
   const valid = new Map(payload.cards.map((c) => [c.key, c]));
   const carried = (await readPendingKeys()).filter((k) => valid.has(k));
   const candidates = new Set([...carried, ...payload.newCards.map((c) => c.key)]);
-  const queue = payload.cards.filter((c) => candidates.has(c.key));
+
+  // 再拿台账筛一道：推过的一律不再推，不管它这一轮为什么又被算成了「新的」。
+  // newCards 只是「按备忘表推断它是新的」，而备忘表的读写都有静默降级路径
+  // （见 PUSHED_KEY 顶上那段），推断塌掉时整块警报栏会重推一遍。
+  const pushed = await readPushedKeys();
+  const queue = payload.cards.filter((c) => candidates.has(c.key) && !pushed.has(c.key));
 
   if (queue.length === 0) {
     await writePendingKeys([]);
@@ -230,6 +268,10 @@ export async function pushNewAlerts(payload: AlertPushInput): Promise<AlertPushO
  * 绕过是有意的，跟原先的 pushScreenerNow 同一个理由——手动点一下就是明确
  * 的意图。它发的是 cards 而不是 newCards：手动触发时「这一轮有没有新事」
  * 通常是 0，那样点了没反应，等于按钮不能用来验证通道。
+ *
+ * 同理也**不查**已推送台账（否则等所有卡都推过之后这个按钮就永远发不出东西，
+ * 恰好在排查「为什么没收到」时最没用），但发完照样**记进**台账——它们确实
+ * 已经推出去了，自动推送不该再推一遍。
  */
 export async function pushActiveAlertsNow(payload: AlertPushInput): Promise<AlertPushOutcome> {
   const settings = await getTelegramPushSettings();
@@ -271,6 +313,11 @@ async function deliverAlerts(
   const keep = delivered ? overflow : queue;
   await writePendingKeys(keep.map((c) => c.key));
 
+  // 台账**只在投递成功后**记，且只记这一条消息真的列出来的那些（batch，
+  // 不含溢出）。反过来写的话，一次 Telegram 故障会把整批标记成「推过了」，
+  // 而它们其实一条都没发出去——重复推送难看，静默漏推才是真的丢信号。
+  if (delivered) await recordPushedKeys(batch.map((c) => c.key));
+
   return {
     pushed: delivered ? batch.length : 0,
     held: keep.length,
@@ -302,5 +349,79 @@ async function writePendingKeys(keys: string[]): Promise<void> {
       .upsert({ key: PENDING_KEY, value: keys }, { onConflict: "key" });
   } catch (err) {
     console.error("[alert-push] failed to persist pending keys", err);
+  }
+}
+
+/** 台账的一行：key + 记录时刻(ms)。带时刻才能按保留期裁剪 */
+type PushedEntry = [key: string, atMs: number];
+
+function parsePushedEntries(value: unknown): PushedEntry[] {
+  if (!Array.isArray(value)) return [];
+  const out: PushedEntry[] = [];
+  for (const row of value) {
+    if (!Array.isArray(row) || row.length < 2) continue;
+    const [k, at] = row;
+    if (typeof k === "string" && typeof at === "number" && Number.isFinite(at)) out.push([k, at]);
+  }
+  return out;
+}
+
+/**
+ * 读台账。
+ *
+ * 读失败返回空集合——那一轮退回到只靠 newCards 判断，也就是这个台账加进来
+ * 之前的行为。最坏是重复推一次，而不是整轮推送因为一次 DB 抖动就没了。
+ */
+async function readPushedKeys(): Promise<Set<string>> {
+  try {
+    const { data } = await createServiceRoleClient()
+      .from("admin_settings")
+      .select("value")
+      .eq("key", PUSHED_KEY)
+      .maybeSingle();
+    return new Set(parsePushedEntries((data as { value?: unknown } | null)?.value).map(([k]) => k));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * 把这批 key 记进台账，顺手裁掉过期的与超量的。
+ *
+ * 读-改-写有并发覆盖的风险（两轮扫描同时写，后写的赢），但这里的代价是
+ * 可接受的：丢掉的是**别人刚记上的几个 key**，后果是那几张卡可能被重推一次，
+ * 而不是漏推。为一张最多几百行的台账上锁不值得。
+ */
+async function recordPushedKeys(keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  const now = Date.now();
+  try {
+    const client = createServiceRoleClient();
+    const { data } = await client
+      .from("admin_settings")
+      .select("value")
+      .eq("key", PUSHED_KEY)
+      .maybeSingle();
+
+    const fresh = parsePushedEntries((data as { value?: unknown } | null)?.value).filter(
+      ([, at]) => now - at < PUSHED_TTL_MS
+    );
+    const seen = new Set(fresh.map(([k]) => k));
+    for (const k of keys) {
+      if (!seen.has(k)) {
+        fresh.push([k, now]);
+        seen.add(k);
+      }
+    }
+    // 撞到上限时丢最旧的——它们本来也最接近过期
+    const capped = fresh.length > PUSHED_MAX ? fresh.slice(fresh.length - PUSHED_MAX) : fresh;
+
+    await client
+      .from("admin_settings")
+      .upsert({ key: PUSHED_KEY, value: capped }, { onConflict: "key" });
+  } catch (err) {
+    // 记不上的后果是这批卡可能被重推一次，不该让整轮推送记成失败——
+    // 消息此刻已经发出去了。
+    console.error("[alert-push] failed to record pushed keys", err);
   }
 }

@@ -119,6 +119,50 @@ describe("detectIgnition", () => {
     expect(detectIgnition(b)).toBeNull();
   });
 
+  /**
+   * 线上重复推送的根因。
+   *
+   * 往回找 origin 那一步曾经用 oldest(= last - maxAgeBars) 收边，而 oldest 跟着
+   * 最后一根一起往前爬，于是一串长过 maxAge 的连续突破里 origin 被顶在 oldest
+   * 上、每根新 K 线挪一格——ignitedAt 每 30 分钟换一个值。备忘钥匙就是
+   * `symbol|ignition|方向|ignitedAt`，钥匙一变这张卡就是全新的结构事件，
+   * Telegram 把同一次点火每半小时重推一遍。
+   */
+  it("一路创新高时 ignitedAt 不漂移——钥匙不稳就会重复推送", () => {
+    const flat: Array<[number, number, number]> = Array.from({ length: 12 }, () => [110, 100, 105]);
+    const rally = (n: number) => {
+      const up: Array<[number, number, number]> = [];
+      let p = 112;
+      for (let i = 0; i < n; i++) {
+        up.push([p + 3, p - 4, p]);
+        p += 6;
+      }
+      return bars([...flat, ...up]);
+    };
+
+    // 头一根突破的时刻，此后不管这波走多久都该是同一个值
+    const first = detectIgnition(rally(1))!.ignitedAt;
+    for (let n = 2; n <= IGNITION_MAX_AGE_BARS + 1; n++) {
+      const r = detectIgnition(rally(n));
+      expect(r, `连续突破 ${n} 根时不该判空`).not.toBeNull();
+      expect(r!.ignitedAt, `连续突破 ${n} 根时 ignitedAt 漂了`).toBe(first);
+      expect(r!.barsAgo).toBe(n - 1);
+    }
+  });
+
+  // 上面那个 bug 的第二重后果：barsAgo 被永远钉在 maxAgeBars 上，
+  // 这道 4 小时上限一次都不会生效，过期信号无限期挂在警报栏里
+  it("一路创新高超过 maxAge 之后就不再认，而不是重新计时", () => {
+    const flat: Array<[number, number, number]> = Array.from({ length: 12 }, () => [110, 100, 105]);
+    const up: Array<[number, number, number]> = [];
+    let p = 112;
+    for (let i = 0; i < IGNITION_MAX_AGE_BARS + 2; i++) {
+      up.push([p + 3, p - 4, p]);
+      p += 6;
+    }
+    expect(detectIgnition(bars([...flat, ...up]))).toBeNull();
+  });
+
   it("非法价格不误判成点火", () => {
     const b = withHistory([115, 108, 112]);
     b[b.length - 1] = { ...b[b.length - 1], close: "abc" };

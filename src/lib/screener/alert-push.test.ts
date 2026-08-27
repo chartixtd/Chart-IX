@@ -25,25 +25,35 @@ vi.mock("@/lib/telegram-push", () => ({
 }));
 
 /**
- * admin_settings 的内存替身，只认 pending 那一行。
+ * admin_settings 的内存替身，**按 key 分行**。
  *
- * 没发成的卡片 key 存在这里，而「发不出去也不丢」正是这条路径的要点——
- * 用一个只读的固定桩替代它，就只能验到「这一轮没发」，验不到「下一轮重试」。
+ * 这里存着两样彼此独立的东西：没发成的卡片（pending，下一轮重试）和已经推过的
+ * 卡片（pushed，永不再推）。早先的替身只有一个槽位，两者会互相覆盖——
+ * 于是「重试」和「不重复推」两条路径在测试里会互相掩盖对方的 bug。
  */
-const store = { pending: null as unknown };
+const rows = new Map<string, unknown>();
+const PENDING = "screener_alert_pending";
+const PUSHED = "screener_alert_pushed";
+
 vi.mock("@/lib/supabase/middleware", () => ({
   createServiceRoleClient: () => ({
     from: () => ({
       select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: { value: store.pending } }) }),
+        eq: (_col: string, key: string) => ({
+          maybeSingle: async () => ({ data: { value: rows.get(key) ?? null } }),
+        }),
       }),
-      upsert: async (row: { value: unknown }) => {
-        store.pending = row.value;
+      upsert: async (row: { key: string; value: unknown }) => {
+        rows.set(row.key, row.value);
         return { error: null };
       },
     }),
   }),
 }));
+
+/** 台账里当前记着的 key（顺序无关，断言时排序） */
+const pushedKeys = () =>
+  ((rows.get(PUSHED) as [string, number][] | undefined) ?? []).map(([k]) => k).sort();
 
 function scenario(overrides: Partial<Scenario> = {}): Scenario {
   return {
@@ -230,7 +240,7 @@ function useSettings(over: Record<string, unknown> = {}) {
 
 describe("pushNewAlerts", () => {
   beforeEach(() => {
-    store.pending = null;
+    rows.clear();
     vi.mocked(getTelegramPushSettings).mockReset();
     vi.mocked(listTargetsFor).mockReset();
     vi.mocked(deliverToTargets).mockReset().mockResolvedValue([{ ok: true } as never]);
@@ -302,35 +312,87 @@ describe("pushNewAlerts", () => {
   });
 
   it("上一轮没发成的卡片，下一轮连同新卡一起重试", async () => {
-    store.pending = [alert.key];
+    rows.set(PENDING, [alert.key]);
     useSettings();
     // 本轮没有新卡片，全靠上一轮没发成的那张
     const out = await pushNewAlerts(input([alert], []));
 
     expect(out.pushed).toBe(1);
-    expect(store.pending).toEqual([]);
+    expect(rows.get(PENDING)).toEqual([]);
   });
 
   // 只存 key 的全部意义：攒着的期间事件结束了，就不该再推一条过期警报
   it("没发成的卡片已经失效时直接丢掉，不会推一条过期警报", async () => {
-    store.pending = ["GONE"];
+    rows.set(PENDING, ["GONE"]);
     useSettings();
 
     const out = await pushNewAlerts(input([], []));
 
     expect(deliverToTargets).not.toHaveBeenCalled();
     expect(out.skippedReason).toBe("nothing_new");
-    expect(store.pending).toEqual([]);
+    expect(rows.get(PENDING)).toEqual([]);
   });
 
   it("同一张卡既在待重试的里、又是本轮新出的，只发一条", async () => {
-    store.pending = [alert.key];
+    rows.set(PENDING, [alert.key]);
     useSettings();
 
     await pushNewAlerts(input([alert]));
 
     const rendered = vi.mocked(deliverToTargets).mock.calls[0][2]("zh");
     expect(rendered.split(/\r?\n/).filter((l) => l.includes("TIA")).length).toBe(1);
+  });
+
+  /* ── 已推送台账：一张卡只推一次 ── */
+
+  it("同一张卡第二轮又被算成「新的」时不再推——台账说了算", async () => {
+    useSettings();
+    await pushNewAlerts(input([alert]));
+    expect(pushedKeys()).toEqual([alert.key]);
+
+    // 第二轮它又出现在 newCards 里（备忘读写出岔子、或钥匙漂移时就是这样）
+    const out = await pushNewAlerts(input([alert]));
+
+    expect(deliverToTargets).toHaveBeenCalledTimes(1);
+    expect(out.skippedReason).toBe("nothing_new");
+  });
+
+  // 备忘表读失败时 readMemos 返回空 Map，那一轮**每张**卡都是「第一次看到」。
+  // 这是有意吞掉错误的降级路径，不会消失，只会偶发——台账是它唯一的挡板。
+  it("整块警报栏被误判成全新时，只有真正没推过的那张发得出去", async () => {
+    const a = card("A");
+    const b = card("B");
+    useSettings();
+    await pushNewAlerts(input([a], [a]));
+    vi.mocked(deliverToTargets).mockClear();
+
+    // 两张卡这一轮都被算成新的，但 A 上一轮已经推过
+    await pushNewAlerts(input([a, b], [a, b]));
+
+    const rendered = vi.mocked(deliverToTargets).mock.calls[0][2]("zh");
+    expect(rendered).toContain("B");
+    expect(rendered).not.toContain("A@");
+    expect(pushedKeys()).toEqual(["A", "B"]);
+  });
+
+  // 反过来写的话，一次 Telegram 故障会把整批标记成「推过了」，而它们一条都没
+  // 发出去——重复推送难看，静默漏推才是真的丢信号
+  it("投递失败时不进台账，下一轮还能重试", async () => {
+    useSettings();
+    vi.mocked(deliverToTargets).mockResolvedValue([{ ok: false, label: "群", error: "429" } as never]);
+
+    await pushNewAlerts(input([alert]));
+
+    expect(pushedKeys()).toEqual([]);
+  });
+
+  it("被单条上限切下来的那部分不进台账——它们还没发出去", async () => {
+    const many = Array.from({ length: MAX_ALERTS_PER_MESSAGE + 3 }, (_, i) => card(`C${i}`));
+    useSettings();
+
+    await pushNewAlerts(input(many));
+
+    expect(pushedKeys()).toHaveLength(MAX_ALERTS_PER_MESSAGE);
   });
 
   /* ── 投递失败 ── */
@@ -343,7 +405,7 @@ describe("pushNewAlerts", () => {
 
     expect(out.pushed).toBe(0);
     expect(out.delivered).toBe(false);
-    expect(store.pending).toEqual([alert.key]);
+    expect(rows.get(PENDING)).toEqual([alert.key]);
     expect(markPushAttempt).toHaveBeenCalledWith(false, expect.stringContaining("429"));
   });
 
@@ -357,13 +419,13 @@ describe("pushNewAlerts", () => {
 
     expect(out.pushed).toBe(MAX_ALERTS_PER_MESSAGE);
     expect(out.held).toBe(3);
-    expect(store.pending).toHaveLength(3);
+    expect(rows.get(PENDING)).toHaveLength(3);
   });
 });
 
 describe("pushActiveAlertsNow", () => {
   beforeEach(() => {
-    store.pending = null;
+    rows.clear();
     vi.mocked(getTelegramPushSettings).mockReset();
     vi.mocked(listTargetsFor).mockReset();
     vi.mocked(deliverToTargets).mockReset().mockResolvedValue([{ ok: true } as never]);
@@ -388,6 +450,30 @@ describe("pushActiveAlertsNow", () => {
     const rendered = vi.mocked(deliverToTargets).mock.calls[0][2]("zh");
     expect(rendered).toContain("TIA");
     expect(rendered).toContain("JTO");
+  });
+
+  // 查台账的话，等所有卡都推过之后这个按钮就永远发不出东西——
+  // 恰好在排查「为什么没收到」时最没用
+  it("不查台账（推过的照样再发一遍），但发完记进台账", async () => {
+    useSettings();
+    await pushNewAlerts(input([alert]));
+    vi.mocked(deliverToTargets).mockClear();
+
+    const out = await pushActiveAlertsNow(input([alert], []));
+
+    expect(out.pushed).toBe(1);
+    expect(pushedKeys()).toEqual([alert.key]);
+  });
+
+  it("手动推过之后，自动推送不会再推同一张", async () => {
+    useSettings();
+    await pushActiveAlertsNow(input([alert], []));
+    vi.mocked(deliverToTargets).mockClear();
+
+    const out = await pushNewAlerts(input([alert]));
+
+    expect(deliverToTargets).not.toHaveBeenCalled();
+    expect(out.skippedReason).toBe("nothing_new");
   });
 
   it("当前一张有效卡都没有时明确说清楚，而不是发一条空消息", async () => {

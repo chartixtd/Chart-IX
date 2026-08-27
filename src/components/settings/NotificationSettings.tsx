@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   deriveSwitchState,
   readPushState,
@@ -188,33 +189,42 @@ export function NotificationSettings() {
               {t("notifications_scanner_desc")}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void toggle()}
-            role="switch"
-            aria-checked={on}
-            aria-label={t("notifications_scanner")}
-            disabled={!interactive || busy}
-            className={cn(
-              "relative h-7 w-12 shrink-0 rounded-full transition-colors",
-              // 与 Button 的 disabled 保持一致；40 在这个深色轨道上压得太狠
-              "disabled:cursor-not-allowed disabled:opacity-50",
-              on ? "bg-gold" : "bg-bg-hover"
-            )}
-          >
-            {/* 滑块颜色必须跟着状态走，不能两态共用一个色值。
-                轨道打开时是金色 #C9A24B、关闭时是 #262117，两者一亮一暗：
-                深色滑块 #0B0A08 在金色上有 8.25:1，在深色轨道上只有 1.24:1
-                （字面意义的看不见——这就是它此前的样子）；反过来浅色滑块
-                在深色轨道上 6.10:1，在金色上却只有 1.09:1。没有哪个单一颜色
-                能同时站住，所以两态各用各的。 */}
-            <span
+          {/* prefs 为 null = 首次挂载还没读到偏好那一瞬间。这里必须跟「已确认
+              是关」区分开：此前没有加载态，開关在这段空窗期直接按 on=false
+              渲染——用户看到的是「先闪一下关，读完才变成开」，会被当成
+              「关闭又打开」的证据，其实只是还没读到数据。骨架屏诚实地说
+              「还不知道」，而不是抢先给一个可能是错的答案。 */}
+          {prefs === null ? (
+            <Skeleton className="h-7 w-12 rounded-full" />
+          ) : (
+            <button
+              type="button"
+              onClick={() => void toggle()}
+              role="switch"
+              aria-checked={on}
+              aria-label={t("notifications_scanner")}
+              disabled={!interactive || busy}
               className={cn(
-                "absolute top-1 h-5 w-5 rounded-full transition-transform",
-                on ? "translate-x-6 bg-bg-primary" : "translate-x-1 bg-text-secondary"
+                "relative h-7 w-12 shrink-0 rounded-full transition-colors",
+                // 与 Button 的 disabled 保持一致；40 在这个深色轨道上压得太狠
+                "disabled:cursor-not-allowed disabled:opacity-50",
+                on ? "bg-gold" : "bg-bg-hover"
               )}
-            />
-          </button>
+            >
+              {/* 滑块颜色必须跟着状态走，不能两态共用一个色值。
+                  轨道打开时是金色 #C9A24B、关闭时是 #262117，两者一亮一暗：
+                  深色滑块 #0B0A08 在金色上有 8.25:1，在深色轨道上只有 1.24:1
+                  （字面意义的看不见——这就是它此前的样子）；反过来浅色滑块
+                  在深色轨道上 6.10:1，在金色上却只有 1.09:1。没有哪个单一颜色
+                  能同时站住，所以两态各用各的。 */}
+              <span
+                className={cn(
+                  "absolute top-1 h-5 w-5 rounded-full transition-transform",
+                  on ? "translate-x-6 bg-bg-primary" : "translate-x-1 bg-text-secondary"
+                )}
+              />
+            </button>
+          )}
         </div>
 
         {/* iOS 上没装到主屏时 Notification API 压根不存在。给死路文案不如给出路。 */}

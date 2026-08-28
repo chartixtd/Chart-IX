@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { authorizeCronTick } from "@/lib/cron-auth";
 import { runScan, listVolumeRefreshCoins } from "@/lib/screener/pipeline";
 import { isScanDue, writeScannerCache } from "@/lib/screener/cache";
-import { pushNewAlerts } from "@/lib/screener/alert-push";
+import { pushNewAlerts, readPushedKeys } from "@/lib/screener/alert-push";
 import { getOptedInSubscriptions, sendToSubscriptions } from "@/lib/push/send";
 import { buildScreenerAlertMessage } from "@/lib/push/messages";
 import { readVolumeCache, pickStaleCoins, refreshVolumeBatch, VOLUME_REFRESH_BATCH } from "@/lib/screener/volume-cache";
@@ -54,6 +54,18 @@ export async function GET(request: NextRequest) {
     // T25 起这里是 scanner 唯一的推送出口：原先「每 4 小时发一张排行榜」那条
     // 走 telegram-push cron 的路已经删掉，改成「扫描出新警报卡就发那几张卡」。
     // 触发点必须落在扫描这一步——只有这里知道哪些卡片是**这一轮新出现的**。
+    // 已推送台账的快照，**必须在 pushNewAlerts 之前取**。
+    //
+    // 台账是 Telegram 那一路写的：投递成功后 deliverAlerts 会把这一批 key 记
+    // 进去。等它跑完再读，读到的就已经包含**当轮**这批卡了——下面的过滤会把
+    // fresh 清成空集，Telegram 每成功一次就顺带把 Web Push 静音一次。
+    // 在这里取快照，集合的含义才是想要的那个：「**往轮**已经推过的 key」。
+    //
+    // readPushedKeys 自己吞掉所有异常并返回空集合，所以这一行不会抛，
+    // 失败时下面退化成不过滤（现状行为）。
+    const pushedBefore =
+      payload.newCards.length > 0 ? await readPushedKeys() : new Set<string>();
+
     let push: Awaited<ReturnType<typeof pushNewAlerts>> = {
       pushed: 0,
       held: 0,
@@ -70,15 +82,27 @@ export async function GET(request: NextRequest) {
     // 是两套东西。它原先挂在 telegram-push cron 的定时窗口上，那个窗口随榜单
     // 推送一起删了，所以搬到同一个事件上来——「有新警报卡就通知」对两个通道
     // 是同一句话。失败不影响扫描结果，也不影响 Telegram 那一路。
+    //
+    // 这里必须自己过一遍已推送台账，不能直接信 payload.newCards。newCards 的
+    // 「新」来自备忘表（cards-store）：那张表读失败时它记一条 "all cards will
+    // look brand new" 就返回空 map，于是**当轮全部活跃卡**都会被算成新卡。
+    // Telegram 那一路靠台账挡住了这一下（pushNewAlerts 内部过滤），Web Push
+    // 这一路没有，结果是一次 DB 抖动就给每个订阅者推一条「N 个新信号」，
+    // 里面全是他昨天就看过的卡。
+    //
+    // 读台账而不是挂到 pushNewAlerts 的返回值上：那样 Telegram 的总开关
+    // （settings.enabled）会顺带静音 Web Push，而这是两个必须各自独立的通道。
+    // 用上面那份**快照**，理由见 pushedBefore 处的注释。
     try {
-      if (payload.newCards.length > 0) {
+      const fresh = payload.newCards.filter((c) => !pushedBefore.has(c.key));
+      if (fresh.length > 0) {
         const subscriptions = await getOptedInSubscriptions("screener");
         // 逐行发而不是一次群发：文案要按每台设备订阅时存下的 locale 生成，
         // 而推送在用户看不见页面时弹出，没法临时问客户端要语言
         await Promise.all(
           subscriptions.map((row) =>
             sendToSubscriptions([row], {
-              ...buildScreenerAlertMessage(row.locale, payload.newCards),
+              ...buildScreenerAlertMessage(row.locale, fresh),
               url: `/${row.locale}/screener`,
               tag: "screener",
             })

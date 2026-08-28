@@ -83,10 +83,20 @@ export async function sendToSubscriptions(
         if (row.failed_count + 1 >= MAX_FAILURES) {
           doomed.push(row.id);
         } else {
-          await supabase
-            .from("push_subscriptions")
-            .update({ failed_count: row.failed_count + 1 })
-            .eq("id", row.id);
+          // 这次 update 自己也会 reject（DB 抖动、连接池满）。裸着写的话它
+          // 会从 map 的回调里抛出去，Promise.all 立刻整体 reject：**其余所有
+          // 订阅行的结果全部作废**——doomed 的删除和 recovered 的归零都不执行，
+          // 已经发成功的 sent 计数也随函数一起消失。而这个函数的调用方之一是
+          // /api/push/test，那个原始 DB 错误会一路回显到设置页上给用户看。
+          // 计错一次失败计数远比这轻：吞掉，记日志，计数照走。
+          try {
+            await supabase
+              .from("push_subscriptions")
+              .update({ failed_count: row.failed_count + 1 })
+              .eq("id", row.id);
+          } catch (updateError) {
+            console.error("[push/send] failed_count update failed", row.id, updateError);
+          }
         }
       }
     })

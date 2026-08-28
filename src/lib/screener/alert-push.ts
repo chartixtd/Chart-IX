@@ -371,8 +371,12 @@ function parsePushedEntries(value: unknown): PushedEntry[] {
  *
  * 读失败返回空集合——那一轮退回到只靠 newCards 判断，也就是这个台账加进来
  * 之前的行为。最坏是重复推一次，而不是整轮推送因为一次 DB 抖动就没了。
+ *
+ * 对外导出是给 Web Push 扇出用的（见 cron/screener-scan）。台账由这个模块的
+ * Telegram 路径写入，但两个通道在同一轮推的是**同一批卡**，所以扇出那边读它
+ * 就够了，不需要再建一张自己的台账。
  */
-async function readPushedKeys(): Promise<Set<string>> {
+export async function readPushedKeys(): Promise<Set<string>> {
   try {
     const { data } = await createServiceRoleClient()
       .from("admin_settings")

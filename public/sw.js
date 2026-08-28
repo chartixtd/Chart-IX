@@ -164,6 +164,16 @@ self.addEventListener("push", function (event) {
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
         tag: payload.tag,
+        // 同 tag 的通知默认是**静默替换**：第二条起不响、不振动、不点亮屏幕，
+        // 只是把通知栏里那一条的文字换掉。scanner 的推送全部共用 tag:"screener"，
+        // 于是一整天里只有当天第一条会真的提醒人，后面每一条都悄无声息地覆盖掉
+        // 前一条——send.ts 那边为了让息屏安卓及时收到而付出的 urgency:"high"
+        // 到这里全部作废。「发送测试通知」按钮更严重：用户点第二次时手机毫无
+        // 动静，得到的是一个假阴性，会以为推送坏了。
+        //
+        // renotify 必须跟 tag 联动：Chrome 在 renotify:true 而无 tag 时直接抛
+        // TypeError，整条通知弹不出来。无 tag 时本来就不存在替换，也就不需要它。
+        renotify: !!payload.tag,
         data: { url: payload.url },
       }),
       self.clients.matchAll({ type: "window" }).then(function (clientList) {
@@ -185,8 +195,20 @@ self.addEventListener("notificationclick", function (event) {
       for (var i = 0; i < clientList.length; i++) {
         var client = clientList[i];
         if ("focus" in client) {
-          client.navigate(target);
-          return client.focus();
+          // client.navigate() 对**不受本 SW 控制**的窗口会 reject 一个 TypeError，
+          // 而 matchAll 这里传了 includeUncontrolled:true，正是主动把这类窗口
+          // 收了进来（SW 刚更新还没 claim、用户在别的标签页开着站点等）。
+          // 原先 navigate() 的 promise 被直接丢弃：那个 reject 无人处理，
+          // 用户点通知的结果是窗口被 focus 到**旧页面**，目标页永远没打开。
+          // 现在 navigate 失败就退回 openWindow——多开一个窗口，
+          // 远好过点了通知却什么都没发生。
+          return client.focus().then(function (c) {
+            // focus() 按规范 resolve 出 WindowClient；个别实现给 undefined，
+            // 那就退回用原来的 client 导航。
+            return (c || client).navigate(target).catch(function () {
+              return self.clients.openWindow(target);
+            });
+          });
         }
       }
       return self.clients.openWindow(target);

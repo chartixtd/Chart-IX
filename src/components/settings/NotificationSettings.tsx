@@ -14,7 +14,15 @@ import {
 } from "@/lib/push/client";
 import { cn } from "@/lib/utils";
 
-/** PUT 的 body 仍是三个键的完整对象——UI 只暴露 screener，但不能把另外两个抹掉 */
+/**
+ * GET 回来的仍是三个键（用来算显示态），但 PUT 只发**改动的那一个键**。
+ *
+ * 早先这里发的是三个键的完整对象，配合 GET 失败时的默认值兜底，效果是一次
+ * 静默重置：GET 失败 → prefs 落到写死的默认值 → 用户点一下开关 → PUT 把
+ * price_alerts/new_content 一起按默认值写回去，把用户真实的偏好覆盖掉，
+ * 而这两个键在 UI 上根本没有入口，他既看不见也改不回来。
+ * 服务端的 schema 三个键现在都是 optional，只写传来的键。
+ */
 type Prefs = { price_alerts: boolean; screener: boolean; new_content: boolean };
 type Notice = { tone: "ok" | "bad"; text: string } | null;
 
@@ -50,15 +58,32 @@ export function NotificationSettings() {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const res = await fetch("/api/user/notification-prefs").catch(() => null);
-      const json = res?.ok ? ((await res.json().catch(() => null)) as { prefs: Prefs } | null) : null;
-      // iOS 清了存储之后浏览器订阅会消失而权限还在。先静默补回来再读状态，
-      // 否则开关会显示成「关」，而用户从来没关过它。
-      await resubscribeIfNeeded(locale);
-      const next = await readPushState();
+      // 整段套 try/catch。这个效果里的每一步都可能抛（res.json() 已经接了，
+      // 但 resubscribeIfNeeded / readPushState 会碰浏览器 API），而它抛出去
+      // 就是一个 unhandled rejection：setPrefs 永远不执行，prefs 停在 null，
+      // 开关是**永久骨架屏**——页面上没有任何东西说明发生了什么，刷新也没用。
+      // 不管中间断在哪里，下面的兜底都必须跑到。
+      let loaded: Prefs | null = null;
+      let next: PushState | null = null;
+      try {
+        const res = await fetch("/api/user/notification-prefs").catch(() => null);
+        const json = res?.ok
+          ? ((await res.json().catch(() => null)) as { prefs: Prefs } | null)
+          : null;
+        loaded = json?.prefs ?? null;
+        // iOS 清了存储之后浏览器订阅会消失而权限还在。先静默补回来再读状态，
+        // 否则开关会显示成「关」，而用户从来没关过它。
+        await resubscribeIfNeeded(locale);
+        next = await readPushState();
+      } catch (err) {
+        // state 留在 null（「还不知道设备行不行」）而不是硬塞一个 unsupported：
+        // 那句「当前浏览器不支持推送通知」在这里是猜的，而且多半是错的。
+        // 真正要说的话由下面的 notice 兜底给出。
+        console.error("[NotificationSettings] 初始化失败", err);
+      }
       if (!alive) return;
-      if (json?.prefs) {
-        setPrefs(json.prefs);
+      if (loaded) {
+        setPrefs(loaded);
       } else {
         // GET 失败时不能把 prefs 留在 null——interactive 恒为 false，开关
         // 永久禁用，而 state 多半是 ready，三块降级说明一条都不触发，用户
@@ -101,78 +126,88 @@ export function NotificationSettings() {
     setBusy(true);
     setNotice(null);
 
-    if (!on) {
-      // subscribeToPush 是幂等的：已有订阅就复用，无论如何都会 POST 给服务端。
-      // 必须先它成功，再写偏好。
-      const result = await subscribeToPush(locale);
-      if (result !== "ok") {
-        setNotice({
-          tone: "bad",
-          text:
-            result === "denied"
-              ? tPwa("push_denied")
-              : result === "unsupported"
-                ? tPwa("push_unsupported")
-                : tPwa("push_error"),
-        });
-        setState(await readPushState());
-        setBusy(false);
+    // try/finally：原先四条返回路径各写一句 setBusy(false)，任何一句抛出的
+    // 异常都会跳过它——开关从此永久禁用（disabled={!interactive || busy}），
+    // 用户唯一的出路是刷新页面，而页面上没有任何提示告诉他要刷新。
+    try {
+      if (!on) {
+        // subscribeToPush 是幂等的：已有订阅就复用，无论如何都会 POST 给服务端。
+        // 必须先它成功，再写偏好。
+        const result = await subscribeToPush(locale);
+        if (result !== "ok") {
+          setNotice({
+            tone: "bad",
+            text:
+              result === "denied"
+                ? tPwa("push_denied")
+                : result === "unsupported"
+                  ? tPwa("push_unsupported")
+                  : tPwa("push_error"),
+          });
+          setState(await readPushState());
+          return;
+        }
+      }
+
+      // 只发 screener 这一个键。发整个 prefs 对象的话，GET 失败走了默认值兜底
+      // 的那次会话里，这一下点击会把用户真实的 price_alerts/new_content
+      // 一起重置成默认值——而这两个键在 UI 上没有入口，改回不来。
+      const res = await fetch("/api/user/notification-prefs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ screener: !on }),
+      }).catch(() => null);
+
+      if (!res?.ok) {
+        // PUT 失败不能让 UI 和数据库悄悄分叉——保持原样并说出来
+        setNotice({ tone: "bad", text: tPwa("push_error") });
         return;
       }
-    }
 
-    const next: Prefs = { ...prefs, screener: !on };
-    const res = await fetch("/api/user/notification-prefs", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(next),
-    }).catch(() => null);
-
-    if (!res?.ok) {
-      // PUT 失败不能让 UI 和数据库悄悄分叉——保持原样并说出来
-      setNotice({ tone: "bad", text: tPwa("push_error") });
+      setPrefs({ ...prefs, screener: !on });
+      setState(await readPushState());
+    } finally {
       setBusy(false);
-      return;
     }
-
-    setPrefs(next);
-    setState(await readPushState());
-    setBusy(false);
   }, [prefs, state, busy, on, locale, tPwa]);
 
   const sendTest = useCallback(async () => {
     setBusy(true);
     setNotice(null);
-    const res = await fetch("/api/push/test", { method: "POST" }).catch(() => null);
-    const json = res
-      ? ((await res.json().catch(() => null)) as { sent?: number; error?: string } | null)
-      : null;
+    // 同 toggle 的理由：busy 卡在 true 会把这个按钮和上面的开关一起永久禁用。
+    // 冷却也放进 finally——它的作用是挡连点，而失败之后的连点最需要被挡住。
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" }).catch(() => null);
+      const json = res
+        ? ((await res.json().catch(() => null)) as { sent?: number; error?: string } | null)
+        : null;
 
-    if (res?.ok) {
-      // sent === 0 说明 send.ts 刚按 404/410 把失效端点删掉了。关掉再打开
-      // 会走完整的重新订阅，这是用户自己能做的修复。
-      setNotice(
-        (json?.sent ?? 0) > 0
-          ? { tone: "ok", text: t("notifications_test_sent") }
-          : { tone: "bad", text: t("notifications_test_stale") }
-      );
-    } else if (json?.error === "no_subscription") {
-      setNotice({ tone: "bad", text: t("notifications_test_stale") });
-    } else if (res?.status === 401) {
-      // 内部错误码，不能原样显示给用户
-      setNotice({ tone: "bad", text: t("please_login") });
-    } else if (res?.status === 429) {
-      // 服务端限流的内部错误码（"rate_limited"），同样不能原样显示
-      setNotice({ tone: "bad", text: t("notifications_test_cooldown") });
-    } else {
-      // 其余情况原样回显服务端消息——VAPID 变量缺失时 sendToSubscriptions
-      // 抛的是一句明确的中文错误，那是「为什么收不到」最有用的答案，
-      // 这个兜底是有意的，不要连它一起改掉
-      setNotice({ tone: "bad", text: json?.error ?? tPwa("push_error") });
+      if (res?.ok) {
+        // sent === 0 说明 send.ts 刚按 404/410 把失效端点删掉了。关掉再打开
+        // 会走完整的重新订阅，这是用户自己能做的修复。
+        setNotice(
+          (json?.sent ?? 0) > 0
+            ? { tone: "ok", text: t("notifications_test_sent") }
+            : { tone: "bad", text: t("notifications_test_stale") }
+        );
+      } else if (json?.error === "no_subscription") {
+        setNotice({ tone: "bad", text: t("notifications_test_stale") });
+      } else if (res?.status === 401) {
+        // 内部错误码，不能原样显示给用户
+        setNotice({ tone: "bad", text: t("please_login") });
+      } else if (res?.status === 429) {
+        // 服务端限流的内部错误码（"rate_limited"），同样不能原样显示
+        setNotice({ tone: "bad", text: t("notifications_test_cooldown") });
+      } else {
+        // 其余情况原样回显服务端消息——VAPID 变量缺失时 sendToSubscriptions
+        // 抛的是一句明确的中文错误，那是「为什么收不到」最有用的答案，
+        // 这个兜底是有意的，不要连它一起改掉
+        setNotice({ tone: "bad", text: json?.error ?? tPwa("push_error") });
+      }
+    } finally {
+      setBusy(false);
+      setCooling(true);
     }
-
-    setBusy(false);
-    setCooling(true);
   }, [t, tPwa]);
 
   return (

@@ -56,7 +56,19 @@ export async function sendToSubscriptions(
             endpoint: row.endpoint,
             keys: { p256dh: row.p256dh, auth: row.auth },
           },
-          JSON.stringify(payload)
+          JSON.stringify(payload),
+          {
+            // urgency 不传时库默认 "normal"——安卓息屏进 Doze 后（恰恰是
+            // 「应用关着、手机在兜里」的场景）FCM 会把 normal 优先级的推送
+            // 攒着批量延迟投递，晚几分钟到几十分钟都有可能。这里发的全是
+            // 时效性内容（警报刚触发、价格刚穿线），晚到等于没到。
+            // high 的代价是多耗一点电，但这是用户明确开启的交易警报，值得。
+            urgency: "high",
+            // 默认 TTL 是四周：手机关机几天再开，会补投一条几天前的旧警报，
+            // 而过时的警报补发反而有害（价格早就走完了）。一小时是平衡点——
+            // 电梯/地铁里断网几分钟仍能收到，隔夜的直接由推送服务丢弃。
+            TTL: 3600,
+          }
         );
         sent += 1;
         if (row.failed_count > 0) recovered.push(row.id);

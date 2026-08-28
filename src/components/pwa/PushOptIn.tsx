@@ -28,19 +28,25 @@ export function PushOptIn({
   const enable = async () => {
     setBusy(true);
     setError(null);
-    const result = await subscribeToPush(locale);
-    setBusy(false);
-    if (result === "ok") {
-      onGranted?.();
-      onClose();
-      return;
-    }
-    if (result === "denied") {
-      setError(t("push_denied"));
-    } else if (result === "error") {
-      setError(t("push_error"));
-    } else {
-      setError(t("push_unsupported"));
+    try {
+      const result = await subscribeToPush(locale);
+      if (result === "ok") {
+        onGranted?.();
+        onClose();
+        return;
+      }
+      if (result === "denied") {
+        setError(t("push_denied"));
+      } else if (result === "error") {
+        setError(t("push_error"));
+      } else {
+        setError(t("push_unsupported"));
+      }
+    } finally {
+      // finally 而不是一句 setBusy(false)：subscribeToPush 现在已经自己兜住了
+      // 异常，但这个按钮的 loading 态不该依赖那个约定——任何一条抛出的路径
+      // （包括将来新加的）都会把按钮永久锁在转圈状态，而弹窗里没有别的出口。
+      setBusy(false);
     }
   };
 

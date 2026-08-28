@@ -9,6 +9,7 @@ import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
 import { createClient } from "@/lib/supabase/client";
 import { buildMoreEntries } from "@/lib/nav/tabs";
 import { purgePageCache } from "@/stores/pwa";
+import { unsubscribeFromPush } from "@/lib/push/client";
 import { Button } from "@/components/ui/Button";
 
 export default function MorePage() {
@@ -30,6 +31,9 @@ export default function MorePage() {
 
   const handleLogout = useCallback(async () => {
     const supabase = createClient();
+    // 顺序与 catch 的理由见 Navbar.tsx 的同名处理函数：退订要在 signOut 之前
+    // （unsubscribe 路由要鉴权），失败也不能挡住登出。
+    await unsubscribeFromPush().catch(() => {});
     await supabase.auth.signOut();
     await purgePageCache();
     router.push(`/${locale}`);

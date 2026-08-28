@@ -7,6 +7,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { purgePageCache } from "@/stores/pwa";
+import { unsubscribeFromPush } from "@/lib/push/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Button } from "@/components/ui/Button";
@@ -83,6 +84,12 @@ export function Navbar() {
 
   const handleLogout = useCallback(async () => {
     const supabase = createClient();
+    // 退订必须排在 signOut() 之前：/api/push/unsubscribe 要鉴权，会话没了就
+    // 401，库里那一行删不掉。而留着那一行的后果跟 purgePageCache 是同一类
+    // 隐私问题、且更刺眼——共用手机上，前一个人的到价提醒会带着币种和价格
+    // 主动弹到锁屏，弹给现在拿着这台手机的另一个人。
+    // catch 掉是因为登出不能因为退订失败而卡住：网络断了也得让人走得掉。
+    await unsubscribeFromPush().catch(() => {});
     await supabase.auth.signOut();
     // 缓存里的仪表盘/订单页 HTML 含用户数据，登出后必须清掉
     await purgePageCache();

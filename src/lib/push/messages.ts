@@ -62,8 +62,19 @@ const COPY: Record<Locale, {
   },
 };
 
+/**
+ * 必须用 hasOwnProperty 而不是 `in`：`in` 走原型链，于是
+ * `"toString" in COPY === true`、`"valueOf" in COPY === true`，
+ * pick("toString") 会返回 Function.prototype.toString，紧接着
+ * `copy.alertTitle(...)` 就是一个 TypeError——推送整轮炸掉。
+ *
+ * locale 现在在 subscribe 路由已经是 z.enum 白名单了，这里是纵深防御：
+ * 挡的是白名单落地**之前**已经写进 DB 的脏值，那些行谁也不会去回补。
+ */
 function pick(locale: string) {
-  return COPY[(locale as Locale) in COPY ? (locale as Locale) : "en-US"];
+  return Object.prototype.hasOwnProperty.call(COPY, locale)
+    ? COPY[locale as Locale]
+    : COPY["en-US"];
 }
 
 export function buildAlertMessage(

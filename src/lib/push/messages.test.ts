@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildScreenerAlertMessage } from "./messages";
+import { buildScreenerAlertMessage, buildTestMessage } from "./messages";
 import type { AlertCardData } from "@/lib/screener/cards";
 import type { Scenario } from "@/lib/screener/factors/scenario";
 
@@ -97,5 +97,36 @@ describe("buildScreenerAlertMessage", () => {
     const msg = buildScreenerAlertMessage("zh-CN", []);
     expect(msg.title).toBe("🚨 0 个新信号");
     expect(msg.body).toBe("");
+  });
+});
+
+/**
+ * 文案表是个普通对象字面量，用 `in` 查键会走原型链：`"toString" in COPY`
+ * 为真，于是 pick() 返回 Function.prototype.toString，下一行调 copy.alertTitle
+ * 就是 TypeError，整轮推送连同 cron 一起炸。locale 现在在 subscribe 路由是
+ * z.enum 白名单，但白名单之前写进 DB 的脏值不会有人回补，所以这道纵深防御
+ * 要有测试钉住。
+ */
+describe("locale 的原型链键不能穿过文案表", () => {
+  for (const key of ["toString", "valueOf", "constructor", "__proto__", "hasOwnProperty"]) {
+    it(`buildScreenerAlertMessage("${key}") 落到 en-US 而不是抛`, () => {
+      const msg = buildScreenerAlertMessage(key, [card({ coin: "A" }), card({ coin: "B" })]);
+      expect(msg.title).toBe("🚨 2 new signals");
+    });
+
+    it(`buildTestMessage("${key}") 落到 en-US 而不是抛`, () => {
+      expect(buildTestMessage(key).title).toBe("Chart-IX test notification");
+    });
+  }
+
+  it("单卡路径也不能被原型链键带崩", () => {
+    const msg = buildScreenerAlertMessage("toString", [card()]);
+    expect(msg.title).toBe("🚨 TIA Healthy Trend");
+  });
+
+  it("正常的三种 locale 不受影响", () => {
+    expect(buildTestMessage("zh-CN").title).toBe("Chart-IX 测试通知");
+    expect(buildTestMessage("ms-MY").title).toBe("Pemberitahuan ujian Chart-IX");
+    expect(buildTestMessage("en-US").title).toBe("Chart-IX test notification");
   });
 });

@@ -72,7 +72,7 @@ export function oiCloses(bars: CoinGlassOiBar[]): number[] {
  *
  * 「已确认」= findPivots 的定义：左右各 PIVOT_N 根都没有更极端的值。
  * 代价是最新的 PIVOT_N 根永远不可能成为摆动点（右侧还没走完），
- * 也就是所有基于摆动点的判定天生带 2.5 小时确认延迟。这是规格
+ * 也就是所有基于摆动点的判定天生带 1 小时确认延迟。这是规格
  * 「用 swing 比较」必然要付的成本，不是实现缺陷。
  */
 export function lastTwoPivots(

@@ -25,6 +25,7 @@ function card(overrides: Partial<AlertCardData> = {}): AlertCardData {
     coin: "TIA",
     trigger: { type: "scenario", scenario: scenario() },
     direction: "long",
+    expired: false,
     factors: { oi: 26, cvd: 13 },
     total: 39,
     firstSeenAt: "2026-08-26T00:00:00.000Z",

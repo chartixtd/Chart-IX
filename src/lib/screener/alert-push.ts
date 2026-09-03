@@ -243,7 +243,10 @@ export async function pushNewAlerts(payload: AlertPushInput): Promise<AlertPushO
   // 候选 = 上一轮没发成的 + 当轮新出的，再跟当轮仍然成立的卡片求交集。
   // 交集这一步同时做掉三件事：剔除已经失效的旧 key、去重、把顺序统一成
   // cards 的排序（总分降序），于是消息里最强的排在最前面。
-  const valid = new Map(payload.cards.map((c) => [c.key, c]));
+  // 已结束的卡（expired）只是留给人「找得到」用的，绝不能进推送队列——
+  // 它们的信号已经没了，推出去就是在报一个过期的东西。
+  const liveCards = payload.cards.filter((c) => !c.expired);
+  const valid = new Map(liveCards.map((c) => [c.key, c]));
   const carried = (await readPendingKeys()).filter((k) => valid.has(k));
   const candidates = new Set([...carried, ...payload.newCards.map((c) => c.key)]);
 
@@ -251,7 +254,7 @@ export async function pushNewAlerts(payload: AlertPushInput): Promise<AlertPushO
   // newCards 只是「按备忘表推断它是新的」，而备忘表的读写都有静默降级路径
   // （见 PUSHED_KEY 顶上那段），推断塌掉时整块警报栏会重推一遍。
   const pushed = await readPushedKeys();
-  const queue = payload.cards.filter((c) => candidates.has(c.key) && !pushed.has(c.key));
+  const queue = liveCards.filter((c) => candidates.has(c.key) && !pushed.has(c.key));
 
   if (queue.length === 0) {
     await writePendingKeys([]);

@@ -1013,7 +1013,9 @@
       "invalidation": "Invalid at",
       "invalidated": "Invalidated",
       "page_hint": "A card disappears when its scenario ends, changes, or price breaks the invalidation level",
-      "trade": "Trade →"
+      "trade": "Trade →",
+      "ended": "Ended",
+      "ended_hint": "Signal is over — kept briefly so you can match it to the push"
     },
     "source_note": "Data from CoinGlass · price and execution on BingX · candles from {exchange}",
     "scenarios": {

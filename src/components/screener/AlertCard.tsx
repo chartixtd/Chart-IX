@@ -78,22 +78,37 @@ export function AlertCard({
   // 实时穿线先变灰、划掉操作指令；服务端下一轮扫描确认后这张卡才真正消失。
   // 分两步而不是直接消失，是因为消失要等最多 15 分钟，而「别再按它操作」
   // 这件事你应该在一秒内就知道。
+  // 两种「这张卡别再按它操作了」：
+  //   expired —— 服务端已经算不出这个信号了（失效/结构变了/点火过期）。
+  //     卡片不立刻消失而是灰着留一段时间，是为了让 Telegram 推过来的币
+  //     在页面上找得到——推的那一刻它一定在，几十分钟后就不一定了。
+  //   dead —— 实时价刚刚穿了失效线，但服务端下一轮（最多 15 分钟）才会确认。
+  //     先变灰是因为「别再按它操作」这件事应该在一秒内知道，不该等一刻钟。
   const dead =
-    card.invalidation !== null &&
-    livePrice !== null &&
-    isInvalidated(card.invalidation, livePrice, livePrice);
+    card.expired ||
+    (card.invalidation !== null &&
+      livePrice !== null &&
+      isInvalidated(card.invalidation, livePrice, livePrice));
 
   const toneCls = toneFor(trigger);
   const dirCls = DIRECTION_CLASSES[direction];
 
-  // 「X 前触发」和新鲜度用的是**信号真正发生的时刻**，不是 firstSeenAt。
-  // 两者对场景卡是一回事，对点火卡不是：点火那根 K 线可能在我们扫到它之前
-  // 就走完了（扫描 15 分钟一轮、K 线 30 分钟一根），用 firstSeenAt 会把一次
-  // 半小时前的点火说成「刚刚」。firstSeenAt 仍然管首次价与累计涨跌——那两个
-  // 数就该锚在我们第一次记录它的那一刻。
-  const triggeredAt = new Date(
-    trigger.type === "ignition" ? trigger.ignition.ignitedAt : trigger.scenario.triggeredAt
-  ).toISOString();
+  // 「X 前触发」= **这张卡什么时候出现的**，两种触发源取的东西不同：
+  //
+  //   点火卡 → ignitedAt（点火那根 K 线的时刻）。它有上限（最多 8 根 = 4 小时），
+  //     而且比 firstSeenAt 准：点火那根可能在我们扫到它之前就走完了
+  //     （扫描 15 分钟一轮、K 线 30 分钟一根），用 firstSeenAt 会把一次
+  //     半小时前的点火说成「刚刚」。
+  //
+  //   场景卡 → firstSeenAt。**这里曾经也用结构锚点（scenario.triggeredAt），
+  //     那是错的**：场景锚在已确认的摆动点或被扫的 SSL/BSL 上，它可以是一天前
+  //     的事——线上实测锚点在 7–22 小时前，而卡片是 6 分钟前才出现的，
+  //     卡上却写着「22小时前触发」。锚点回答的是「结构在哪儿成形」，
+  //     不是「这个警报什么时候来的」，而后者才是这行字要答的问题。
+  const triggeredAt =
+    trigger.type === "ignition"
+      ? new Date(trigger.ignition.ignitedAt).toISOString()
+      : card.firstSeenAt;
   const fresh = freshness(triggeredAt);
 
   // 场景卡与点火卡在这三格上说的是不同的话，其余版式完全共用。
@@ -198,8 +213,13 @@ export function AlertCard({
           </span>
         )}
         {dead && (
-          <span className="ml-auto rounded-xs bg-danger/15 px-1.5 py-px text-[10px] font-semibold text-danger">
-            {t("alerts.invalidated")}
+          <span
+            className={cn(
+              "ml-auto rounded-xs px-1.5 py-px text-[10px] font-semibold",
+              card.expired ? "bg-text-muted/15 text-text-muted" : "bg-danger/15 text-danger"
+            )}
+          >
+            {card.expired ? t("alerts.ended") : t("alerts.invalidated")}
           </span>
         )}
       </div>

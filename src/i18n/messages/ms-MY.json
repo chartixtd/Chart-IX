@@ -937,7 +937,9 @@
       "invalidation": "Tidak sah pada",
       "invalidated": "Tidak sah",
       "page_hint": "Kad hilang apabila senario tamat, berubah, atau harga menembusi paras tidak sah",
-      "trade": "Dagang →"
+      "trade": "Dagang →",
+      "ended": "Tamat",
+      "ended_hint": "Isyarat sudah tamat — dikekalkan sebentar untuk padanan dengan tolakan"
     },
     "source_note": "Data daripada CoinGlass · harga dan dagangan di BingX · lilin daripada {exchange}",
     "scenarios": {

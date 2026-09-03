@@ -72,6 +72,19 @@ export interface AlertCardData {
   peakPct: number;
   /** 失效线；锚点价格非法时为 null */
   invalidation: InvalidationLine | null;
+  /**
+   * 这张卡的信号**已经结束**，留在这里只是为了让人找得到。
+   *
+   * 存在的理由是一个真实抱怨：Telegram 推过来的币，点进页面找不到。
+   * 推送是某一刻的快照（推的那一批就是当轮 payload.cards 的子集），而页面
+   * 是「现在」——中间隔了几十分钟到几小时，卡片早就因为失效/结构变了/
+   * 点火过期而不再被算出来。页面上什么都不留，看起来就像推送在乱报。
+   *
+   * 现在这种卡会**灰着留一段时间**（CARD_GRACE_MS），标成「已结束」。
+   * 这跟前端实时穿线只变灰不消失是同一个取舍：消失让人无从判断发生过什么，
+   * 而「发生过、已经结束」是一个有用的答案。
+   */
+  expired: boolean;
 }
 
 /** 触发价 → 现价的顺方向涨跌幅。做空时符号翻过来，跌了才是正的。 */
@@ -201,6 +214,7 @@ export function buildCard({ row, priceBars, memo, now }: BuildCardInput): BuildC
       firstPrice,
       peakPct,
       invalidation: line,
+      expired: false,
     },
     newMemo,
   };

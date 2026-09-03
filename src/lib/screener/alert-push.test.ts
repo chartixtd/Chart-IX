@@ -82,6 +82,7 @@ const alert: AlertCardData = {
   firstPrice: 0.2961,
   peakPct: 0,
   invalidation: { price: 0.28, breach: "below" },
+  expired: false,
 };
 
 describe("formatAlertMessage", () => {

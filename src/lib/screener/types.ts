@@ -233,7 +233,19 @@ export interface ScannerRow {
  * 版本对不上就当缓存不存在，下一个请求重算一遍——代价是一轮扫描，
  * 比白屏便宜太多。
  */
-export const SCANNER_PAYLOAD_VERSION = 6;
+/**
+ * 信号结束之后，卡片还灰着留多久。
+ *
+ * 这个值要覆盖「收到 Telegram 推送 → 有空点开看」的典型间隔。推送实测每
+ * 20–35 分钟就有一批，而人不会每次都马上看。2 小时够覆盖绝大多数情况，
+ * 又不至于让警报栏堆满昨天的东西。
+ */
+export const CARD_GRACE_MS = 2 * 60 * 60 * 1000;
+
+/** 最多同时留几张已结束的卡。防止行情剧烈时警报栏被灰卡淹掉。 */
+export const CARD_GRACE_MAX = 12;
+
+export const SCANNER_PAYLOAD_VERSION = 7;
 
 export interface ScannerPayload {
   /** 见 SCANNER_PAYLOAD_VERSION —— 形状对不上的缓存一律丢弃 */

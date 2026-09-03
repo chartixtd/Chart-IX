@@ -37,6 +37,32 @@ export async function readScannerCache(): Promise<ScannerPayload | null> {
   }
 }
 
+/**
+ * 读上一轮的 payload，**无视 TTL**。
+ *
+ * readScannerCache 会把过期的当作不存在（那是它的职责：过期就该重算），
+ * 但「把上一轮还没结束多久的卡片接着显示一会儿」恰恰需要那份过期数据。
+ * 两个函数分开，是为了不让「续命」这件事污染缓存新鲜度的判断。
+ *
+ * 形状版本仍然要对得上——旧版本的卡片结构跟当前代码不一样，接过来只会
+ * 在前端炸（这个坑修过一次，见 SCANNER_PAYLOAD_VERSION）。
+ */
+export async function readLastScannerPayload(): Promise<ScannerPayload | null> {
+  try {
+    const client = createServiceRoleClient();
+    const { data } = await client
+      .from("screener_cache")
+      .select("payload")
+      .eq("id", 1)
+      .maybeSingle();
+    const payload = (data as { payload?: unknown } | null)?.payload as Partial<ScannerPayload> | null;
+    if (!payload || payload.version !== SCANNER_PAYLOAD_VERSION) return null;
+    return payload as ScannerPayload;
+  } catch {
+    return null;
+  }
+}
+
 /** 写入失败只记录、不抛出——一次算好的结果不能因为存不进 DB 就白算。 */
 export async function writeScannerCache(payload: ScannerPayload): Promise<void> {
   try {

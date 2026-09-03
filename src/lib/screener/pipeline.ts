@@ -21,6 +21,7 @@ import { readVolumeCache } from "./volume-cache";
 import type { CachedVolume } from "./volume-cache";
 import { readMemos, saveMemos } from "./cards-store";
 import { buildCard, sortCards, memoKey, ignitionMemoKey } from "./cards";
+import { readLastScannerPayload } from "./cache";
 import type { AlertCardData, ScenarioMemo } from "./cards";
 import { pickDirection, amplitudeFromBars } from "./score";
 import { pickFundingRate } from "./funding";
@@ -28,7 +29,13 @@ import { classifyScenario } from "./factors/scenario";
 import { scenarioInvalidated } from "./invalidation";
 import { detectIgnition } from "./ignition";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
-import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS, SCANNER_PAYLOAD_VERSION } from "./types";
+import {
+  QUIET_RANK_TAKE,
+  CARD_RESERVE_SLOTS,
+  SCANNER_PAYLOAD_VERSION,
+  CARD_GRACE_MS,
+  CARD_GRACE_MAX,
+} from "./types";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -467,10 +474,30 @@ export async function runScan(): Promise<ScannerPayload> {
   );
 
   const newKeys = new Set(newMemos.map((m) => m.key));
+
+  // 信号已经结束、但结束得还不久的卡片，灰着留一会儿（见 CARD_GRACE_MS）。
+  //
+  // 修的是一个真实抱怨：Telegram 推过来的币，点进页面找不到。推送推的就是
+  // 当轮 payload.cards 的子集，所以推的那一刻它一定在页面上；找不到是因为
+  // 中间隔了几十分钟到几小时，卡片早就不再被算出来了。页面什么都不留，
+  // 看起来就像推送在乱报。
+  //
+  // 只接**上一轮**的卡片，不去翻更早的历史：上一轮的 payload 里已经含着它
+  // 自己接过来的灰卡，于是「结束多久」是靠 firstSeenAt + 宽限期截断的，
+  // 不需要额外记一张台账。
+  const live = new Set(cards.map((c) => c.key));
+  const carried = (await readLastScannerPayload())?.cards ?? [];
+  const expired = carried
+    .filter((c) => !live.has(c.key))
+    .filter((c) => now - new Date(c.firstSeenAt).getTime() < CARD_GRACE_MS)
+    .slice(0, CARD_GRACE_MAX)
+    .map((c) => ({ ...c, expired: true }));
+
   return {
     version: SCANNER_PAYLOAD_VERSION,
     rows,
-    cards: sortCards(cards),
+    // 活着的排前面，已结束的一律沉底——警报栏第一眼要看的是「现在能做什么」。
+    cards: [...sortCards(cards), ...expired],
     newCards: cards.filter((c) => newKeys.has(c.key)),
     computedAt: now,
   };

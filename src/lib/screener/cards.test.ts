@@ -198,6 +198,7 @@ describe("sortCards", () => {
     firstPrice: 1,
     peakPct: 0,
     invalidation: null,
+    expired: false,
   });
 
   it("总分高的在上——打开警报栏要问的是「现在最值得看哪个」", () => {
@@ -311,5 +312,13 @@ describe("buildCard —— 点火卡", () => {
 
   it("点火卡与场景卡的钥匙不会撞车", () => {
     expect(ignitionMemoKey("TIA-USDT", ignition())).not.toBe(memoKey("TIA-USDT", scenario()));
+  });
+});
+
+describe("新出的卡不带 expired 标记", () => {
+  it("buildCard 产出的一律是活卡——expired 只由流水线接上一轮时才置上", () => {
+    // 写反的话，刚判出来的信号会被当成「已结束」灰掉，而且不会报错。
+    const r = buildCard({ row: row(), priceBars: [], memo: undefined, now: T0 });
+    expect(r.card?.expired).toBe(false);
   });
 });

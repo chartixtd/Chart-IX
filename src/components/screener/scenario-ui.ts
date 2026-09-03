@@ -1,4 +1,9 @@
-import type { ScenarioKind, ScenarioDirection, ScenarioStrength } from "@/lib/screener/factors/scenario";
+import type {
+  Scenario,
+  ScenarioKind,
+  ScenarioDirection,
+  ScenarioStrength,
+} from "@/lib/screener/factors/scenario";
 import type { CardTrigger } from "@/lib/screener/cards";
 
 /**
@@ -192,3 +197,25 @@ export const STRENGTH_CLASSES: Record<ScenarioStrength, { bg: string; text: stri
   medium: { bg: "bg-accent-orange/15", text: "text-accent-orange" },
   healthy: { bg: "bg-text-secondary/15", text: "text-text-secondary" },
 };
+
+/**
+ * 场景文案（name / action / reading）的 ICU 变量。
+ *
+ * **任何 t("scenarios.*") 调用都必须带上它。** A2/A4/B4 的名称与操作用
+ * `{strength, select}` / `{oiState, select}` 从数据选词——这是为了让形容词
+ * 不可能跟数字矛盾（详见 factors/scenario.ts 的 Scenario.oiState）。代价是
+ * 少传变量时 next-intl 会把**模板原文**直接渲染到界面上。
+ *
+ * 这不是假设：改完文案那一版，速查表和主扫描表的场景列上真的显示出了
+ * 「{strength, select, medium{True Bottom Divergence} other{…}}」这一整串。
+ * 两个调用点都只是漏传了变量，而 TypeScript 管不到 t() 的参数。
+ *
+ * 所以取变量这件事只留这一个入口：有 scenario 就用它的真值，没有（速查表
+ * 那种泛列，本来就不对应任何一次具体判定）就用默认值渲染主要说法。
+ */
+export function scenarioVars(scenario?: Pick<Scenario, "strength" | "oiState">) {
+  return {
+    strength: scenario?.strength ?? "strongest",
+    oiState: scenario?.oiState ?? "up",
+  };
+}

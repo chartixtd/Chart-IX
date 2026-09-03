@@ -12,7 +12,7 @@ import { formatCompactUsd } from "@/lib/market-cap";
 import type { ScannerRow } from "@/lib/screener/types";
 import type { SortKey } from "@/lib/screener/filter";
 import { FactorStack } from "./FactorStack";
-import { TONE_CLASSES } from "./scenario-ui";
+import { TONE_CLASSES, scenarioVars } from "./scenario-ui";
 
 export const ScannerTable = memo(function ScannerTable({
   rows,
@@ -89,7 +89,8 @@ export const ScannerTable = memo(function ScannerTable({
       render: (r) => {
         if (!r.scenario) return <span className="text-text-muted">—</span>;
         const cls = TONE_CLASSES[r.scenario.kind];
-        const name = t(`scenarios.${r.scenario.kind}.name`);
+        // 变量必须传，否则渲染出的是 ICU 模板原文。见 scenario-ui.ts 的 scenarioVars。
+        const name = t(`scenarios.${r.scenario.kind}.name`, scenarioVars(r.scenario));
         return (
           <span
             className={cn(

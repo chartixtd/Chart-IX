@@ -8,7 +8,13 @@ import { ScanCountdown } from "@/components/screener/ScanCountdown";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
-import { SCENARIO_KINDS, TRAP_KINDS, TONE_CLASSES, IGNITION_TONE } from "@/components/screener/scenario-ui";
+import {
+  SCENARIO_KINDS,
+  TRAP_KINDS,
+  TONE_CLASSES,
+  IGNITION_TONE,
+  scenarioVars,
+} from "@/components/screener/scenario-ui";
 
 /**
  * 主扫描表与警报卡片的公共外壳：标题、倒计时、刷新、图例、以及两个子页的
@@ -99,13 +105,7 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
           {t("guide.title")}
         </summary>
         <div className="space-y-2.5 border-t border-border-default px-4 py-3 text-xs leading-relaxed text-text-secondary">
-          <p>{t("guide.oi")}</p>
-          <p>{t("guide.cvd")}</p>
-          <p className="rounded-sm bg-bg-tertiary px-3 py-2">{t("guide.alert")}</p>
           <div>
-            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-text-muted lg:text-[10px]">
-              {t("guide.scenarios_title")}
-            </p>
             <ul className="space-y-1">
               {/* 点火排在六场景之前：选币口径改成「最安静」之后，警报栏里
                   绝大多数是点火卡（安静的币判不出场景），把最常见的那一类
@@ -123,9 +123,9 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
                 <li key={kind} className="flex items-baseline gap-1.5">
                   <span className={cn("inline-flex items-center gap-1 font-medium", TONE_CLASSES[kind].text)}>
                     {TRAP_KINDS.has(kind) && <Icon name="alert" className="h-3 w-3" />}
-                    {t(`scenarios.${kind}.name`)}
+                    {t(`scenarios.${kind}.name`, scenarioVars())}
                   </span>
-                  <span>— {t(`scenarios.${kind}.action`)}</span>
+                  <span>— {t(`scenarios.${kind}.action`, scenarioVars())}</span>
                 </li>
               ))}
             </ul>

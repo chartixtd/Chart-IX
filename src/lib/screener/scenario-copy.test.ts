@@ -3,6 +3,7 @@ import { OI_STATES_BY_KIND } from "./factors/scenario";
 import type { Scenario, ScenarioKind, ScenarioStrength } from "./factors/scenario";
 import type { OiState } from "./factors/series";
 import { scenarioLabel, scenarioAction } from "./alert-copy";
+import { scenarioVars } from "@/components/screener/scenario-ui";
 import zh from "@/i18n/messages/zh-CN.json";
 import en from "@/i18n/messages/en-US.json";
 import ms from "@/i18n/messages/ms-MY.json";
@@ -129,5 +130,44 @@ describe("推送文案跟卡片文案不许分叉", () => {
     expect(scenarioLabel("en", scenario({ oiState: "down" }))).not.toBe(
       scenarioLabel("en", scenario({ oiState: "up" }))
     );
+  });
+});
+
+/**
+ * ICU 变量必须被 scenarioVars 全覆盖。
+ *
+ * 这一条是线上事故补的：改成 select 之后，速查表和主扫描表两个调用点都忘了
+ * 传变量，next-intl 于是把**模板原文**渲染了出来——界面上直接显示
+ * 「{strength, select, medium{True Bottom Divergence} other{…}}」这一整串。
+ *
+ * TypeScript 管不到 t() 的参数，编译和当时的全部测试都是绿的。所以这里换个
+ * 角度盯：把所有场景文案里出现过的 select 变量名抽出来，要求 scenarioVars
+ * 每一个都提供。以后谁在文案里新加一个 `{foo, select, …}` 而没把 foo 加进
+ * scenarioVars，这条就会红——而 scenarioVars 是所有调用点唯一的取值入口。
+ */
+describe("ICU 变量覆盖", () => {
+  it("文案里用到的每个 select 变量，scenarioVars 都得给", () => {
+    const provided = new Set(Object.keys(scenarioVars()));
+    const used = new Set<string>();
+    for (const loc of Object.keys(LOCALES) as Array<keyof typeof LOCALES>) {
+      for (const kind of KINDS) {
+        const c = copyOf(loc, kind);
+        for (const field of ["name", "action", "reading"] as const) {
+          for (const m of c[field].matchAll(/\{\s*([a-zA-Z][a-zA-Z0-9]*)\s*,\s*select/g)) {
+            used.add(m[1]);
+          }
+        }
+      }
+    }
+    expect(used.size, "一个 select 都没有？那这套选词机制已经被改没了").toBeGreaterThan(0);
+    for (const v of used) {
+      expect(provided.has(v), `文案用了 {${v}, select} 但 scenarioVars 没提供它`).toBe(true);
+    }
+  });
+
+  it("scenarioVars 的默认值能渲染出主要说法——速查表那种泛列没有具体判定", () => {
+    const d = scenarioVars();
+    expect(d.strength).toBe("strongest");
+    expect(d.oiState).toBe("up");
   });
 });

@@ -1,6 +1,6 @@
 import { coinglassGet } from "./client";
 import type { CoinGlassTakerBar } from "./types";
-import { SERIES_INTERVAL, PRICE_HISTORY_LIMIT } from "./price-history";
+import { SERIES_INTERVAL } from "./price-history";
 
 /**
  * CVD 的采样交易所。
@@ -25,6 +25,39 @@ import { SERIES_INTERVAL, PRICE_HISTORY_LIMIT } from "./price-history";
 export const CVD_EXCHANGES = ["Binance", "Bybit", "OKX", "Hyperliquid"] as const;
 
 /**
+ * 14 天 = 672 根 30 分钟。量能比的分母需要这么长。
+ *
+ * 上游给不给足这么多根不由我们决定，所以下游一律**按实际拿到的根数**折算
+ * 天数（见 volume-ratio.ts），不要写死 14。真只给了 336 根，量能比就是
+ * 7 天口径——含义仍然成立，只是窗口短一点。
+ */
+export const TAKER_HISTORY_LIMIT = 672;
+
+/**
+ * 把 taker 序列裁成与价格 K 线**逐根对齐**的等长数组。
+ *
+ * 按时间戳配对，不按「取最后 N 根」——后者只在两条序列末尾恰好同一时刻、
+ * 中间一根不缺时才成立，而这两个前提都不由我们控制。缺失的那一根填 0/0：
+ * classifySide 会因为 gross ≤ 0 直接返回 null，也就是「这段判不出场景」，
+ * 这正是缺数据时该有的行为——比拿相邻一根顶上去要诚实。
+ */
+export function alignTakerToPrice(
+  taker: CoinGlassTakerBar[],
+  priceBars: Array<{ time: number }>
+): CoinGlassTakerBar[] {
+  const byTime = new Map<number, CoinGlassTakerBar>();
+  for (const b of taker) byTime.set(b.time, b);
+  return priceBars.map(
+    (p) =>
+      byTime.get(p.time) ?? {
+        time: p.time,
+        aggregated_buy_volume_usd: 0,
+        aggregated_sell_volume_usd: 0,
+      }
+  );
+}
+
+/**
  * 主动买/卖成交额（多交易所聚合），CVD 因子与六场景判定的唯一数据源。
  *
  * 用 `symbol=<币名>` 而不是交易所的合约 id —— 这顺带去掉了「先在
@@ -36,8 +69,15 @@ export const CVD_EXCHANGES = ["Binance", "Bybit", "OKX", "Hyperliquid"] as const
  * aggregated-history 相反——那个端点会把 exchange_list 静默忽略，
  * 见 open-interest.ts。
  *
- * limit 与粒度复用 price-history 的常量，让它和价格、OI 两条序列逐根对齐——
- * 三条序列同下标同时刻是背离/场景判定成立的前提。
+ * **这条序列比价格/OI 长**：14 天（672 根），而那两条是 7 天（336 根）。
+ * 多出来的一倍只服务一件事——量能比要拿「最近 24 小时」去比「14 天日均」
+ * （见 screener/volume-ratio.ts）。拉长不额外花调用，同一次请求而已。
+ *
+ * **代价是逐根对齐没了。** 六场景判定用价格摆动点的下标去取 buys[i]/sells[i]
+ * （见 factors/scenario.ts 的 classifySide），三条序列同下标同时刻是它成立的
+ * 前提。序列一长一短，同一个下标就指到 7 天前去了，而且**不会报错**，
+ * 只会把每个币的场景判定悄悄算错。所以喂给场景/CVD 之前必须先过
+ * alignTakerToPrice()，不要直接把这个函数的返回值传下去。
  */
 export function getTakerVolumeHistory(coin: string): Promise<CoinGlassTakerBar[]> {
   return coinglassGet<CoinGlassTakerBar[]>(
@@ -45,7 +85,7 @@ export function getTakerVolumeHistory(coin: string): Promise<CoinGlassTakerBar[]
     {
       symbol: coin,
       interval: SERIES_INTERVAL,
-      limit: PRICE_HISTORY_LIMIT,
+      limit: TAKER_HISTORY_LIMIT,
       exchange_list: CVD_EXCHANGES.join(","),
     }
   );

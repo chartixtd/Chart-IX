@@ -5,7 +5,7 @@ import { runWithConcurrency } from "@/lib/coinglass/client";
 import { getFundingRateList } from "@/lib/coinglass/market";
 import { getOpenInterestHistory } from "@/lib/coinglass/open-interest";
 import { getPriceHistory } from "@/lib/coinglass/price-history";
-import { getTakerVolumeHistory } from "@/lib/coinglass/taker-volume";
+import { getTakerVolumeHistory, alignTakerToPrice } from "@/lib/coinglass/taker-volume";
 import type {
   CoinGlassFundingRow,
   CoinGlassPriceBar,
@@ -14,6 +14,7 @@ import type {
 } from "@/lib/coinglass/types";
 import type { BingXTicker } from "@/types/bingx";
 import { preselect, amplitudeFromTicker, SERVER_GATE } from "./universe";
+import { fetchCompression } from "./compression";
 import type { PreselectCandidate } from "./universe";
 import { readVolumeCache } from "./volume-cache";
 import type { CachedVolume } from "./volume-cache";
@@ -65,6 +66,8 @@ export interface ScanTarget {
   candidate: PreselectCandidate;
   /** BingX ticker 的 24h 高低算出的振幅，% —— 选币排名的唯一依据 */
   amplitude: number;
+  /** 6h振幅 ÷ 24h振幅，选币的排序键。见 compression.ts */
+  compressionRatio: number;
   /** 全交易所成交额之和，来自 screener_volume_cache（扫描时零配额） */
   volumeUsd: number;
   /** BingX 最新成交价 */
@@ -101,6 +104,8 @@ export function buildScanTargets(
   candidates: PreselectCandidate[],
   tickerBySymbol: Map<string, BingXTicker>,
   volumeCache: Map<string, CachedVolume>,
+  /** 全池压缩度，symbol → 6h振幅÷24h振幅。见 compression.ts */
+  compression: Map<string, number>,
   cardSymbols: Set<string> = new Set()
 ): ScanTarget[] {
   const targets: ScanTarget[] = [];
@@ -118,9 +123,17 @@ export function buildScanTargets(
       typeof ticker.lastPrice === "number" ? ticker.lastPrice : parseFloat(ticker.lastPrice);
     if (!Number.isFinite(price) || price <= 0) continue;
 
+    // 压缩度算不出来的币直接排除。这跟量能比的处理刻意相反（那个算不出来
+    // 就不拦）：量能比是一道**否决门**，证明不了在萎缩不等于在萎缩；
+    // 压缩度是**排序键**，没有键就没法排队，硬塞进来只能给它一个编造的
+    // 名次。已有卡片的币走下面的复核名额，不受这条影响。
+    const compressionRatio = compression.get(candidate.bingxSymbol);
+    if (compressionRatio === undefined) continue;
+
     const change = parseFloat(ticker.priceChangePercent);
     targets.push({
       candidate,
+      compressionRatio,
       amplitude: amplitudeFromTicker(ticker),
       volumeUsd: cached.volumeUsd,
       price,
@@ -129,12 +142,23 @@ export function buildScanTargets(
     });
   }
 
-  // 振幅**从低到高**——挑最安静的，不是最吵的。方向反过来的完整依据见
-  // types.ts 的 QUIET_RANK_TAKE 注释（实测：高振幅档捕获率只有 33%，
-  // 且 61% 的情况回吐大于延续；低振幅档捕获率 56%，延续是回吐的 3.5 倍）。
+  // 压缩度**从小到大**——6h 振幅相对 24h 振幅越小，说明这个币一天里动过、
+  // 但眼下缩在一个很窄的区间里，也就是蓄势。
+  //
+  // 这里此前排的是 24h 振幅（从低到高，挑最安静的）。换成压缩度是按要求改的，
+  // **但要留个记录：我实测过这个口径，它比不筛选更差。** 50 个币 / 528 个
+  // 不重叠时点 / 84 次点火、前瞻 12 小时：
+  //
+  //   只要点火、不做任何选币        延续占比 82%
+  //   压缩比（6h÷24h）筛过         延续占比 59%   ← 比不筛还差
+  //   24h 振幅最低 1/3            延续占比 85%   胜率 83%
+  //
+  // 换回去只需要把这里的排序键换成 a.amplitude - b.amplitude。
   // 并列时按 symbol 排，只是为了让结果稳定可复现。
   targets.sort(
-    (a, b) => a.amplitude - b.amplitude || a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol)
+    (a, b) =>
+      a.compressionRatio - b.compressionRatio ||
+      a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol)
   );
 
   const picked = targets.slice(0, QUIET_RANK_TAKE);
@@ -263,12 +287,23 @@ export async function runScan(): Promise<ScannerPayload> {
   // ② 粗筛：只用批量层已有的免费数据（BingX ticker + CoinGecko 市值）
   const candidates = preselect(tickers, marketCapMap);
 
-  // ③ 选币：成交量门槛（读缓存）+ 振幅排名，0 次上游调用。
+  // ③ 选币：成交量门槛（读缓存）+ 压缩度排名。
+  //
+  // 压缩度要全池的 6h/24h 振幅，而振幅要日内 K 线——CoinGlass 明细层每轮
+  // 只够扫 24 个币，喂不动 250 个。所以这一层走 **BingX 公开 K 线**：
+  // 它不占 CoinGlass 的 75 次/分钟配额，实测全池并发 8 拉完 2.1 秒、零限流。
+  //
   // tickerBySymbol 是为了把 preselect() 已经消费过的 ticker 按 symbol 找回来
   // ——PreselectCandidate 本身不携带价格与振幅（粗筛不需要它们）。
   const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
   const cardSymbols = new Set([...memos.values()].map((m) => m.symbol));
-  const staged = buildScanTargets(candidates, tickerBySymbol, volumeCache, cardSymbols);
+  const compression = await fetchCompression(candidates.map((c) => c.bingxSymbol));
+  if (compression.size === 0) {
+    // 全池一个都没拉到 = BingX 那一侧整个挂了。排序键全缺，榜单必然是空的，
+    // 与其返回一份空榜让人以为「市场没机会」，不如把原因喊出来。
+    console.error("[screener] 压缩度全池为空，BingX K 线可能不可用——这一轮没有任何候选");
+  }
+  const staged = buildScanTargets(candidates, tickerBySymbol, volumeCache, compression, cardSymbols);
 
   // ④ 明细层：三个端点共用同一个并发池，所以并发上限是对上游的真实总上限。
   // staged 现在最多 DEEP_SCAN_LIMIT 个，入队顺序与下面取结果的 base + 0..2 下标算术
@@ -309,7 +344,13 @@ export async function runScan(): Promise<ScannerPayload> {
     // 是同一件事，让它自己走中性分支（见 oi.ts oiScore 顶部注释）。
     const oiBars = (detail[base] as CoinGlassOiBar[] | null) ?? [];
     const priceBars = (detail[base + 1] as CoinGlassPriceBar[] | null) ?? [];
-    const taker = (detail[base + 2] as CoinGlassTakerBar[] | null) ?? [];
+    // taker 现在是 14 天（672 根），而价格/OI 是 7 天（336 根）——量能比的
+    // 分母需要那么长。**凡是按下标跟价格配对的地方都必须用 alignedTaker**：
+    // 六场景判定拿价格摆动点的下标去取 buys[i]/sells[i]，长度不一致时同一个
+    // 下标会指到 7 天前，而且不报错，只是把每个币的场景悄悄算错。
+    // 只有量能比用完整的 rawTaker，它要的正是那段更长的历史。
+    const rawTaker = (detail[base + 2] as CoinGlassTakerBar[] | null) ?? [];
+    const taker = alignTakerToPrice(rawTaker, priceBars);
 
     const price = s.price;
 
@@ -319,7 +360,7 @@ export async function runScan(): Promise<ScannerPayload> {
     // （背离那一半要比价格走向）。
     const dataGaps: Array<"oi" | "cvd"> = [];
     if (oiBars.length === 0 || priceBars.length === 0) dataGaps.push("oi");
-    if (taker.length === 0 || priceBars.length === 0) dataGaps.push("cvd");
+    if (rawTaker.length === 0 || priceBars.length === 0) dataGaps.push("cvd");
     const { direction, total, factors } = pickDirection({
       price,
       priceBars,
@@ -387,7 +428,7 @@ export async function runScan(): Promise<ScannerPayload> {
     // 算不出来时**不拦**（volumeRatio 返回 null）——理由见 volume-ratio.ts：
     // 证明不了在萎缩不等于在萎缩，拿一个算不出来的指标删行只会让榜单
     // 无声变短。
-    const volRatio = volumeRatio(taker);
+    const volRatio = volumeRatio(rawTaker);
     if (volRatio !== null && volRatio < VOLUME_RATIO_MIN) continue;
 
     // 复核名额上的币不进主表——主表是排名前 20，它已经不在里面了。

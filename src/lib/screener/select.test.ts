@@ -28,33 +28,51 @@ function ticker(coin: string, high: number, low: number, last = 10): BingXTicker
 const OK_VOL = SERVER_GATE.minVolumeUsd;
 const vol = (v: number): CachedVolume => ({ volumeUsd: v, updatedAt: 1 });
 
-function build(specs: Array<{ coin: string; amp: number; volumeUsd?: number | null }>) {
+/**
+ * `comp` 是排序键（压缩度）。不给就用 amp 顶上——只是为了让「小的排前面」
+ * 这一类断言写起来直观，跟真实语义无关：真实的压缩度是 6h振幅÷24h振幅。
+ * `comp: null` 表示这个币在压缩度 Map 里查不到。
+ */
+function build(
+  specs: Array<{ coin: string; amp: number; comp?: number | null; volumeUsd?: number | null }>
+) {
   const cands = specs.map((s) => candidate(s.coin));
   const tickers = new Map(
     specs.map((s) => [`${s.coin}-USDT`, ticker(s.coin, 100 * (1 + s.amp / 100), 100)])
   );
   const cache = new Map<string, CachedVolume>();
+  const compression = new Map<string, number>();
   for (const s of specs) {
     if (s.volumeUsd !== null) cache.set(s.coin, vol(s.volumeUsd ?? OK_VOL));
+    if (s.comp !== null) compression.set(`${s.coin}-USDT`, s.comp ?? s.amp);
   }
-  return buildScanTargets(cands, tickers, cache);
+  return buildScanTargets(cands, tickers, cache, compression);
 }
 
 describe("buildScanTargets", () => {
-  it("按振幅从低到高取——挑最安静的，不是最吵的", () => {
-    // 方向是反的，而且是实测逼出来的：高振幅档捕获率只有 33%、六成情况
-    // 回吐大于延续；低振幅档捕获率 56%、延续是回吐的 3.5 倍。叠加点火后
-    // 差距更极端（延续占比 85% vs 21%）。完整数据见 types.ts 的
-    // QUIET_RANK_TAKE 注释。
+  it("按压缩度从小到大取——6h 振幅相对 24h 越小越靠前", () => {
+    // 方向写反不会报错，只会让整个扫描器悄悄改成「专挑正在放开的币」，
+    // 而榜单看上去一切正常，所以这条断言必须在。
     //
-    // 这条用例是这次改动的核心断言——写反了不会报错，只会让整个扫描器
-    // 悄悄退回「专挑已经跑完的币」，而榜单看上去一切正常。
+    // **留个记录**：实测数据不支持用压缩度当排序键。50 个币 / 528 个不重叠
+    // 时点 / 84 次点火：只要点火不做选币，延续占比 82%；压缩比筛过反而降到
+    // 59%；而 24h 振幅最低 1/3 是 85%。这是按要求改的，不是数据选出来的。
     const out = build([
-      { coin: "LOUD", amp: 30 },
-      { coin: "QUIET", amp: 2 },
-      { coin: "MID", amp: 10 },
+      { coin: "LOOSE", amp: 1, comp: 0.9 },
+      { coin: "TIGHT", amp: 1, comp: 0.1 },
+      { coin: "MID", amp: 1, comp: 0.5 },
     ]);
-    expect(out.map((t) => t.candidate.coin)).toEqual(["QUIET", "MID", "LOUD"]);
+    expect(out.map((t) => t.candidate.coin)).toEqual(["TIGHT", "MID", "LOOSE"]);
+  });
+
+  it("压缩度查不到的币排除——没有排序键就没法排队", () => {
+    // 跟量能比刻意相反：量能比是否决门，算不出来不拦；压缩度是排序键，
+    // 缺了就只能给它编一个名次。
+    const out = build([
+      { coin: "HAS", amp: 5 },
+      { coin: "MISSING", amp: 1, comp: null },
+    ]);
+    expect(out.map((t) => t.candidate.coin)).toEqual(["HAS"]);
   });
 
   it("成交量不达标的直接排除", () => {
@@ -62,13 +80,13 @@ describe("buildScanTargets", () => {
       { coin: "RICH", amp: 5, volumeUsd: OK_VOL },
       { coin: "THIN", amp: 99, volumeUsd: OK_VOL - 1 },
     ]);
-    // THIN 振幅高得多，但流动性不达标——排名再高也不该进
+    // THIN 排在前面，但流动性不达标——排名再高也不该进
     expect(out.map((t) => t.candidate.coin)).toEqual(["RICH"]);
   });
 
   it("缓存里查不到成交量的一律排除，不是当作 0 也不是放行", () => {
     // 「必须证明达标」——查不到就证明不了。放行会让一个流动性未知的币
-    // 凭高振幅直接占掉一个深度扫描名额。
+    // 凭排名直接占掉一个深度扫描名额。
     const out = build([
       { coin: "KNOWN", amp: 5 },
       { coin: "UNKNOWN", amp: 99, volumeUsd: null },
@@ -84,7 +102,7 @@ describe("buildScanTargets", () => {
     expect(build(specs)).toHaveLength(QUIET_RANK_TAKE);
   });
 
-  it("振幅并列时按 symbol 排，结果可复现", () => {
+  it("压缩度并列时按 symbol 排，结果可复现", () => {
     const a = build([{ coin: "BBB", amp: 7 }, { coin: "AAA", amp: 7 }]);
     expect(a.map((t) => t.candidate.coin)).toEqual(["AAA", "BBB"]);
   });
@@ -92,7 +110,9 @@ describe("buildScanTargets", () => {
   it("价格非法的币跳过——没有价格就没有可下单的行", () => {
     const cands = [candidate("BAD")];
     const tickers = new Map([["BAD-USDT", ticker("BAD", 110, 100, 0)]]);
-    expect(buildScanTargets(cands, tickers, new Map([["BAD", vol(OK_VOL)]]))).toHaveLength(0);
+    expect(
+      buildScanTargets(cands, tickers, new Map([["BAD", vol(OK_VOL)]]), new Map([["BAD-USDT", 0.2]]))
+    ).toHaveLength(0);
   });
 
   it("成交量恰好等于门槛时放行（门槛是 ≥ 不是 >）", () => {

@@ -186,7 +186,14 @@ function volumeRatioAt(bars: CoinGlassPriceBar[], i: number, period: number): nu
   return Number.isFinite(ratio) ? ratio : null;
 }
 
-/** 第 i 根相对前一根的 OI 变化 %。取不到有限值返回 null（交给调用方否掉）。 */
+/**
+ * 第 i 根相对前一根的 OI 变化 %。取不到有限值返回 null（交给调用方否掉）。
+ *
+ * i 是最后一根（barsAgo=0，也就是刚点火那一刻）时，读的是**实时快照**——
+ * 含义是「距上一根收盘以来 OI 涨了没」，这个问法本身成立，但它覆盖的时长
+ * 取决于扫描落在这根 K 线的第几分钟（1 到 29 分钟不等）。实测依据见
+ * coinglass/open-interest.ts 顶部那段。
+ */
 function oiChangeAt(oiBars: CoinGlassOiBar[], i: number): number | null {
   if (i < 1 || i >= oiBars.length) return null;
   const prev = toFiniteNumber(oiBars[i - 1].close);

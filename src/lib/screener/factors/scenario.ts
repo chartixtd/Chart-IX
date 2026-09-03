@@ -149,7 +149,14 @@ interface Ctx {
   last: number;
 }
 
-/** 一段区间 (from, to] 上三个变量各自的读数。 */
+/**
+ * 一段区间 (from, to] 上三个变量各自的读数。
+ *
+ * `to` 传 ctx.last 时，OI 那一项读的是**当前周期的实时快照**而不是收盘值
+ * （实测见 coinglass/open-interest.ts 顶部）。也就是说 oiPct/oiState 会随
+ * 扫描落在这根 K 线的第几分钟而漂，同一根 K 线上有可能 flat ↔ up 来回跳。
+ * 这是有意接受的：OI 是存量不是流量，当前快照就是此刻最真实的持仓水平。
+ */
 function leg(ctx: Ctx, from: number, to: number) {
   const pricePct = pctChange(ctx.c, from, to);
   const oiPct = pctChange(ctx.oi, from, to);

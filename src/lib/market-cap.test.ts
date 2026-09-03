@@ -5,7 +5,7 @@ import {
   getMarketCapScore,
   formatCompactUsd,
   stripContractMultiplier,
-  TOP_MARKET_CAP_EXCLUDED,
+  TOP_RANK_COVERAGE_PROBE,
   MARKET_CAP_FALLBACK_SCORE,
 } from "./market-cap";
 
@@ -162,7 +162,7 @@ describe("stripContractMultiplier", () => {
 
 describe("constants", () => {
   it("matches the values the screener spec pins down", () => {
-    expect(TOP_MARKET_CAP_EXCLUDED).toBe(50);
+    expect(TOP_RANK_COVERAGE_PROBE).toBe(50);
     expect(MARKET_CAP_FALLBACK_SCORE).toBe(50);
   });
 });

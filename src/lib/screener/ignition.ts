@@ -1,4 +1,5 @@
-import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
+import type { CoinGlassPriceBar, CoinGlassOiBar } from "@/lib/coinglass/types";
+import { toFiniteNumber } from "@/lib/coinglass/types";
 
 /**
  * 点火：价格刚刚突破最近 N 根 K 线的区间。
@@ -38,6 +39,24 @@ export const IGNITION_MAX_AGE_BARS = 8;
 
 /** ATR 的回看根数。14 根 30 分钟 = 7 小时，跟点火自己的 6 小时窗口是同一个量级。 */
 export const IGNITION_ATR_BARS = 14;
+
+/**
+ * 点火那根 K 线的量能比下限 = 该根成交额 ÷ 之前 12 根的均值。
+ *
+ * 没有量的突破多半是**流动性真空里的一根针**——盘口薄的时候几十万美元
+ * 就能把价格推出区间，然后原样掉回来。要求放量 1.5 倍，是要求这次突破
+ * 背后真的有人在换手，而不是无人区里的一次滑动。
+ *
+ * 用的是价格 K 线自带的 volume_usd（下单盘口 BingX 的量），不是聚合的
+ * taker 序列：这里比的是**同一根 K 线自己**的量和它前面 12 根的量，
+ * 同源比值最干净，也不需要跨序列对齐。代价是 BingX 长尾的成交额被拍平过
+ * （见 universe.ts 底部记录），那种币算出来的比值会趋近 1、被这道门挡掉——
+ * 方向是保守的（漏掉，不是误放），可以接受。
+ */
+export const IGNITION_VOLUME_RATIO_MIN = 1.5;
+
+/** 量能比的回看根数。跟点火自己的区间窗口同宽，比的是「相对刚才」。 */
+export const IGNITION_VOLUME_BARS = 12;
 
 /**
  * 失效线在区间边界之外让多少个 ATR。
@@ -87,6 +106,10 @@ export interface Ignition {
   ignitedAt: number;
   /** 点火到现在过了几根 K 线。0 = 就是当前这根 */
   barsAgo: number;
+  /** 点火那根的成交额 ÷ 之前 12 根均值。见 IGNITION_VOLUME_RATIO_MIN */
+  volumeRatio: number;
+  /** 点火那根的 OI 变化 %，必须为正才算数。见 detectIgnition 第 ⑤ 步 */
+  oiChangePct: number;
 }
 
 /**
@@ -138,6 +161,42 @@ function breakoutAt(
 }
 
 /**
+ * 第 i 根的成交额 ÷ 之前 period 根的均值。算不出来返回 null。
+ *
+ * 均值分母用**实际累加到的根数**而不是 period：靠近序列头部时可用的根数
+ * 不足，写死 period 会把均值算小、比值算大，于是最早那几根永远「放量」。
+ */
+function volumeRatioAt(bars: CoinGlassPriceBar[], i: number, period: number): number | null {
+  const here = parseFloat(bars[i].volume_usd);
+  if (!Number.isFinite(here) || here < 0) return null;
+
+  let sum = 0;
+  let n = 0;
+  for (let k = Math.max(0, i - period); k < i; k++) {
+    const v = parseFloat(bars[k].volume_usd);
+    if (!Number.isFinite(v) || v < 0) continue;
+    sum += v;
+    n++;
+  }
+  if (n === 0) return null;
+  const avg = sum / n;
+  if (!Number.isFinite(avg) || avg <= 0) return null;
+
+  const ratio = here / avg;
+  return Number.isFinite(ratio) ? ratio : null;
+}
+
+/** 第 i 根相对前一根的 OI 变化 %。取不到有限值返回 null（交给调用方否掉）。 */
+function oiChangeAt(oiBars: CoinGlassOiBar[], i: number): number | null {
+  if (i < 1 || i >= oiBars.length) return null;
+  const prev = toFiniteNumber(oiBars[i - 1].close);
+  const curr = toFiniteNumber(oiBars[i].close);
+  if (!Number.isFinite(prev) || !Number.isFinite(curr) || prev <= 0) return null;
+  const pct = ((curr - prev) / prev) * 100;
+  return Number.isFinite(pct) ? pct : null;
+}
+
+/**
  * 找出当前**仍然成立**的那次点火，并锚到它开始的那一根。
  *
  * 早先这个函数只看最后一根有没有突破。那样做检测是对的，但**没法拿来做
@@ -163,6 +222,12 @@ function breakoutAt(
  */
 export function detectIgnition(
   bars: CoinGlassPriceBar[],
+  /**
+   * 与 bars **同下标同时刻**的 OI 序列。流水线保证这一点（三条序列同长度
+   * 同粒度一起拉，见 pipeline.ts 明细层）。长度对不上时 OI 那道门会因为
+   * 取不到有限值而直接否掉这次点火——宁可漏，不要拿错位的 OI 去放行。
+   */
+  oiBars: CoinGlassOiBar[],
   lookback: number = IGNITION_LOOKBACK_BARS,
   maxAgeBars: number = IGNITION_MAX_AGE_BARS
 ): Ignition | null {
@@ -239,6 +304,21 @@ export function detectIgnition(
   const barsAgo = last - origin;
   if (barsAgo > maxAgeBars) return null;
 
+  // ⑤ 点火那根必须放量。没量的突破多半是流动性真空里的一根针。
+  const volumeRatio = volumeRatioAt(bars, origin, IGNITION_VOLUME_BARS);
+  if (volumeRatio === null || volumeRatio < IGNITION_VOLUME_RATIO_MIN) return null;
+
+  // ⑥ 点火那根 OI 必须增加。
+  //
+  // 价格突破 + OI 上升 = 有**新仓**在推；价格突破 + OI 下降 = 空头回补／
+  // 多头平仓推上去的，推力来自正在离场的人，走完就没了。这两件事在 K 线上
+  // 长得一模一样，只有 OI 能分开。
+  //
+  // 比的是点火那根与它前一根的收盘 OI——「这根 K 线期间 OI 是增是减」，
+  // 跟「点火」是同一个时刻，不牵扯更早的仓位变化。
+  const oiChangePct = oiChangeAt(oiBars, origin);
+  if (oiChangePct === null || oiChangePct <= 0) return null;
+
   return {
     direction: hit.direction,
     level,
@@ -246,5 +326,7 @@ export function detectIgnition(
     distancePct: (Math.abs(close - level) / level) * 100,
     ignitedAt,
     barsAgo,
+    volumeRatio,
+    oiChangePct,
   };
 }

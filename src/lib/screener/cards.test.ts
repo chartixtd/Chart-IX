@@ -31,6 +31,8 @@ function ignition(o: Partial<Ignition> = {}): Ignition {
     distancePct: 2,
     ignitedAt: T0 - 3_600_000,
     barsAgo: 2,
+    volumeRatio: 2,
+    oiChangePct: 1.5,
     ...o,
   };
 }

@@ -13,8 +13,17 @@ export interface MarketCapEntry {
 /** key 形如 "PEPE-USDT"，与 BingX 永续合约 symbol 对齐 */
 export type MarketCapMap = Record<string, MarketCapEntry>;
 
-/** 市值排名在这个名次以内的币视为主流大币，排除出候选池 */
-export const TOP_MARKET_CAP_EXCLUDED = 50;
+/**
+ * 只用来验「CoinGecko 第 1 页有没有拉到」的探针名次，**不是**一条筛选门槛。
+ *
+ * 这里曾经是 TOP_MARKET_CAP_EXCLUDED——市值排名前 50 的币会被排除出候选池。
+ * 那条规则已经去掉：候选池现在只受市值下限（3000万）与成交量门槛约束，
+ * 没有上限，BTC/ETH 这类大币只要满足其余条件就能进。
+ *
+ * 名字改掉是必须的：一个叫「EXCLUDED」的常量在没有任何东西被 exclude 之后
+ * 还留在代码里，下一个读它的人（包括几个月后的我）会以为筛选逻辑还在。
+ */
+export const TOP_RANK_COVERAGE_PROBE = 50;
 
 /**
  * 市值与全量行情的客户端刷新节奏，1 小时。
@@ -48,13 +57,14 @@ export function buildMarketCapMap(rows: CoinGeckoMarketRow[]): MarketCapMap {
 }
 
 /**
- * CoinGecko 的第 1 页装着排名 1-250，正是市值排除规则要拦的那批。少了它，
- * 大币会变成"查不到市值"→ 不排除 + 满分，而且前端毫无察觉。
- * 宁可整体失败让前端走中性分兜底，也不能返回一份缺了头部的名单。
+ * CoinGecko 的第 1 页装着排名 1-250。少了它，大币会变成"查不到市值"——
+ * 而"查不到市值"在 getMarketCapScore 里是**满分**（当极小盘处理），
+ * 于是一份缺了头部的名单会让 BTC 拿到极小盘的分数，前端毫无察觉。
+ * 宁可整体失败让前端走中性分兜底。
  */
 export function hasTopRankCoverage(rows: CoinGeckoMarketRow[]): boolean {
   return rows.some(
-    (row) => row.market_cap_rank !== null && row.market_cap_rank <= TOP_MARKET_CAP_EXCLUDED
+    (row) => row.market_cap_rank !== null && row.market_cap_rank <= TOP_RANK_COVERAGE_PROBE
   );
 }
 

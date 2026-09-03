@@ -83,13 +83,15 @@ describe("preselect", () => {
     expect(preselect([ticker("TIA-USDT", 1.02, 1)], caps).map((c) => c.coin)).toEqual(["TIA"]);
   });
 
-  it("排除排名前 50 的主流大币", () => {
-    expect(preselect([ticker("BTC-USDT", 1.02, 1)], caps)).toHaveLength(0);
+  it("主流大币不再被排除——「前 50 名不要」这条规则已经去掉", () => {
+    // 这条断言以前是反的（BTC 必须被挡掉）。候选池现在没有任何市值上限：
+    // 先是 5 亿的上限被删，接着「CoinGecko 前 50 名排除」也被删，
+    // 大币只要满足市值下限与成交量门槛就能进。
+    expect(preselect([ticker("BTC-USDT", 1.02, 1)], caps).map((c) => c.coin)).toEqual(["BTC"]);
   });
 
-  it("市值没有上限——大市值币只要不在前 50 名就照样进候选池", () => {
-    // HUGE-USDT 市值 9 亿、排名 60。早期版本有一条 5 亿的上限会把它挡掉，
-    // 现在挡大币的只剩「前 50 名」这一条规则。
+  it("市值没有上限", () => {
+    // HUGE-USDT 市值 9 亿、排名 60。早期版本有一条 5 亿的上限会把它挡掉。
     expect(preselect([ticker("HUGE-USDT", 1.02, 1)], caps).map((c) => c.coin)).toEqual(["HUGE"]);
   });
 

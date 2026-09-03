@@ -87,7 +87,7 @@ const alert: AlertCardData = {
 describe("formatAlertMessage", () => {
   const ignition = (direction: "up" | "down"): AlertCardData["trigger"] => ({
     type: "ignition",
-    ignition: { direction, level: 1, invalidationPrice: direction === "up" ? 0.98 : 1.02, distancePct: 1.2, ignitedAt: 1, barsAgo: 0 },
+    ignition: { direction, level: 1, invalidationPrice: direction === "up" ? 0.98 : 1.02, distancePct: 1.2, ignitedAt: 1, barsAgo: 0, volumeRatio: 2, oiChangePct: 1.5 },
   });
 
   it("带上触发价——这是整条警报的基准，缺了它后续的累计涨跌无从谈起", () => {

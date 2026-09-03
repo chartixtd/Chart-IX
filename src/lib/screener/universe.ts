@@ -1,4 +1,4 @@
-import { stripContractMultiplier, TOP_MARKET_CAP_EXCLUDED } from "@/lib/market-cap";
+import { stripContractMultiplier } from "@/lib/market-cap";
 import type { MarketCapMap } from "@/lib/market-cap";
 import type { BingXTicker } from "@/types/bingx";
 
@@ -30,10 +30,10 @@ export const SERVER_GATE = {
   /**
    * 市值下限。3000万以下的盘子太容易被单笔资金推动，日内进出容易被埋。
    *
-   * **刻意没有上限。** 早期版本有一条 5 亿的上限，用来把这个产品钉在
-   * 「小市值币扫描器」这个定位上；现在去掉了，大市值币只要不在
-   * CoinGecko 前 50 名（见下面 TOP_MARKET_CAP_EXCLUDED）就能进候选池。
-   * 所以实际的上界是「不是主流大币」，而不是一个具体的市值数字。
+   * **刻意没有上限，而且现在连「排名前 50 不要」这条也去掉了。**
+   * 早期版本先是有一条 5 亿的市值上限（用来把产品钉在「小市值币扫描器」
+   * 这个定位上），后来换成「CoinGecko 前 50 名排除」，现在两条都没有了——
+   * 候选池的上界只剩「成交量与压缩度排得上号」。
    *
    * 这条在粗筛阶段生效（CoinGecko 市值是免费数据，不花 CoinGlass 配额）。
    */
@@ -116,9 +116,8 @@ export function preselect(
 
     const entry = marketCapMap[stripContractMultiplier(t.symbol)];
     if (entry === undefined) continue;
-    // 大市值币只由「前 50 名」这一条挡，没有具体的市值上限——
-    // 见 SERVER_GATE.minMarketCap 的注释。
-    if (entry.rank <= TOP_MARKET_CAP_EXCLUDED) continue;
+    // 候选池**没有市值上限**。这里曾经有一条「排名前 50 的主流大币直接排除」，
+    // 已按要求去掉：BTC/ETH/SOL 这类币只要满足市值下限与成交量门槛就能进。
     if (entry.marketCap < SERVER_GATE.minMarketCap) continue;
 
     seen.add(t.symbol);

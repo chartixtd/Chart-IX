@@ -27,6 +27,7 @@ import { scenarioInvalidated } from "./invalidation";
 import { detectIgnition } from "./ignition";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
 import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS, SCANNER_PAYLOAD_VERSION } from "./types";
+import { volumeRatio, VOLUME_RATIO_MIN } from "./volume-ratio";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -341,7 +342,7 @@ export async function runScan(): Promise<ScannerPayload> {
     // 「现在是哪种局面」这个问题的答案里，表格和卡片都不该。
     // 点火：当根收盘突破前 6 小时区间。**这是唯一没有确认延迟的信号**——
     // 六场景要等摆动点确认（2.5 小时），等到了就不叫「刚启动」了。
-    const ignition = detectIgnition(priceBars);
+    const ignition = detectIgnition(priceBars, oiBars);
 
     const raw = classifyScenario(priceBars, oiBars, taker);
     const scenario = raw && !scenarioInvalidated(raw, priceBars) ? raw : null;
@@ -377,7 +378,19 @@ export async function runScan(): Promise<ScannerPayload> {
       sourceExchange: PRICE_EXCHANGE,
     };
 
-    // 复核名额上的币不进主表——主表是「振幅前 20」，它已经不在里面了。
+    // 成交量正在萎缩的币整个剔除——不进主表，也不出卡片。
+    //
+    // 绝对门槛（2000万）只能挡掉完全没法交易的币，挡不掉「平时一天 5 亿、
+    // 今天只有 8000 万」这种：绝对量很漂亮，但行情其实已经走完了。
+    // 量能比拿这个币自己平时的量当基准，问的是「它现在比平时活跃还是清淡」。
+    //
+    // 算不出来时**不拦**（volumeRatio 返回 null）——理由见 volume-ratio.ts：
+    // 证明不了在萎缩不等于在萎缩，拿一个算不出来的指标删行只会让榜单
+    // 无声变短。
+    const volRatio = volumeRatio(taker);
+    if (volRatio !== null && volRatio < VOLUME_RATIO_MIN) continue;
+
+    // 复核名额上的币不进主表——主表是排名前 20，它已经不在里面了。
     // 但它的卡片照常参与下面的判定，这正是给它留名额的全部意义。
     if (s.inMainTable) rows.push(row);
 

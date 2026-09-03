@@ -233,7 +233,7 @@ export interface ScannerRow {
  * 版本对不上就当缓存不存在，下一个请求重算一遍——代价是一轮扫描，
  * 比白屏便宜太多。
  */
-export const SCANNER_PAYLOAD_VERSION = 4;
+export const SCANNER_PAYLOAD_VERSION = 5;
 
 export interface ScannerPayload {
   /** 见 SCANNER_PAYLOAD_VERSION —— 形状对不上的缓存一律丢弃 */

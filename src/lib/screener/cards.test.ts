@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { buildCard, memoKey, ignitionMemoKey, sortCards, extremesSince, signedPct } from "./cards";
+import {
+  buildCard,
+  memoKey,
+  ignitionMemoKey,
+  sortCards,
+  extremesSince,
+  signedPct,
+  carryForwardExpired,
+} from "./cards";
 import type { AlertCardData, ScenarioMemo } from "./cards";
 import type { Scenario } from "./factors/scenario";
 import type { Ignition } from "./ignition";
@@ -321,5 +329,78 @@ describe("新出的卡不带 expired 标记", () => {
     // 写反的话，刚判出来的信号会被当成「已结束」灰掉，而且不会报错。
     const r = buildCard({ row: row(), priceBars: [], memo: undefined, now: T0 });
     expect(r.card?.expired).toBe(false);
+  });
+});
+
+/**
+ * 灰卡（已结束但还留着）的三条筛选。
+ *
+ * 这组用例是线上问题逼出来的：初版只筛「不在当轮里」+「没过宽限期」，
+ * 结果 21 张卡里 12 张是灰的，而绝大多数根本不是信号结束，是**卡片换了
+ * 身份**——用户看到的现象是「价格离失效价还有 1%，卡片却显示已结束」。
+ */
+describe("carryForwardExpired", () => {
+  const T = 1_700_000_000_000;
+  const card = (o: Partial<AlertCardData> & { key: string; symbol: string }): AlertCardData => ({
+    coin: o.symbol.replace("-USDT", ""),
+    trigger: { type: "scenario", scenario: scenario() },
+    direction: "long",
+    factors: { oi: 0, cvd: 0 },
+    total: 10,
+    firstSeenAt: new Date(T - 10 * 60000).toISOString(),
+    firstPrice: 1,
+    peakPct: 0,
+    invalidation: null,
+    expired: false,
+    ...o,
+  });
+  const pushed = (...keys: string[]) => new Set(keys);
+
+  it("推送过、这个币没有活卡、没过期 → 留下并标成 expired", () => {
+    const prev = [card({ key: "k1", symbol: "AAA-USDT" })];
+    const out = carryForwardExpired(prev, [], pushed("k1"), T);
+    expect(out).toHaveLength(1);
+    expect(out[0].expired).toBe(true);
+  });
+
+  it("这个币已经有活卡 → 不留灰卡", () => {
+    // 线上真实情况：BTC 同时挂着一张活的 a4 和一张灰的点火卡，
+    // 而那张点火卡的价格离失效线还有 1%——它不是失效了，是被场景抢占了。
+    // 一张灰一张亮并排，等于对同一个币给出两个互相矛盾的结论。
+    const prev = [card({ key: "old", symbol: "BTC-USDT" })];
+    const liveNow = [card({ key: "new", symbol: "BTC-USDT" })];
+    expect(carryForwardExpired(prev, liveNow, pushed("old"), T)).toHaveLength(0);
+  });
+
+  it("没推送过的卡不留——灰卡的唯一用途就是让推送里的币找得到", () => {
+    const prev = [card({ key: "k1", symbol: "AAA-USDT" })];
+    expect(carryForwardExpired(prev, [], pushed(), T)).toHaveLength(0);
+  });
+
+  it("台账读不出来时一张灰卡都不留，退回「卡片直接消失」的旧行为", () => {
+    // readPushedKeys 读失败会返回空集合。这时宁可什么都不留，
+    // 也不要把一堆换过身份的旧卡当成「已结束」摆出来。
+    const prev = [card({ key: "k1", symbol: "AAA-USDT" }), card({ key: "k2", symbol: "BBB-USDT" })];
+    expect(carryForwardExpired(prev, [], new Set(), T)).toHaveLength(0);
+  });
+
+  it("还在当轮活着的卡不会被复制成灰卡", () => {
+    const c = card({ key: "k1", symbol: "AAA-USDT" });
+    expect(carryForwardExpired([c], [c], pushed("k1"), T)).toHaveLength(0);
+  });
+
+  it("超过宽限期的丢掉", () => {
+    const old = card({
+      key: "k1",
+      symbol: "AAA-USDT",
+      firstSeenAt: new Date(T - 5 * 60 * 60 * 1000).toISOString(),
+    });
+    expect(carryForwardExpired([old], [], pushed("k1"), T)).toHaveLength(0);
+  });
+
+  it("不改原对象——上一轮的 payload 是从缓存读来的，就地改会污染它", () => {
+    const c = card({ key: "k1", symbol: "AAA-USDT" });
+    carryForwardExpired([c], [], pushed("k1"), T);
+    expect(c.expired).toBe(false);
   });
 });

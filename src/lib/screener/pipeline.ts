@@ -20,8 +20,9 @@ import type { PreselectCandidate } from "./universe";
 import { readVolumeCache } from "./volume-cache";
 import type { CachedVolume } from "./volume-cache";
 import { readMemos, saveMemos } from "./cards-store";
-import { buildCard, sortCards, memoKey, ignitionMemoKey } from "./cards";
+import { buildCard, sortCards, memoKey, ignitionMemoKey, carryForwardExpired } from "./cards";
 import { readLastScannerPayload } from "./cache";
+import { readPushedKeys } from "./alert-push";
 import type { AlertCardData, ScenarioMemo } from "./cards";
 import { pickDirection, amplitudeFromBars } from "./score";
 import { pickFundingRate } from "./funding";
@@ -29,13 +30,7 @@ import { classifyScenario } from "./factors/scenario";
 import { scenarioInvalidated } from "./invalidation";
 import { detectIgnition } from "./ignition";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
-import {
-  QUIET_RANK_TAKE,
-  CARD_RESERVE_SLOTS,
-  SCANNER_PAYLOAD_VERSION,
-  CARD_GRACE_MS,
-  CARD_GRACE_MAX,
-} from "./types";
+import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS, SCANNER_PAYLOAD_VERSION } from "./types";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -485,13 +480,12 @@ export async function runScan(): Promise<ScannerPayload> {
   // 只接**上一轮**的卡片，不去翻更早的历史：上一轮的 payload 里已经含着它
   // 自己接过来的灰卡，于是「结束多久」是靠 firstSeenAt + 宽限期截断的，
   // 不需要额外记一张台账。
-  const live = new Set(cards.map((c) => c.key));
-  const carried = (await readLastScannerPayload())?.cards ?? [];
-  const expired = carried
-    .filter((c) => !live.has(c.key))
-    .filter((c) => now - new Date(c.firstSeenAt).getTime() < CARD_GRACE_MS)
-    .slice(0, CARD_GRACE_MAX)
-    .map((c) => ({ ...c, expired: true }));
+  const expired = carryForwardExpired(
+    (await readLastScannerPayload())?.cards ?? [],
+    cards,
+    await readPushedKeys(),
+    now
+  );
 
   return {
     version: SCANNER_PAYLOAD_VERSION,

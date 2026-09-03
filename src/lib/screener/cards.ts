@@ -1,6 +1,7 @@
 import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
 import type { Scenario, ScenarioDirection } from "./factors/scenario";
 import type { FactorBreakdown, ScannerRow } from "./types";
+import { CARD_GRACE_MS, CARD_GRACE_MAX } from "./types";
 import type { Ignition } from "./ignition";
 import { invalidationLine, ignitionLine } from "./invalidation";
 import type { InvalidationLine } from "./invalidation";
@@ -231,4 +232,44 @@ export function buildCard({ row, priceBars, memo, now }: BuildCardInput): BuildC
  */
 export function sortCards(cards: AlertCardData[]): AlertCardData[] {
   return [...cards].sort((a, b) => b.total - a.total || a.symbol.localeCompare(b.symbol));
+}
+
+/**
+ * 挑出「信号已经结束、但还值得灰着留一会儿」的卡片。
+ *
+ * 灰卡存在的唯一理由是**让推送里的币找得到**：推送推的就是当轮 cards 的
+ * 子集，推的那一刻它一定在页面上；人隔几十分钟才点开，那时卡片早已不再被
+ * 算出来，页面什么都不留就像推送在乱报。
+ *
+ * 三条筛选缺一不可，每一条都是线上问题逼出来的：
+ *
+ * ① **这个币没有活卡。** 一张灰一张亮并排放着，等于在同一个币上给出两个
+ *    互相矛盾的结论，而灰的那张多半只是被新卡换掉的旧身份。
+ *
+ * ② **这张卡推送过。** 初版没有这条，线上 21 张里 12 张是灰的，绝大多数
+ *    根本不是「信号结束」而是**卡片换了身份**：场景抢占点火（场景优先，
+ *    点火就不再产出，可那张点火卡明明还成立、价格离失效线还有 1%）、
+ *    场景在 kind 之间切换、锚点漂移导致钥匙变化。用户看到的就是
+ *    「价格还没到失效价，卡片却显示已结束」。没推过的卡本来就不需要找回。
+ *
+ * ③ **没超过宽限期。**
+ *
+ * 传空的 pushedKeys 会让结果为空——那等于回到「卡片直接消失」，也就是加
+ * 宽限期之前的行为，是安全的退化方向。
+ */
+export function carryForwardExpired(
+  previous: AlertCardData[],
+  liveCards: AlertCardData[],
+  pushedKeys: Set<string>,
+  now: number
+): AlertCardData[] {
+  const liveKeys = new Set(liveCards.map((c) => c.key));
+  const liveSymbols = new Set(liveCards.map((c) => c.symbol));
+  return previous
+    .filter((c) => !liveKeys.has(c.key))
+    .filter((c) => !liveSymbols.has(c.symbol))
+    .filter((c) => pushedKeys.has(c.key))
+    .filter((c) => now - new Date(c.firstSeenAt).getTime() < CARD_GRACE_MS)
+    .slice(0, CARD_GRACE_MAX)
+    .map((c) => ({ ...c, expired: true }));
 }

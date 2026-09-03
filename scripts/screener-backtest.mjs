@@ -27,8 +27,8 @@
  * 需要 CoinGlass 的 key（只读，脚本只发 GET）。**不要把 key 写进任何文件**，
  * 用环境变量传：
  *
- *   PowerShell:  $env:COINGLASS_API_KEY="..."; node scripts/screener-backtest.mjs
- *   bash:        COINGLASS_API_KEY=... node scripts/screener-backtest.mjs
+ *   PowerShell:  $env:COINGLASS_API_KEY="..."; npx tsx scripts/screener-backtest.mjs
+ *   bash:        COINGLASS_API_KEY=... npx tsx scripts/screener-backtest.mjs
  *
  * 可选参数（都有默认值）：
  *   --coins 40      抽多少个币
@@ -58,8 +58,8 @@ const STEP = Math.max(arg("step", 12), FWD); // 步长 < 前瞻 = 窗口重叠�
 if (!process.env.COINGLASS_API_KEY) {
   console.error(
     "缺 COINGLASS_API_KEY。脚本只发 GET，不写任何文件；用环境变量传，别写进代码里：\n" +
-      '  PowerShell:  $env:COINGLASS_API_KEY="..."; node scripts/screener-backtest.mjs\n' +
-      "  bash:        COINGLASS_API_KEY=... node scripts/screener-backtest.mjs"
+      '  PowerShell:  $env:COINGLASS_API_KEY="..."; npx tsx scripts/screener-backtest.mjs\n' +
+      "  bash:        COINGLASS_API_KEY=... npx tsx scripts/screener-backtest.mjs"
   );
   process.exit(1);
 }

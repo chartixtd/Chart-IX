@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { buildScanTargets } from "./pipeline";
 import { SERVER_GATE } from "./universe";
 import { QUIET_RANK_TAKE } from "./types";
+import { VOLUME_RATIO_MIN } from "./pool-metrics";
+import type { PoolMetrics } from "./pool-metrics";
 import type { PreselectCandidate } from "./universe";
 import type { CachedVolume } from "./volume-cache";
 import type { BingXTicker } from "@/types/bingx";
@@ -31,22 +33,34 @@ const vol = (v: number): CachedVolume => ({ volumeUsd: v, updatedAt: 1 });
 /**
  * `comp` 是排序键（压缩度）。不给就用 amp 顶上——只是为了让「小的排前面」
  * 这一类断言写起来直观，跟真实语义无关：真实的压缩度是 6h振幅÷24h振幅。
- * `comp: null` 表示这个币在压缩度 Map 里查不到。
+ * `comp: null` 表示这个币在全池指标里查不到。
+ * `vr` 是量能比，不给就用 1（稳稳过门）；显式给 null 表示算不出来。
  */
 function build(
-  specs: Array<{ coin: string; amp: number; comp?: number | null; volumeUsd?: number | null }>
+  specs: Array<{
+    coin: string;
+    amp: number;
+    comp?: number | null;
+    vr?: number | null;
+    volumeUsd?: number | null;
+  }>
 ) {
   const cands = specs.map((s) => candidate(s.coin));
   const tickers = new Map(
     specs.map((s) => [`${s.coin}-USDT`, ticker(s.coin, 100 * (1 + s.amp / 100), 100)])
   );
   const cache = new Map<string, CachedVolume>();
-  const compression = new Map<string, number>();
+  const metrics = new Map<string, PoolMetrics>();
   for (const s of specs) {
     if (s.volumeUsd !== null) cache.set(s.coin, vol(s.volumeUsd ?? OK_VOL));
-    if (s.comp !== null) compression.set(`${s.coin}-USDT`, s.comp ?? s.amp);
+    if (s.comp !== null) {
+      metrics.set(`${s.coin}-USDT`, {
+        compression: s.comp ?? s.amp,
+        volumeRatio: s.vr === undefined ? 1 : s.vr,
+      });
+    }
   }
-  return buildScanTargets(cands, tickers, cache, compression);
+  return buildScanTargets(cands, tickers, cache, metrics);
 }
 
 describe("buildScanTargets", () => {
@@ -63,6 +77,40 @@ describe("buildScanTargets", () => {
       { coin: "MID", amp: 1, comp: 0.5 },
     ]);
     expect(out.map((t) => t.candidate.coin)).toEqual(["TIGHT", "MID", "LOOSE"]);
+  });
+
+  it("量能比不达标的从前 20 里剔除，主表因此可能不足 20 行", () => {
+    const out = build([
+      { coin: "OK", amp: 1, comp: 0.1 },
+      { coin: "SHRINKING", amp: 1, comp: 0.2, vr: VOLUME_RATIO_MIN - 0.01 },
+    ]);
+    expect(out.map((t) => t.candidate.coin)).toEqual(["OK"]);
+  });
+
+  it("量能比恰好等于门槛放行（是 ≥ 不是 >）", () => {
+    const out = build([{ coin: "EDGE", amp: 1, comp: 0.1, vr: VOLUME_RATIO_MIN }]);
+    expect(out).toHaveLength(1);
+  });
+
+  it("量能比算不出来时放行——证明不了在萎缩不等于在萎缩", () => {
+    const out = build([{ coin: "UNKNOWN", amp: 1, comp: 0.1, vr: null }]);
+    expect(out).toHaveLength(1);
+  });
+
+  it("量能比是在取前 20 之后才剔除的，空位不会被第 21 名补上", () => {
+    // 顺序反过来（先筛量能比再取前 20）等于放宽了压缩度那道排名——
+    // 被剔掉的位置会由压缩度更差的币顶上来，而那正是我们不想要的币。
+    const specs = Array.from({ length: QUIET_RANK_TAKE + 5 }, (_, i) => ({
+      coin: `C${String(i).padStart(2, "0")}`,
+      amp: 1,
+      comp: (i + 1) / 100,
+      // 前 20 名里让第 0 名不达标；第 21 名之后全部达标
+      vr: i === 0 ? 0.1 : 1,
+    }));
+    const out = build(specs);
+    expect(out).toHaveLength(QUIET_RANK_TAKE - 1);
+    expect(out.map((t) => t.candidate.coin)).not.toContain("C00");
+    expect(out.map((t) => t.candidate.coin)).not.toContain("C20");
   });
 
   it("压缩度查不到的币排除——没有排序键就没法排队", () => {
@@ -111,7 +159,12 @@ describe("buildScanTargets", () => {
     const cands = [candidate("BAD")];
     const tickers = new Map([["BAD-USDT", ticker("BAD", 110, 100, 0)]]);
     expect(
-      buildScanTargets(cands, tickers, new Map([["BAD", vol(OK_VOL)]]), new Map([["BAD-USDT", 0.2]]))
+      buildScanTargets(
+        cands,
+        tickers,
+        new Map([["BAD", vol(OK_VOL)]]),
+        new Map([["BAD-USDT", { compression: 0.2, volumeRatio: 1 }]])
+      )
     ).toHaveLength(0);
   });
 

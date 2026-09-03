@@ -5,7 +5,7 @@ import { runWithConcurrency } from "@/lib/coinglass/client";
 import { getFundingRateList } from "@/lib/coinglass/market";
 import { getOpenInterestHistory } from "@/lib/coinglass/open-interest";
 import { getPriceHistory } from "@/lib/coinglass/price-history";
-import { getTakerVolumeHistory, alignTakerToPrice } from "@/lib/coinglass/taker-volume";
+import { getTakerVolumeHistory } from "@/lib/coinglass/taker-volume";
 import type {
   CoinGlassFundingRow,
   CoinGlassPriceBar,
@@ -14,7 +14,8 @@ import type {
 } from "@/lib/coinglass/types";
 import type { BingXTicker } from "@/types/bingx";
 import { preselect, amplitudeFromTicker, SERVER_GATE } from "./universe";
-import { fetchCompression } from "./compression";
+import { fetchPoolMetrics, VOLUME_RATIO_MIN } from "./pool-metrics";
+import type { PoolMetrics } from "./pool-metrics";
 import type { PreselectCandidate } from "./universe";
 import { readVolumeCache } from "./volume-cache";
 import type { CachedVolume } from "./volume-cache";
@@ -28,7 +29,6 @@ import { scenarioInvalidated } from "./invalidation";
 import { detectIgnition } from "./ignition";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
 import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS, SCANNER_PAYLOAD_VERSION } from "./types";
-import { volumeRatio, VOLUME_RATIO_MIN } from "./volume-ratio";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -66,8 +66,10 @@ export interface ScanTarget {
   candidate: PreselectCandidate;
   /** BingX ticker 的 24h 高低算出的振幅，% —— 选币排名的唯一依据 */
   amplitude: number;
-  /** 6h振幅 ÷ 24h振幅，选币的排序键。见 compression.ts */
+  /** 6h振幅 ÷ 24h振幅，选币的排序键。见 pool-metrics.ts */
   compressionRatio: number;
+  /** 24h成交额 ÷ 14天日均；null = 算不出来，放行 */
+  volumeRatio: number | null;
   /** 全交易所成交额之和，来自 screener_volume_cache（扫描时零配额） */
   volumeUsd: number;
   /** BingX 最新成交价 */
@@ -104,8 +106,8 @@ export function buildScanTargets(
   candidates: PreselectCandidate[],
   tickerBySymbol: Map<string, BingXTicker>,
   volumeCache: Map<string, CachedVolume>,
-  /** 全池压缩度，symbol → 6h振幅÷24h振幅。见 compression.ts */
-  compression: Map<string, number>,
+  /** 全池的压缩度与量能比，symbol → PoolMetrics。见 pool-metrics.ts */
+  metrics: Map<string, PoolMetrics>,
   cardSymbols: Set<string> = new Set()
 ): ScanTarget[] {
   const targets: ScanTarget[] = [];
@@ -127,13 +129,14 @@ export function buildScanTargets(
     // 就不拦）：量能比是一道**否决门**，证明不了在萎缩不等于在萎缩；
     // 压缩度是**排序键**，没有键就没法排队，硬塞进来只能给它一个编造的
     // 名次。已有卡片的币走下面的复核名额，不受这条影响。
-    const compressionRatio = compression.get(candidate.bingxSymbol);
-    if (compressionRatio === undefined) continue;
+    const m = metrics.get(candidate.bingxSymbol);
+    if (!m) continue;
 
     const change = parseFloat(ticker.priceChangePercent);
     targets.push({
       candidate,
-      compressionRatio,
+      compressionRatio: m.compression,
+      volumeRatio: m.volumeRatio,
       amplitude: amplitudeFromTicker(ticker),
       volumeUsd: cached.volumeUsd,
       price,
@@ -161,7 +164,17 @@ export function buildScanTargets(
       a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol)
   );
 
-  const picked = targets.slice(0, QUIET_RANK_TAKE);
+  // 先按压缩度取前 20，**再**从这 20 个里剔掉成交量萎缩的——顺序是刻意的：
+  // 「前 20 里不合格的剔除」和「合格的里面取前 20」是两回事，后者会用第 21、
+  // 第 22 名把空位补满，等于放宽了压缩度这道排名。
+  //
+  // 所以这一步之后主表可能不足 20 行，那是预期行为。
+  //
+  // 量能比算不出来（null）时放行：证明不了在萎缩不等于在萎缩，拿一个算不
+  // 出来的指标删行只会让榜单无声变短。
+  const picked = targets
+    .slice(0, QUIET_RANK_TAKE)
+    .filter((t) => t.volumeRatio === null || t.volumeRatio >= VOLUME_RATIO_MIN);
 
   // 已有卡片但这轮掉出前 20 的币，坐配额里空着的那几个名额继续扫。
   // 不这么做的话，它们这一轮算不出场景，卡片会因为「排名掉了」而消失
@@ -297,13 +310,13 @@ export async function runScan(): Promise<ScannerPayload> {
   // ——PreselectCandidate 本身不携带价格与振幅（粗筛不需要它们）。
   const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
   const cardSymbols = new Set([...memos.values()].map((m) => m.symbol));
-  const compression = await fetchCompression(candidates.map((c) => c.bingxSymbol));
-  if (compression.size === 0) {
+  const metrics = await fetchPoolMetrics(candidates.map((c) => c.bingxSymbol));
+  if (metrics.size === 0) {
     // 全池一个都没拉到 = BingX 那一侧整个挂了。排序键全缺，榜单必然是空的，
     // 与其返回一份空榜让人以为「市场没机会」，不如把原因喊出来。
-    console.error("[screener] 压缩度全池为空，BingX K 线可能不可用——这一轮没有任何候选");
+    console.error("[screener] 全池指标为空，BingX K 线可能不可用——这一轮没有任何候选");
   }
-  const staged = buildScanTargets(candidates, tickerBySymbol, volumeCache, compression, cardSymbols);
+  const staged = buildScanTargets(candidates, tickerBySymbol, volumeCache, metrics, cardSymbols);
 
   // ④ 明细层：三个端点共用同一个并发池，所以并发上限是对上游的真实总上限。
   // staged 现在最多 DEEP_SCAN_LIMIT 个，入队顺序与下面取结果的 base + 0..2 下标算术
@@ -344,13 +357,7 @@ export async function runScan(): Promise<ScannerPayload> {
     // 是同一件事，让它自己走中性分支（见 oi.ts oiScore 顶部注释）。
     const oiBars = (detail[base] as CoinGlassOiBar[] | null) ?? [];
     const priceBars = (detail[base + 1] as CoinGlassPriceBar[] | null) ?? [];
-    // taker 现在是 14 天（672 根），而价格/OI 是 7 天（336 根）——量能比的
-    // 分母需要那么长。**凡是按下标跟价格配对的地方都必须用 alignedTaker**：
-    // 六场景判定拿价格摆动点的下标去取 buys[i]/sells[i]，长度不一致时同一个
-    // 下标会指到 7 天前，而且不报错，只是把每个币的场景悄悄算错。
-    // 只有量能比用完整的 rawTaker，它要的正是那段更长的历史。
-    const rawTaker = (detail[base + 2] as CoinGlassTakerBar[] | null) ?? [];
-    const taker = alignTakerToPrice(rawTaker, priceBars);
+    const taker = (detail[base + 2] as CoinGlassTakerBar[] | null) ?? [];
 
     const price = s.price;
 
@@ -360,7 +367,7 @@ export async function runScan(): Promise<ScannerPayload> {
     // （背离那一半要比价格走向）。
     const dataGaps: Array<"oi" | "cvd"> = [];
     if (oiBars.length === 0 || priceBars.length === 0) dataGaps.push("oi");
-    if (rawTaker.length === 0 || priceBars.length === 0) dataGaps.push("cvd");
+    if (taker.length === 0 || priceBars.length === 0) dataGaps.push("cvd");
     const { direction, total, factors } = pickDirection({
       price,
       priceBars,
@@ -418,18 +425,6 @@ export async function runScan(): Promise<ScannerPayload> {
       // 表格里这个标签紧挨着 symbol 与价格，标的就是「这一行的价格是哪儿的」。
       sourceExchange: PRICE_EXCHANGE,
     };
-
-    // 成交量正在萎缩的币整个剔除——不进主表，也不出卡片。
-    //
-    // 绝对门槛（2000万）只能挡掉完全没法交易的币，挡不掉「平时一天 5 亿、
-    // 今天只有 8000 万」这种：绝对量很漂亮，但行情其实已经走完了。
-    // 量能比拿这个币自己平时的量当基准，问的是「它现在比平时活跃还是清淡」。
-    //
-    // 算不出来时**不拦**（volumeRatio 返回 null）——理由见 volume-ratio.ts：
-    // 证明不了在萎缩不等于在萎缩，拿一个算不出来的指标删行只会让榜单
-    // 无声变短。
-    const volRatio = volumeRatio(rawTaker);
-    if (volRatio !== null && volRatio < VOLUME_RATIO_MIN) continue;
 
     // 复核名额上的币不进主表——主表是排名前 20，它已经不在里面了。
     // 但它的卡片照常参与下面的判定，这正是给它留名额的全部意义。

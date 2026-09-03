@@ -943,30 +943,6 @@
     "scenarios": {
       "trap_label": "Isyarat perangkap",
       "pill_manage": "Manage",
-      "healthy_trend": {
-        "name": "Trend Sihat",
-        "action": "Ikut trend, masuk semasa susulan"
-      },
-      "inventory_flush": {
-        "name": "Pelupusan Inventori",
-        "action": "Ambil untung berperingkat, tunggu pembalikan"
-      },
-      "true_top_div": {
-        "name": "Divergens Puncak Benar",
-        "action": "Berbalik ke short"
-      },
-      "true_bottom_div": {
-        "name": "Divergens Dasar Benar",
-        "action": "Berbalik ke long"
-      },
-      "false_top_div": {
-        "name": "Divergens Puncak Palsu",
-        "action": "Jangan short — ikut trend, pergi long"
-      },
-      "false_bottom_div": {
-        "name": "Divergens Dasar Palsu",
-        "action": "Jangan long — ikut trend, pergi short"
-      },
       "cvd_tag": {
         "healthy_trend": "selari, menguat",
         "inventory_flush": "selari",
@@ -983,15 +959,55 @@
         "false_top_div": "melonjak",
         "false_bottom_div": "melonjak"
       },
-      "reading": {
-        "healthy_trend_high": "Paras tinggi baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD selari {cvdPct}, OI naik {oiPct}",
-        "healthy_trend_low": "Paras rendah baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD selari {cvdPct}, OI naik {oiPct}",
-        "inventory_flush_high": "Paras tinggi baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD selari {cvdPct}, OI turun {oiPct}",
-        "inventory_flush_low": "Paras rendah baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD selari {cvdPct}, OI turun {oiPct}",
-        "true_top_div": "Menyapu BSL ke paras tinggi baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD melemah {cvdPct}, OI turun {oiPct}",
-        "true_bottom_div": "Menyapu SSL ke paras rendah baharu pada {price} ({pricePct} berbanding ayunan sebelum ini), CVD menguat {cvdPct}, OI turun {oiPct}",
-        "false_top_div": "Tersekat berhampiran paras tinggi ({price} ({pricePct} berbanding ayunan sebelum ini)), CVD melemah drastik {cvdPct}, OI melonjak {oiPct}",
-        "false_bottom_div": "Tersekat berhampiran paras rendah ({price} ({pricePct} berbanding ayunan sebelum ini)), CVD menguat drastik {cvdPct}, OI melonjak {oiPct}"
+      "a1_healthy_pullback": {
+        "name": "Susulan Trend Sihat",
+        "action": "Ikut trend, masuk semasa susulan",
+        "reading": "Susulan dalam trend naik; paras rendah ayunan {level} masih utuh. Sepanjang susulan CVD {cvdPct}, OI {oiPct} — wang tidak keluar, trend masih ada."
+      },
+      "a2_accum_bottom_div": {
+        "name": "Divergen Dasar Tambah Posisi",
+        "action": "Dasar disapu dan dirampas semula, beli",
+        "reading": "Harga menyapu paras rendah {level} lalu ditutup semula di atasnya, manakala CVD tidak mencipta paras rendah baharu. CVD {cvdPct}, OI {oiPct}."
+      },
+      "a3_e1_absorb": {
+        "name": "Serapan E1",
+        "action": "Serapan disahkan, beli",
+        "reading": "CVD mencipta paras rendah sebelum harga (ada yang menyerap), kemudian berpaling dengan daya mencukupi, dan OI naik {oiPct} seiring. CVD {cvdPct}, dasar gelombang {level}."
+      },
+      "a4_e4_flush": {
+        "name": "Pembersihan Stabil",
+        "action": "Pembersihan tamat, beli",
+        "reading": "Harga jatuh vakum ke paras rendah baharu {level} sementara CVD tidak mengikut, dan OI beralih daripada runtuh kepada stabil ({oiPct}). CVD {cvdPct}."
+      },
+      "b1_healthy_bounce": {
+        "name": "Lantunan Trend Turun Sihat",
+        "action": "Ikut trend, masuk semasa lantunan",
+        "reading": "Lantunan dalam trend turun; paras tinggi ayunan {level} masih utuh. Sepanjang lantunan CVD {cvdPct}, OI {oiPct} — wang tidak masuk, penurunan masih ada."
+      },
+      "b2_distrib_top_div": {
+        "name": "Divergen Puncak Tambah Posisi",
+        "action": "Puncak disapu dan dirampas semula, jual",
+        "reading": "Harga menyapu paras tinggi {level} lalu ditutup semula di bawahnya, manakala CVD tidak mencipta paras tinggi baharu. CVD {cvdPct}, OI {oiPct}."
+      },
+      "b3_e5_distrib": {
+        "name": "Agihan E5",
+        "action": "Agihan disahkan, jual",
+        "reading": "CVD mencipta paras tinggi sebelum harga (ada yang mengagih), kemudian berpaling turun dengan daya mencukupi, dan OI naik {oiPct} seiring. CVD {cvdPct}, puncak gelombang {level}."
+      },
+      "b4_e8_cover_stall": {
+        "name": "Tutup Posisi Terhenti",
+        "action": "Penutupan posisi tamat, jual",
+        "reading": "Harga melonjak vakum ke paras tinggi baharu {level} sementara CVD tidak mengikut, dan OI beralih daripada runtuh kepada stabil ({oiPct}). CVD {cvdPct}."
+      },
+      "trap_false_top_div": {
+        "name": "Divergen Puncak Palsu",
+        "action": "Jangan jual — ikut trend, beli",
+        "reading": "Harga bertahan berhampiran {level}, CVD lemah keterlaluan pada {cvdPct}, namun OI melonjak {oiPct} — yang masuk ialah posisi jual baharu, merekalah yang bakal diperah."
+      },
+      "trap_false_bottom_div": {
+        "name": "Divergen Dasar Palsu",
+        "action": "Jangan beli — ikut trend, jual",
+        "reading": "Harga bertahan berhampiran {level}, CVD kuat keterlaluan pada {cvdPct}, namun OI melonjak {oiPct} — yang masuk ialah posisi beli baharu, merekalah yang bakal diperah."
       }
     },
     "guide": {
@@ -1018,6 +1034,12 @@
         "up": "Ditutup di atas puncak julat 6j {level} ({distancePct} melepasinya). Tidak sah apabila ditutup semula di bawah {invalid} — kira-kira 1 ATR di bawah puncak julat, kerana puncak itu sendiri mudah ditembusi bunyi intrahari.",
         "down": "Ditutup di bawah dasar julat 6j {level} ({distancePct} melepasinya). Tidak sah apabila ditutup semula di atas {invalid} — kira-kira 1 ATR di atas dasar julat, kerana dasar itu sendiri mudah ditembusi bunyi intrahari."
       }
+    },
+    "strength": {
+      "strongest": "Terkuat",
+      "trend_best": "Terbaik ikut trend",
+      "medium": "Sederhana",
+      "healthy": "Sihat"
     }
   },
   "pwa": {

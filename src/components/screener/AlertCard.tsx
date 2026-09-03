@@ -9,7 +9,7 @@ import { isInvalidated } from "@/lib/screener/invalidation";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { FactorMeter } from "./FactorMeter";
-import { readingKey, toneFor, DIRECTION_CLASSES } from "./scenario-ui";
+import { toneFor, DIRECTION_CLASSES, STRENGTH_CLASSES } from "./scenario-ui";
 
 // 接收 t 而不是硬编码文案——页面其余文案全部走 i18n，这里也不能例外
 // （英文/马来语环境下直接冒出一个中文"刚刚"是真的会发生的 bug）。
@@ -91,8 +91,9 @@ export function AlertCard({
   // 就走完了（扫描 15 分钟一轮、K 线 30 分钟一根），用 firstSeenAt 会把一次
   // 半小时前的点火说成「刚刚」。firstSeenAt 仍然管首次价与累计涨跌——那两个
   // 数就该锚在我们第一次记录它的那一刻。
-  const triggeredAt =
-    trigger.type === "ignition" ? new Date(trigger.ignition.ignitedAt).toISOString() : card.firstSeenAt;
+  const triggeredAt = new Date(
+    trigger.type === "ignition" ? trigger.ignition.ignitedAt : trigger.scenario.triggeredAt
+  ).toISOString();
   const fresh = freshness(triggeredAt);
 
   // 场景卡与点火卡在这三格上说的是不同的话，其余版式完全共用。
@@ -100,17 +101,20 @@ export function AlertCard({
   let verdict: string;
   let action: string;
   let trap = false;
+  let strengthBadge: { bg: string; text: string; label: string } | null = null;
   if (trigger.type === "scenario") {
     const sc = trigger.scenario;
     trap = sc.trap;
     title = t(`scenarios.${sc.kind}.name`);
     action = t(`scenarios.${sc.kind}.action`);
-    verdict = t(`scenarios.reading.${readingKey(sc.kind, sc.side)}`, {
-      price: formatPrice(sc.swingNow),
-      pricePct: formatPercent(((sc.swingNow - sc.swingPrev) / sc.swingPrev) * 100),
+    // 判定句用「结构位 + 两个变量的读数」拼，每个场景一句，见 i18n。
+    verdict = t(`scenarios.${sc.kind}.reading`, {
+      level: formatPrice(sc.structureLevel),
       cvdPct: formatPercent(sc.cvdPct),
       oiPct: formatPercent(sc.oiPct),
     });
+    const cls = STRENGTH_CLASSES[sc.strength];
+    strengthBadge = { ...cls, label: t(`strength.${sc.strength}`) };
   } else {
     const ig = trigger.ignition;
     title = t(`ignition.${ig.direction}.name`);
@@ -118,8 +122,6 @@ export function AlertCard({
     verdict = t(`ignition.reading.${ig.direction}`, {
       level: formatPrice(ig.level),
       invalid: formatPrice(ig.invalidationPrice),
-      // 突破幅度恒为正，不走 formatPercent——那个会加正负号，
-      // 写出来是「已越出 +0.51%」，那个加号没有任何含义。
       distancePct: `${ig.distancePct.toFixed(2)}%`,
     });
   }
@@ -182,6 +184,17 @@ export function AlertCard({
           <span className={cn("inline-flex items-center gap-0.5 text-[11px] font-semibold", toneCls.text)}>
             <Icon name="alert" className="h-3 w-3" />
             {t("scenarios.trap_label")}
+          </span>
+        )}
+        {strengthBadge && (
+          <span
+            className={cn(
+              "rounded-xs px-1.5 py-0.5 text-[10px] font-semibold",
+              strengthBadge.bg,
+              strengthBadge.text
+            )}
+          >
+            {strengthBadge.label}
           </span>
         )}
         {dead && (

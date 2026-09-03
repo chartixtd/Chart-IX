@@ -51,6 +51,13 @@ const config: Config = {
         "accent-orange": "#EE9A4D",
         "accent-violet": "#B692E8",
         "accent-magenta": "#DF7ECD",
+        // 三变量八场景各占一个色位，见 components/screener/scenario-ui.ts。
+        // 色环已经很挤，这三个是按「跟已有色相至少隔开 20°」挑的：
+        // cyan 落在 teal(168°) 与 info(220°) 之间，indigo 在 info 与
+        // violet(267°) 之间，rose 在 magenta(310°) 与 danger(358°) 之间。
+        "accent-cyan": "#35D0E8",
+        "accent-indigo": "#7C6CF0",
+        "accent-rose": "#F2617A",
         // 点火卡专用。六个场景色（青/蓝/金/橙/紫/品红）已经把色环占满，
         // 而点火不是「第七个场景」——它是另一个类别的信号，需要一眼能跟
         // 那六个分开。落在黄绿这一档：离金(42°)够远不会被读成同一族，

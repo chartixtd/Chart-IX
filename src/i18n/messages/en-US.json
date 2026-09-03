@@ -1019,30 +1019,6 @@
     "scenarios": {
       "trap_label": "Trap signal",
       "pill_manage": "Manage",
-      "healthy_trend": {
-        "name": "Healthy Trend",
-        "action": "Follow the trend, enter on pullback"
-      },
-      "inventory_flush": {
-        "name": "Inventory Flush",
-        "action": "Scale out, wait for reversal"
-      },
-      "true_top_div": {
-        "name": "True Top Divergence",
-        "action": "Reverse to short"
-      },
-      "true_bottom_div": {
-        "name": "True Bottom Divergence",
-        "action": "Reverse to long"
-      },
-      "false_top_div": {
-        "name": "False Top Divergence",
-        "action": "Do not short — follow trend, go long"
-      },
-      "false_bottom_div": {
-        "name": "False Bottom Divergence",
-        "action": "Do not long — follow trend, go short"
-      },
       "cvd_tag": {
         "healthy_trend": "aligned, strengthening",
         "inventory_flush": "aligned",
@@ -1059,15 +1035,55 @@
         "false_top_div": "surging",
         "false_bottom_div": "surging"
       },
-      "reading": {
-        "healthy_trend_high": "Fresh high at {price} ({pricePct} vs. prior swing), CVD aligned {cvdPct}, OI up {oiPct}",
-        "healthy_trend_low": "Fresh low at {price} ({pricePct} vs. prior swing), CVD aligned {cvdPct}, OI up {oiPct}",
-        "inventory_flush_high": "Fresh high at {price} ({pricePct} vs. prior swing), CVD aligned {cvdPct}, OI down {oiPct}",
-        "inventory_flush_low": "Fresh low at {price} ({pricePct} vs. prior swing), CVD aligned {cvdPct}, OI down {oiPct}",
-        "true_top_div": "Swept BSL to a new high at {price} ({pricePct} vs. prior swing), CVD weakening {cvdPct}, OI down {oiPct}",
-        "true_bottom_div": "Swept SSL to a new low at {price} ({pricePct} vs. prior swing), CVD strengthening {cvdPct}, OI down {oiPct}",
-        "false_top_div": "Stalling near the high ({price} ({pricePct} vs. prior swing)), CVD sharply weakening {cvdPct}, OI surging {oiPct}",
-        "false_bottom_div": "Stalling near the low ({price} ({pricePct} vs. prior swing)), CVD sharply strengthening {cvdPct}, OI surging {oiPct}"
+      "a1_healthy_pullback": {
+        "name": "Healthy Pullback",
+        "action": "Follow the trend, enter on the pullback",
+        "reading": "A pullback inside an uptrend; the {level} swing low is still intact. Through the pullback CVD {cvdPct}, OI {oiPct} — money is not leaving, the trend holds."
+      },
+      "a2_accum_bottom_div": {
+        "name": "Accumulation Bottom Divergence",
+        "action": "Lows swept and reclaimed, go long",
+        "reading": "Price swept the prior low at {level} and closed back above it, while CVD did not make a new low. CVD {cvdPct}, OI {oiPct}."
+      },
+      "a3_e1_absorb": {
+        "name": "E1 Absorption",
+        "action": "Absorption confirmed, go long",
+        "reading": "CVD made a new low before price did (someone is absorbing), then turned with enough force, and OI rose {oiPct} alongside. CVD {cvdPct}, wave low {level}."
+      },
+      "a4_e4_flush": {
+        "name": "Flush Stabilised",
+        "action": "Liquidation over, go long",
+        "reading": "Price vacuum-dropped to a new low at {level} while CVD did not follow, and OI has gone from collapsing to steady ({oiPct}). CVD {cvdPct}."
+      },
+      "b1_healthy_bounce": {
+        "name": "Healthy Bounce",
+        "action": "Follow the trend, enter on the bounce",
+        "reading": "A bounce inside a downtrend; the {level} swing high is still intact. Through the bounce CVD {cvdPct}, OI {oiPct} — money is not stepping in, the decline holds."
+      },
+      "b2_distrib_top_div": {
+        "name": "Distribution Top Divergence",
+        "action": "Highs swept and reclaimed, go short",
+        "reading": "Price swept the prior high at {level} and closed back below it, while CVD did not make a new high. CVD {cvdPct}, OI {oiPct}."
+      },
+      "b3_e5_distrib": {
+        "name": "E5 Distribution",
+        "action": "Distribution confirmed, go short",
+        "reading": "CVD made a new high before price did (someone is distributing), then turned down with enough force, and OI rose {oiPct} alongside. CVD {cvdPct}, wave high {level}."
+      },
+      "b4_e8_cover_stall": {
+        "name": "Short-Cover Stall",
+        "action": "Short covering over, go short",
+        "reading": "Price vacuum-rallied to a new high at {level} while CVD did not follow, and OI has gone from collapsing to steady ({oiPct}). CVD {cvdPct}."
+      },
+      "trap_false_top_div": {
+        "name": "False Top Divergence",
+        "action": "Do not short — follow trend, go long",
+        "reading": "Price is holding near {level}, CVD is violently weak at {cvdPct}, yet OI surged {oiPct} — what piled in is fresh short inventory, and they are the ones about to be squeezed."
+      },
+      "trap_false_bottom_div": {
+        "name": "False Bottom Divergence",
+        "action": "Do not long — follow trend, go short",
+        "reading": "Price is holding near {level}, CVD is violently strong at {cvdPct}, yet OI surged {oiPct} — what piled in is fresh long inventory, and they are the ones about to be squeezed."
       }
     },
     "guide": {
@@ -1094,6 +1110,12 @@
         "up": "Closed above the prior 6h range top {level} ({distancePct} beyond). Invalid on a close back below {invalid} — about 1 ATR under the range top, since the top itself gets cut by intraday noise.",
         "down": "Closed below the prior 6h range bottom {level} ({distancePct} beyond). Invalid on a close back above {invalid} — about 1 ATR over the range bottom, since the bottom itself gets cut by intraday noise."
       }
+    },
+    "strength": {
+      "strongest": "Strongest",
+      "trend_best": "Best with trend",
+      "medium": "Medium",
+      "healthy": "Healthy"
     }
   },
   "pwa": {

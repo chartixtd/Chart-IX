@@ -57,15 +57,15 @@ const pushedKeys = () =>
 
 function scenario(overrides: Partial<Scenario> = {}): Scenario {
   return {
-    kind: "healthy_trend",
+    kind: "a1_healthy_pullback",
     direction: "long",
     trap: false,
-    swingPrev: 0.28,
-    swingNow: 0.2961,
-    swingNowAt: 0,
+    strength: "trend_best",
+    triggeredAt: 0,
+    invalidation: { price: 0.28, breach: "below" },
+    structureLevel: 0.28,
     cvdPct: 3.1,
     oiPct: 2.4,
-    side: "high",
     ...overrides,
   };
 }
@@ -101,14 +101,14 @@ describe("formatAlertMessage", () => {
   it("方向、场景名与操作文案都在分组标题上", () => {
     const head = formatAlertMessage([alert], "zh").split(/\r?\n/)[2];
     expect(head).toContain("做多");
-    expect(head).toContain("健康趋势");
-    expect(head).toContain("顺势，回调进场");
+    expect(head).toContain("健康趋势回调");
+    expect(head).toContain("顺势做多，回调进场");
   });
 
   it("manage 场景显示为「观望」而不是做多/做空", () => {
     const manageAlert: AlertCardData = {
       ...alert,
-      trigger: { type: "scenario", scenario: scenario({ kind: "inventory_flush", direction: "manage" }) },
+      trigger: { type: "scenario", scenario: scenario({ kind: "a4_e4_flush", direction: "manage" }) },
       direction: "manage",
     };
     expect(formatAlertMessage([manageAlert], "zh")).toContain("观望");
@@ -171,13 +171,14 @@ describe("formatAlertMessage", () => {
       ...alert,
       key: "S",
       symbol: "S-USDT",
-      trigger: { type: "scenario", scenario: scenario({ direction: "short", side: "low" }) },
+      trigger: { type: "scenario", scenario: // 刻意保持 kind 不变、只改方向：这条测的正是「同名场景不同方向不能并组」
+      scenario({ direction: "short" }) },
       direction: "short",
     };
 
     const msg = formatAlertMessage([long, short], "zh");
 
-    expect(msg.match(/健康趋势/g)).toHaveLength(2);
+    expect(msg.match(/健康趋势回调/g)).toHaveLength(2);
     expect(msg).toContain("做多");
     expect(msg).toContain("做空");
   });
@@ -187,13 +188,13 @@ describe("formatAlertMessage", () => {
 
     const msg = formatAlertMessage([alert, weakIgnition], "zh");
 
-    expect(msg.indexOf("健康趋势")).toBeLessThan(msg.indexOf("向上点火"));
+    expect(msg.indexOf("健康趋势回调")).toBeLessThan(msg.indexOf("向上点火"));
   });
 
   it("陷阱场景用 ⚠️ 顶掉方向圆点，非陷阱场景用圆点", () => {
     const trapAlert: AlertCardData = {
       ...alert,
-      trigger: { type: "scenario", scenario: scenario({ kind: "false_top_div", trap: true, direction: "long" }) },
+      trigger: { type: "scenario", scenario: scenario({ kind: "trap_false_top_div", trap: true, direction: "long" }) },
     };
     const trapHead = formatAlertMessage([trapAlert], "zh").split(/\r?\n/)[2];
 

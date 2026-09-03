@@ -8,15 +8,15 @@ import type { InvalidationLine } from "./invalidation";
 /**
  * 备忘的钥匙 = 一个「结构事件」的身份。
  *
- * 带上 swingNow 是关键：场景锚在摆动点上，锚点没变就是同一件事。
- * 这样币暂时掉出前 20 又回来时，首次价与累计变化能接上而不是重置成 0；
- * 而摆动点一旦更新（结构真的变了），钥匙自然不同，重新计时。
+ * 带上 triggeredAt 是关键：场景锚在触发那根 K 线上，锚点没变就是同一件事。
+ * 这样币暂时掉出榜单又回来时，首次价与累计变化能接上而不是重置成 0；
+ * 而结构一旦更新（触发点换了根 K 线），钥匙自然不同，重新计时。
  *
- * swingNow 直接进字符串而不做四舍五入：它来自 K 线的最高/最低价，
- * 是精确值不是算出来的；取整反而会让两个相邻的摆动点撞成同一把钥匙。
+ * 用时刻而不是价格：价格来自浮点运算，同一个结构在两轮扫描之间可能因为
+ * 序列长度变化而算出末位不同的值，钥匙就白白换了一把。
  */
 export function memoKey(symbol: string, s: Scenario): string {
-  return `${symbol}|${s.kind}|${s.direction}|${s.side}|${s.swingNow}`;
+  return `${symbol}|${s.kind}|${s.direction}|${s.triggeredAt}`;
 }
 
 /**

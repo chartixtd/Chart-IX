@@ -10,15 +10,15 @@ const T0 = 1_700_000_000_000;
 
 function scenario(o: Partial<Scenario> = {}): Scenario {
   return {
-    kind: "healthy_trend",
+    kind: "a1_healthy_pullback",
     direction: "long",
     trap: false,
-    swingPrev: 100,
-    swingNow: 110,
-    swingNowAt: 0,
+    strength: "trend_best",
+    triggeredAt: 0,
+    invalidation: { price: 100, breach: "below" },
+    structureLevel: 100,
     cvdPct: 5,
     oiPct: 3,
-    side: "high",
     ...o,
   };
 }
@@ -73,8 +73,8 @@ function bars(specs: Array<[number, number, number]>): CoinGlassPriceBar[] {
 
 describe("memoKey", () => {
   it("锚点变了就是新事件——钥匙跟着变", () => {
-    const a = memoKey("TIA-USDT", scenario({ swingNow: 110 }));
-    const b = memoKey("TIA-USDT", scenario({ swingNow: 111 }));
+    const a = memoKey("TIA-USDT", scenario({ triggeredAt: 110 }));
+    const b = memoKey("TIA-USDT", scenario({ triggeredAt: 111 }));
     expect(a).not.toBe(b);
   });
 
@@ -82,10 +82,10 @@ describe("memoKey", () => {
     expect(memoKey("TIA-USDT", scenario())).toBe(memoKey("TIA-USDT", scenario()));
   });
 
-  it("同一个币的不同侧/不同方向互不混淆", () => {
-    const high = memoKey("TIA-USDT", scenario({ side: "high" }));
-    const low = memoKey("TIA-USDT", scenario({ side: "low" }));
-    expect(high).not.toBe(low);
+  it("同一个币的不同场景/不同方向互不混淆", () => {
+    const a = memoKey("TIA-USDT", scenario({ kind: "a1_healthy_pullback", direction: "long" }));
+    const b = memoKey("TIA-USDT", scenario({ kind: "b1_healthy_bounce", direction: "short" }));
+    expect(a).not.toBe(b);
   });
 });
 
@@ -160,7 +160,7 @@ describe("buildCard", () => {
   });
 
   it("做空的峰值看最低价，且符号翻过来", () => {
-    const sc = scenario({ kind: "true_top_div", direction: "short" });
+    const sc = scenario({ kind: "b2_distrib_top_div", direction: "short" });
     const memo: ScenarioMemo = {
       key: memoKey("TIA-USDT", sc),
       symbol: "TIA-USDT",

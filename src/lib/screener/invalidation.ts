@@ -25,11 +25,6 @@ import type { Ignition } from "./ignition";
  * 突破成立，失效线在 `swingPrev`。**
  */
 
-/** 真背离两格：论点是「这个极值是虚的」，所以极值本身就是失效线。 */
-function betsOnExtreme(kind: Scenario["kind"]): boolean {
-  return kind === "true_top_div" || kind === "true_bottom_div";
-}
-
 export interface InvalidationLine {
   /** 失效价 */
   price: number;
@@ -41,27 +36,20 @@ export interface InvalidationLine {
 }
 
 /**
- * 算出一个场景的失效线。
+ * 场景的失效线。
  *
- * 返回 null 的唯一情形是锚点价格非法（非有限值或非正数）——那种数据本身
- * 就不可信，宁可这张卡没有失效线，也不要给出一个错误的止损位。
+ * 新引擎里每个场景**自己带**失效位（Scenario.invalidation），因为规格要求
+ * 每个场景都有明确的失效位、没有就不成立——A2/B2 是 sweep 那一根的极值，
+ * A3/B3 是本波最低/最高点，A1/B1 是那个不能破的 swing，A4/B4 是清算极值。
+ *
+ * 这里曾经是一张「哪种场景赌什么、失效线放哪」的推导表。那张表随判定逻辑
+ * 一起搬进了 scenario.ts：失效位是判定的一部分（没有失效位就不该判出场景），
+ * 拆在两个文件里迟早会对不上。
  */
 export function invalidationLine(scenario: Scenario): InvalidationLine | null {
-  const anchor = betsOnExtreme(scenario.kind) ? scenario.swingNow : scenario.swingPrev;
-  if (!Number.isFinite(anchor) || anchor <= 0) return null;
-
-  // 高点侧：极值在上方（穿上去才算突破极值），前一个摆动点在下方（跌回去才算突破失败）。
-  // 低点侧完全镜像。两者合起来就是下面这个异或关系。
-  const breach: "above" | "below" =
-    scenario.side === "high"
-      ? betsOnExtreme(scenario.kind)
-        ? "above"
-        : "below"
-      : betsOnExtreme(scenario.kind)
-        ? "below"
-        : "above";
-
-  return { price: anchor, breach };
+  const { price, breach } = scenario.invalidation;
+  if (!Number.isFinite(price) || price <= 0) return null;
+  return { price, breach };
 }
 
 /**
@@ -75,25 +63,22 @@ export function invalidationLine(scenario: Scenario): InvalidationLine | null {
  */
 export function isInvalidated(line: InvalidationLine, high: number, low: number): boolean {
   if (!Number.isFinite(high) || !Number.isFinite(low)) return false;
-  // 严格不等：恰好碰到失效价不算穿。摆动点价格本身就是那一根 K 线的
-  // 最高/最低价，所以「碰到」在锚点那一刻必然成立——用 >= 会让每张卡
-  // 在诞生的同一秒就判定失效。
+  // 严格不等：恰好碰到失效价不算穿。结构位本身就取自某一根 K 线的极值，
+  // 所以「碰到」在锚点那一刻必然成立——用 >= 会让每张卡在诞生的同一秒
+  // 就判定失效。
   return line.breach === "above" ? high > line.price : low < line.price;
 }
 
 /**
  * 这个场景是不是已经被价格证伪了。
  *
- * 窗口从**摆动点成形那一刻**（`swingNowAt`）算起，而不是从「我们第一次
- * 看到这张卡」算起。后者取决于扫描什么时候轮到这个币，跟结构本身无关；
- * 而且它会漏判最要紧的一类：结构成形之后、我们看到之前，价格已经走反了。
+ * 窗口从**触发那一刻**（`triggeredAt`）算起，而不是从「我们第一次看到这张
+ * 卡」算起。后者取决于扫描什么时候轮到这个币，跟结构本身无关；而且它会漏判
+ * 最要紧的一类：结构成形之后、我们看到之前，价格已经走反了。
  *
- * 实测的漏判：APR 的存量清算锚在 0.1821 → 0.1744 两个低点上，失效线
- * 0.1821（涨破即失效），而价格早已反弹到 0.2217。按「第一次看到」算的
- * 窗口里价格一直在 0.2195–0.2221 之间波动，一次穿越都没有——因为穿越
- * 发生在我们看到它之前。按结构成形算就一目了然。
- *
- * 用区间最高/最低价而不是收盘价：插针也算数（见 isInvalidated 的注释）。
+ * 实测过一次真实漏判：某个币的场景锚在两个很早的低点上，失效线远在现价
+ * 下方，价格早就反弹上去了；按「第一次看到」算的窗口里一次穿越都没有，
+ * 因为穿越发生在我们看到它之前。按结构成形算就一目了然。
  */
 export function scenarioInvalidated(scenario: Scenario, bars: CoinGlassPriceBar[]): boolean {
   const line = invalidationLine(scenario);
@@ -102,13 +87,13 @@ export function scenarioInvalidated(scenario: Scenario, bars: CoinGlassPriceBar[
   let high = -Infinity;
   let low = Infinity;
   for (const b of bars) {
-    if (b.time < scenario.swingNowAt) continue;
+    if (b.time < scenario.triggeredAt) continue;
     const h = parseFloat(b.high);
     const l = parseFloat(b.low);
     if (Number.isFinite(h) && h > high) high = h;
     if (Number.isFinite(l) && l < low) low = l;
   }
-  // 一根都没有 = 摆动点比整段序列还新，理论上不可能（它就取自这段序列）。
+  // 一根都没有 = 触发点比整段序列还新，理论上不可能（它就取自这段序列）。
   // 真出现了就当没失效——宁可留着一个可疑的场景，也不要因为一个说不通的
   // 数据状态把所有场景静默清空。
   if (!Number.isFinite(high) || !Number.isFinite(low)) return false;

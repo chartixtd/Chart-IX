@@ -1019,30 +1019,6 @@
     "scenarios": {
       "trap_label": "陷阱信号",
       "pill_manage": "观望",
-      "healthy_trend": {
-        "name": "健康趋势",
-        "action": "顺势，回调进场"
-      },
-      "inventory_flush": {
-        "name": "存量清算",
-        "action": "分批止盈，等反手"
-      },
-      "true_top_div": {
-        "name": "真顶背离",
-        "action": "反手做空"
-      },
-      "true_bottom_div": {
-        "name": "真底背离",
-        "action": "反手做多"
-      },
-      "false_top_div": {
-        "name": "假顶背离",
-        "action": "禁止做空，顺势做多"
-      },
-      "false_bottom_div": {
-        "name": "假底背离",
-        "action": "禁止做多，顺势做空"
-      },
       "cvd_tag": {
         "healthy_trend": "同向走强",
         "inventory_flush": "同向",
@@ -1059,15 +1035,55 @@
         "false_top_div": "暴增",
         "false_bottom_div": "暴增"
       },
-      "reading": {
-        "healthy_trend_high": "顺势创新高至 {price}（较前一摆动点 {pricePct}），CVD 同向 {cvdPct}，OI 增加 {oiPct}",
-        "healthy_trend_low": "顺势创新低至 {price}（较前一摆动点 {pricePct}），CVD 同向 {cvdPct}，OI 增加 {oiPct}",
-        "inventory_flush_high": "顺势创新高至 {price}（较前一摆动点 {pricePct}），CVD 同向 {cvdPct}，OI 减少 {oiPct}",
-        "inventory_flush_low": "顺势创新低至 {price}（较前一摆动点 {pricePct}），CVD 同向 {cvdPct}，OI 减少 {oiPct}",
-        "true_top_div": "创新高扫 BSL 至 {price}（较前一摆动点 {pricePct}），CVD 走弱 {cvdPct}，OI 减少 {oiPct}",
-        "true_bottom_div": "创新低扫 SSL 至 {price}（较前一摆动点 {pricePct}），CVD 走强 {cvdPct}，OI 减少 {oiPct}",
-        "false_top_div": "新高后高位盘整（{price}（较前一摆动点 {pricePct}）），CVD 剧烈走弱 {cvdPct}，OI 暴增 {oiPct}",
-        "false_bottom_div": "新低后低位盘整（{price}（较前一摆动点 {pricePct}）），CVD 剧烈走强 {cvdPct}，OI 暴增 {oiPct}"
+      "a1_healthy_pullback": {
+        "name": "健康趋势回调",
+        "action": "顺势做多，回调进场",
+        "reading": "上升趋势中的回调，{level} 这个低点没有被跌破。回调段 CVD {cvdPct}、OI {oiPct}——钱没有在撤，趋势还在。"
+      },
+      "a2_accum_bottom_div": {
+        "name": "增仓型底背离",
+        "action": "扫底收回，反手做多",
+        "reading": "价格扫掉 {level} 的前低之后收了回来，而 CVD 没有跟着创新低。CVD {cvdPct}、OI {oiPct}。"
+      },
+      "a3_e1_absorb": {
+        "name": "E1吸筹",
+        "action": "吸筹力度到位，做多",
+        "reading": "CVD 比价格先创新低（有人在承接），随后转向且反弹力度达标，OI 同步增加 {oiPct}。CVD {cvdPct}，本波低点 {level}。"
+      },
+      "a4_e4_flush": {
+        "name": "恐慌清算企稳",
+        "action": "清算结束，做多",
+        "reading": "价格真空式下跌创出新低 {level} 而 CVD 没有跟跌，OI 已从暴减转为企稳（{oiPct}）。CVD {cvdPct}。"
+      },
+      "b1_healthy_bounce": {
+        "name": "健康跌势反弹",
+        "action": "顺势做空，反弹进场",
+        "reading": "下跌趋势中的反弹，{level} 这个高点没有被突破。反弹段 CVD {cvdPct}、OI {oiPct}——钱没有在进场，跌势还在。"
+      },
+      "b2_distrib_top_div": {
+        "name": "增仓型顶背离",
+        "action": "扫顶收回，反手做空",
+        "reading": "价格扫掉 {level} 的前高之后收了回来，而 CVD 没有跟着创新高。CVD {cvdPct}、OI {oiPct}。"
+      },
+      "b3_e5_distrib": {
+        "name": "E5派发",
+        "action": "派发力度到位，做空",
+        "reading": "CVD 比价格先创新高（有人在派发），随后转向且下行力度达标，OI 同步增加 {oiPct}。CVD {cvdPct}，本波高点 {level}。"
+      },
+      "b4_e8_cover_stall": {
+        "name": "回补失速",
+        "action": "回补结束，做空",
+        "reading": "价格真空式拉升创出新高 {level} 而 CVD 没有跟涨，OI 已从暴减转为企稳（{oiPct}）。CVD {cvdPct}。"
+      },
+      "trap_false_top_div": {
+        "name": "假顶背离",
+        "action": "禁止做空，顺势做多",
+        "reading": "价格守在 {level} 附近没有回落，CVD 剧烈走弱 {cvdPct}，但 OI 暴增 {oiPct}——堆进来的是追空的新仓，他们才是待收割的一方。"
+      },
+      "trap_false_bottom_div": {
+        "name": "假底背离",
+        "action": "禁止做多，顺势做空",
+        "reading": "价格守在 {level} 附近没有反弹，CVD 剧烈走强 {cvdPct}，但 OI 暴增 {oiPct}——堆进来的是抄底的新仓，他们才是待收割的一方。"
       }
     },
     "guide": {
@@ -1094,6 +1110,12 @@
         "up": "收盘站上前 6 小时区间顶 {level}（已越出 {distancePct}）。收盘跌回 {invalid} 之下即失效——这条线在区间顶下方约 1 个 ATR，画在区间顶上会被日内噪音打穿。",
         "down": "收盘跌破前 6 小时区间底 {level}（已越出 {distancePct}）。收盘涨回 {invalid} 之上即失效——这条线在区间底上方约 1 个 ATR，画在区间底上会被日内噪音打穿。"
       }
+    },
+    "strength": {
+      "strongest": "最强",
+      "trend_best": "最强顺势",
+      "medium": "中强",
+      "healthy": "健康"
     }
   },
   "pwa": {

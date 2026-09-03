@@ -1,145 +1,126 @@
 import { describe, it, expect } from "vitest";
-import { invalidationLine, isInvalidated, scenarioInvalidated } from "./invalidation";
-import type { Scenario, ScenarioKind } from "./factors/scenario";
+import { invalidationLine, isInvalidated, scenarioInvalidated, ignitionLine } from "./invalidation";
+import type { Scenario } from "./factors/scenario";
+import type { Ignition } from "./ignition";
+import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
 
-function sc(kind: ScenarioKind, side: "high" | "low"): Scenario {
-  // 高点侧：新高 110 > 前高 100。低点侧镜像：新低 90 < 前低 100。
+const B = 1_800_000;
+
+function scenario(o: Partial<Scenario> = {}): Scenario {
   return {
-    kind,
+    kind: "a2_accum_bottom_div",
     direction: "long",
     trap: false,
-    swingPrev: 100,
-    swingNow: side === "high" ? 110 : 90,
-    swingNowAt: 0,
-    cvdPct: 0,
-    oiPct: 0,
-    side,
+    strength: "strongest",
+    triggeredAt: 5 * B,
+    invalidation: { price: 100, breach: "below" },
+    structureLevel: 100,
+    cvdPct: 4,
+    oiPct: 3,
+    ...o,
   };
 }
 
+/** [time下标, high, low] → K 线 */
+function bars(specs: Array<[number, number, number]>): CoinGlassPriceBar[] {
+  return specs.map(([i, high, low]) => ({
+    time: i * B,
+    open: String(low),
+    high: String(high),
+    low: String(low),
+    close: String(low),
+    volume_usd: "1",
+  }));
+}
+
 describe("invalidationLine", () => {
-  it("真背离赌极值本身：失效线在 swingNow，往极值方向穿", () => {
-    // 真顶背离说「110 这个高点是虚的」——涨过 110 就说明它不虚。
-    expect(invalidationLine(sc("true_top_div", "high"))).toEqual({ price: 110, breach: "above" });
-    // 真底背离说「90 这个低点是虚的」——跌破 90 就说明它不虚。
-    expect(invalidationLine(sc("true_bottom_div", "low"))).toEqual({ price: 90, breach: "below" });
+  it("直接用场景自己带的失效位", () => {
+    // 新引擎里失效位是判定的一部分：规格要求每个场景都有明确失效位，
+    // 没有就不成立。所以这里不再有一张「哪种场景赌什么」的推导表——
+    // 那张表跟判定逻辑分居两个文件时迟早会对不上。
+    expect(invalidationLine(scenario())).toEqual({ price: 100, breach: "below" });
   });
 
-  it("其余四种赌突破成立：失效线在 swingPrev，往收回的方向穿", () => {
-    for (const kind of ["healthy_trend", "inventory_flush", "false_top_div"] as ScenarioKind[]) {
-      expect(invalidationLine(sc(kind, "high"))).toEqual({ price: 100, breach: "below" });
-    }
-    for (const kind of ["healthy_trend", "inventory_flush", "false_bottom_div"] as ScenarioKind[]) {
-      expect(invalidationLine(sc(kind, "low"))).toEqual({ price: 100, breach: "above" });
-    }
+  it("做空侧的失效方向是往上穿", () => {
+    const s = scenario({ direction: "short", invalidation: { price: 120, breach: "above" } });
+    expect(invalidationLine(s)!.breach).toBe("above");
   });
 
-  it("失效线永远落在「当前价格已经走过的那一侧」的反方向", () => {
-    // 这条钉的是最容易搞反的地方：高点侧的失效线要么在更高处（真背离），
-    // 要么在下方（其余四种）——绝不会出现「高点侧却要求跌破 swingNow」
-    // 这种既不是止损也不是目标的位置。
-    for (const kind of [
-      "healthy_trend", "inventory_flush", "true_top_div", "false_top_div",
-    ] as ScenarioKind[]) {
-      const line = invalidationLine(sc(kind, "high"))!;
-      if (line.breach === "above") expect(line.price).toBe(110); // 只可能是极值
-      else expect(line.price).toBe(100); // 只可能是前一个摆动点
-    }
-  });
-
-  it("锚点价格非法时返回 null，而不是给一个错误的止损位", () => {
-    expect(invalidationLine({ ...sc("healthy_trend", "high"), swingPrev: 0 })).toBeNull();
-    expect(invalidationLine({ ...sc("true_top_div", "high"), swingNow: NaN })).toBeNull();
+  it("失效价非法时返回 null，而不是给一个错误的止损位", () => {
+    expect(invalidationLine(scenario({ invalidation: { price: 0, breach: "below" } }))).toBeNull();
+    expect(invalidationLine(scenario({ invalidation: { price: NaN, breach: "below" } }))).toBeNull();
   });
 });
 
 describe("isInvalidated", () => {
-  const above = { price: 110, breach: "above" as const };
-  const below = { price: 100, breach: "below" as const };
-
-  it("穿过去才算失效", () => {
-    expect(isInvalidated(above, 110.1, 90)).toBe(true);
-    expect(isInvalidated(above, 109.9, 90)).toBe(false);
-    expect(isInvalidated(below, 120, 99.9)).toBe(true);
-    expect(isInvalidated(below, 120, 100.1)).toBe(false);
+  it("用区间极值判，插针也算数", () => {
+    // 止损被扫了就是被扫了。用收盘价判会漏掉真实发生过的穿越，
+    // 而那种漏判恰恰发生在行情最剧烈、这张卡最需要被撤下的时候。
+    expect(isInvalidated({ price: 100, breach: "below" }, 120, 99)).toBe(true);
   });
 
-  it("恰好碰到不算——否则每张卡诞生的同一秒就会判定失效", () => {
-    // 摆动点价格本身就是那根 K 线的最高/最低价，所以「碰到」在锚点
-    // 那一刻必然成立。用 >= 的话真背离的卡永远活不过一秒。
-    expect(isInvalidated(above, 110, 90)).toBe(false);
-    expect(isInvalidated(below, 120, 100)).toBe(false);
+  it("恰好碰到不算穿——否则每张卡诞生的同一秒就失效", () => {
+    // 失效价取自某一根 K 线的极值，「碰到」在锚点那一刻必然成立。
+    expect(isInvalidated({ price: 100, breach: "below" }, 120, 100)).toBe(false);
+    expect(isInvalidated({ price: 100, breach: "above" }, 100, 90)).toBe(false);
   });
 
-  it("看区间最高/最低价，插针也算数", () => {
-    // 收盘价回到线内，但盘中插针穿过去了——止损被扫了就是被扫了。
-    expect(isInvalidated(above, 115, 105)).toBe(true);
-    expect(isInvalidated(below, 120, 95)).toBe(true);
-  });
-
-  it("实时逐笔价：同一个价格同时当 high 和 low 传，行为一致", () => {
-    expect(isInvalidated(above, 111, 111)).toBe(true);
-    expect(isInvalidated(above, 109, 109)).toBe(false);
-  });
-
-  it("非有限值不算失效——宁可留着卡，也不要因为一个坏数据误撤", () => {
-    expect(isInvalidated(above, NaN, 90)).toBe(false);
-    expect(isInvalidated(below, 120, NaN)).toBe(false);
+  it("非法价格不误判成失效", () => {
+    expect(isInvalidated({ price: 100, breach: "below" }, NaN, NaN)).toBe(false);
   });
 });
 
 describe("scenarioInvalidated", () => {
-  const bar = (time: number, high: number, low: number) => ({
-    time,
-    open: String(low),
-    high: String(high),
-    low: String(low),
-    close: String(high),
-    volume_usd: "1",
-  });
-  const T = 1_700_000_000_000;
-
-  it("窗口从摆动点成形算起，不是从我们第一次看到算起", () => {
-    // 这是线上抓到的真实 bug（APR）：存量清算锚在两个很早的低点上，
-    // 失效线在 swingPrev（涨破即失效），而价格早就反弹到远高于它的位置。
-    // 穿越发生在「我们看到它」之前——所以按 firstSeenAt 开窗判不出来，
-    // 而主扫描表照样在推销一个死掉的信号。
-    const s: Scenario = {
-      ...sc("inventory_flush", "low"),
-      swingPrev: 0.1821,
-      swingNow: 0.1744,
-      swingNowAt: T,
-    };
-    // 摆动点之后价格一路反弹到 0.2217，远高于失效线 0.1821
-    const bars = [
-      bar(T - 3_600_000, 0.19, 0.17), // 摆动点之前，不该参与
-      bar(T, 0.1744, 0.1744),
-      bar(T + 1_800_000, 0.2217, 0.2195),
-    ];
-    expect(scenarioInvalidated(s, bars)).toBe(true);
+  it("窗口从触发那一刻算起，不是从我们第一次看到算起", () => {
+    // 触发在下标 5。下标 3 那根跌破过 100，但它在触发之前，不该算数。
+    const b = bars([
+      [3, 110, 90],
+      [5, 110, 105],
+      [6, 110, 106],
+    ]);
+    expect(scenarioInvalidated(scenario(), b)).toBe(false);
   });
 
-  it("摆动点之前的 K 线不参与判定", () => {
-    const s: Scenario = { ...sc("healthy_trend", "high"), swingNowAt: T };
-    // 失效线是 swingPrev=100（跌破即失效）。摆动点之前跌到过 50，
-    // 但那属于这个结构成形之前的事，不能算它失效。
-    const bars = [bar(T - 3_600_000, 120, 50), bar(T, 110, 105)];
-    expect(scenarioInvalidated(s, bars)).toBe(false);
+  it("触发之后跌破就是失效", () => {
+    const b = bars([
+      [5, 110, 105],
+      [6, 110, 99],
+    ]);
+    expect(scenarioInvalidated(scenario(), b)).toBe(true);
   });
 
-  it("结构成形之后穿线才算", () => {
-    const s: Scenario = { ...sc("healthy_trend", "high"), swingNowAt: T };
-    const bars = [bar(T, 110, 105), bar(T + 1_800_000, 108, 99)];
-    expect(scenarioInvalidated(s, bars)).toBe(true);
+  it("触发点比整段序列还新时当作没失效", () => {
+    // 理论上不可能（触发点就取自这段序列）。真出现了，宁可留着一个可疑的
+    // 场景，也不要因为一个说不通的数据状态把所有场景静默清空。
+    expect(scenarioInvalidated(scenario({ triggeredAt: 999 * B }), bars([[1, 110, 1]]))).toBe(false);
+  });
+});
+
+describe("ignitionLine", () => {
+  const ig = (o: Partial<Ignition> = {}): Ignition => ({
+    direction: "up",
+    level: 100,
+    invalidationPrice: 98,
+    distancePct: 1,
+    ignitedAt: 0,
+    barsAgo: 0,
+    volumeRatio: 2,
+    oiChangePct: 1,
+    ...o,
   });
 
-  it("锚点价格非法时不判失效——宁可留着可疑场景，也不要静默清空全部", () => {
-    const s: Scenario = { ...sc("healthy_trend", "high"), swingPrev: 0, swingNowAt: T };
-    expect(scenarioInvalidated(s, [bar(T, 1, 1)])).toBe(false);
+  it("用 invalidationPrice，不是被突破的那条区间边界", () => {
+    // 边界本身太近：773 个真实事件里点火当下离边界的距离中位只有 0.38%，
+    // 照那个位置判，84% 会被打穿，而且中位情况下在行情走出任何东西之前
+    // 就已经作废。
+    expect(ignitionLine(ig())).toEqual({ price: 98, breach: "below" });
   });
 
-  it("窗口内一根 K 线都没有时不判失效", () => {
-    const s: Scenario = { ...sc("healthy_trend", "high"), swingNowAt: T };
-    expect(scenarioInvalidated(s, [bar(T - 1000, 1, 1)])).toBe(false);
+  it("向下点火的失效方向相反", () => {
+    expect(ignitionLine(ig({ direction: "down", invalidationPrice: 102 }))!.breach).toBe("above");
+  });
+
+  it("失效价非法时返回 null", () => {
+    expect(ignitionLine(ig({ invalidationPrice: 0 }))).toBeNull();
   });
 });

@@ -5,15 +5,15 @@ import type { Scenario } from "@/lib/screener/factors/scenario";
 
 function scenario(overrides: Partial<Scenario> = {}): Scenario {
   return {
-    kind: "healthy_trend",
+    kind: "a1_healthy_pullback",
     direction: "long",
     trap: false,
-    swingPrev: 0.28,
-    swingNow: 0.2961,
-    swingNowAt: 0,
+    strength: "trend_best",
+    triggeredAt: 0,
+    invalidation: { price: 0.28, breach: "below" },
+    structureLevel: 0.28,
     cvdPct: 3.1,
     oiPct: 2.4,
-    side: "high",
     ...overrides,
   };
 }
@@ -38,8 +38,8 @@ function card(overrides: Partial<AlertCardData> = {}): AlertCardData {
 describe("buildScreenerAlertMessage", () => {
   it("只有一张卡时说清楚是哪个币、什么事、怎么办", () => {
     const msg = buildScreenerAlertMessage("zh-CN", [card()]);
-    expect(msg.title).toBe("🚨 TIA 健康趋势");
-    expect(msg.body).toBe("@2,369.5 · 顺势，回调进场");
+    expect(msg.title).toBe("🚨 TIA 健康趋势回调");
+    expect(msg.body).toBe("@2,369.5 · 顺势做多，回调进场");
   });
 
   it("点火卡走点火自己的说法，不套场景名", () => {
@@ -88,7 +88,7 @@ describe("buildScreenerAlertMessage", () => {
 
   it("ms-MY 的框架文案是马来语，场景名落到英文——已知的不对称", () => {
     const msg = buildScreenerAlertMessage("ms-MY", [card()]);
-    expect(msg.title).toBe("🚨 TIA Healthy Trend");
+    expect(msg.title).toBe("🚨 TIA Healthy Pullback");
     const many = buildScreenerAlertMessage("ms-MY", [card({ coin: "A" }), card({ coin: "B" })]);
     expect(many.title).toBe("🚨 2 isyarat baharu");
   });
@@ -121,7 +121,7 @@ describe("locale 的原型链键不能穿过文案表", () => {
 
   it("单卡路径也不能被原型链键带崩", () => {
     const msg = buildScreenerAlertMessage("toString", [card()]);
-    expect(msg.title).toBe("🚨 TIA Healthy Trend");
+    expect(msg.title).toBe("🚨 TIA Healthy Pullback");
   });
 
   it("正常的三种 locale 不受影响", () => {

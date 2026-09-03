@@ -1,265 +1,509 @@
 import type { CoinGlassPriceBar, CoinGlassOiBar, CoinGlassTakerBar } from "@/lib/coinglass/types";
-import { toFiniteNumber } from "@/lib/coinglass/types";
-import { findPivots, PIVOT_N, PRICE_EXTREME_MIN_PCT } from "./oi-divergence";
+import { findPivots, PIVOT_N } from "./oi-divergence";
+import {
+  cvdLine,
+  highs,
+  lows,
+  closes,
+  oiCloses,
+  lastTwoPivots,
+  pctChange,
+  cvdNetPct,
+  oiState,
+  findSweep,
+  CVD_ALIGN_PCT,
+  CVD_EXTREME_PCT,
+  OI_SURGE_PCT,
+} from "./series";
+import type { OiState, Sweep } from "./series";
 
 /**
- * 六场景判定层：以价格最近两个已确认摆动点为锚，读同一对时刻之间 CVD 与
- * OI 的变化，把每个币分类成六种场景之一（或无场景）。MSS 不在这一批做。
+ * 三变量（价格 / CVD / OI）判读引擎。
  *
- * 与 oiDivergence（一个连续的方向调整量）不同，这里产出的是离散分类 +
- * 操作方向 + 陷阱标志，供警报状态机与前端警报卡直接使用——警报要的是
- * 「现在是哪种局面」，不是「往哪边调几分」。
+ * 通用语义层——三个变量各自回答的问题不同，混着看必错：
+ *   价格 = 发生了什么（硬门槛：结构有没有破）
+ *   CVD  = 谁在推动（**用 swing 比较，不用单根颜色**）
+ *   OI   = 有没有新钱（含义模糊，必须配 CVD 才知道是谁在动）
+ *
+ * OI×CVD 交叉语义（所有场景通用）：
+ *   OI减 + CVD跌 = 多头被清算      OI减 + CVD平 = 空头回补
+ *   OI增 + CVD跌 = 空头建仓        OI增 + CVD涨 = 多头建仓
+ *
+ * 冲突优先级：**价格结构 > OI > CVD**。
+ *
+ * 这一版整个替换了旧的六场景（healthy_trend / inventory_flush / 真假顶底
+ * 背离）。旧那套只用「最近两个价格摆动点之间的 CVD 净流与 OI 变化」填一张
+ * 四格表，没有前置状态、没有 sweep、也没有 CVD 自己的 swing——而规格里
+ * 「CVD 有没有跌破它自己前一个 swing low」正是背离成不成立的判据。
  */
+
 export type ScenarioKind =
-  | "healthy_trend"
-  | "inventory_flush"
-  | "true_top_div"
-  | "true_bottom_div"
-  | "false_top_div"
-  | "false_bottom_div";
+  // 做多方向
+  | "a1_healthy_pullback" // A1 健康趋势回调
+  | "a2_accum_bottom_div" // A2 增仓型底背离（含 OI 减的真底背离）
+  | "a3_e1_absorb" // A3 E1 吸筹 + OI 增
+  | "a4_e4_flush" // A4 E4 恐慌清算 + OI 企稳
+  // 做空方向
+  | "b1_healthy_bounce" // B1 健康跌势反弹
+  | "b2_distrib_top_div" // B2 增仓型顶背离
+  | "b3_e5_distrib" // B3 E5 派发 + OI 增
+  | "b4_e8_cover_stall" // B4 E8 回补失速 + OI 企稳
+  // 陷阱（独立判定，优先级高于以上所有）
+  | "trap_false_top_div" // 假顶背离 → 禁止做空，顺势做多
+  | "trap_false_bottom_div"; // 假底背离 → 禁止做多，顺势做空
 
 export type ScenarioDirection = "long" | "short" | "manage";
+
+/** 强度分级，取自规格最后那张汇总表。排除档不产出场景，所以不在这里。 */
+export type ScenarioStrength = "strongest" | "trend_best" | "medium" | "healthy";
 
 export interface Scenario {
   kind: ScenarioKind;
   direction: ScenarioDirection;
   trap: boolean;
-  /** 判定锚点：前一个摆动点价格与最新摆动点价格 */
-  swingPrev: number;
-  swingNow: number;
+  strength: ScenarioStrength;
   /**
-   * 最新摆动点那根 K 线的时刻，ms epoch。
+   * 触发那根 K 线的时刻，ms epoch。
    *
-   * 失效判定要用它当窗口起点：「这个结构成形之后，价格有没有打穿失效线」。
-   * 用「我们第一次看到这张卡」当起点是错的——那取决于扫描什么时候轮到
-   * 这个币，而不是取决于结构本身。实测过一个真实后果：APR 的存量清算
-   * 锚在两个很早的低点上（0.1821 → 0.1744），价格早就反弹到 0.2217，
-   * 按结构成形算它显然已经失效，但按「第一次看到」算的窗口里价格一直
-   * 在 0.2195–0.2221 之间，反而判不出穿线。
+   * 失效判定的窗口起点用它，不用「我们第一次看到这张卡」——后者取决于扫描
+   * 什么时候轮到这个币，跟结构本身无关，而且会漏掉最要紧的一类：结构成形
+   * 之后、我们看到之前，价格已经走反了。
    */
-  swingNowAt: number;
-  /** 两摆动点之间的净流占换手 %、OI 变化 % —— 警报卡的判定句直接用它们 */
+  triggeredAt: number;
+  /** 失效价与穿越方向。规格要求每个场景都有明确失效位，没有就不成立。 */
+  invalidation: { price: number; breach: "above" | "below" };
+  /** 关键结构位：被扫的 SSL/BSL，或这次判定依托的那个未破 swing */
+  structureLevel: number;
+  /** 判定区间内的 CVD 净流占换手 %、OI 变化 % —— 卡片判定句直接用 */
   cvdPct: number;
   oiPct: number;
-  /** 判定用的是高点侧还是低点侧 */
-  side: "high" | "low";
 }
 
 /**
- * 以下四个阈值是量出来的，不是拍的（2026-08-19，18 个深度扫描币、17 个
- * 新极值样本，摆动点对之间）：
- *   |CVD净流%| 中位 3.1 · 75% 分位 7.8 · 90% 分位 9.8
- *   |OI差%|   中位 1.2 · 75% 分位 2.9 · 90% 分位 7.3
- * 起判线取中位数下方挡噪音（CVD ±2、OI ±1），「剧烈/暴增」取 90% 分位
- * （CVD ±10、OI +7）。这组阈值下高点侧/低点侧各自的四个格子数学上互斥：
- * OI 的符号分开真背离（OI 收缩，≤-1）与假背离陷阱（OI 暴增，≥+7）；
- * CVD 的符号分开健康趋势/存量清算（同向，≥+2）与背离（逆向，≤-2）。
+ * 力度扳机的斜率倍数下限（A3/B3 的第 ② 条）。
  *
- * **端到端出现率基线**（2026-08-19 复测，14 币 × 7 天滑动前缀 = 658 轮
- * 模拟扫描，scripts/screener-calibrate.mjs）：
- *   无场景 73.6% · 存量清算 15.7% · 健康趋势 9.9% · 真底背离 0.9%
- *   真顶背离 0% · 假顶背离 0% · 假底背离 0%
- *   命中时 |cvdPct| 中位 7.5% / 90% 17.9%，|oiPct| 中位 3.7% / 90% 10.9%
- *
- * 两种陷阱场景 0/658 **不是判定坏了**——scenario.test.ts 里
- * false_top_div / false_bottom_div 都有直接断言覆盖，构造出条件就能判出来。
- * 是这七天里「CVD 剧烈逆行 + OI 同时暴增」这个组合真的没出现过。
- *
- * 不要因为它不触发就去调低阈值。这两格的输出是「禁止反手」——调低意味着
- * 更频繁地叫停一个方向，判错的代价是实打实的。要改就该等真实行情里出现过
- * 几次已知的假背离，拿那几次的实际数值去定，而不是为了让它有动静而定。
- * 单看边际分布会误导：|cvdPct| ≥ 2% 覆盖了 78% 的摆动点对，像是形同虚设，
- * 但叠加 OI 与「价格创新极值」之后的端到端出现率完全是另一回事（见上）。
+ * 规格给的是「1.5–2 倍」一个区间。取下界 1.5：这套系统眼下的问题一直是
+ * 门槛叠太紧导致几乎不出卡（六场景时代实测每天只出 8–26 个，改了选币口径
+ * 之后直接归零），在一个区间里挑上界只会让它更沉默。真出卡太多再收紧。
  */
-export const SCENARIO_CVD_ALIGN_MIN = 2;
-export const SCENARIO_CVD_EXTREME_MIN = 10;
-export const SCENARIO_OI_CHANGE_MIN = 1;
-export const SCENARIO_OI_SURGE_MIN = 7;
+export const SLOPE_RATIO_MIN = 1.5;
 
-function isFiniteNumber(n: number): boolean {
-  return Number.isFinite(n);
+/** 短时间收复整段跌幅的比例下限（A3/B3 第 ② 条的另一条路）。 */
+export const RECLAIM_PCT_MIN = 30;
+
+/** 判定回看窗口：往回找 sweep 的最大根数。48 根 = 24 小时。 */
+export const SCENARIO_LOOKBACK = 48;
+
+interface Ctx {
+  bars: CoinGlassPriceBar[];
+  h: number[];
+  l: number[];
+  c: number[];
+  oi: number[];
+  cvd: number[];
+  taker: CoinGlassTakerBar[];
+  last: number;
 }
 
-/**
- * 单侧（高点侧或低点侧）分类结果，附带 i2（最新摆动点下标）供
- * classifyScenario 在两侧都命中时挑「更晚确认」的那一侧。
- */
-interface SideResult {
-  scenario: Scenario;
-  i2: number;
+/** 一段区间 (from, to] 上三个变量各自的读数。 */
+function leg(ctx: Ctx, from: number, to: number) {
+  const pricePct = pctChange(ctx.c, from, to);
+  const oiPct = pctChange(ctx.oi, from, to);
+  const cvdPct = cvdNetPct(ctx.taker, from, to);
+  const oi = oiState(ctx.oi, from, to);
+  if (pricePct === null || oiPct === null || cvdPct === null || oi === null) return null;
+  return { pricePct, oiPct, cvdPct, oi };
 }
 
-/**
- * 八格判定表的符号方向（写代码前独立推导，避免抄错方向）：
- *
- * 高点侧「同向」= CVD 为正（买盘推着价格创新高，买盘方向与价格方向一致）；
- * 低点侧「同向」= CVD 为负（卖盘推着价格创新低，下跌趋势里「同向」是卖盘
- * 主导，不是买盘）。所以统一用 signedCvd：高点侧 signedCvd = cvdPct，
- * 低点侧 signedCvd = -cvdPct，「正数 signedCvd」在两侧都表示「同向」。
- * 换算之后，四个格子在两侧共用同一套 signedCvd/oiPct 判据，唯一的区别是
- * 「同向」对应的操作方向相反（高点侧同向=多头趋势延续=long；低点侧同向=
- * 空头趋势延续=short）：
- *
- *   signedCvd ≤ -EXTREME 且 oiPct ≥ SURGE
- *     → 假背离陷阱：同向的钱其实是逆势追进来的新仓（OI 暴增），价格顶/底
- *       扛住没被打穿，真正会发生的是这批追单被反向挤爆——高点侧「顺势做多」
- *       （false_top_div/long/trap）、低点侧「顺势做空」（false_bottom_div/
- *       short/trap）。
- *   signedCvd ≤ -ALIGN 且 oiPct ≤ -CHANGE
- *     → 真背离：价格创新极值但资金流逆着走、且 OI 还在收缩（没有新钱托底/
- *       接力），结构最弱——高点侧「反手做空」（true_top_div/short）、
- *       低点侧「反手做多」（true_bottom_div/long）。
- *   signedCvd ≥ ALIGN 且 oiPct ≥ CHANGE
- *     → 健康趋势：资金流与价格同向、OI 同步扩张，新钱在推动——
- *       高点侧「顺势做多」（healthy_trend/long）、低点侧「顺势做空」
- *       （healthy_trend/short）。
- *   signedCvd ≥ ALIGN 且 oiPct ≤ -CHANGE
- *     → 存量清算：资金流同向但 OI 在收缩（老仓位被平掉而非新仓进场），
- *       这是行情要衰竭的信号，不是新趋势——两侧统一给 manage
- *       （inventory_flush/manage）：分批止盈，等反手。
- *
- * 其余组合（包括 signedCvd 落在 (-ALIGN, ALIGN) 内、或 oiPct 落在
- * (-CHANGE, CHANGE) 内）都不命中任何格子，返回 null（无场景）。
- */
-function classifyCell(
-  side: "high" | "low",
+/** 这条序列最后两个摆动点之间有没有创新极值。取不到摆动点返回 null。 */
+function newExtreme(values: number[], kind: "high" | "low"): boolean | null {
+  const pv = lastTwoPivots(values, kind);
+  if (!pv) return null;
+  const a = values[pv.prev];
+  const b = values[pv.curr];
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return kind === "high" ? b > a : b < a;
+}
+
+function mk(
+  kind: ScenarioKind,
+  direction: ScenarioDirection,
+  strength: ScenarioStrength,
+  trap: boolean,
+  triggeredAt: number,
+  invalidationPrice: number,
+  breach: "above" | "below",
+  structureLevel: number,
   cvdPct: number,
   oiPct: number
-): { kind: ScenarioKind; direction: ScenarioDirection; trap: boolean } | null {
-  const signedCvd = side === "high" ? cvdPct : -cvdPct;
-  const alignedDirection: ScenarioDirection = side === "high" ? "long" : "short";
-  const divergedDirection: ScenarioDirection = side === "high" ? "short" : "long";
+): Scenario | null {
+  if (!Number.isFinite(invalidationPrice) || invalidationPrice <= 0) return null;
+  if (!Number.isFinite(triggeredAt)) return null;
+  return {
+    kind,
+    direction,
+    trap,
+    strength,
+    triggeredAt,
+    invalidation: { price: invalidationPrice, breach },
+    structureLevel,
+    cvdPct,
+    oiPct,
+  };
+}
 
-  if (signedCvd <= -SCENARIO_CVD_EXTREME_MIN && oiPct >= SCENARIO_OI_SURGE_MIN) {
-    return {
-      kind: side === "high" ? "false_top_div" : "false_bottom_div",
-      // 陷阱格的操作方向是「顺势」，即跟 alignedDirection 一致，不是
-      // divergedDirection——这正是「假背离」这个名字的意思：看起来像
-      // 背离，实际该顺着原趋势走。
-      direction: alignedDirection,
-      trap: true,
-    };
-  }
-  if (signedCvd <= -SCENARIO_CVD_ALIGN_MIN && oiPct <= -SCENARIO_OI_CHANGE_MIN) {
-    return {
-      kind: side === "high" ? "true_top_div" : "true_bottom_div",
-      direction: divergedDirection,
-      trap: false,
-    };
-  }
-  if (signedCvd >= SCENARIO_CVD_ALIGN_MIN && oiPct >= SCENARIO_OI_CHANGE_MIN) {
-    return { kind: "healthy_trend", direction: alignedDirection, trap: false };
-  }
-  if (signedCvd >= SCENARIO_CVD_ALIGN_MIN && oiPct <= -SCENARIO_OI_CHANGE_MIN) {
-    return { kind: "inventory_flush", direction: "manage", trap: false };
+/* ────────────────────────────── 陷阱 ──────────────────────────────
+ * 独立判定，**优先级高于所有场景**。识别关键是出现「剧烈 / 暴增」这类
+ * 极端量级：任一场景判定过程中检出这两种组合，直接覆盖原判定。
+ *
+ * 假顶背离 = 新高/高位盘整 + CVD 剧烈走弱 + OI 暴增 → 禁止做空，顺势做多
+ * 假底背离 = 新低/低位盘整 + CVD 剧烈走强 + OI 暴增 → 禁止做多，顺势做空
+ *
+ * 方向是**反直觉**的，这正是它叫「假背离」的原因：看着像背离该反手，
+ * 实际那批逆势追进来的新仓（OI 暴增）才是待收割的一方，该顺着原方向走。
+ */
+function detectTrap(ctx: Ctx): Scenario | null {
+  for (const side of ["high", "low"] as const) {
+    const values = side === "high" ? ctx.h : ctx.l;
+    const pv = lastTwoPivots(values, side);
+    if (!pv) continue;
+    const st = leg(ctx, pv.prev, ctx.last);
+    if (!st) continue;
+
+    // 「新高/高位盘整」= 没有往反方向走掉。跌回去就不是这个局面了。
+    const holding = side === "high" ? st.pricePct > -CVD_ALIGN_PCT : st.pricePct < CVD_ALIGN_PCT;
+    if (!holding) continue;
+    if (st.oiPct < OI_SURGE_PCT) continue;
+
+    const violent = side === "high" ? st.cvdPct <= -CVD_EXTREME_PCT : st.cvdPct >= CVD_EXTREME_PCT;
+    if (!violent) continue;
+
+    const level = values[pv.curr];
+    return mk(
+      side === "high" ? "trap_false_top_div" : "trap_false_bottom_div",
+      side === "high" ? "long" : "short",
+      "strongest",
+      true,
+      ctx.bars[pv.curr].time,
+      level,
+      side === "high" ? "below" : "above",
+      level,
+      st.cvdPct,
+      st.oiPct
+    );
   }
   return null;
 }
 
-/**
- * 单侧判定：用 findPivots 找最后两个已确认摆动点，检查新极值幅度门槛，
- * 算 cvdPct/oiPct，套进 classifyCell。任何一步的数据不是有限值就返回
- * null——这条规矩与 oiDivergence 一致：下标硬取不报错，只让判定全错，
- * 所以每一步都要显式挡。
+/* ────────────────── A1 / B1 健康趋势回调 · 反弹 ──────────────────
+ * 前置（酝酿期）：价格连续创新极值且高低点同向推进、CVD 同步创新极值、
+ * OI 每一波都在增加。三条都要，缺一条就不是「健康趋势」，后面的回调
+ * 也就无从谈起。
+ *
+ * 触发看的是回调段里 CVD 与 OI 的配合：
+ *   CVD 跌得比价格多(E1) + OI 增或平 → 最佳回调 ⭐
+ *   CVD 与价格同步小幅回落 + OI 小幅减 → 正常回调 ✅
+ *   CVD 急速创新低跌破上涨起点 + OI 增 → 新空头介入 ⛔
+ *   OI 快速大幅减 → 趋势衰竭 ⛔
+ *   跌破 swing low → 趋势失效 ⛔ 作废
  */
-function classifySide(
-  side: "high" | "low",
-  priceValues: number[],
-  oiCloses: number[],
-  buys: number[],
-  sells: number[],
-  /** 与 priceValues 同下标的时间戳，用来给场景带上摆动点时刻 */
-  times: number[]
-): SideResult | null {
-  const pivots = findPivots(priceValues, PIVOT_N, side);
-  if (pivots.length < 2) return null;
+function detectHealthyPullback(ctx: Ctx, dir: "long" | "short"): Scenario | null {
+  const up = dir === "long";
+  const trendSide = up ? "high" : "low";
+  const guardSide = up ? "low" : "high";
+  const trendVals = up ? ctx.h : ctx.l;
+  const guardVals = up ? ctx.l : ctx.h;
 
-  const i1 = pivots[pivots.length - 2];
-  const i2 = pivots[pivots.length - 1];
+  // ── 前置状态
+  if (newExtreme(trendVals, trendSide) !== true) return null;
+  // 高点抬高的同时低点也要抬高（做空侧镜像）
+  if (newExtreme(guardVals, guardSide) === true) return null;
+  if (newExtreme(ctx.cvd, trendSide) !== true) return null;
 
-  const prevPrice = priceValues[i1];
-  const currPrice = priceValues[i2];
-  if (!isFiniteNumber(prevPrice) || !isFiniteNumber(currPrice) || prevPrice <= 0) return null;
+  const trendPv = lastTwoPivots(trendVals, trendSide);
+  const guardPv = lastTwoPivots(guardVals, guardSide);
+  if (!trendPv || !guardPv) return null;
 
-  // 高点侧要求 curr > prev 才算创新高；低点侧要求 curr < prev 才算创新低。
-  const isNewExtreme = side === "high" ? currPrice > prevPrice : currPrice < prevPrice;
-  if (!isNewExtreme) return null;
+  // 推进段的 OI 必须在增加，否则这波推进本身就没有新钱
+  const push = leg(ctx, trendPv.prev, trendPv.curr);
+  if (!push || push.oiPct <= 0) return null;
 
-  const priceChangePct = (Math.abs(currPrice - prevPrice) / prevPrice) * 100;
-  if (!isFiniteNumber(priceChangePct) || priceChangePct < PRICE_EXTREME_MIN_PCT) return null;
-
-  const prevOi = oiCloses[i1];
-  const currOi = oiCloses[i2];
-  if (!isFiniteNumber(prevOi) || !isFiniteNumber(currOi) || prevOi <= 0) return null;
-  const oiPct = ((currOi - prevOi) / prevOi) * 100;
-  if (!isFiniteNumber(oiPct)) return null;
-
-  // cvdPct：区间 (i1, i2]——从 i1 的下一根开始累加到 i2（含），不含 i1 本身。
-  // i1 是「上一个」摆动点，它自己那一根的买卖量属于更早一段行情，
-  // 不该算进「这两个摆动点之间发生了什么」。
-  let netBuy = 0;
-  let gross = 0;
-  for (let k = i1 + 1; k <= i2; k++) {
-    const buy = buys[k];
-    const sell = sells[k];
-    if (!isFiniteNumber(buy) || !isFiniteNumber(sell)) return null;
-    netBuy += buy - sell;
-    gross += buy + sell;
+  // ── 硬门槛：结构没破。破了直接作废，不论其他变量多好。
+  const guardLevel = guardVals[guardPv.curr];
+  if (!Number.isFinite(guardLevel)) return null;
+  for (let i = guardPv.curr + 1; i <= ctx.last; i++) {
+    const v = up ? ctx.l[i] : ctx.h[i];
+    if (Number.isFinite(v) && (up ? v < guardLevel : v > guardLevel)) return null;
   }
-  if (gross <= 0) return null;
-  const cvdPct = (netBuy / gross) * 100;
-  if (!isFiniteNumber(cvdPct)) return null;
 
-  const cell = classifyCell(side, cvdPct, oiPct);
-  if (!cell) return null;
+  // ── 回调段：从最新那个推进极值到现在
+  const back = leg(ctx, trendPv.curr, ctx.last);
+  if (!back) return null;
+  // 还在顺势推进、没有回调，就不是这个场景
+  if (up ? back.pricePct >= 0 : back.pricePct <= 0) return null;
 
-  return {
-    i2,
-    scenario: {
-      kind: cell.kind,
-      direction: cell.direction,
-      trap: cell.trap,
-      swingPrev: prevPrice,
-      swingNow: currPrice,
-      swingNowAt: times[i2],
-      cvdPct,
-      oiPct,
-      side,
-    },
-  };
+  // OI 快速大幅减 = 趋势衰竭，排除
+  if (back.oi === "plunge") return null;
+
+  // 顺方向的 CVD：做多侧回调期望 CVD 为负，做空侧反弹期望 CVD 为正
+  const signedCvd = up ? back.cvdPct : -back.cvdPct;
+
+  // CVD 急速创新极值并跌破推进起点 + OI 增 = 新的反向力量介入，排除
+  if (signedCvd <= -CVD_EXTREME_PCT && back.oiPct > 0) return null;
+
+  let strength: ScenarioStrength;
+  if (
+    signedCvd <= -CVD_ALIGN_PCT &&
+    (back.oi === "up" || back.oi === "flat" || back.oi === "surge")
+  ) {
+    strength = "trend_best"; // CVD 跌得比价格多 + OI 增或平
+  } else if (back.oi === "down") {
+    strength = "healthy"; // 同步小幅回落 + 小幅减
+  } else {
+    return null;
+  }
+
+  return mk(
+    up ? "a1_healthy_pullback" : "b1_healthy_bounce",
+    dir,
+    strength,
+    false,
+    ctx.bars[trendPv.curr].time,
+    guardLevel,
+    up ? "below" : "above",
+    guardLevel,
+    back.cvdPct,
+    back.oiPct
+  );
+}
+
+/* ────────────── A2 / B2 增仓型底背离 · 顶背离 ──────────────
+ * 价格必要条件（定义，不可省）：创出新极值 → 扫掉明确的 SSL/BSL →
+ * **收回来**。仅实体跌破未收回不算 sweep，场景不成立。
+ *
+ * CVD 判定法：价格创新低时，CVD 有没有跌破**它自己**前一个 swing low。
+ * 没跌破 → 背离成立。这是全套规格里最容易实现错的一条：拿 CVD 的绝对
+ * 涨跌去判，而不是拿它自己的 swing 去判。
+ *
+ * 不对称：做多侧 OI 减的「真底背离」可用（🟠 中强）；做空侧因上行漂移与
+ * 资金费率成本，**只取 OI 增的增仓型**。这不是笔误。
+ */
+function detectSweepDivergence(ctx: Ctx, dir: "long" | "short"): Scenario | null {
+  const up = dir === "long";
+  const side = up ? "low" : "high";
+
+  const sweep: Sweep | null = findSweep(ctx.bars, side, SCENARIO_LOOKBACK);
+  if (!sweep) return null;
+
+  // CVD 有没有跟着创新极值。跟了 = 同步，不是背离。
+  const cvdBroke = newExtreme(ctx.cvd, side);
+  if (cvdBroke !== false) return null;
+
+  const st = leg(ctx, Math.max(0, sweep.at - PIVOT_N), ctx.last);
+  if (!st) return null;
+
+  const oiUp = st.oi === "up" || st.oi === "surge";
+  const oiDown = st.oi === "down" || st.oi === "plunge";
+
+  let strength: ScenarioStrength;
+  if (oiUp) strength = "strongest";
+  else if (oiDown && up) strength = "medium"; // 真底背离，只有做多侧取
+  else return null;
+
+  // 失效位：sweep 那一根的极值。价格越过它 = 这次扫盘没站住。
+  const wick = up ? ctx.l[sweep.at] : ctx.h[sweep.at];
+  return mk(
+    up ? "a2_accum_bottom_div" : "b2_distrib_top_div",
+    dir,
+    strength,
+    false,
+    ctx.bars[sweep.at].time,
+    wick,
+    up ? "below" : "above",
+    sweep.level,
+    st.cvdPct,
+    st.oiPct
+  );
+}
+
+/* ─────────────── A3 / B3 E1吸筹 · E5派发（两层结构）───────────────
+ * 第一层 E1/E5 定位（**不触发**）：
+ *   E1 = CVD 创新低 + 价格未创新低（CVD 跌得比价格多）；OI 增才成立，
+ *        OI 减是 E2，出局，等 OI 由减转增才变回 E1。
+ *   E5 = 镜像。
+ *   E1/E5 是持续状态，只作定位与否决，不作入场扳机。
+ *
+ * 第二层 力度扳机（四条同时成立才触发）：
+ *   ① CVD 转向：swing low 高于前一个 swing low（红变青不算）
+ *   ② 力度达标：反转斜率 ÷ 前面下跌段平均斜率 > 1.5–2 倍，
+ *      或短时间收复整段跌幅 > 30%
+ *   ③ OI 同步增加（力度大 + OI 减 = 假的，是回补）
+ *   ④ 有明确失效位：本波最低点
+ */
+function detectAbsorption(ctx: Ctx, dir: "long" | "short"): Scenario | null {
+  const up = dir === "long";
+  const cvdSide = up ? "low" : "high";
+  const priceSide = up ? "low" : "high";
+  const priceVals = up ? ctx.l : ctx.h;
+
+  // ── 第一层：E1 / E5 定位
+  // CVD 创新极值，而价格没有——这正是「CVD 跌得比价格多」的结构表达。
+  if (newExtreme(ctx.cvd, cvdSide) !== true) return null;
+  if (newExtreme(priceVals, priceSide) !== false) return null;
+
+  // CVD 需要三个摆动点：L1→L2 是 E1 那段，L2→L3 是转向。
+  const cvdPivots = findPivots(ctx.cvd, PIVOT_N, cvdSide);
+  if (cvdPivots.length < 3) return null;
+  const [i1, i2, i3] = cvdPivots.slice(-3);
+
+  // ① CVD 转向：最新的摆动点比上一个更靠顺方向
+  const turned = up ? ctx.cvd[i3] > ctx.cvd[i2] : ctx.cvd[i3] < ctx.cvd[i2];
+  if (!turned) return null;
+
+  // ② 力度达标：反转斜率 ÷ 前段斜率，或短时间收复整段跌幅
+  const declineSpan = i2 - i1;
+  const reboundSpan = ctx.last - i2;
+  if (declineSpan <= 0 || reboundSpan <= 0) return null;
+  const declineMove = Math.abs(ctx.cvd[i2] - ctx.cvd[i1]);
+  if (!Number.isFinite(declineMove) || declineMove <= 0) return null;
+  const reboundMove = Math.abs(ctx.cvd[ctx.last] - ctx.cvd[i2]);
+  const slopeRatio = reboundMove / reboundSpan / (declineMove / declineSpan);
+  const reclaimed = (reboundMove / declineMove) * 100;
+  if (slopeRatio < SLOPE_RATIO_MIN && reclaimed < RECLAIM_PCT_MIN) return null;
+
+  // ③ OI 同步增加。力度大 + OI 减 = 回补，不是吸筹。
+  const st = leg(ctx, i2, ctx.last);
+  if (!st) return null;
+  if (st.oi !== "up" && st.oi !== "surge") return null;
+
+  // ④ 失效位：本波最低点（做空侧为最高点）
+  let extreme = up ? Infinity : -Infinity;
+  for (let k = i2; k <= ctx.last; k++) {
+    const v = priceVals[k];
+    if (!Number.isFinite(v)) continue;
+    if (up ? v < extreme : v > extreme) extreme = v;
+  }
+
+  return mk(
+    up ? "a3_e1_absorb" : "b3_e5_distrib",
+    dir,
+    "strongest",
+    false,
+    ctx.bars[i2].time,
+    extreme,
+    up ? "below" : "above",
+    extreme,
+    st.cvdPct,
+    st.oiPct
+  );
+}
+
+/* ────────── A4 / B4 E4恐慌清算 · E8回补失速（OI 企稳）──────────
+ * E4 = 价格创新低（跌得比 CVD 多，真空式下跌）+ CVD 未创新低 + OI 减少。
+ *
+ * 前置闸门（不可跳过）：
+ *   OI 还在暴减 → 清算未结束，不动
+ *   OI 缩量至走平 → 清算尾声
+ *   OI 转为增加 → 新资金进场确认，最佳
+ *
+ * E1 与 E4 的分辨不看形态：E1 是 CVD 跌得比价格多且 OI 增，可以 sweep
+ * 直接触发；E4 是价格跌得比 CVD 多且 OI 减，**必须先等 OI 企稳**。
+ */
+function detectFlush(ctx: Ctx, dir: "long" | "short"): Scenario | null {
+  const up = dir === "long";
+  const side = up ? "low" : "high";
+  const priceVals = up ? ctx.l : ctx.h;
+
+  // E4/E8：价格创新极值，CVD 没有
+  if (newExtreme(priceVals, side) !== true) return null;
+  if (newExtreme(ctx.cvd, side) !== false) return null;
+
+  const pv = lastTwoPivots(priceVals, side);
+  if (!pv) return null;
+
+  // 清算段：推向新极值的那一段，OI 必须是在减少的
+  const flush = leg(ctx, pv.prev, pv.curr);
+  if (!flush || flush.oiPct >= 0) return null;
+
+  // 前置闸门：极值之后 OI 有没有企稳
+  const after = leg(ctx, pv.curr, ctx.last);
+  if (!after) return null;
+  if (after.oi === "plunge") return null; // 还在暴减 = 清算未结束
+
+  // 价格企稳 + CVD 止跌回升：顺方向的 CVD 要转正
+  const signedCvd = up ? after.cvdPct : -after.cvdPct;
+  if (signedCvd <= 0) return null;
+
+  const strength: ScenarioStrength =
+    after.oi === "up" || after.oi === "surge" ? "strongest" : "healthy";
+
+  const extreme = priceVals[pv.curr];
+  return mk(
+    up ? "a4_e4_flush" : "b4_e8_cover_stall",
+    dir,
+    strength,
+    false,
+    ctx.bars[pv.curr].time,
+    extreme,
+    up ? "below" : "above",
+    extreme,
+    after.cvdPct,
+    after.oiPct
+  );
 }
 
 /**
- * 六场景判定入口。三条序列长度必须相等（同下标同时刻），否则直接返回
- * null——这条规矩和 oiDivergence 相同：不能拿不同时刻的数据硬凑判定。
- *
- * 高点侧、低点侧各自独立判定；两侧都命中时取 i2 更大（更晚确认）的
- * 那一侧——它是更接近「现在」的结构，旧的那个摆动点对已经是过去式了。
+ * 主判定。陷阱最优先，其余按强度从高到低——同时命中多个时报强度最高的。
  */
 export function classifyScenario(
   priceBars: CoinGlassPriceBar[],
   oiBars: CoinGlassOiBar[],
-  takerBars: CoinGlassTakerBar[]
+  taker: CoinGlassTakerBar[]
 ): Scenario | null {
-  if (priceBars.length !== oiBars.length || priceBars.length !== takerBars.length) return null;
+  const n = priceBars.length;
+  if (n < PIVOT_N * 2 + 2 || oiBars.length !== n || taker.length !== n) return null;
 
-  // CoinGlassPriceBar 的 high/low 是纯字符串，parseFloat 准确（同
-  // oiDivergence 里的注释）；OI 与聚合 taker 两族端点的字段类型逐根不稳定，
-  // 必须走 toFiniteNumber（见 CoinGlassOiBar / CoinGlassTakerBar 的注释）。
-  const highs = priceBars.map((b) => parseFloat(b.high));
-  const lows = priceBars.map((b) => parseFloat(b.low));
-  const oiCloses = oiBars.map((b) => toFiniteNumber(b.close));
-  const buys = takerBars.map((b) => toFiniteNumber(b.aggregated_buy_volume_usd));
-  const sells = takerBars.map((b) => toFiniteNumber(b.aggregated_sell_volume_usd));
+  const cvd = cvdLine(taker);
+  if (!cvd) return null;
 
-  const times = priceBars.map((b) => b.time);
-  const highResult = classifySide("high", highs, oiCloses, buys, sells, times);
-  const lowResult = classifySide("low", lows, oiCloses, buys, sells, times);
+  const ctx: Ctx = {
+    bars: priceBars,
+    h: highs(priceBars),
+    l: lows(priceBars),
+    c: closes(priceBars),
+    oi: oiCloses(oiBars),
+    cvd,
+    taker,
+    last: n - 1,
+  };
 
-  if (!highResult) return lowResult ? lowResult.scenario : null;
-  if (!lowResult) return highResult.scenario;
-  // 两侧都命中：i2 相等是理论上才会出现的退化情形（比如同一根 K 线同时是
-  // 局部最高点与最低点），此时取高点侧没有特殊含义，只是要有一个确定的
-  // 选择、不能让结果随意漂移。
-  return highResult.i2 >= lowResult.i2 ? highResult.scenario : lowResult.scenario;
+  const trap = detectTrap(ctx);
+  if (trap) return trap;
+
+  const found: Scenario[] = [];
+  for (const f of [
+    () => detectSweepDivergence(ctx, "long"),
+    () => detectSweepDivergence(ctx, "short"),
+    () => detectAbsorption(ctx, "long"),
+    () => detectAbsorption(ctx, "short"),
+    () => detectHealthyPullback(ctx, "long"),
+    () => detectHealthyPullback(ctx, "short"),
+    () => detectFlush(ctx, "long"),
+    () => detectFlush(ctx, "short"),
+  ]) {
+    const s = f();
+    if (s) found.push(s);
+  }
+  if (found.length === 0) return null;
+
+  const rank: Record<ScenarioStrength, number> = {
+    strongest: 0,
+    trend_best: 1,
+    medium: 2,
+    healthy: 3,
+  };
+  found.sort((a, b) => rank[a.strength] - rank[b.strength]);
+  return found[0];
 }
+
+export type { OiState };

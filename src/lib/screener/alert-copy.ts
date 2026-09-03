@@ -5,7 +5,7 @@ import type { ScenarioKind } from "./factors/scenario";
  *
  * 共用不是为了省几行——两个通道说的是**同一个事件**，文案各写一份就会分叉：
  * Telegram 说「反手做空」而系统推送说「考虑做空」，读的人无从判断哪个是准的。
- * 场景名与操作文案原样取自 brief 的六场景速查表，改这里之前先去改那张表。
+ * 场景名与操作文案原样取自三变量判读规格，改这里之前先去改那份规格。
  *
  * 只有 zh / en 两语。推送订阅的 locale 有 ms-MY，它会落到 en（见 pickAlertLang）。
  * 这跟 Telegram 侧的 TelegramMessageLang 是同一个取值集合，但不复用那个类型——
@@ -15,42 +15,59 @@ import type { ScenarioKind } from "./factors/scenario";
 export type AlertCopyLang = "en" | "zh";
 
 /** 场景名，跟 brief 里六场景速查表用的中文名一一对应，英文是直译。 */
+/** 场景名。跟规格里 A1–A4 / B1–B4 的命名一一对应，英文是直译。 */
 export const SCENARIO_LABELS: Record<AlertCopyLang, Record<ScenarioKind, string>> = {
   zh: {
-    healthy_trend: "健康趋势",
-    inventory_flush: "存量清算",
-    true_top_div: "真顶背离",
-    true_bottom_div: "真底背离",
-    false_top_div: "假顶背离",
-    false_bottom_div: "假底背离",
+    a1_healthy_pullback: "健康趋势回调",
+    a2_accum_bottom_div: "增仓型底背离",
+    a3_e1_absorb: "E1吸筹",
+    a4_e4_flush: "恐慌清算企稳",
+    b1_healthy_bounce: "健康跌势反弹",
+    b2_distrib_top_div: "增仓型顶背离",
+    b3_e5_distrib: "E5派发",
+    b4_e8_cover_stall: "回补失速",
+    trap_false_top_div: "假顶背离",
+    trap_false_bottom_div: "假底背离",
   },
   en: {
-    healthy_trend: "Healthy Trend",
-    inventory_flush: "Inventory Flush",
-    true_top_div: "True Top Divergence",
-    true_bottom_div: "True Bottom Divergence",
-    false_top_div: "False Top Divergence",
-    false_bottom_div: "False Bottom Divergence",
+    a1_healthy_pullback: "Healthy Pullback",
+    a2_accum_bottom_div: "Accumulation Bottom Divergence",
+    a3_e1_absorb: "E1 Absorption",
+    a4_e4_flush: "Flush Stabilised",
+    b1_healthy_bounce: "Healthy Bounce",
+    b2_distrib_top_div: "Distribution Top Divergence",
+    b3_e5_distrib: "E5 Distribution",
+    b4_e8_cover_stall: "Short-Cover Stall",
+    trap_false_top_div: "False Top Divergence",
+    trap_false_bottom_div: "False Bottom Divergence",
   },
 };
 
-/** 操作文案，原样取自 brief 六场景速查表最后一列——不重新措辞，避免文案与判定表脱节。 */
+/** 操作文案，原样取自规格的触发组合表——不重新措辞，避免文案与判定脱节。 */
 export const SCENARIO_ACTIONS: Record<AlertCopyLang, Record<ScenarioKind, string>> = {
   zh: {
-    healthy_trend: "顺势，回调进场",
-    inventory_flush: "分批止盈，等反手",
-    true_top_div: "反手做空",
-    true_bottom_div: "反手做多",
-    false_top_div: "禁止做空，顺势做多",
-    false_bottom_div: "禁止做多，顺势做空",
+    a1_healthy_pullback: "顺势做多，回调进场",
+    a2_accum_bottom_div: "扫底收回，反手做多",
+    a3_e1_absorb: "吸筹力度到位，做多",
+    a4_e4_flush: "清算结束，做多",
+    b1_healthy_bounce: "顺势做空，反弹进场",
+    b2_distrib_top_div: "扫顶收回，反手做空",
+    b3_e5_distrib: "派发力度到位，做空",
+    b4_e8_cover_stall: "回补结束，做空",
+    trap_false_top_div: "禁止做空，顺势做多",
+    trap_false_bottom_div: "禁止做多，顺势做空",
   },
   en: {
-    healthy_trend: "Follow the trend, enter on pullback",
-    inventory_flush: "Scale out, wait for reversal",
-    true_top_div: "Reverse to short",
-    true_bottom_div: "Reverse to long",
-    false_top_div: "Do not short — follow trend, go long",
-    false_bottom_div: "Do not long — follow trend, go short",
+    a1_healthy_pullback: "Follow the trend, enter on the pullback",
+    a2_accum_bottom_div: "Lows swept and reclaimed, go long",
+    a3_e1_absorb: "Absorption confirmed, go long",
+    a4_e4_flush: "Liquidation over, go long",
+    b1_healthy_bounce: "Follow the trend, enter on the bounce",
+    b2_distrib_top_div: "Highs swept and reclaimed, go short",
+    b3_e5_distrib: "Distribution confirmed, go short",
+    b4_e8_cover_stall: "Short covering over, go short",
+    trap_false_top_div: "Do not short — follow trend, go long",
+    trap_false_bottom_div: "Do not long — follow trend, go short",
   },
 };
 

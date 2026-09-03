@@ -1040,12 +1040,12 @@
       "a1_healthy_pullback": {
         "name": "健康趋势回调",
         "action": "顺势做多，回调进场",
-        "reading": "上升趋势中的回调，{level} 这个低点没有被跌破。回调段 CVD {cvdPct}、OI {oiPct}——钱没有在撤，趋势还在。"
+        "reading": "上升趋势中的回调，{level} 这个低点没有被跌破。回调段 CVD {cvdPct}，{oiState, select, surge{OI 暴增 {oiPct}，新钱在猛进} up{OI 增加 {oiPct}，有新钱进来} flat{OI 基本没动（{oiPct}）} down{OI 在减少（{oiPct}），是有人在平仓} other{OI 暴减 {oiPct}，仓位在被清掉}}。"
       },
       "a2_accum_bottom_div": {
-        "name": "增仓型底背离",
+        "name": "{strength, select, medium{真底背离} other{增仓型底背离}}",
         "action": "扫底收回，反手做多",
-        "reading": "价格扫掉 {level} 的前低之后收了回来，而 CVD 没有跟着创新低。CVD {cvdPct}、OI {oiPct}。"
+        "reading": "价格扫掉 {level} 的前低之后收了回来，而 CVD 没有跟着创新低。CVD {cvdPct}，{oiState, select, surge{OI 暴增 {oiPct}，新钱在猛进} up{OI 增加 {oiPct}，有新钱进来} flat{OI 基本没动（{oiPct}）} down{OI 在减少（{oiPct}），是有人在平仓} other{OI 暴减 {oiPct}，仓位在被清掉}}。"
       },
       "a3_e1_absorb": {
         "name": "E1吸筹",
@@ -1053,19 +1053,19 @@
         "reading": "CVD 比价格先创新低（有人在承接），随后转向且反弹力度达标，OI 同步增加 {oiPct}。CVD {cvdPct}，本波低点 {level}。"
       },
       "a4_e4_flush": {
-        "name": "恐慌清算企稳",
-        "action": "清算结束，做多",
-        "reading": "价格真空式下跌创出新低 {level} 而 CVD 没有跟跌，OI 已从暴减转为企稳（{oiPct}）。CVD {cvdPct}。"
+        "name": "{oiState, select, down{恐慌清算·抛压未尽} other{恐慌清算企稳}}",
+        "action": "{oiState, select, down{清算尾声，做多但等 OI 转正} other{清算结束，做多}}",
+        "reading": "价格真空式下跌创出新低 {level} 而 CVD 没有跟跌。现在 {oiState, select, surge{OI 暴增 {oiPct}，新钱在猛进} up{OI 增加 {oiPct}，有新钱进来} flat{OI 基本没动（{oiPct}）} down{OI 在减少（{oiPct}），是有人在平仓} other{OI 暴减 {oiPct}，仓位在被清掉}}，CVD {cvdPct}。"
       },
       "b1_healthy_bounce": {
         "name": "健康跌势反弹",
         "action": "顺势做空，反弹进场",
-        "reading": "下跌趋势中的反弹，{level} 这个高点没有被突破。反弹段 CVD {cvdPct}、OI {oiPct}——钱没有在进场，跌势还在。"
+        "reading": "下跌趋势中的反弹，{level} 这个高点没有被突破。反弹段 CVD {cvdPct}，{oiState, select, surge{OI 暴增 {oiPct}，新钱在猛进} up{OI 增加 {oiPct}，有新钱进来} flat{OI 基本没动（{oiPct}）} down{OI 在减少（{oiPct}），是有人在平仓} other{OI 暴减 {oiPct}，仓位在被清掉}}。"
       },
       "b2_distrib_top_div": {
         "name": "增仓型顶背离",
         "action": "扫顶收回，反手做空",
-        "reading": "价格扫掉 {level} 的前高之后收了回来，而 CVD 没有跟着创新高。CVD {cvdPct}、OI {oiPct}。"
+        "reading": "价格扫掉 {level} 的前高之后收了回来，而 CVD 没有跟着创新高。CVD {cvdPct}，{oiState, select, surge{OI 暴增 {oiPct}，新钱在猛进} up{OI 增加 {oiPct}，有新钱进来} flat{OI 基本没动（{oiPct}）} down{OI 在减少（{oiPct}），是有人在平仓} other{OI 暴减 {oiPct}，仓位在被清掉}}。"
       },
       "b3_e5_distrib": {
         "name": "E5派发",
@@ -1073,9 +1073,9 @@
         "reading": "CVD 比价格先创新高（有人在派发），随后转向且下行力度达标，OI 同步增加 {oiPct}。CVD {cvdPct}，本波高点 {level}。"
       },
       "b4_e8_cover_stall": {
-        "name": "回补失速",
-        "action": "回补结束，做空",
-        "reading": "价格真空式拉升创出新高 {level} 而 CVD 没有跟涨，OI 已从暴减转为企稳（{oiPct}）。CVD {cvdPct}。"
+        "name": "{oiState, select, down{回补失速·未尽} other{回补失速企稳}}",
+        "action": "{oiState, select, down{回补尾声，做空但等 OI 转正} other{回补结束，做空}}",
+        "reading": "价格真空式拉升创出新高 {level} 而 CVD 没有跟涨。现在 {oiState, select, surge{OI 暴增 {oiPct}，新钱在猛进} up{OI 增加 {oiPct}，有新钱进来} flat{OI 基本没动（{oiPct}）} down{OI 在减少（{oiPct}），是有人在平仓} other{OI 暴减 {oiPct}，仓位在被清掉}}，CVD {cvdPct}。"
       },
       "trap_false_top_div": {
         "name": "假顶背离",

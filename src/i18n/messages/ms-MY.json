@@ -964,12 +964,12 @@
       "a1_healthy_pullback": {
         "name": "Susulan Trend Sihat",
         "action": "Ikut trend, masuk semasa susulan",
-        "reading": "Susulan dalam trend naik; paras rendah ayunan {level} masih utuh. Sepanjang susulan CVD {cvdPct}, OI {oiPct} — wang tidak keluar, trend masih ada."
+        "reading": "Susulan dalam trend naik; paras rendah ayunan {level} masih utuh. Sepanjang susulan CVD {cvdPct}, {oiState, select, surge{OI melonjak {oiPct} — wang baharu masuk deras} up{OI naik {oiPct} — ada wang baharu masuk} flat{OI hampir tidak berubah ({oiPct})} down{OI menurun ({oiPct}) — posisi sedang ditutup} other{OI merudum {oiPct} — posisi sedang dihapus}}."
       },
       "a2_accum_bottom_div": {
-        "name": "Divergen Dasar Tambah Posisi",
+        "name": "{strength, select, medium{Divergen Dasar Sebenar} other{Divergen Dasar Tambah Posisi}}",
         "action": "Dasar disapu dan dirampas semula, beli",
-        "reading": "Harga menyapu paras rendah {level} lalu ditutup semula di atasnya, manakala CVD tidak mencipta paras rendah baharu. CVD {cvdPct}, OI {oiPct}."
+        "reading": "Harga menyapu paras rendah {level} lalu ditutup semula di atasnya, manakala CVD tidak mencipta paras rendah baharu. CVD {cvdPct}, {oiState, select, surge{OI melonjak {oiPct} — wang baharu masuk deras} up{OI naik {oiPct} — ada wang baharu masuk} flat{OI hampir tidak berubah ({oiPct})} down{OI menurun ({oiPct}) — posisi sedang ditutup} other{OI merudum {oiPct} — posisi sedang dihapus}}."
       },
       "a3_e1_absorb": {
         "name": "Serapan E1",
@@ -977,19 +977,19 @@
         "reading": "CVD mencipta paras rendah sebelum harga (ada yang menyerap), kemudian berpaling dengan daya mencukupi, dan OI naik {oiPct} seiring. CVD {cvdPct}, dasar gelombang {level}."
       },
       "a4_e4_flush": {
-        "name": "Pembersihan Stabil",
-        "action": "Pembersihan tamat, beli",
-        "reading": "Harga jatuh vakum ke paras rendah baharu {level} sementara CVD tidak mengikut, dan OI beralih daripada runtuh kepada stabil ({oiPct}). CVD {cvdPct}."
+        "name": "{oiState, select, down{Pembersihan — Tekanan Belum Habis} other{Pembersihan Stabil}}",
+        "action": "{oiState, select, down{Penghujung pembersihan — beli apabila OI berbalik naik} other{Pembersihan tamat, beli}}",
+        "reading": "Harga jatuh vakum ke paras rendah baharu {level} sementara CVD tidak mengikut. Kini {oiState, select, surge{OI melonjak {oiPct} — wang baharu masuk deras} up{OI naik {oiPct} — ada wang baharu masuk} flat{OI hampir tidak berubah ({oiPct})} down{OI menurun ({oiPct}) — posisi sedang ditutup} other{OI merudum {oiPct} — posisi sedang dihapus}}, CVD {cvdPct}."
       },
       "b1_healthy_bounce": {
         "name": "Lantunan Trend Turun Sihat",
         "action": "Ikut trend, masuk semasa lantunan",
-        "reading": "Lantunan dalam trend turun; paras tinggi ayunan {level} masih utuh. Sepanjang lantunan CVD {cvdPct}, OI {oiPct} — wang tidak masuk, penurunan masih ada."
+        "reading": "Lantunan dalam trend turun; paras tinggi ayunan {level} masih utuh. Sepanjang lantunan CVD {cvdPct}, {oiState, select, surge{OI melonjak {oiPct} — wang baharu masuk deras} up{OI naik {oiPct} — ada wang baharu masuk} flat{OI hampir tidak berubah ({oiPct})} down{OI menurun ({oiPct}) — posisi sedang ditutup} other{OI merudum {oiPct} — posisi sedang dihapus}}."
       },
       "b2_distrib_top_div": {
         "name": "Divergen Puncak Tambah Posisi",
         "action": "Puncak disapu dan dirampas semula, jual",
-        "reading": "Harga menyapu paras tinggi {level} lalu ditutup semula di bawahnya, manakala CVD tidak mencipta paras tinggi baharu. CVD {cvdPct}, OI {oiPct}."
+        "reading": "Harga menyapu paras tinggi {level} lalu ditutup semula di bawahnya, manakala CVD tidak mencipta paras tinggi baharu. CVD {cvdPct}, {oiState, select, surge{OI melonjak {oiPct} — wang baharu masuk deras} up{OI naik {oiPct} — ada wang baharu masuk} flat{OI hampir tidak berubah ({oiPct})} down{OI menurun ({oiPct}) — posisi sedang ditutup} other{OI merudum {oiPct} — posisi sedang dihapus}}."
       },
       "b3_e5_distrib": {
         "name": "Agihan E5",
@@ -997,9 +997,9 @@
         "reading": "CVD mencipta paras tinggi sebelum harga (ada yang mengagih), kemudian berpaling turun dengan daya mencukupi, dan OI naik {oiPct} seiring. CVD {cvdPct}, puncak gelombang {level}."
       },
       "b4_e8_cover_stall": {
-        "name": "Tutup Posisi Terhenti",
-        "action": "Penutupan posisi tamat, jual",
-        "reading": "Harga melonjak vakum ke paras tinggi baharu {level} sementara CVD tidak mengikut, dan OI beralih daripada runtuh kepada stabil ({oiPct}). CVD {cvdPct}."
+        "name": "{oiState, select, down{Tutup Posisi — Belum Habis} other{Tutup Posisi Stabil}}",
+        "action": "{oiState, select, down{Penghujung penutupan — jual apabila OI berbalik naik} other{Penutupan tamat, jual}}",
+        "reading": "Harga melonjak vakum ke paras tinggi baharu {level} sementara CVD tidak mengikut. Kini {oiState, select, surge{OI melonjak {oiPct} — wang baharu masuk deras} up{OI naik {oiPct} — ada wang baharu masuk} flat{OI hampir tidak berubah ({oiPct})} down{OI menurun ({oiPct}) — posisi sedang ditutup} other{OI merudum {oiPct} — posisi sedang dihapus}}, CVD {cvdPct}."
       },
       "trap_false_top_div": {
         "name": "Divergen Puncak Palsu",

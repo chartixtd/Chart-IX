@@ -120,14 +120,21 @@ export function AlertCard({
   if (trigger.type === "scenario") {
     const sc = trigger.scenario;
     trap = sc.trap;
-    title = t(`scenarios.${sc.kind}.name`);
-    action = t(`scenarios.${sc.kind}.action`);
-    // 判定句用「结构位 + 两个变量的读数」拼，每个场景一句，见 i18n。
-    verdict = t(`scenarios.${sc.kind}.reading`, {
+    // strength / oiState 一并传进去：文案里凡是描述 OI 或强度的**定语**，
+    // 都用 ICU select 从这两个值选词，而不是写死。写死过三次，三次都不报错，
+    // 只是在骗读的人——A2 顶着「增仓型」而 OI 是负的、A4 写「已企稳」而 OI
+    // 还在减、A1 写「钱没有在撤」而它的健康档恰恰接受 OI 下降。
+    // 详见 factors/scenario.ts 里 Scenario.oiState 的注释。
+    const vars = {
       level: formatPrice(sc.structureLevel),
       cvdPct: formatPercent(sc.cvdPct),
       oiPct: formatPercent(sc.oiPct),
-    });
+      oiState: sc.oiState,
+      strength: sc.strength,
+    };
+    title = t(`scenarios.${sc.kind}.name`, vars);
+    action = t(`scenarios.${sc.kind}.action`, vars);
+    verdict = t(`scenarios.${sc.kind}.reading`, vars);
     const cls = STRENGTH_CLASSES[sc.strength];
     strengthBadge = { ...cls, label: t(`strength.${sc.strength}`) };
   } else {

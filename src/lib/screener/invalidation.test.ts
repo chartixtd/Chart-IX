@@ -17,6 +17,7 @@ function scenario(o: Partial<Scenario> = {}): Scenario {
     structureLevel: 100,
     cvdPct: 4,
     oiPct: 3,
+    oiState: "up",
     ...o,
   };
 }

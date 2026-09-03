@@ -77,7 +77,51 @@ export interface Scenario {
   /** 判定区间内的 CVD 净流占换手 %、OI 变化 % —— 卡片判定句直接用 */
   cvdPct: number;
   oiPct: number;
+  /**
+   * 判定区间内 OI 的**状态分档**，卡片文案的定语从它选词。
+   *
+   * 存在的理由是一类反复出现的 bug：文案写死了判定并不保证的状态。
+   * 上线后同时出现过三处——A2 顶着「**增仓**型」的名字而 OI 是 -2.20%；
+   * A4/B4 写「已从暴减转为**企稳**」而 OI 仍在减；A1/B1 写「钱没有在撤」
+   * 而它的健康档恰恰接受 OI 下降。三处都不会报错，只是在骗读的人。
+   *
+   * 根因是文案在**断言**状态。带上这个字段之后文案改成从它**选词**
+   * （i18n 的 ICU select），形容词就不可能跟数字矛盾——因为它就是数字选出来的。
+   * 新增场景时，只要文案里出现任何描述 OI 的定语，都该走这个字段而不是写死。
+   */
+  oiState: OiState;
 }
+
+/**
+ * 每个场景，引擎**实际可能产出**的 OI 状态。
+ *
+ * 这张表是文案的契约：卡片文案里任何描述 OI 的定语，都必须对这里的每一项
+ * 都成立；做不到就得走 ICU select 从 oiState 选词，不能写死。
+ *
+ * 有测试盯着（screener/scenario-copy.test.ts）——同时向两边验：改判定逻辑
+ * 放宽了某个场景的 OI 档位而没更新这张表会被抓到，文案在跨方向的场景里
+ * 写死 OI 定语也会被抓到。这一类 bug 上线过三处，全都不报错，只是在骗读的人。
+ *
+ * 各项的依据直接对应下面各个 detect 函数里的门槛：
+ *   A1/B1  回调段排除 plunge，其余四档都收（trend_best 收 up/flat/surge，healthy 收 down）
+ *   A2     oiUp → strongest；oiDown 且做多侧 → medium（真底背离）
+ *   B2     只收 oiUp（规格的不对称：做空侧不取 OI 减）
+ *   A3/B3  力度扳机第 ③ 条硬性要求 up/surge
+ *   A4/B4  前置闸门只排除 plunge
+ *   陷阱   入口条件就是 oiPct ≥ OI_SURGE_PCT
+ */
+export const OI_STATES_BY_KIND: Record<ScenarioKind, OiState[]> = {
+  a1_healthy_pullback: ["surge", "up", "flat", "down"],
+  b1_healthy_bounce: ["surge", "up", "flat", "down"],
+  a2_accum_bottom_div: ["surge", "up", "down", "plunge"],
+  b2_distrib_top_div: ["surge", "up"],
+  a3_e1_absorb: ["surge", "up"],
+  b3_e5_distrib: ["surge", "up"],
+  a4_e4_flush: ["surge", "up", "flat", "down"],
+  b4_e8_cover_stall: ["surge", "up", "flat", "down"],
+  trap_false_top_div: ["surge"],
+  trap_false_bottom_div: ["surge"],
+};
 
 /**
  * 力度扳机的斜率倍数下限（A3/B3 的第 ② 条）。
@@ -135,7 +179,8 @@ function mk(
   breach: "above" | "below",
   structureLevel: number,
   cvdPct: number,
-  oiPct: number
+  oiPct: number,
+  oi: OiState
 ): Scenario | null {
   if (!Number.isFinite(invalidationPrice) || invalidationPrice <= 0) return null;
   if (!Number.isFinite(triggeredAt)) return null;
@@ -149,6 +194,7 @@ function mk(
     structureLevel,
     cvdPct,
     oiPct,
+    oiState: oi,
   };
 }
 
@@ -189,7 +235,8 @@ function detectTrap(ctx: Ctx): Scenario | null {
       side === "high" ? "below" : "above",
       level,
       st.cvdPct,
-      st.oiPct
+      st.oiPct,
+      st.oi
     );
   }
   return null;
@@ -273,7 +320,8 @@ function detectHealthyPullback(ctx: Ctx, dir: "long" | "short"): Scenario | null
     up ? "below" : "above",
     guardLevel,
     back.cvdPct,
-    back.oiPct
+    back.oiPct,
+    back.oi
   );
 }
 
@@ -322,7 +370,8 @@ function detectSweepDivergence(ctx: Ctx, dir: "long" | "short"): Scenario | null
     up ? "below" : "above",
     sweep.level,
     st.cvdPct,
-    st.oiPct
+    st.oiPct,
+    st.oi
   );
 }
 
@@ -394,7 +443,8 @@ function detectAbsorption(ctx: Ctx, dir: "long" | "short"): Scenario | null {
     up ? "below" : "above",
     extreme,
     st.cvdPct,
-    st.oiPct
+    st.oiPct,
+    st.oi
   );
 }
 
@@ -448,7 +498,8 @@ function detectFlush(ctx: Ctx, dir: "long" | "short"): Scenario | null {
     up ? "below" : "above",
     extreme,
     after.cvdPct,
-    after.oiPct
+    after.oiPct,
+    after.oi
   );
 }
 

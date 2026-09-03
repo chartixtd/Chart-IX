@@ -1,7 +1,7 @@
 import type { AlertCardData } from "@/lib/screener/cards";
 import {
-  SCENARIO_LABELS,
-  SCENARIO_ACTIONS,
+  scenarioLabel,
+  scenarioAction,
   IGNITION_LABELS,
   fmtTriggerPrice,
   pickAlertLang,
@@ -128,11 +128,11 @@ export function buildScreenerAlertMessage(
     const tr = card.trigger;
     const name =
       tr.type === "scenario"
-        ? SCENARIO_LABELS[lang][tr.scenario.kind]
+        ? scenarioLabel(lang, tr.scenario)
         : IGNITION_LABELS[lang][tr.ignition.direction];
     const action =
       tr.type === "scenario"
-        ? SCENARIO_ACTIONS[lang][tr.scenario.kind]
+        ? scenarioAction(lang, tr.scenario)
         : IGNITION_LABELS[lang].action;
     return {
       title: `🚨 ${card.coin} ${name}`,

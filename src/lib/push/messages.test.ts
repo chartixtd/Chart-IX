@@ -14,6 +14,7 @@ function scenario(overrides: Partial<Scenario> = {}): Scenario {
     structureLevel: 0.28,
     cvdPct: 3.1,
     oiPct: 2.4,
+    oiState: "up",
     ...overrides,
   };
 }

@@ -1,4 +1,4 @@
-import type { ScenarioKind } from "./factors/scenario";
+import type { Scenario, ScenarioKind } from "./factors/scenario";
 
 /**
  * 警报卡的文案表。Telegram 与 Web Push 两个通道共用。
@@ -96,4 +96,41 @@ export function fmtTriggerPrice(n: number): string {
  */
 export function pickAlertLang(locale: string): AlertCopyLang {
   return locale.startsWith("zh") ? "zh" : "en";
+}
+
+/**
+ * 场景名与操作文案的**取用入口**。上面那两张表是「默认说法」，不是全部——
+ * A2 / A4 / B4 三个场景的说法随 OI 状态或强度而变，直接查表会说谎：
+ *
+ *   A2 强度=medium 时 OI 是**减**的，却顶着「增仓型」的名字
+ *   A4 / B4 的 OI 允许仍在减少，却写着「已企稳 / 已结束」
+ *
+ * 这不是假设，是线上出现过的：ATOM 的卡片同时写着「增仓型底背离」和
+ * 「OI -2.20%」。根因是文案在**断言**判定并不保证的状态。
+ *
+ * 所以对外只暴露这两个函数，不暴露表。i18n 那一路用 ICU select 做同样的事
+ * （见 messages 里的 scenarios.*），两条路的分支必须保持一致——两份文案
+ * 说同一个事件，分叉了读的人无从判断哪个是准的。
+ */
+export function scenarioLabel(lang: AlertCopyLang, s: Scenario): string {
+  if (s.kind === "a2_accum_bottom_div" && s.strength === "medium") {
+    return lang === "zh" ? "真底背离" : "True Bottom Divergence";
+  }
+  if (s.kind === "a4_e4_flush" && s.oiState === "down") {
+    return lang === "zh" ? "恐慌清算·抛压未尽" : "Flush — Selling Not Done";
+  }
+  if (s.kind === "b4_e8_cover_stall" && s.oiState === "down") {
+    return lang === "zh" ? "回补失速·未尽" : "Short-Cover Stall — Not Done";
+  }
+  return SCENARIO_LABELS[lang][s.kind];
+}
+
+export function scenarioAction(lang: AlertCopyLang, s: Scenario): string {
+  if (s.kind === "a4_e4_flush" && s.oiState === "down") {
+    return lang === "zh" ? "清算尾声，做多但等 OI 转正" : "Tail end of the flush — go long once OI turns up";
+  }
+  if (s.kind === "b4_e8_cover_stall" && s.oiState === "down") {
+    return lang === "zh" ? "回补尾声，做空但等 OI 转正" : "Tail end of the covering — go short once OI turns up";
+  }
+  return SCENARIO_ACTIONS[lang][s.kind];
 }

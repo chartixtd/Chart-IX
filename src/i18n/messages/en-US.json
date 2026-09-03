@@ -1040,12 +1040,12 @@
       "a1_healthy_pullback": {
         "name": "Healthy Pullback",
         "action": "Follow the trend, enter on the pullback",
-        "reading": "A pullback inside an uptrend; the {level} swing low is still intact. Through the pullback CVD {cvdPct}, OI {oiPct} — money is not leaving, the trend holds."
+        "reading": "A pullback inside an uptrend; the {level} swing low is still intact. Through the pullback CVD {cvdPct}, {oiState, select, surge{OI surged {oiPct} — new money piling in} up{OI up {oiPct} — new money coming in} flat{OI barely moved ({oiPct})} down{OI falling ({oiPct}) — positions are being closed} other{OI collapsed {oiPct} — positions being wiped}}."
       },
       "a2_accum_bottom_div": {
-        "name": "Accumulation Bottom Divergence",
+        "name": "{strength, select, medium{True Bottom Divergence} other{Accumulation Bottom Divergence}}",
         "action": "Lows swept and reclaimed, go long",
-        "reading": "Price swept the prior low at {level} and closed back above it, while CVD did not make a new low. CVD {cvdPct}, OI {oiPct}."
+        "reading": "Price swept the prior low at {level} and closed back above it, while CVD did not make a new low. CVD {cvdPct}, {oiState, select, surge{OI surged {oiPct} — new money piling in} up{OI up {oiPct} — new money coming in} flat{OI barely moved ({oiPct})} down{OI falling ({oiPct}) — positions are being closed} other{OI collapsed {oiPct} — positions being wiped}}."
       },
       "a3_e1_absorb": {
         "name": "E1 Absorption",
@@ -1053,19 +1053,19 @@
         "reading": "CVD made a new low before price did (someone is absorbing), then turned with enough force, and OI rose {oiPct} alongside. CVD {cvdPct}, wave low {level}."
       },
       "a4_e4_flush": {
-        "name": "Flush Stabilised",
-        "action": "Liquidation over, go long",
-        "reading": "Price vacuum-dropped to a new low at {level} while CVD did not follow, and OI has gone from collapsing to steady ({oiPct}). CVD {cvdPct}."
+        "name": "{oiState, select, down{Flush — Selling Not Done} other{Flush Stabilised}}",
+        "action": "{oiState, select, down{Tail end of the flush — go long once OI turns up} other{Liquidation over, go long}}",
+        "reading": "Price vacuum-dropped to a new low at {level} while CVD did not follow. Right now {oiState, select, surge{OI surged {oiPct} — new money piling in} up{OI up {oiPct} — new money coming in} flat{OI barely moved ({oiPct})} down{OI falling ({oiPct}) — positions are being closed} other{OI collapsed {oiPct} — positions being wiped}}, CVD {cvdPct}."
       },
       "b1_healthy_bounce": {
         "name": "Healthy Bounce",
         "action": "Follow the trend, enter on the bounce",
-        "reading": "A bounce inside a downtrend; the {level} swing high is still intact. Through the bounce CVD {cvdPct}, OI {oiPct} — money is not stepping in, the decline holds."
+        "reading": "A bounce inside a downtrend; the {level} swing high is still intact. Through the bounce CVD {cvdPct}, {oiState, select, surge{OI surged {oiPct} — new money piling in} up{OI up {oiPct} — new money coming in} flat{OI barely moved ({oiPct})} down{OI falling ({oiPct}) — positions are being closed} other{OI collapsed {oiPct} — positions being wiped}}."
       },
       "b2_distrib_top_div": {
         "name": "Distribution Top Divergence",
         "action": "Highs swept and reclaimed, go short",
-        "reading": "Price swept the prior high at {level} and closed back below it, while CVD did not make a new high. CVD {cvdPct}, OI {oiPct}."
+        "reading": "Price swept the prior high at {level} and closed back below it, while CVD did not make a new high. CVD {cvdPct}, {oiState, select, surge{OI surged {oiPct} — new money piling in} up{OI up {oiPct} — new money coming in} flat{OI barely moved ({oiPct})} down{OI falling ({oiPct}) — positions are being closed} other{OI collapsed {oiPct} — positions being wiped}}."
       },
       "b3_e5_distrib": {
         "name": "E5 Distribution",
@@ -1073,9 +1073,9 @@
         "reading": "CVD made a new high before price did (someone is distributing), then turned down with enough force, and OI rose {oiPct} alongside. CVD {cvdPct}, wave high {level}."
       },
       "b4_e8_cover_stall": {
-        "name": "Short-Cover Stall",
-        "action": "Short covering over, go short",
-        "reading": "Price vacuum-rallied to a new high at {level} while CVD did not follow, and OI has gone from collapsing to steady ({oiPct}). CVD {cvdPct}."
+        "name": "{oiState, select, down{Short-Cover Stall — Not Done} other{Short-Cover Stall Stabilised}}",
+        "action": "{oiState, select, down{Tail end of the covering — go short once OI turns up} other{Short covering over, go short}}",
+        "reading": "Price vacuum-rallied to a new high at {level} while CVD did not follow. Right now {oiState, select, surge{OI surged {oiPct} — new money piling in} up{OI up {oiPct} — new money coming in} flat{OI barely moved ({oiPct})} down{OI falling ({oiPct}) — positions are being closed} other{OI collapsed {oiPct} — positions being wiped}}, CVD {cvdPct}."
       },
       "trap_false_top_div": {
         "name": "False Top Divergence",

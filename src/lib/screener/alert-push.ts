@@ -10,8 +10,8 @@ import {
 import type { AlertCardData } from "./cards";
 import { MEMO_TTL_MS } from "./cards-store";
 import {
-  SCENARIO_LABELS,
-  SCENARIO_ACTIONS,
+  scenarioLabel,
+  scenarioAction,
   IGNITION_LABELS,
   fmtTriggerPrice,
 } from "./alert-copy";
@@ -119,10 +119,10 @@ function groupHeading(a: AlertCardData, lang: TelegramMessageLang): string {
   const tr = a.trigger;
   const name =
     tr.type === "scenario"
-      ? SCENARIO_LABELS[lang][tr.scenario.kind]
+      ? scenarioLabel(lang, tr.scenario)
       : IGNITION_LABELS[lang][tr.ignition.direction];
   const action =
-    tr.type === "scenario" ? SCENARIO_ACTIONS[lang][tr.scenario.kind] : IGNITION_LABELS[lang].action;
+    tr.type === "scenario" ? scenarioAction(lang, tr.scenario) : IGNITION_LABELS[lang].action;
   // 陷阱场景用 ⚠️ **顶掉**方向圆点，而不是排在它前面：两个 emoji 并排既挤又
   // 分不清主次，而对这类场景「这是个陷阱」本来就比「往哪个方向」更该先看到。
   // 方向没有丢——紧接着的 dir 那一格就是。

@@ -55,7 +55,7 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
         <div className="flex items-center gap-3">
           {/* 报错时不显示倒计时——那会是一个冻在 00:00 的假进度 */}
           {!error && <ScanCountdown lastUpdated={lastUpdated} />}
-          <Button variant="ghost" size="sm" onClick={refetch} disabled={isRefreshing}>
+          <Button variant="outline" size="sm" onClick={refetch} disabled={isRefreshing}>
             {t("refresh_now")}
           </Button>
         </div>

@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { classifyScenario } from "./scenario";
+import {
+  classifyScenario,
+  absorptionStrengthOk,
+  RECLAIM_PCT_MIN,
+  SLOPE_RATIO_MIN,
+  SLOPE_MIN_BARS,
+} from "./scenario";
 import type { CoinGlassPriceBar, CoinGlassOiBar, CoinGlassTakerBar } from "@/lib/coinglass/types";
 
 const B = 1_800_000;
@@ -165,5 +171,67 @@ describe("classifyScenario —— 输出契约", () => {
     const [b, o, t] = build(price, cvd, oi);
     const s = classifyScenario(b, o, t)!;
     expect(b.some((x) => x.time === s.triggeredAt)).toBe(true);
+  });
+});
+
+/**
+ * A3/B3 力度扳机第 ② 条的边界。
+ *
+ * 规格：**优先用回补比例**（反转段 CVD 涨幅 ÷ 整段下跌 CVD 跌幅 > 30%）；
+ * 斜率 > 1.5 倍那条**只在反转段已有 3 根以上 30m K 线时才启用**。
+ *
+ * 为什么斜率要设这道闸：斜率比要除以反转段的根数，根数只有 1–2 时分母极小，
+ * 一根凶一点的 K 线就能把比值推到远超 1.5——那不是力度达标，是除数太小。
+ */
+describe("absorptionStrengthOk", () => {
+  // 下跌段固定：跌 100，用了 10 根
+  const decline = [100, 10] as const;
+  const ok = (reboundMove: number, reboundSpan: number) =>
+    absorptionStrengthOk(decline[0], decline[1], reboundMove, reboundSpan);
+
+  it("回补超过 30% 就算数，哪怕反转段只有 1 根", () => {
+    // 主口径是两个幅度的比值，跟根数无关，所以不受那道闸限制。
+    expect(ok(31, 1)).toBe(true);
+  });
+
+  it("回补恰好 30% 不算——门槛是「> 30%」", () => {
+    expect(ok(RECLAIM_PCT_MIN, 1)).toBe(false);
+  });
+
+  it("回补不够、反转段只有 2 根时，斜率再陡也不启用", () => {
+    // 反转 25（占跌幅 25%，不到 30%），只用了 2 根：
+    // 斜率比 = (25/2) ÷ (100/10) = 1.25 …… 就算把它拉到 10 倍也一样不认。
+    expect(ok(25, 2)).toBe(false);
+    expect(ok(29, 1)).toBe(false); // 一根就回补 29%，斜率比高达 2.9，仍然不认
+  });
+
+  it("反转段够 3 根、斜率过线才算数", () => {
+    // 反转 25（25% < 30%），3 根：斜率比 = (25/3) ÷ 10 = 0.83 → 不够
+    expect(ok(25, SLOPE_MIN_BARS)).toBe(false);
+    // 反转 50（50% > 30%）本来主口径就过了，换个不触发主口径的：
+    // 反转 29（29% < 30%），根数 1.5 倍要求 → 需要 (29/n)÷10 > 1.5 → n < 1.93
+    // 也就是说 3 根时斜率永远不可能过——这正是「主口径优先」的实际效果。
+    expect(ok(29, 3)).toBe(false);
+  });
+
+  it("斜率口径真正能起作用的是「下跌很慢、反转不算快但相对更陡」那种", () => {
+    // 下跌段：跌 100 用了 100 根（很慢，平均斜率 1）
+    // 反转段：涨 20（20% < 30%，主口径不过）用了 4 根 → 斜率 5 ÷ 1 = 5 > 1.5
+    expect(absorptionStrengthOk(100, 100, 20, 4)).toBe(true);
+    // 同样的形状但只有 2 根反转 → 闸门挡住
+    expect(absorptionStrengthOk(100, 100, 10, 2)).toBe(false);
+  });
+
+  it("斜率恰好等于 1.5 不算——门槛是「> 1.5 倍」", () => {
+    // 下跌 100/100 根 → 平均 1。反转段 n 根、幅度 1.5n 时斜率恰好 1.5。
+    const n = 4;
+    expect(absorptionStrengthOk(100, 100, SLOPE_RATIO_MIN * n, n)).toBe(false);
+  });
+
+  it("非法输入一律不算数，不靠除法自己冒 NaN/Infinity", () => {
+    expect(absorptionStrengthOk(0, 10, 50, 5)).toBe(false); // 下跌幅度为 0
+    expect(absorptionStrengthOk(100, 0, 50, 5)).toBe(false); // 下跌根数为 0
+    expect(absorptionStrengthOk(100, 10, 50, 0)).toBe(false); // 反转根数为 0
+    expect(absorptionStrengthOk(100, 10, NaN, 5)).toBe(false);
   });
 });

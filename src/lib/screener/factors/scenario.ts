@@ -124,7 +124,7 @@ export const OI_STATES_BY_KIND: Record<ScenarioKind, OiState[]> = {
 };
 
 /**
- * 力度扳机的斜率倍数下限（A3/B3 的第 ② 条）。
+ * 力度扳机的斜率倍数下限（A3/B3 的第 ② 条，**补充口径**）。
  *
  * 规格给的是「1.5–2 倍」一个区间。取下界 1.5：这套系统眼下的问题一直是
  * 门槛叠太紧导致几乎不出卡（六场景时代实测每天只出 8–26 个，改了选币口径
@@ -132,7 +132,23 @@ export const OI_STATES_BY_KIND: Record<ScenarioKind, OiState[]> = {
  */
 export const SLOPE_RATIO_MIN = 1.5;
 
-/** 短时间收复整段跌幅的比例下限（A3/B3 第 ② 条的另一条路）。 */
+/**
+ * 斜率口径**至少要有这么多根反转 K 线**才启用。
+ *
+ * 斜率比 = (反转幅度/反转根数) ÷ (下跌幅度/下跌根数)。反转段只有 1–2 根时
+ * 分母极小，一根凶一点的 K 线就能把比值推到远超 1.5——那不是力度达标，
+ * 是除数太小。3 根 = 1.5 小时，够让「斜率」这个词有意义。
+ */
+export const SLOPE_MIN_BARS = 3;
+
+/**
+ * 回补比例下限（A3/B3 第 ② 条的**主口径**）：
+ * 反转段 CVD 涨幅 ÷ 整段下跌 CVD 跌幅 > 30%。
+ *
+ * 优先于斜率，因为它是两个幅度的比值、跟反转段有几根 K 线无关，
+ * 任何时候都算得准；而且「收复了多少」比「涨得多快」更贴近这一条想表达的
+ * 意思——吸筹要的是把砸下去的量吃回去，不是短时间内画一根陡线。
+ */
 export const RECLAIM_PCT_MIN = 30;
 
 /** 判定回看窗口：往回找 sweep 的最大根数。48 根 = 24 小时。 */
@@ -174,6 +190,34 @@ function newExtreme(values: number[], kind: "high" | "low"): boolean | null {
   const b = values[pv.curr];
   if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
   return kind === "high" ? b > a : b < a;
+}
+
+/**
+ * A3/B3 力度扳机的第 ② 条：这波反转的力度够不够。
+ *
+ * 抽成纯函数是为了能直接测边界——它埋在 detectAbsorption 里的时候，要造出
+ * 一组同时满足 E1 定位、三个 CVD 摆动点、转向、OI 增的合成数据才能碰到它，
+ * 而真正容易写错的恰恰是这几个不等号。
+ *
+ * 两条口径：
+ *   · **主口径 · 回补比例** = 反转幅度 ÷ 下跌幅度 > 30%。两个幅度的比值，
+ *     跟反转段有几根 K 线无关，任何时候都算得准。
+ *   · **补充口径 · 斜率比** = (反转幅度/反转根数) ÷ (下跌幅度/下跌根数) > 1.5，
+ *     **只在反转段攒够 SLOPE_MIN_BARS 根之后才启用**。根数太少时分母极小，
+ *     一根凶一点的 K 线就能把比值推到远超 1.5——那不是力度达标，是除数太小。
+ */
+export function absorptionStrengthOk(
+  declineMove: number,
+  declineSpan: number,
+  reboundMove: number,
+  reboundSpan: number
+): boolean {
+  if (!(declineMove > 0) || !(declineSpan > 0) || !(reboundSpan > 0)) return false;
+  if (!Number.isFinite(reboundMove) || reboundMove < 0) return false;
+
+  if ((reboundMove / declineMove) * 100 > RECLAIM_PCT_MIN) return true;
+  if (reboundSpan < SLOPE_MIN_BARS) return false;
+  return reboundMove / reboundSpan / (declineMove / declineSpan) > SLOPE_RATIO_MIN;
 }
 
 function mk(
@@ -391,8 +435,8 @@ function detectSweepDivergence(ctx: Ctx, dir: "long" | "short"): Scenario | null
  *
  * 第二层 力度扳机（四条同时成立才触发）：
  *   ① CVD 转向：swing low 高于前一个 swing low（红变青不算）
- *   ② 力度达标：反转斜率 ÷ 前面下跌段平均斜率 > 1.5–2 倍，
- *      或短时间收复整段跌幅 > 30%
+ *   ② 力度达标。**优先用回补比例**（反转段 CVD 涨幅 ÷ 整段下跌 CVD 跌幅
+ *      > 30%）；斜率那条只在反转段已经有 3 根以上 30m K 线时才启用。
  *   ③ OI 同步增加（力度大 + OI 减 = 假的，是回补）
  *   ④ 有明确失效位：本波最低点
  */
@@ -416,16 +460,25 @@ function detectAbsorption(ctx: Ctx, dir: "long" | "short"): Scenario | null {
   const turned = up ? ctx.cvd[i3] > ctx.cvd[i2] : ctx.cvd[i3] < ctx.cvd[i2];
   if (!turned) return null;
 
-  // ② 力度达标：反转斜率 ÷ 前段斜率，或短时间收复整段跌幅
+  // ② 力度达标。两条口径，**回补比例优先，斜率是补充**。
+  //
+  // 回补比例 = 反转段 CVD 涨幅 ÷ 整段下跌 CVD 跌幅。它是两个幅度的比值，
+  // **跟反转段有几根 K 线无关**，所以任何时候都可以用。
+  //
+  // 斜率那条不一样：它要除以反转段的根数。反转段只有 1–2 根时，分母极小，
+  // 一根凶一点的 K 线就能把斜率比推到远超 1.5——那不是「力度达标」，那是
+  // 除数太小。所以斜率只在反转段攒够 SLOPE_MIN_BARS 根之后才启用。
+  //
+  // 顺序上先判回补比例：它没有这个毛病，而且它直接回答「收复了多少」，
+  // 比「涨得多快」更贴近规格想表达的意思。
   const declineSpan = i2 - i1;
   const reboundSpan = ctx.last - i2;
   if (declineSpan <= 0 || reboundSpan <= 0) return null;
   const declineMove = Math.abs(ctx.cvd[i2] - ctx.cvd[i1]);
   if (!Number.isFinite(declineMove) || declineMove <= 0) return null;
   const reboundMove = Math.abs(ctx.cvd[ctx.last] - ctx.cvd[i2]);
-  const slopeRatio = reboundMove / reboundSpan / (declineMove / declineSpan);
-  const reclaimed = (reboundMove / declineMove) * 100;
-  if (slopeRatio < SLOPE_RATIO_MIN && reclaimed < RECLAIM_PCT_MIN) return null;
+
+  if (!absorptionStrengthOk(declineMove, declineSpan, reboundMove, reboundSpan)) return null;
 
   // ③ OI 同步增加。力度大 + OI 减 = 回补，不是吸筹。
   const st = leg(ctx, i2, ctx.last);

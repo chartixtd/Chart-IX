@@ -245,7 +245,7 @@ export const CARD_GRACE_MS = 2 * 60 * 60 * 1000;
 /** 最多同时留几张已结束的卡。防止行情剧烈时警报栏被灰卡淹掉。 */
 export const CARD_GRACE_MAX = 12;
 
-export const SCANNER_PAYLOAD_VERSION = 9;
+export const SCANNER_PAYLOAD_VERSION = 10;
 
 export interface ScannerPayload {
   /** 见 SCANNER_PAYLOAD_VERSION —— 形状对不上的缓存一律丢弃 */

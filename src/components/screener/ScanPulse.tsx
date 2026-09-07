@@ -78,7 +78,7 @@ export function ScanPulse({
 
   return (
     <div className={cn("flex flex-col items-center", className)}>
-      <div className="relative aspect-square w-[clamp(8.5rem,22vw,13.5rem)]">
+      <div className="relative aspect-square w-[clamp(7rem,14vw,10rem)]">
         <svg viewBox="0 0 200 200" className="h-full w-full" aria-hidden>
           <defs>
             <linearGradient id={`${gradId}-arc`} x1="0" y1="0" x2="1" y2="1">
@@ -145,10 +145,10 @@ export function ScanPulse({
         {/* px-6 + 居中：ms-MY 的「Imbasan seterusnya」在手机尺寸的表盘里要折成两行，
             不居中的话第二行会贴着弧线 */}
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
-          <span className="font-mono text-[clamp(1.5rem,4vw,2.25rem)] tabular-nums leading-none text-text-primary">
+          <span className="font-mono text-[clamp(1.25rem,2.6vw,1.75rem)] tabular-nums leading-none text-text-primary">
             {known ? mmss(remaining) : "--:--"}
           </span>
-          <span className="eyebrow mt-3 leading-snug">{t("next_scan")}</span>
+          <span className="eyebrow mt-2 text-[10px] leading-snug">{t("next_scan")}</span>
         </div>
       </div>
 
@@ -156,7 +156,7 @@ export function ScanPulse({
         type="button"
         onClick={onRefresh}
         disabled={disabled || isRefreshing}
-        className="link-underline mt-6 inline-flex min-h-[44px] items-center text-[11px] font-medium uppercase tracking-[0.14em] text-gold transition-opacity disabled:cursor-not-allowed disabled:opacity-40 lg:min-h-0"
+        className="link-underline mt-4 inline-flex min-h-[44px] items-center text-[11px] font-medium uppercase tracking-[0.14em] text-gold transition-opacity disabled:cursor-not-allowed disabled:opacity-40 lg:min-h-0"
       >
         {t("refresh_now")}
       </button>

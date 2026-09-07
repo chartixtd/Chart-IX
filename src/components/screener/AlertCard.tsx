@@ -9,6 +9,7 @@ import { isInvalidated } from "@/lib/screener/invalidation";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { FactorMeter } from "./FactorMeter";
+import { AlertSpark } from "./AlertSpark";
 import { toneFor, DIRECTION_CLASSES } from "./scenario-ui";
 
 // 接收 t 而不是硬编码文案——页面其余文案全部走 i18n，这里也不能例外
@@ -41,10 +42,6 @@ function directionLabel(dir: "long" | "short" | "manage", t: ReturnType<typeof u
  * 4 小时这条线：这类结构事件的生命周期实测是几十分钟到几小时，叠上
  * 30 分钟的确认延迟，超过 4 小时的卡片基本已经从「入场信号」退化成
  * 「趋势确认」——还有参考价值，但不该照着它进场。
- *
- * 注意这里**不再有「最后确认」那一行**。卡片改成当轮扫描的视图之后，
- * 每一张按定义就是这一轮算出来的，不存在「这张卡是不是过期状态」这个
- * 问题——那是旧的警报状态机（卡片能比扫描活得久）才需要回答的。
  */
 function freshness(iso: string): "fresh" | "normal" | "stale" {
   const mins = (Date.now() - new Date(iso).getTime()) / 60000;
@@ -54,13 +51,20 @@ function freshness(iso: string): "fresh" | "normal" | "stale" {
 }
 
 /**
- * 警报卡（Ink & Gilt 版）。
+ * 警报卡（第二版）。
  *
- * 上一版是「盒子里套盒子」：判读一块底色、操作一块底色、价格一块底色，
- * 三块灰底叠在一张灰卡里，每块都在争注意力。这一版把结构交给发丝线：
- *   抬头（币名 + 方向 + 时间）与大涨跌数并置 → 一条场景基调色的细线 →
- *   判读正文 → 操作指令 → 三格价格刻度带 → 因子读数 → 唯一的操作按钮。
- * 场景基调色只出现在左边框与那条细线上：颜色是标注，不是填充。
+ * 第一版把三个价格排成三格数字带，读者要在脑子里自己把它们摆成一张图。
+ * 这一版直接给图：一条 24 小时的永续价格曲线（AlertSpark），叠首次警报价
+ * 的中性虚线与失效价的红虚线，现价离哪条线多远一眼可见。
+ *
+ * 版式从上到下只有一种节奏——每一层都是左右一对：
+ *   币名 + 方向 ｜ 多久前触发
+ *   顺方向涨跌（主角）｜ 实时价
+ *   曲线 ＋ 两条参考线的图例
+ *   操作指令（先说做什么）｜ 判读（再说为什么）
+ *   OI ｜ CVD
+ *   唯一的按钮
+ * 场景基调色只出现在左边框、曲线和那条细线上：颜色是标注，不是填充。
  *
  * livePrice 是 BingX 永续行情推送的最新成交价（见 useCardPrices），亚秒级。
  * 拿不到时回落到扫描价，**涨跌幅要跟着一起回落**——用实时价配一个按扫描价
@@ -98,17 +102,10 @@ export function AlertCard({
   const dirCls = DIRECTION_CLASSES[direction];
 
   // 「X 前触发」= **这张卡什么时候出现的**，两种触发源取的东西不同：
-  //
-  //   点火卡 → ignitedAt（点火那根 K 线的时刻）。它有上限（最多 8 根 = 4 小时），
-  //     而且比 firstSeenAt 准：点火那根可能在我们扫到它之前就走完了
-  //     （扫描 15 分钟一轮、K 线 30 分钟一根），用 firstSeenAt 会把一次
-  //     半小时前的点火说成「刚刚」。
-  //
-  //   场景卡 → firstSeenAt。**这里曾经也用结构锚点（scenario.triggeredAt），
-  //     那是错的**：场景锚在已确认的摆动点或被扫的 SSL/BSL 上，它可以是一天前
-  //     的事——线上实测锚点在 7–22 小时前，而卡片是 6 分钟前才出现的，
-  //     卡上却写着「22小时前触发」。锚点回答的是「结构在哪儿成形」，
-  //     不是「这个警报什么时候来的」，而后者才是这行字要答的问题。
+  //   点火卡 → ignitedAt（点火那根 K 线的时刻），比 firstSeenAt 准：点火那根
+  //     可能在我们扫到它之前就走完了，用 firstSeenAt 会把半小时前说成「刚刚」。
+  //   场景卡 → firstSeenAt。结构锚点（scenario.triggeredAt）可以是一天前的事，
+  //     它回答的是「结构在哪儿成形」，不是「这个警报什么时候来的」。
   const triggeredAt =
     trigger.type === "ignition"
       ? new Date(trigger.ignition.ignitedAt).toISOString()
@@ -117,11 +114,9 @@ export function AlertCard({
 
   // 场景卡与点火卡在这两格上说的是不同的话，其余版式完全共用。
   //
-  // 场景名（「增仓型底背离」这类）与强度徽章都**不显示**：前者读起来像一个
-  // 已经读懂市场的结论，而实测不同场景之间的方向准确度全部落在 50% 附近、
-  // 彼此区分不开；后者暗示了一个可信度排序，而各强度档的胜率同样都是 50%
-  // 上下。verdict 用大白话说**发生了什么**，信息量一样，但不冒充结论。
-  // i18n 的 scenarios.*.name 没删——事后归因统计要按场景名分组。
+  // 场景名与强度徽章都**不显示**：前者读起来像一个已经读懂市场的结论，而实测
+  // 不同场景之间的方向准确度全部落在 50% 附近；后者暗示了一个可信度排序，
+  // 而各强度档的胜率同样都是 50% 上下。verdict 用大白话说**发生了什么**。
   let verdict: string;
   let action: string;
   let trap = false;
@@ -129,8 +124,7 @@ export function AlertCard({
     const sc = trigger.scenario;
     trap = sc.trap;
     // strength / oiState 一并传进去：文案里凡是描述 OI 或强度的**定语**，
-    // 都用 ICU select 从这两个值选词，而不是写死。写死过三次，三次都不报错，
-    // 只是在骗读的人。详见 factors/scenario.ts 里 Scenario.oiState 的注释。
+    // 都用 ICU select 从这两个值选词，而不是写死。详见 factors/scenario.ts。
     const vars = {
       level: formatPrice(sc.structureLevel),
       cvdPct: formatPercent(sc.cvdPct),
@@ -160,62 +154,39 @@ export function AlertCard({
         dead && "opacity-50"
       )}
     >
-      {/* 抬头：左边是这是什么（币、方向、多久前），右边是它现在怎么样了（顺方向涨跌）。
-          两者是这张卡最先要回答的两个问题，所以并置在同一行、同一基线。 */}
-      <header className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <span className="font-display text-xl font-medium tracking-tight text-text-primary">{coin}</span>
-            <span
-              className={cn(
-                "rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
-                dirCls.pillBg,
-                dirCls.pillText
-              )}
-            >
-              {directionLabel(direction, t)}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
-            {fresh === "fresh" && (
-              <span className="rounded-sm border border-gold/40 px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-gold">
-                {t("alerts.fresh_new")}
-              </span>
+      {/* 币名 + 方向 ｜ 多久前触发 */}
+      <header className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="font-display text-2xl font-light tracking-tight text-text-primary">{coin}</span>
+          <span
+            className={cn(
+              "rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+              dirCls.pillBg,
+              dirCls.pillText
             )}
-            {fresh === "stale" && (
-              <span className="rounded-sm border border-border-hover px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-text-muted">
-                {t("alerts.fresh_stale")}
-              </span>
-            )}
-            <span>{triggeredLabel(triggeredAt, t)}</span>
-          </div>
+          >
+            {directionLabel(direction, t)}
+          </span>
         </div>
-
-        <div className="shrink-0 text-right">
-          <div className={cn("numeral text-[2rem] leading-none", pct >= 0 ? "text-success" : "text-danger")}>
-            {formatPercent(pct)}
-          </div>
-          <div className="mt-2 font-mono text-[10px] tabular-nums text-text-muted">
-            {t("alerts.peak")} {formatPercent(peak)}
-          </div>
-        </div>
-      </header>
-
-      {/* 状态行：只剩「陷阱」与「已结束 / 已失效」。两个都没有时整行不渲染。
-          陷阱标签跟着场景自身的基调色走（假顶=紫 / 假底=品红），写死一个紫
-          会让品红卡片上出现两个对不上的"陷阱色"。 */}
-      {(trap || dead) && (
-        <div className="mt-4 flex items-center gap-2">
-          {trap && (
-            <span className={cn("inline-flex items-center gap-1 text-[11px] font-semibold", toneCls.text)}>
-              <Icon name="alert" className="h-3.5 w-3.5" />
-              {t("scenarios.trap_label")}
+        <div className="flex shrink-0 items-center gap-2 pt-1.5 text-[11px] text-text-muted">
+          {!dead && fresh === "fresh" && (
+            <span className="rounded-sm border border-gold/40 px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-gold">
+              {t("alerts.fresh_new")}
             </span>
           )}
+          {!dead && fresh === "stale" && (
+            <span className="rounded-sm border border-border-hover px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-text-muted">
+              {t("alerts.fresh_stale")}
+            </span>
+          )}
+          <span className="whitespace-nowrap">{triggeredLabel(triggeredAt, t)}</span>
+          {/* 「已结束 / 已失效」跟新鲜度徽章同属「这张卡的状态」，放同一行；
+              单独另起一行会在抬头下面留一条只有右端有字的空行。dead 时新鲜度
+              徽章不再显示——已经结束的信号无所谓新不新。 */}
           {dead && (
             <span
               className={cn(
-                "ml-auto rounded-sm border px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.12em]",
+                "rounded-sm border px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em]",
                 card.expired ? "border-border-hover text-text-muted" : "border-danger/40 text-danger"
               )}
             >
@@ -223,67 +194,84 @@ export function AlertCard({
             </span>
           )}
         </div>
+      </header>
+
+      {/* 陷阱标签跟着场景自身的基调色走（假顶=紫 / 假底=品红），写死一个紫
+          会让品红卡片上出现两个对不上的"陷阱色"。 */}
+      {trap && (
+        <div className={cn("mt-3 inline-flex items-center gap-1 text-[11px] font-semibold", toneCls.text)}>
+          <Icon name="alert" className="h-3.5 w-3.5" />
+          {t("scenarios.trap_label")}
+        </div>
       )}
 
-      {/* 判读正文。上面那条细线是场景基调色——颜色在这里是标注，不是填充。 */}
-      <p className={cn("mt-5 border-t pt-4 text-xs leading-relaxed text-text-secondary", toneCls.borderTint)}>
-        {verdict}
-      </p>
-
-      {/* 操作指令：方向色文字，不再是一块填色。失效之后划掉，但保留——
-          你可能正持着这个仓，需要知道它当初说的是什么。 */}
-      <p className={cn("mt-3 text-[13px] font-semibold leading-snug", dirCls.actionText, dead && "line-through")}>
-        {action}
-      </p>
-
-      {/* 三格价格刻度带：实时价最重（唯一每秒在变的数），首次价与失效价是
-          两个不动的结构位，退到次级。发丝线分格，不用底色块。 */}
-      <dl
-        className={cn(
-          "mt-5 grid gap-px border-y border-border-default bg-border-default",
-          card.invalidation ? "grid-cols-3" : "grid-cols-2"
-        )}
-      >
-        <div className="bg-bg-secondary py-3 pr-3">
-          <dt className="eyebrow">{t("alerts.last_price")}</dt>
-          <dd className="mt-2 font-mono text-sm tabular-nums text-text-primary">{formatPrice(price)}</dd>
-        </div>
-        <div className="bg-bg-secondary px-3 py-3">
-          <dt className="eyebrow">{t("alerts.first_price")}</dt>
-          <dd className="mt-2 font-mono text-sm tabular-nums text-text-secondary">{formatPrice(card.firstPrice)}</dd>
-        </div>
-        {card.invalidation && (
-          <div className="bg-bg-secondary py-3 pl-3">
-            <dt className="eyebrow">{t("alerts.invalidation")}</dt>
-            <dd className={cn("mt-2 font-mono text-sm tabular-nums", dead ? "text-danger" : "text-text-secondary")}>
-              {formatPrice(card.invalidation.price)}
-            </dd>
+      {/* 顺方向涨跌（主角）｜ 实时价 */}
+      <div className="mt-5 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className={cn("numeral text-[2.5rem] leading-none", pct >= 0 ? "text-success" : "text-danger")}>
+            {formatPercent(pct)}
           </div>
-        )}
-      </dl>
+          <div className="mt-2 font-mono text-[10px] tabular-nums text-text-muted">
+            {t("alerts.peak")} {formatPercent(peak)}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="font-mono text-xl tabular-nums leading-none text-text-primary">{formatPrice(price)}</div>
+          <div className="eyebrow mt-2 text-[10px]">{t("alerts.last_price")}</div>
+        </div>
+      </div>
 
-      <FactorMeter factors={card.factors} fillClassName={toneCls.fill} className="mt-5" />
+      {/* 24 小时曲线 + 两条参考线。已结束的卡曲线退成灰色，只剩红虚线还在说话 */}
+      <AlertSpark
+        className="mt-4 h-16"
+        symbol={card.symbol}
+        firstPrice={card.firstPrice}
+        invalidation={card.invalidation}
+        toneClassName={dead ? "text-text-muted" : toneCls.text}
+      />
+      {/* 图例：短虚线样本 + 标签 + 值，与图上的两条线一一对应 */}
+      <div className="mt-2 flex items-center justify-between gap-3 font-mono text-[10px] tabular-nums">
+        <span className="inline-flex items-center gap-1.5 text-text-secondary">
+          <i aria-hidden className="inline-block w-3 border-t border-dashed border-text-secondary/70" />
+          <span className="text-text-muted">{t("alerts.first_price")}</span>
+          {formatPrice(card.firstPrice)}
+        </span>
+        {card.invalidation && (
+          <span className={cn("inline-flex items-center gap-1.5", dead ? "text-danger" : "text-text-secondary")}>
+            <i aria-hidden className="inline-block w-3 border-t border-dashed border-danger/70" />
+            <span className="text-text-muted">{t("alerts.invalidation")}</span>
+            {formatPrice(card.invalidation.price)}
+          </span>
+        )}
+      </div>
+
+      {/* 先说做什么，再说为什么。上面那条细线是场景基调色。
+          失效之后指令划掉但保留——你可能正持着这个仓，需要知道它当初说的是什么。 */}
+      <div className={cn("mt-5 border-t pt-4", toneCls.borderTint)}>
+        <p className={cn("text-[13px] font-semibold leading-snug", dirCls.actionText, dead && "line-through")}>
+          {action}
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-text-secondary">{verdict}</p>
+      </div>
+
+      <FactorMeter layout="pair" factors={card.factors} fillClassName={toneCls.fill} className="mt-5" />
 
       {/* manage 不是可下单方向：按钮改成中性「查看」、链接不带 side，
           交易页自己决定默认方向。与主扫描表的操作列同一套处理。
-          失效之后按钮也保留——你可能正持着这个仓要去平掉，
-          这时候更需要一键跳过去，而不是把入口收走。 */}
+          失效之后按钮也保留——你可能正持着这个仓要去平掉，这时候更需要一键跳过去。 */}
       <Link
         href={
           direction === "manage"
             ? `/${locale}/trade?symbol=${card.symbol}&market=futures`
             : `/${locale}/trade?symbol=${card.symbol}&side=${direction}&market=futures`
         }
-        className="mt-6 block"
+        className="mt-5 block"
       >
         <Button
           variant={direction === "long" ? "green" : direction === "short" ? "red" : "secondary"}
           size="sm"
           className="h-10 w-full text-xs uppercase tracking-[0.14em]"
         >
-          {/* 按钮文案直接说方向（做多 / 做空）。manage 仍然是中性的「查看」——
-              它按定义就不是一个可下单方向，给它安一个方向词等于凭空造一个
-              系统没给出的结论。 */}
           {direction === "manage"
             ? t("action_view")
             : direction === "long"

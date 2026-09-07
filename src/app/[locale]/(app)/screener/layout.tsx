@@ -75,7 +75,7 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
         <AuraField />
         <div aria-hidden className="ruled-grid pointer-events-none absolute inset-0 opacity-60" />
 
-        <div className="relative mx-auto max-w-[110rem] px-4 pt-10 lg:px-6 lg:pt-14">
+        <div className="relative mx-auto max-w-[110rem] px-4 pt-8 lg:px-6 lg:pt-10">
           {/* items-center 而不是 items-baseline：h1 是个 flex 容器，它的基线取自第一个
               子项——那段 1px 的金线——于是右边那行会比标题高出 3px。两者都是 11px
               的微标签，按中线对齐才是齐的。 */}
@@ -90,18 +90,20 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
             )}
           </div>
 
-          <div className="mt-8 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-6 lg:mt-12 lg:gap-16">
+          {/* 抬头压到约 300px：第一版的 8rem 数字 + 13.5rem 表盘把首屏吃掉一半，
+              表格和卡片要滚一屏才看得到。数字与表盘各降一档，间距同步收紧。 */}
+          <div className="mt-6 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-6 lg:mt-8 lg:gap-16">
             <div className="min-w-0 animate-rise-in [animation-delay:80ms]">
               {error ? (
-                <div className="display text-3xl text-text-muted md:text-4xl">{t("error")}</div>
+                <div className="display text-2xl text-text-muted md:text-3xl">{t("error")}</div>
               ) : isLoading ? (
-                <Skeleton className="h-[clamp(4rem,12vw,8rem)] w-[clamp(4rem,12vw,8rem)]" />
+                <Skeleton className="h-[clamp(3rem,7.5vw,5.5rem)] w-[clamp(3rem,7.5vw,5.5rem)]" />
               ) : (
-                <div className="numeral text-[clamp(4rem,12vw,8rem)] leading-[0.9]">{liveCount}</div>
+                <div className="numeral text-[clamp(3rem,7.5vw,5.5rem)] leading-[0.9]">{liveCount}</div>
               )}
-              <p className="eyebrow mt-5 text-text-secondary">{t("hero.live_signals")}</p>
+              <p className="eyebrow mt-3 text-text-secondary">{t("hero.live_signals")}</p>
               {!error && !isLoading && (
-                <p className="mt-2 font-mono text-xs tabular-nums text-text-muted">
+                <p className="mt-1.5 font-mono text-xs tabular-nums text-text-muted">
                   {t("candidate_count", { count: rows.length })}
                 </p>
               )}
@@ -122,7 +124,7 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
             section 上：section 是 overflow-hidden，tab 往下溢出的那 1px 会被裁掉。
             横向滚动包在 nav 上：en-US / ms-MY 文案在 375px 下放不下时横向滚，
             不许折行——折行会把下划线 tab 撑成两层。 */}
-        <div className="relative mt-10 border-b border-border-default lg:mt-14">
+        <div className="relative mt-7 border-b border-border-default lg:mt-9">
           <div className="mx-auto max-w-[110rem] px-4 lg:px-6">
             <nav className="custom-scrollbar -mb-px flex items-center gap-1 overflow-x-auto">
               {tabs.map((tab) => {

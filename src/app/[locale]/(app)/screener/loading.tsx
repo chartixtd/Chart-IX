@@ -8,24 +8,24 @@ export default function ScreenerLoading() {
   return (
     <div>
       <section className="hero-ground relative overflow-hidden">
-        <div className="mx-auto max-w-[110rem] px-4 pt-10 lg:px-6 lg:pt-14">
-          <div className="flex items-baseline justify-between">
+        <div className="mx-auto max-w-[110rem] px-4 pt-8 lg:px-6 lg:pt-10">
+          <div className="flex items-center justify-between">
             <Skeleton className="h-3 w-24" />
             <Skeleton className="h-3 w-32" />
           </div>
-          <div className="mt-8 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-6 lg:mt-12 lg:gap-16">
+          <div className="mt-6 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-6 lg:mt-8 lg:gap-16">
             <div>
-              <Skeleton className="h-[clamp(4rem,12vw,8rem)] w-[clamp(4rem,12vw,8rem)]" />
-              <Skeleton className="mt-5 h-3 w-20" />
-              <Skeleton className="mt-3 h-3 w-28" />
+              <Skeleton className="h-[clamp(3rem,7.5vw,5.5rem)] w-[clamp(3rem,7.5vw,5.5rem)]" />
+              <Skeleton className="mt-3 h-3 w-20" />
+              <Skeleton className="mt-2 h-3 w-28" />
             </div>
             <div className="flex flex-col items-center">
-              <Skeleton className="aspect-square w-[clamp(8.5rem,22vw,13.5rem)] rounded-full" />
-              <Skeleton className="mt-6 h-3 w-16" />
+              <Skeleton className="aspect-square w-[clamp(7rem,14vw,10rem)] rounded-full" />
+              <Skeleton className="mt-4 h-3 w-16" />
             </div>
           </div>
         </div>
-        <div className="mt-10 border-b border-border-default lg:mt-14">
+        <div className="mt-7 border-b border-border-default lg:mt-9">
           <div className="mx-auto flex max-w-[110rem] gap-6 px-4 py-3.5 lg:px-6">
             <Skeleton className="h-3 w-20" />
             <Skeleton className="h-3 w-20" />

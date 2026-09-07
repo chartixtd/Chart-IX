@@ -41,8 +41,8 @@ async function fetchKlines(symbol: string, interval: string, limit: number): Pro
   return json.data as BingXKline[];
 }
 
-/** Catmull-Rom → 三次贝塞尔：让折线读成一条有张力的曲线 */
-function smoothPath(points: [number, number][]): string {
+/** Catmull-Rom → 三次贝塞尔：让折线读成一条有张力的曲线。警报卡的 AlertSpark 复用同一条算法。 */
+export function smoothPath(points: [number, number][]): string {
   if (points.length < 2) return "";
   let d = `M ${points[0][0]} ${points[0][1]}`;
   for (let i = 0; i < points.length - 1; i++) {

@@ -3,7 +3,7 @@ import type { Scenario, ScenarioDirection } from "./factors/scenario";
 import type { FactorBreakdown, ScannerRow } from "./types";
 import { CARD_GRACE_MS, CARD_GRACE_MAX } from "./types";
 import type { Ignition } from "./ignition";
-import { invalidationLine, ignitionLine } from "./invalidation";
+import { invalidationLine, ignitionLine, scenarioInvalidated, ignitionInvalidated } from "./invalidation";
 import type { InvalidationLine } from "./invalidation";
 
 /**
@@ -56,6 +56,25 @@ export type CardTrigger =
   | { type: "scenario"; scenario: Scenario }
   | { type: "ignition"; ignition: Ignition };
 
+/**
+ * 一张卡为什么结束了。**只在它结束的那一轮判一次**，之后灰着的每一轮原样带着。
+ *
+ *   · invalidated —— 价格穿了失效线。场景按 K 线极值判（插针也算），点火按
+ *     收盘判，跟活卡那一路各自的口径一致（见 invalidation.ts）。
+ *   · structure_changed —— 这个币这一轮扫了、K 线也拿到了，但按同一套判定
+ *     已经算不出这张卡了：条件不再全部成立，或者判成了别的场景 / 锚点换了。
+ *     **价格没有碰到失效线。** 这是最容易被误读的一种——线上一张 OP 的
+ *     b3 卡，价格离失效价还有 1.7%，卡片却打着「已结束」，读的人自然以为
+ *     是止损被扫了，其实是反弹把「下行力度 / OI 同增」那几条打掉了。
+ *   · not_scanned —— 这个币这一轮根本不在扫描名单里：掉出主表而复核名额
+ *     又不够，或者掉出了候选池。信号本身还成不成立，系统不知道。
+ *   · no_data —— 扫了，但这个币的 K 线没拿到（上游失败），判不了。
+ *
+ * 前两种是「市场说了话」，后两种是「系统没看」。分开写，是因为对一个可能
+ * 正持着仓的人，这两类的含义完全不同：前者该走了，后者该自己去看一眼。
+ */
+export type ExpiredReason = "invalidated" | "structure_changed" | "not_scanned" | "no_data";
+
 export interface AlertCardData {
   key: string;
   symbol: string;
@@ -86,6 +105,13 @@ export interface AlertCardData {
    * 而「发生过、已经结束」是一个有用的答案。
    */
   expired: boolean;
+  /**
+   * 结束原因，只在 expired 为 true 时有意义。缺失 = 这张卡是在这个字段加上
+   * 之前就结束的（从旧 payload 接过来的灰卡），前端退回只显示「已结束」，
+   * 不去猜。可选字段，所以不必抬 SCANNER_PAYLOAD_VERSION：旧形状读出来是
+   * undefined，而 undefined 正是这里的合法取值之一。
+   */
+  expiredReason?: ExpiredReason;
 }
 
 /** 触发价 → 现价的顺方向涨跌幅。做空时符号翻过来，跌了才是正的。 */
@@ -274,6 +300,38 @@ export function sortCards(cards: AlertCardData[]): AlertCardData[] {
 }
 
 /**
+ * 这张卡的触发源有没有被价格证伪。按触发源分派到各自的口径：
+ * 场景看 K 线极值（止损被扫了就是被扫了），点火看收盘（影线穿回来不算）。
+ */
+export function triggerInvalidated(trigger: CardTrigger, bars: CoinGlassPriceBar[]): boolean {
+  return trigger.type === "scenario"
+    ? scenarioInvalidated(trigger.scenario, bars)
+    : ignitionInvalidated(trigger.ignition, bars);
+}
+
+/**
+ * 判一张刚结束的卡的结束原因。
+ *
+ * `scannedBars` 是本轮**实际扫过**的每个币 → 它的价格 K 线。没扫的币不在
+ * 里面，扫了但没拿到 K 线的是空数组——两者要分开（一个是「没看」，一个是
+ * 「看了但看不见」），所以传 Map 而不是只传一个 symbol 集合。
+ *
+ * 顺序有讲究：先查穿线，再归为「条件已变」。一张穿了线的卡在分类器里同样
+ * 是算不出来的（b3 一创新高就被第一道门否掉），只看「算不算得出」分不开
+ * 这两种；而穿线是更具体、对持仓者更要紧的那个答案。
+ */
+export function resolveExpiredReason(
+  card: AlertCardData,
+  scannedBars: ReadonlyMap<string, CoinGlassPriceBar[]>
+): ExpiredReason {
+  const bars = scannedBars.get(card.symbol);
+  if (bars === undefined) return "not_scanned";
+  if (bars.length === 0) return "no_data";
+  if (triggerInvalidated(card.trigger, bars)) return "invalidated";
+  return "structure_changed";
+}
+
+/**
  * 挑出「信号已经结束、但还值得灰着留一会儿」的卡片。
  *
  * 灰卡存在的唯一理由是**让推送里的币找得到**：推送推的就是当轮 cards 的
@@ -295,12 +353,18 @@ export function sortCards(cards: AlertCardData[]): AlertCardData[] {
  *
  * 传空的 pushedKeys 会让结果为空——那等于回到「卡片直接消失」，也就是加
  * 宽限期之前的行为，是安全的退化方向。
+ *
+ * `reasonFor` 只对**这一轮刚结束**的卡调用（上一轮还是活的、这一轮没了）。
+ * 上一轮已经是灰卡的，原样带着它的原因不再重判——这一轮再判会判错：它当初
+ * 是「条件已变」，这一轮币掉出了名单，重判就成了「本轮未扫」。上一轮就是
+ * 灰卡却没有原因的（字段加上之前结束的旧卡），保持没有，前端退回「已结束」。
  */
 export function carryForwardExpired(
   previous: AlertCardData[],
   liveCards: AlertCardData[],
   pushedKeys: Set<string>,
-  now: number
+  now: number,
+  reasonFor: (card: AlertCardData) => ExpiredReason
 ): AlertCardData[] {
   const liveKeys = new Set(liveCards.map((c) => c.key));
   const liveSymbols = new Set(liveCards.map((c) => c.symbol));
@@ -310,5 +374,9 @@ export function carryForwardExpired(
     .filter((c) => pushedKeys.has(c.key))
     .filter((c) => now - new Date(c.firstSeenAt).getTime() < CARD_GRACE_MS)
     .slice(0, CARD_GRACE_MAX)
-    .map((c) => ({ ...c, expired: true }));
+    .map((c) => ({
+      ...c,
+      expired: true,
+      expiredReason: c.expired ? c.expiredReason : reasonFor(c),
+    }));
 }

@@ -124,3 +124,25 @@ export function ignitionLine(ignition: Ignition): InvalidationLine | null {
     breach: ignition.direction === "up" ? "below" : "above",
   };
 }
+
+/**
+ * 点火有没有被价格证伪：`ignitedAt` 之后任何一根 K 线的**收盘**越过失效线。
+ *
+ * 用收盘不用极值，理由见 ignitionLine——影线穿回来又拉上去是突破成立时的
+ * 常见走法。detectIgnition 内部只看最后一根收盘（它每轮从头重算），这里要
+ * 回看整段，是因为调用方拿的是**上一轮**的点火对象，两轮之间可能隔了不止
+ * 一根 K 线，穿越可能发生在中间那根上。
+ *
+ * 点火那一根本身不用跳过：它的收盘按定义在区间外侧，失效线在区间内侧再
+ * 让 1×ATR，同一根不可能同时满足两边。
+ */
+export function ignitionInvalidated(ignition: Ignition, bars: CoinGlassPriceBar[]): boolean {
+  const line = ignitionLine(ignition);
+  if (!line) return false;
+  for (const b of bars) {
+    if (b.time < ignition.ignitedAt) continue;
+    const c = parseFloat(b.close);
+    if (isInvalidated(line, c, c)) return true;
+  }
+  return false;
+}

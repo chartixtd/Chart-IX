@@ -98,6 +98,20 @@ export function AlertCard({
       livePrice !== null &&
       isInvalidated(card.invalidation, livePrice, livePrice));
 
+  // 结束标签怎么写、用什么色：
+  //   实时穿线（服务端还没确认）→ 红「已失效」。
+  //   服务端结束 → 按它记下的原因分：穿线也是红的；条件已变 / 本轮未扫 /
+  //     数据缺失是灰的。红 = 市场证伪了它，灰 = 系统不再算它。
+  //   旧 payload 里没带原因的灰卡 → 退回「已结束」，不猜。
+  // 原因只对服务端结束的卡有意义，实时穿线那一路没有原因字段可读。
+  const reason = card.expired ? card.expiredReason : undefined;
+  const endedLabel = !card.expired
+    ? t("alerts.invalidated")
+    : reason
+      ? t(`alerts.ended_reason.${reason}`)
+      : t("alerts.ended");
+  const endedDanger = !card.expired || reason === "invalidated";
+
   const toneCls = toneFor(trigger);
   const dirCls = DIRECTION_CLASSES[direction];
 
@@ -187,10 +201,10 @@ export function AlertCard({
             <span
               className={cn(
                 "rounded-sm border px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em]",
-                card.expired ? "border-border-hover text-text-muted" : "border-danger/40 text-danger"
+                endedDanger ? "border-danger/40 text-danger" : "border-border-hover text-text-muted"
               )}
             >
-              {card.expired ? t("alerts.ended") : t("alerts.invalidated")}
+              {endedLabel}
             </span>
           )}
         </div>
@@ -251,6 +265,15 @@ export function AlertCard({
         <p className={cn("text-[13px] font-semibold leading-snug", dirCls.actionText, dead && "line-through")}>
           {action}
         </p>
+        {/* 指令被划掉了，紧跟着说清楚**为什么**。一张失效线画得很显眼的卡打着
+            「已结束」，读的人多半会以为是碰线了——而多数情况恰恰不是。 */}
+        {reason && (
+          <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
+            {t(`alerts.ended_detail.${reason}`, {
+              price: card.invalidation ? formatPrice(card.invalidation.price) : "—",
+            })}
+          </p>
+        )}
         <p className="mt-2 text-xs leading-relaxed text-text-secondary">{verdict}</p>
       </div>
 

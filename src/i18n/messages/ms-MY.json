@@ -944,7 +944,19 @@
       "page_hint": "Kad hilang apabila senario tamat, berubah, atau harga menembusi paras tidak sah",
       "trade": "Dagang →",
       "ended": "Tamat",
-      "ended_hint": "Isyarat sudah tamat — dikekalkan sebentar untuk padanan dengan tolakan"
+      "ended_hint": "Isyarat sudah tamat — dikekalkan sebentar untuk padanan dengan tolakan",
+      "ended_reason": {
+        "invalidated": "Paras ditembusi",
+        "structure_changed": "Syarat berubah",
+        "not_scanned": "Tidak diimbas",
+        "no_data": "Tiada data"
+      },
+      "ended_detail": {
+        "invalidated": "Harga menembusi paras tidak sah {price}. Pasaran membuktikan isyarat ini salah.",
+        "structure_changed": "Selepas dinilai semula, syarat di sebalik kad ini tidak lagi semua dipenuhi. Harga tidak mencapai paras tidak sah.",
+        "not_scanned": "Syiling ini tiada dalam senarai imbasan pusingan ini, jadi isyarat tidak disemak semula. Sama ada ia masih sah tidak diketahui.",
+        "no_data": "Lilin untuk syiling ini tidak tersedia pusingan ini, jadi isyarat tidak dapat disemak semula."
+      }
     },
     "source_note": "Data daripada CoinGlass · harga dan dagangan di BingX · lilin daripada {exchange}",
     "scenarios": {

@@ -1020,7 +1020,19 @@
       "page_hint": "A card disappears when its scenario ends, changes, or price breaks the invalidation level",
       "trade": "Trade →",
       "ended": "Ended",
-      "ended_hint": "Signal is over — kept briefly so you can match it to the push"
+      "ended_hint": "Signal is over — kept briefly so you can match it to the push",
+      "ended_reason": {
+        "invalidated": "Level broken",
+        "structure_changed": "Setup changed",
+        "not_scanned": "Not scanned",
+        "no_data": "No data"
+      },
+      "ended_detail": {
+        "invalidated": "Price broke through the invalidation level {price}. The market proved this signal wrong.",
+        "structure_changed": "On re-evaluation the conditions behind this card no longer all hold. Price did not reach the invalidation level.",
+        "not_scanned": "This coin was not in this round's scan list, so the signal was not re-checked. Whether it still holds is unknown.",
+        "no_data": "Candles for this coin were unavailable this round, so the signal could not be re-checked."
+      }
     },
     "source_note": "Data from CoinGlass · price and execution on BingX · candles from {exchange}",
     "scenarios": {

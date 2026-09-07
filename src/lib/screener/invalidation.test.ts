@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { invalidationLine, isInvalidated, scenarioInvalidated, ignitionLine } from "./invalidation";
+import { invalidationLine, isInvalidated, scenarioInvalidated, ignitionLine, ignitionInvalidated } from "./invalidation";
 import type { Scenario } from "./factors/scenario";
 import type { Ignition } from "./ignition";
 import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
@@ -123,5 +123,55 @@ describe("ignitionLine", () => {
 
   it("失效价非法时返回 null", () => {
     expect(ignitionLine(ig({ invalidationPrice: 0 }))).toBeNull();
+  });
+});
+
+describe("ignitionInvalidated", () => {
+  const ig = (o: Partial<Ignition> = {}): Ignition => ({
+    direction: "up",
+    level: 100,
+    invalidationPrice: 98,
+    distancePct: 2,
+    ignitedAt: 10 * B,
+    barsAgo: 1,
+    volumeRatio: 2,
+    oiChangePct: 1,
+    ...o,
+  });
+  const bar = (i: number, high: number, low: number, close: number): CoinGlassPriceBar => ({
+    time: i * B,
+    open: String(close),
+    high: String(high),
+    low: String(low),
+    close: String(close),
+    volume_usd: "1",
+  });
+
+  it("点火之后某根收盘跌破失效线 → 失效", () => {
+    expect(ignitionInvalidated(ig(), [bar(10, 105, 101, 104), bar(11, 104, 96, 97)])).toBe(true);
+  });
+
+  it("只有影线穿过、收盘守住 → 不算——这跟六场景刻意相反", () => {
+    expect(ignitionInvalidated(ig(), [bar(10, 105, 101, 104), bar(11, 104, 96, 99)])).toBe(false);
+  });
+
+  it("穿越发生在两轮扫描之间的某根上也抓得到，不只看最后一根", () => {
+    expect(
+      ignitionInvalidated(ig(), [bar(10, 105, 101, 104), bar(11, 104, 96, 97), bar(12, 106, 101, 105)])
+    ).toBe(true);
+  });
+
+  it("点火之前的 K 线不算", () => {
+    expect(ignitionInvalidated(ig(), [bar(9, 95, 90, 90), bar(10, 105, 101, 104)])).toBe(false);
+  });
+
+  it("向下点火方向相反：收盘涨回失效线之上算失效", () => {
+    const down = ig({ direction: "down", invalidationPrice: 102 });
+    expect(ignitionInvalidated(down, [bar(10, 99, 95, 96), bar(11, 103, 97, 103)])).toBe(true);
+    expect(ignitionInvalidated(down, [bar(10, 99, 95, 96), bar(11, 103, 97, 101)])).toBe(false);
+  });
+
+  it("失效价非法时不误判", () => {
+    expect(ignitionInvalidated(ig({ invalidationPrice: NaN }), [bar(11, 104, 96, 97)])).toBe(false);
   });
 });

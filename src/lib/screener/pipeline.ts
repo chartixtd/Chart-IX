@@ -26,6 +26,7 @@ import {
   memoKey,
   ignitionMemoKey,
   carryForwardExpired,
+  resolveExpiredReason,
   IGNITION_CARDS_ENABLED,
 } from "./cards";
 import { readLastScannerPayload } from "./cache";
@@ -370,6 +371,9 @@ export async function runScan(): Promise<ScannerPayload> {
   const rows: ScannerRow[] = [];
   const cards: AlertCardData[] = [];
   const newMemos: ScenarioMemo[] = [];
+  // 本轮扫过的每个币 → 它的价格 K 线。给下面判「灰卡为什么结束」用：不在
+  // 这张表里 = 这一轮没扫它；在但是空数组 = 扫了但 K 线没拿到。两者要分开。
+  const scannedBars = new Map<string, CoinGlassPriceBar[]>();
   const now = Date.now();
   for (let i = 0; i < staged.length; i++) {
     const s = staged[i];
@@ -379,6 +383,7 @@ export async function runScan(): Promise<ScannerPayload> {
     const oiBars = (detail[base] as CoinGlassOiBar[] | null) ?? [];
     const priceBars = (detail[base + 1] as CoinGlassPriceBar[] | null) ?? [];
     const taker = (detail[base + 2] as CoinGlassTakerBar[] | null) ?? [];
+    scannedBars.set(s.candidate.bingxSymbol, priceBars);
 
     const price = s.price;
 
@@ -503,11 +508,16 @@ export async function runScan(): Promise<ScannerPayload> {
   // 只接**上一轮**的卡片，不去翻更早的历史：上一轮的 payload 里已经含着它
   // 自己接过来的灰卡，于是「结束多久」是靠 firstSeenAt + 宽限期截断的，
   // 不需要额外记一张台账。
+  //
+  // 每张灰卡都带着**它为什么结束**（见 cards.ts ExpiredReason）。判定用的是
+  // 上一轮那张卡自己的触发源对上本轮的 K 线——不是本轮判出的新场景，那个
+  // 可能根本不存在。
   const expired = carryForwardExpired(
     (await readLastScannerPayload())?.cards ?? [],
     cards,
     await readPushedKeys(),
-    now
+    now,
+    (c) => resolveExpiredReason(c, scannedBars)
   );
 
   return {

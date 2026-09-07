@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   buildCard,
   memoKey,
@@ -7,8 +7,9 @@ import {
   extremesSince,
   signedPct,
   carryForwardExpired,
+  resolveExpiredReason,
 } from "./cards";
-import type { AlertCardData, ScenarioMemo } from "./cards";
+import type { AlertCardData, ScenarioMemo, ExpiredReason } from "./cards";
 import type { Scenario } from "./factors/scenario";
 import type { Ignition } from "./ignition";
 import type { ScannerRow } from "./types";
@@ -371,10 +372,11 @@ describe("carryForwardExpired", () => {
     ...o,
   });
   const pushed = (...keys: string[]) => new Set(keys);
+  const why = (): ExpiredReason => "structure_changed";
 
   it("推送过、这个币没有活卡、没过期 → 留下并标成 expired", () => {
     const prev = [card({ key: "k1", symbol: "AAA-USDT" })];
-    const out = carryForwardExpired(prev, [], pushed("k1"), T);
+    const out = carryForwardExpired(prev, [], pushed("k1"), T, why);
     expect(out).toHaveLength(1);
     expect(out[0].expired).toBe(true);
   });
@@ -385,24 +387,24 @@ describe("carryForwardExpired", () => {
     // 一张灰一张亮并排，等于对同一个币给出两个互相矛盾的结论。
     const prev = [card({ key: "old", symbol: "BTC-USDT" })];
     const liveNow = [card({ key: "new", symbol: "BTC-USDT" })];
-    expect(carryForwardExpired(prev, liveNow, pushed("old"), T)).toHaveLength(0);
+    expect(carryForwardExpired(prev, liveNow, pushed("old"), T, why)).toHaveLength(0);
   });
 
   it("没推送过的卡不留——灰卡的唯一用途就是让推送里的币找得到", () => {
     const prev = [card({ key: "k1", symbol: "AAA-USDT" })];
-    expect(carryForwardExpired(prev, [], pushed(), T)).toHaveLength(0);
+    expect(carryForwardExpired(prev, [], pushed(), T, why)).toHaveLength(0);
   });
 
   it("台账读不出来时一张灰卡都不留，退回「卡片直接消失」的旧行为", () => {
     // readPushedKeys 读失败会返回空集合。这时宁可什么都不留，
     // 也不要把一堆换过身份的旧卡当成「已结束」摆出来。
     const prev = [card({ key: "k1", symbol: "AAA-USDT" }), card({ key: "k2", symbol: "BBB-USDT" })];
-    expect(carryForwardExpired(prev, [], new Set(), T)).toHaveLength(0);
+    expect(carryForwardExpired(prev, [], new Set(), T, why)).toHaveLength(0);
   });
 
   it("还在当轮活着的卡不会被复制成灰卡", () => {
     const c = card({ key: "k1", symbol: "AAA-USDT" });
-    expect(carryForwardExpired([c], [c], pushed("k1"), T)).toHaveLength(0);
+    expect(carryForwardExpired([c], [c], pushed("k1"), T, why)).toHaveLength(0);
   });
 
   it("超过宽限期的丢掉", () => {
@@ -411,12 +413,112 @@ describe("carryForwardExpired", () => {
       symbol: "AAA-USDT",
       firstSeenAt: new Date(T - 5 * 60 * 60 * 1000).toISOString(),
     });
-    expect(carryForwardExpired([old], [], pushed("k1"), T)).toHaveLength(0);
+    expect(carryForwardExpired([old], [], pushed("k1"), T, why)).toHaveLength(0);
   });
 
   it("不改原对象——上一轮的 payload 是从缓存读来的，就地改会污染它", () => {
     const c = card({ key: "k1", symbol: "AAA-USDT" });
-    carryForwardExpired([c], [], pushed("k1"), T);
+    carryForwardExpired([c], [], pushed("k1"), T, why);
     expect(c.expired).toBe(false);
+  });
+
+  it("这一轮刚结束的卡带上原因", () => {
+    const prev = [card({ key: "k1", symbol: "AAA-USDT" })];
+    const out = carryForwardExpired(prev, [], pushed("k1"), T, () => "invalidated");
+    expect(out[0].expiredReason).toBe("invalidated");
+  });
+
+  it("上一轮已经是灰卡的，原样带着原因，不重判", () => {
+    // 它当初是「条件已变」；这一轮币掉出了名单，重判会变成「本轮未扫」——
+    // 那是在描述这一轮，不是在描述它为什么结束。
+    const grey = card({ key: "k1", symbol: "AAA-USDT", expired: true, expiredReason: "structure_changed" });
+    const spy = vi.fn((): ExpiredReason => "not_scanned");
+    const out = carryForwardExpired([grey], [], pushed("k1"), T, spy);
+    expect(out[0].expiredReason).toBe("structure_changed");
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("旧灰卡没有原因的保持没有——前端退回「已结束」，不去猜", () => {
+    const grey = card({ key: "k1", symbol: "AAA-USDT", expired: true });
+    const out = carryForwardExpired([grey], [], pushed("k1"), T, () => "not_scanned");
+    expect(out[0].expired).toBe(true);
+    expect(out[0].expiredReason).toBeUndefined();
+  });
+});
+
+/**
+ * 结束原因的判定。线上那张 OP 的 b3 卡是这组用例的原型：失效价 0.1135 是
+ * 本波高点，之后没有一根 K 线的最高价超过它，价格离线还有 1.7%，卡片却
+ * 打着「已结束」——读的人以为是止损被扫了，其实是反弹把场景条件打掉了。
+ */
+describe("resolveExpiredReason", () => {
+  const card = (o: Partial<AlertCardData> = {}): AlertCardData => ({
+    key: "k",
+    symbol: "OP-USDT",
+    coin: "OP",
+    trigger: { type: "scenario", scenario: scenario() },
+    direction: "long",
+    factors: { oi: 0, cvd: 0 },
+    total: 10,
+    firstSeenAt: new Date(T0).toISOString(),
+    firstPrice: 1,
+    peakPct: 0,
+    invalidation: { price: 100, breach: "below" },
+    expired: false,
+    ...o,
+  });
+  const scanned = (entries: Array<[string, CoinGlassPriceBar[]]>) => new Map(entries);
+
+  it("这一轮没扫这个币 → not_scanned", () => {
+    expect(resolveExpiredReason(card(), scanned([["BTC-USDT", bars([[T0, 1, 1]])]]))).toBe("not_scanned");
+  });
+
+  it("扫了但 K 线是空的 → no_data，跟「没扫」分开", () => {
+    expect(resolveExpiredReason(card(), scanned([["OP-USDT", []]]))).toBe("no_data");
+  });
+
+  it("场景卡：触发之后有一根 K 线的极值穿了失效线 → invalidated（插针也算）", () => {
+    // scenario() 默认 triggeredAt=0、失效线 100 往下穿
+    const b = bars([
+      [T0, 105, 101],
+      [T0 + 1_800_000, 104, 99],
+    ]);
+    expect(resolveExpiredReason(card(), scanned([["OP-USDT", b]]))).toBe("invalidated");
+  });
+
+  it("场景卡：扫了、没穿线、但这张卡算不出来了 → structure_changed", () => {
+    // OP 的真实形状：做空，失效线 0.1135 = 本波高点。有一根最高价**恰好**
+    // 等于失效价（就是那根高点本身），严格不等所以不算穿。
+    const c = card({
+      direction: "short",
+      trigger: {
+        type: "scenario",
+        scenario: scenario({ direction: "short", invalidation: { price: 0.1135, breach: "above" } }),
+      },
+      invalidation: { price: 0.1135, breach: "above" },
+    });
+    const b = bars([
+      [T0, 0.1135, 0.1109],
+      [T0 + 1_800_000, 0.1131, 0.1102],
+      [T0 + 3_600_000, 0.1118, 0.1097],
+    ]);
+    expect(resolveExpiredReason(c, scanned([["OP-USDT", b]]))).toBe("structure_changed");
+  });
+
+  it("点火卡：按收盘判——收盘跌破失效线是 invalidated，只有影线穿过不是", () => {
+    const ig = ignition({ direction: "up", invalidationPrice: 98, ignitedAt: T0 });
+    const c = card({ trigger: { type: "ignition", ignition: ig }, invalidation: { price: 98, breach: "below" } });
+    const mk = (time: number, high: number, low: number, close: number): CoinGlassPriceBar => ({
+      time,
+      open: String(close),
+      high: String(high),
+      low: String(low),
+      close: String(close),
+      volume_usd: "1",
+    });
+    const wickOnly = [mk(T0, 103, 100, 102), mk(T0 + 1_800_000, 103, 96, 99)];
+    expect(resolveExpiredReason(c, scanned([["OP-USDT", wickOnly]]))).toBe("structure_changed");
+    const closedBelow = [mk(T0, 103, 100, 102), mk(T0 + 1_800_000, 103, 96, 97)];
+    expect(resolveExpiredReason(c, scanned([["OP-USDT", closedBelow]]))).toBe("invalidated");
   });
 });

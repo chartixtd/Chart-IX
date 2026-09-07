@@ -7,11 +7,28 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { LANGUAGE_LABELS, PUBLIC_LOCALES } from "@/lib/constants";
 import { NotificationSettings } from "@/components/settings/NotificationSettings";
+
+/**
+ * 设置页的分节骨架：左栏是粘性标题，右栏是内容，顶边一条发丝线。
+ * 卡片在这里传达不了层级——四张同宽同色的盒子上下排就只是四个盒子。
+ */
+function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="grid gap-8 border-t border-border-default pt-10 lg:grid-cols-12 lg:gap-10">
+      <h2 className="font-display text-lg font-medium tracking-tight text-text-primary lg:col-span-3 lg:sticky lg:top-24 lg:self-start">
+        {title}
+      </h2>
+      <div className="lg:col-span-9">{children}</div>
+    </section>
+  );
+}
 
 export default function SettingsPage() {
   const t = useTranslations("settings");
@@ -103,107 +120,115 @@ export default function SettingsPage() {
   // 空占位再跳变成真实值。查询依赖 userId（enabled），所以只在已登录时看它。
   if (auth.loading || (!!auth.userId && profileQuery.isPending)) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-8 lg:py-14">
-        <Skeleton className="h-8 w-40" />
-        <Skeleton className="mt-8 h-64 w-full" />
-        <Skeleton className="mt-6 h-32 w-full" />
+      <div className="mx-auto max-w-page px-6 py-10 lg:py-16">
+        {/* 骨架照着分节骨架的形状摆：左栏窄标题 + 右栏内容，
+            不是三个整宽灰块——形状对不上就会在数据到位时跳一下 */}
+        <Skeleton className="h-10 w-56" />
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="mt-14 grid gap-8 lg:grid-cols-12 lg:gap-10">
+            <Skeleton className="h-5 w-28 lg:col-span-3" />
+            <div className="space-y-3 lg:col-span-9">
+              <Skeleton className="h-4 w-full max-w-md" />
+              <Skeleton className="h-11 w-full max-w-sm" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
   if (!auth.userId) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-8 lg:py-14">
+      <div className="mx-auto max-w-page px-6 py-10 lg:py-16">
         <p className="text-text-muted">{t("please_login")}</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8 lg:py-14">
-      <h1 className="display text-display-md">{t("title")}</h1>
+    <div className="mx-auto max-w-page px-6 py-10 lg:py-16">
+      <PageHeader title={t("title")} className="border-b-0 pb-0" />
 
-      {/* Profile */}
-      <Card className="mt-6 lg:mt-8" padding="lg">
-        <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("profile")}</h2>
-        <div className="mt-4 space-y-4">
-          {/* 只读展示行：不是表单控件，不用 <label>；label 样式与 Input 的 label 规范对齐 */}
-          <div>
-            <span className="eyebrow block">
-              {t("email")}
-            </span>
-            <p className="mt-2 break-all text-text-primary">{auth.email ?? ""}</p>
+      <div className="mt-14 space-y-16">
+        {/* 账户 */}
+        <SettingsSection title={t("profile")}>
+          <dl className="grid gap-8 sm:grid-cols-3">
+            <div className="min-w-0">
+              <dt className="eyebrow">{t("email")}</dt>
+              <dd className="mt-3 break-all text-sm text-text-primary">{auth.email ?? ""}</dd>
+            </div>
+            <div>
+              <dt className="eyebrow">{t("role")}</dt>
+              <dd className="mt-3 text-sm capitalize text-text-primary">{profileQuery.data?.role ?? "-"}</dd>
+            </div>
+            <div>
+              <dt className="eyebrow">{t("tier")}</dt>
+              <dd className="mt-3 text-sm">
+                {profileQuery.data?.tier === "pro" ? (
+                  <Badge variant="foil">{profileQuery.data.tier}</Badge>
+                ) : (
+                  <span className="text-text-primary">{profileQuery.data?.tier ?? "-"}</span>
+                )}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="mt-10 max-w-sm">
+            <Input
+              id="displayName"
+              type="text"
+              variant="line"
+              label={t("display_name")}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder={(auth.email ?? "").split("@")[0]}
+            />
           </div>
-          <div>
-            <span className="eyebrow block">
-              {t("role")}
-            </span>
-            <p className="mt-2 text-text-primary capitalize">{profileQuery.data?.role ?? "-"}</p>
-          </div>
-          <div>
-            <span className="eyebrow block">
-              {t("tier")}
-            </span>
-            <p className="mt-2 text-text-primary">
-              <span className={profileQuery.data?.tier === "pro" ? "text-gold" : ""}>
-                {profileQuery.data?.tier ?? "-"}
-              </span>
-            </p>
-          </div>
-          <Input
-            id="displayName"
-            type="text"
-            label={t("display_name")}
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            className="lg:max-w-sm"
-            placeholder={(auth.email ?? "").split("@")[0]}
-          />
           {message && (
-            <p className={message === t("saved") ? "text-success" : "text-danger"}>
+            <p className={cn("mt-4 text-sm", message === t("saved") ? "text-success" : "text-danger")}>
               {message}
             </p>
           )}
-          <Button onClick={saveProfile} disabled={saving} className="w-full sm:w-auto">
+          <Button onClick={saveProfile} disabled={saving} className="mt-8 w-full sm:w-auto">
             {saving ? t("saving") : t("save")}
           </Button>
-        </div>
-      </Card>
+        </SettingsSection>
 
-      {/* Language */}
-      <Card className="mt-6" padding="lg">
-        <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("language")}</h2>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {PUBLIC_LOCALES.map((l) => (
-            <Button
-              key={l}
-              variant={profileQuery.data?.language === l ? "primary" : "outline"}
-              size="sm"
-              onClick={() => saveLanguage(l)}
-            >
-              {LANGUAGE_LABELS[l] ?? l}
-            </Button>
-          ))}
-        </div>
-      </Card>
-
-      {/* API Keys */}
-      <Card className="mt-6" padding="lg">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("api_keys")}</h2>
-            <p className="mt-1 break-words text-sm text-text-secondary">{t("api_keys_desc")}</p>
+        {/* 语言 */}
+        <SettingsSection title={t("language")}>
+          <div className="flex flex-wrap gap-3">
+            {PUBLIC_LOCALES.map((l) => (
+              <Button
+                key={l}
+                // 选中态用描边而不是实心金：这一栏是「我选了哪个」，不是这一屏的
+                // 主操作。同屏已经有一块实心金（保存），第二块会把它稀释掉。
+                variant={profileQuery.data?.language === l ? "outline" : "secondary"}
+                size="sm"
+                onClick={() => saveLanguage(l)}
+              >
+                {LANGUAGE_LABELS[l] ?? l}
+              </Button>
+            ))}
           </div>
-          <Button
-            variant="outline"
-            onClick={() => router.push(`/${locale}/settings/api-keys`)}
-            className="w-full sm:w-auto"
-          >
-            {t("api_keys")}
-          </Button>
-        </div>
-      </Card>
+        </SettingsSection>
 
-      <NotificationSettings />
+        {/* 交易所密钥 */}
+        <SettingsSection title={t("api_keys")}>
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <p className="max-w-md break-words text-sm leading-relaxed text-text-secondary">
+              {t("api_keys_desc")}
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/${locale}/settings/api-keys`)}
+              className="w-full shrink-0 sm:w-auto"
+            >
+              {t("api_keys")}
+            </Button>
+          </div>
+        </SettingsSection>
+
+        <NotificationSettings />
+      </div>
     </div>
   );
 }

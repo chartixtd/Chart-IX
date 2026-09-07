@@ -24,6 +24,9 @@ export function formatNumber(value: number, decimals = 2): string {
 }
 
 export function formatPrice(price: number): string {
+  // 零单独走 2 位：它落在 <0.01 这一支里会被印成 "0.00000000"，那是假精度。
+  // 空账户的对账单上一整排八位小数的零，看起来像系统在报一个测量值。
+  if (price === 0) return getFormatter(2).format(0);
   if (price >= 1) return getFormatter(2).format(price);
   if (price >= 0.01) return getFormatter(4).format(price);
   return getFormatter(8).format(price);

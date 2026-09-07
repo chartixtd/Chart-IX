@@ -1,24 +1,28 @@
 /**
- * DIRECTION CONTRACT — "我的主页"（Obsidian & Gilt 版）
- * THESIS: 账户对账单与 Bento 各占一半，按内容性质分工，而不是二选一。
- *   - 时间序台账（成交 + 成就）**保持台账**：它是按时间读的流水，切成网格
- *     会强迫读者在格子间跳读，比一条竖排的流水更难扫。
- *   - 概览类内容（继续学习 / 自选行情 / 最新内容 / 成就墙）改**非对称 Bento**：
- *     它们彼此独立、没有先后关系，网格反而比上下堆叠更快找到目标。
- *   早前版本整页拒绝卡片；改版后这条收窄为"只在流水类内容上拒绝"。
- * OWN-WORLD: 暖黑曜石底、镌刻香槟金、Space Grotesk 展示字承载头部数字、
- *   发丝金分隔线划分区段、JetBrains Mono 承载所有数值。
- *   不用 emoji，不用彩色药丸状态块。
- * STORY: visitor understands this is their account statement, not a widget
- *   board; believes their standing (paper equity, real trading activity,
- *   learning progress) is being tracked precisely; acts by continuing to
- *   trade, learn, or review a specific entry.
- * FIRST VIEWPORT: masthead (greeting + statement period) → hairline → Account
- *   Summary (oversized mono equity figure, ruled sub-line items) → hairline →
- *   unified chronological Ledger merging real trade fills and achievement
- *   unlocks → hairline → Continue Learning / Watchlist two-up → hairline →
- *   Latest Content two-up.
- * FORM: 在已确立的世界里做表层重构；不新增 token。
+ * DIRECTION CONTRACT — 「我的主页」（Ink & Gilt 版）
+ *
+ * THESIS: 这一页是登录后的第一眼，值得当作一个**时刻**来设计，而不是一个
+ *   带标题的控件板。上一版只是把字重换轻了，构图没动——一条问候、一条金线、
+ *   一串 text-lg 的小标题往下排，读起来仍然是「四个盒子」。这一版把权益数字
+ *   做成满幅抬头里的主角，其余内容退到它下面。
+ *
+ * OWN-WORLD: 满幅墨底 + 环境光 + 发丝栅格的抬头区，巨型轻字重权益数字
+ *   （clamp 到 5.5rem），右侧压一条**该用户自选标的的真实行情曲线**——与
+ *   首页 GoldChart 同一个组件，让营销面与产品面是同一个世界而不是两套皮。
+ *   刻度式数据带（StatRow）取代原来的四列 dl，区块标题升到展示级。
+ *
+ * FORM: 内容性质决定形态，这条不变——
+ *   - 时间序台账（成交 + 成就）**保持台账**：按时间读的流水，切成网格会
+ *     强迫读者在格子间跳读。
+ *   - 概览类内容（继续学习 / 自选行情 / 最新内容 / 成就墙）用**非对称 Bento**：
+ *     彼此独立、没有先后关系，网格比上下堆叠更快找到目标。
+ *
+ * STORY: 用户理解这是他的账户对账单而不是一块小组件板；相信他的状况
+ *   （权益、真实交易活动、学习进度）被精确记录着；行动是继续交易、继续学习，
+ *   或点开某一条具体记录。
+ *
+ * FIRST VIEWPORT: 满幅抬头（问候微标签 + 对账周期 → 实盘/模拟下划线切换 +
+ *   自选行情曲线 → 巨型权益数字 → 刻度式数据带）。整屏只有一个主角。
  */
 "use client";
 
@@ -41,6 +45,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { SectionHeading, StatRow, SegmentTabs } from "@/components/ui/Section";
+import { AuraField } from "@/components/motion/AuraField";
+import { GoldChart } from "@/components/motion/GoldChart";
 import { ShareCardModal } from "@/components/dashboard/ShareCardModal";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -243,54 +250,54 @@ export default function DashboardPage() {
   const displayName = auth.displayName || auth.email?.split("@")[0];
 
   return (
-    <div className="mx-auto max-w-page px-6 py-12 lg:py-16">
-      {/* Masthead */}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-        <h1 className="display text-display-lg">
-          {t("welcome")}{displayName ? `, ${displayName}` : ""}
-        </h1>
-        {statementPeriod && (
-          <p className="eyebrow">
-            {t("statement_period", { period: statementPeriod })}
-          </p>
-        )}
-      </div>
-      <div className="hairline-gold mt-5" />
+    <div>
+      {/* ── 对账单抬头 ──────────────────────────────────────────────────
+          登录后的第一眼。满幅墨底 + 环境光 + 发丝栅格，左侧巨型权益数字，
+          右侧压一条该用户自选标的的真实行情曲线——跟首页同一个组件，
+          让「营销面」和「产品面」是同一个世界而不是两套皮。 */}
+      <section className="hero-ground grain relative overflow-hidden border-b border-border-default">
+        <AuraField />
+        <div aria-hidden className="ruled-grid pointer-events-none absolute inset-0 opacity-60" />
 
-      {/* Account Summary */}
-      <section className="mt-10">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-          <p className="eyebrow">
-            {summaryMode === "live" ? t("live_account") : t("paper_title")}
-          </p>
-          <div className="flex items-center gap-5 text-xs font-medium">
-            <button
-              type="button"
-              onClick={() => setSummaryMode("live")}
-              className={cn(
-                // 账户模式切换是高频操作，移动端保证 44px 触控高度，桌面端保持原有紧凑样式
-                "inline-flex min-h-[44px] items-center border-b-2 pb-1 transition-colors lg:min-h-0",
-                summaryMode === "live" ? "border-gold text-text-primary" : "border-transparent text-text-muted hover:text-text-secondary"
-              )}
-            >
-              {t("live_account")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setSummaryMode("paper")}
-              className={cn(
-                "inline-flex min-h-[44px] items-center border-b-2 pb-1 transition-colors lg:min-h-0",
-                summaryMode === "paper" ? "border-gold text-text-primary" : "border-transparent text-text-muted hover:text-text-secondary"
-              )}
-            >
-              {t("paper_tab")}
-            </button>
+        <div className="relative mx-auto max-w-page px-6 pb-12 pt-12 lg:pb-16 lg:pt-16">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2">
+            <p className="section-mark eyebrow-gold">
+              {t("welcome")}{displayName ? `, ${displayName}` : ""}
+            </p>
+            {statementPeriod && (
+              <p className="eyebrow">{t("statement_period", { period: statementPeriod })}</p>
+            )}
           </div>
-        </div>
+
+          <div className="mt-10 grid gap-10 lg:grid-cols-12 lg:gap-8">
+            <div className="lg:col-span-7">
+              <SegmentTabs
+                className="border-b border-border-default"
+                value={summaryMode}
+                onChange={(k) => setSummaryMode(k as "live" | "paper")}
+                options={[
+                  { key: "live", label: t("live_account") },
+                  { key: "paper", label: t("paper_tab") },
+                ]}
+              />
+            </div>
+            {/* 自选第一支的实时曲线。没有自选时退回 BTC——空着一半版面比
+                显示一个默认标的更糟。 */}
+            <div className="hidden lg:col-span-5 lg:block">
+              <div className="h-[136px]">
+                <GoldChart
+                  symbol={favorites[0] ?? "BTC-USDT"}
+                  interval="1h"
+                  limit={72}
+                  height={136}
+                />
+              </div>
+            </div>
+          </div>
 
         {summaryMode === "live" ? (
           <>
-            <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
+            <div className="mt-12 flex flex-wrap items-end justify-between gap-6">
               {spotLoading ? (
                 <Skeleton className="h-14 w-64" />
               ) : liveNotConnected ? (
@@ -304,12 +311,15 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="min-w-0">
-                  {/* 大额权益（六位数以上）在窄屏上以 5xl 显示会顶到边缘，缩到 4xl 并允许极端情况下断行，避免撑破容器造成横向滚动 */}
-                  <div className="break-words numeral text-4xl sm:text-5xl md:text-6xl">
+                  {/* 六位数以上的权益在 375px 上会顶到边缘，所以字号走 clamp 的
+                      下限而不是固定值，并允许断行兜底 */}
+                  <div className="numeral break-words text-[clamp(2.75rem,9vw,5.5rem)] leading-[0.95]">
                     {formatPrice(liveTotalValue)}
-                    <span className="ml-2 font-sans text-base font-normal tracking-normal text-text-muted">USDT</span>
+                    <span className="ml-3 align-super font-sans text-[0.22em] font-medium uppercase tracking-[0.2em] text-text-muted">
+                      USDT
+                    </span>
                   </div>
-                  <div className="mt-2 font-mono text-sm text-text-muted">
+                  <div className="mt-4 font-mono text-xs tabular-nums text-text-muted">
                     {t("full_balance_summary", { count: liveHoldingsCount })}
                   </div>
                 </div>
@@ -322,57 +332,33 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Ruled sub-line items */}
-            <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-border-default pt-5 font-mono text-sm sm:grid-cols-4">
-              <div>
-                <dt className="text-xs text-text-muted">{t("spot_asset_value")}</dt>
-                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(spotTotalValue)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-text-muted">{t("futures_equity")}</dt>
-                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(futuresEquity)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-text-muted">{t("spot_available_usdt")}</dt>
-                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(liveUsdtBalance)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-text-muted">{t("holdings_count")}</dt>
-                <dd className="mt-1 tabular-nums text-text-primary">{liveHoldingsCount}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-text-muted">{t("live_volume")}</dt>
-                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(tradeStats.totalVolume)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-text-muted">{t("live_net")}</dt>
-                <dd className={cn("mt-1 tabular-nums", tradeStats.netPnl >= 0 ? "text-success" : "text-danger")}>
-                  {tradeStats.netPnl >= 0 ? "+" : ""}{formatPrice(tradeStats.netPnl)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-text-muted">{t("most_traded_pair")}</dt>
-                <dd className="mt-1 tabular-nums text-text-primary">
-                  {tradeStats.mostTradedPair || "—"}
-                  {tradeStats.maxCount > 0 && <span className="text-text-muted"> ×{tradeStats.maxCount}</span>}
-                </dd>
-              </div>
-            </dl>
+            {/* 抬头只放余额：交易活动三项挪到台账上方，它们在那里是台账的
+                上下文，摆在这里只是为了凑满第二行。 */}
+            <StatRow
+              className="mt-10"
+              items={[
+                { label: t("spot_asset_value"), value: formatPrice(spotTotalValue) },
+                { label: t("futures_equity"), value: formatPrice(futuresEquity) },
+                { label: t("spot_available_usdt"), value: formatPrice(liveUsdtBalance) },
+                { label: t("holdings_count"), value: liveHoldingsCount },
+              ]}
+            />
           </>
         ) : (
           <>
-            <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
+            <div className="mt-12 flex flex-wrap items-end justify-between gap-6">
               {paperLoading ? (
                 <Skeleton className="h-14 w-64" />
               ) : (
                 <div className="min-w-0">
-                  {/* 同上：大额权益换算后可能是六位数以上，窄屏先降级到 4xl 并允许断行兜底 */}
-                  <div className="break-words numeral text-4xl sm:text-5xl md:text-6xl">
+                  <div className="numeral break-words text-[clamp(2.75rem,9vw,5.5rem)] leading-[0.95]">
                     {formatPrice(paperTotalValue)}
-                    <span className="ml-2 font-sans text-base font-normal tracking-normal text-text-muted">USDT</span>
+                    <span className="ml-3 align-super font-sans text-[0.22em] font-medium uppercase tracking-[0.2em] text-text-muted">
+                      USDT
+                    </span>
                   </div>
-                  <div className={cn("mt-2 font-mono text-sm font-medium", paperPnl >= 0 ? "text-success" : "text-danger")}>
-                    {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)} USDT ({formatPercent(paperPnlPct)}) {t("cumulative_suffix")}
+                  <div className={cn("mt-4 font-mono text-xs tabular-nums", paperPnl >= 0 ? "text-success" : "text-danger")}>
+                    {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)} ({formatPercent(paperPnlPct)}) {t("cumulative_suffix")}
                   </div>
                 </div>
               )}
@@ -394,42 +380,58 @@ export default function DashboardPage() {
             </div>
 
             {/* Ruled sub-line items */}
-            <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-border-default pt-5 font-mono text-sm sm:grid-cols-4">
-              <div>
-                <dt className="text-xs text-text-muted">{t("paper_balance")}</dt>
-                <dd className="mt-1 tabular-nums text-text-primary">{formatPrice(paperData?.account.balance_usdt ?? 0)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-text-muted">{t("cumulative_pnl")}</dt>
-                <dd className={cn("mt-1 tabular-nums", paperPnl >= 0 ? "text-success" : "text-danger")}>
-                  {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-text-muted">{t("cumulative_return")}</dt>
-                <dd className={cn("mt-1 tabular-nums", paperPnlPct >= 0 ? "text-success" : "text-danger")}>
-                  {formatPercent(paperPnlPct)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-text-muted">{t("holdings_quantity")}</dt>
-                <dd className="mt-1 tabular-nums text-text-primary">{paperData?.positions.length ?? 0}</dd>
-              </div>
-            </dl>
+            <StatRow
+              className="mt-10"
+              items={[
+                { label: t("paper_balance"), value: formatPrice(paperData?.account.balance_usdt ?? 0) },
+                {
+                  label: t("cumulative_pnl"),
+                  value: `${paperPnl >= 0 ? "+" : ""}${formatPrice(paperPnl)}`,
+                  tone: paperPnl >= 0 ? "up" : "down",
+                },
+                {
+                  label: t("cumulative_return"),
+                  value: formatPercent(paperPnlPct),
+                  tone: paperPnlPct >= 0 ? "up" : "down",
+                },
+                { label: t("holdings_quantity"), value: paperData?.positions.length ?? 0 },
+              ]}
+            />
           </>
         )}
+        </div>
       </section>
 
-      <div className="hairline-gold mt-10" />
-
+      <div className="mx-auto max-w-page px-6 py-16 lg:py-24">
       {/* Unified ledger */}
-      <section className="mt-10">
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("ledger_title")}</h2>
-          <Link href={`/${locale}/orders`} className="link-underline text-[11px] font-medium uppercase tracking-[0.14em] text-gold">
-            {t("view_all_orders_cta")} →
-          </Link>
-        </div>
+      <section>
+        <SectionHeading
+          title={t("ledger_title")}
+          action={
+            <Link href={`/${locale}/orders`} className="link-underline text-[11px] font-medium uppercase tracking-[0.14em] text-gold">
+              {t("view_all_orders_cta")} →
+            </Link>
+          }
+        />
+
+        {/* 这三项是台账的上下文：这段流水一共做了多大、净了多少、集中在哪个品种 */}
+        <StatRow
+          className="mt-10 sm:grid-cols-3"
+          items={[
+            { label: t("live_volume"), value: formatPrice(tradeStats.totalVolume) },
+            {
+              label: t("live_net"),
+              value: `${tradeStats.netPnl >= 0 ? "+" : ""}${formatPrice(tradeStats.netPnl)}`,
+              tone: tradeStats.netPnl >= 0 ? "up" : "down",
+            },
+            {
+              label: t("most_traded_pair"),
+              value: tradeStats.mostTradedPair
+                ? `${tradeStats.mostTradedPair}${tradeStats.maxCount > 0 ? ` ×${tradeStats.maxCount}` : ""}`
+                : "—",
+            },
+          ]}
+        />
 
         {ordersPending ? (
           <div className="mt-5 space-y-3">
@@ -450,13 +452,11 @@ export default function DashboardPage() {
         )}
       </section>
 
-      <div className="hairline-gold mt-10" />
-
       {/* 继续学习 + 自选行情 —— Bento 起点。
           材质是 .ink（不透明墨面）而不是 .ink-glass：仪表盘是 Operate 面，
           DESIGN.md 明令零 backdrop-filter——手机上四块整宽玻璃在滚动时
           全程重算 blur(20px)。同一套边缘语言，只是不透明。 */}
-      <section className="mt-10 grid gap-4 sm:grid-cols-2">
+      <section className="mt-24 grid gap-4 sm:grid-cols-2">
         <div className="ink min-w-0 rounded-lg p-6">
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("continue_learning_title")}</h2>
@@ -523,11 +523,8 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <div className="hairline-gold mt-10" />
-
-      {/* 最新内容。间距与其余区段一致走 mt-10——此前这一段是 mt-6，
-          五段里唯独它窄 16px，节奏不齐。 */}
-      <section className="mt-10 grid gap-4 sm:grid-cols-2">
+      {/* 最新内容 */}
+      <section className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="ink min-w-0 rounded-lg p-6">
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("latest_videos_title")}</h2>
@@ -597,15 +594,12 @@ export default function DashboardPage() {
       {/* Achievements — restrained seal row, not a colored pill wall */}
       {achievements && achievements.length > 0 && (
         <>
-          <div className="hairline-gold mt-10" />
-          <section className="mt-10">
-            <div className="flex items-baseline justify-between">
-              <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("achievements_title")}</h2>
-              <span className="font-mono text-xs tabular-nums text-text-muted">
-                {achievements.filter((a) => a.earned).length}/{achievements.length}
-              </span>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-4">
+          <section className="mt-24">
+            <SectionHeading
+              title={t("achievements_title")}
+              count={`${achievements.filter((a) => a.earned).length}/${achievements.length}`}
+            />
+            <div className="mt-10 flex flex-wrap gap-x-4 gap-y-8">
               {achievements.map((a) => (
                 <div
                   key={a.key}
@@ -631,6 +625,8 @@ export default function DashboardPage() {
           </section>
         </>
       )}
+
+      </div>
 
       {paperData && (
         <ShareCardModal

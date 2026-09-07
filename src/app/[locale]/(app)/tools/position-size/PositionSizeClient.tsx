@@ -124,12 +124,18 @@ export default function PositionSizeClient() {
     : assetClass === "crypto" ? t("units_coins")
     : t("units_shares");
 
-  const field = "w-full rounded-sm border border-border-default bg-bg-tertiary px-3 py-2 text-sm text-text-primary outline-none focus:border-gold/60";
-  const label = "mb-1 block text-xs text-text-muted";
+  const field =
+    "w-full rounded-sm border border-border-hover bg-bg-primary px-3.5 py-2.5 text-sm tabular-nums text-text-primary outline-none transition-colors focus:border-gold focus:ring-1 focus:ring-gold/40";
+  const label = "eyebrow mb-2.5 block";
+  /**
+   * 分段项不能用 flex-1 等分：四个选项里「加密货币」是 4 个汉字，等分后
+   * 每格只有 ~54px，它必然折行（实测就是这样）。改成按内容宽度排布，
+   * 窄屏放不下时容器横向滚动——折行会把控件撑成两层，滚动不会。
+   */
   const seg = (active: boolean) =>
     cn(
-      "flex-1 rounded-sm px-3 py-2 text-sm transition-colors",
-      active ? "bg-gold/15 text-gold" : "text-text-secondary hover:text-text-primary"
+      "shrink-0 whitespace-nowrap border-b px-3 py-2 text-[13px] transition-colors",
+      active ? "border-gold text-gold" : "border-transparent text-text-muted hover:text-text-primary"
     );
 
   return (
@@ -137,14 +143,14 @@ export default function PositionSizeClient() {
       <h1 className="display text-display-md">
         {t("title")}
       </h1>
-      <p className="mt-2 text-sm text-text-secondary">{t("subtitle")}</p>
+      <p className="mt-3 max-w-xl text-sm leading-relaxed text-text-secondary">{t("subtitle")}</p>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-12 grid gap-4 lg:grid-cols-12">
         {/* ── 输入 ── */}
-        <Card className="space-y-4">
+        <Card className="space-y-5 lg:col-span-5" padding="lg">
           <div>
             <span className={label} id="asset-class-label">{t("asset_class")}</span>
-            <div className="flex gap-1 rounded-sm border border-border-default p-1" role="group" aria-labelledby="asset-class-label">
+            <div className="custom-scrollbar flex items-center gap-1 overflow-x-auto border-b border-border-default" role="group" aria-labelledby="asset-class-label">
               {ASSET_CLASSES.map((a) => (
                 <button key={a} type="button" aria-pressed={assetClass === a} onClick={() => setAssetClass(a)} className={seg(assetClass === a)}>
                   {t(a)}
@@ -167,7 +173,7 @@ export default function PositionSizeClient() {
 
           <div>
             <span className={label} id="direction-label">{t("direction")}</span>
-            <div className="flex gap-1 rounded-sm border border-border-default p-1" role="group" aria-labelledby="direction-label">
+            <div className="custom-scrollbar flex items-center gap-1 overflow-x-auto border-b border-border-default" role="group" aria-labelledby="direction-label">
               <button type="button" aria-pressed={direction === "long"} onClick={() => setDirection("long")} className={seg(direction === "long")}>
                 {t("long")}
               </button>
@@ -185,7 +191,7 @@ export default function PositionSizeClient() {
 
           <div>
             <label className={label} htmlFor="risk" id="risk-group-label">{t("risk_per_trade")}</label>
-            <div className="mb-2 flex gap-1 rounded-sm border border-border-default p-1" role="group" aria-labelledby="risk-group-label">
+            <div className="custom-scrollbar mb-3 flex items-center gap-1 overflow-x-auto border-b border-border-default" role="group" aria-labelledby="risk-group-label">
               <button type="button" aria-pressed={riskMode === "percent"} onClick={() => setRiskMode("percent")} className={seg(riskMode === "percent")}>
                 {t("risk_percent")}
               </button>
@@ -211,7 +217,7 @@ export default function PositionSizeClient() {
           <div>
             <label className={label} htmlFor="stop" id="stop-group-label">{t("stop_loss")}</label>
             {assetClass === "forex" && (
-              <div className="mb-2 flex gap-1 rounded-sm border border-border-default p-1" role="group" aria-labelledby="stop-group-label">
+              <div className="custom-scrollbar mb-3 flex items-center gap-1 overflow-x-auto border-b border-border-default" role="group" aria-labelledby="stop-group-label">
                 <button type="button" aria-pressed={stopMode === "price"} onClick={() => setStopMode("price")} className={seg(stopMode === "price")}>
                   {t("stop_by_price")}
                 </button>
@@ -284,23 +290,35 @@ export default function PositionSizeClient() {
           )}
         </Card>
 
-        {/* ── 结果 ── */}
-        <Card className="space-y-4">
-          <h2 className="text-sm font-medium text-text-primary font-display tracking-tight">{t("results")}</h2>
+        {/* ── 结果 ──
+            这一栏在桌面端吸顶：左边改参数、右边答案不动，是这个工具唯一的
+            使用方式。答案本身用展示级字号，它是整页存在的理由。 */}
+        <div className="lg:col-span-7 lg:sticky lg:top-24 lg:self-start">
+        <Card className="space-y-5" padding="lg">
+          <p className="eyebrow">{t("results")}</p>
 
           {!result.ok ? (
-            <p className={cn("text-sm", touched ? "text-danger" : "text-text-muted")}>
+            /* 空态不去模仿结果态的形状：结果态的主角是一个巨型数字，给它做
+               占位只会多出一条读不懂的线。这里就是一句话 + 足够的高度，让
+               面板在填完之前也不塌。 */
+            <p
+              className={cn(
+                "flex min-h-[16rem] items-center text-sm leading-relaxed",
+                touched ? "text-danger" : "text-text-muted"
+              )}
+            >
               {touched ? t(ERR_KEY[result.reason]) : t("enter_values")}
             </p>
           ) : (
             <>
-              <div className="border-b border-border-default pb-4">
-                <p className="text-xs text-text-muted">{t("position_size")}</p>
-                <p className="numeral mt-1 text-3xl text-gold">
-                  {fmt(result.lots ?? result.units, result.lots !== null ? 3 : 2)}{" "}
-                  <span className="text-base text-text-secondary">{unitLabel}</span>
+              <div className="border-b border-border-default pb-8">
+                <p className="numeral text-[clamp(2.5rem,6vw,4.5rem)] leading-[0.95] text-gold">
+                  {fmt(result.lots ?? result.units, result.lots !== null ? 3 : 2)}
+                  <span className="ml-3 align-super font-sans text-[0.2em] font-medium uppercase tracking-[0.18em] text-text-secondary">
+                    {unitLabel}
+                  </span>
                 </p>
-                <p className="mt-1 text-sm text-text-secondary">
+                <p className="mt-4 font-mono text-xs tabular-nums text-text-muted">
                   ${fmt(result.positionValue)} {t("position_value")}
                 </p>
               </div>
@@ -366,15 +384,19 @@ export default function PositionSizeClient() {
                 </div>
               )}
 
-              <div className="border-t border-border-default pt-4">
-                <p className="mb-1 text-xs text-text-muted">{t("risk_assessment")}</p>
-                <p className={cn("text-lg font-medium", BAND_COLOR[result.riskBand])}>
-                  {fmt(result.accountRiskPct, 1)}% · {t(BAND_KEY[result.riskBand])}
+              <div className="border-t border-border-default pt-6">
+                <p className="eyebrow">{t("risk_assessment")}</p>
+                <p className={cn("numeral mt-3 text-2xl", BAND_COLOR[result.riskBand])}>
+                  {fmt(result.accountRiskPct, 1)}%
+                  <span className="ml-3 font-sans text-sm font-normal tracking-normal">
+                    {t(BAND_KEY[result.riskBand])}
+                  </span>
                 </p>
               </div>
             </>
           )}
         </Card>
+        </div>
       </div>
 
       <p className="mt-6 text-xs text-text-muted">{t("disclaimer")}</p>

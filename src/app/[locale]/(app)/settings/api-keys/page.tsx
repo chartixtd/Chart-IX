@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import { useLocale } from "next-intl";
 import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -149,7 +149,7 @@ export default function ApiKeysPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8 lg:py-14">
+      <div className="mx-auto max-w-4xl px-6 py-10 lg:py-16">
         <div className="flex items-center justify-center py-24">
           <Spinner className="h-8 w-8" />
         </div>
@@ -158,20 +158,20 @@ export default function ApiKeysPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8 lg:py-14">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="display text-display-md">{t("title")}</h1>
-          <p className="mt-1 text-sm text-text-secondary">{t("description")}</p>
-        </div>
-        <Button onClick={() => setShowAddModal(true)} className="w-full sm:w-auto">{t("add_key")}</Button>
-      </div>
+    <div className="mx-auto max-w-4xl px-6 py-10 lg:py-16">
+      <PageHeader
+        title={t("title")}
+        subtitle={t("description")}
+        className="border-b-0 pb-0"
+        actions={<Button onClick={() => setShowAddModal(true)}>{t("add_key")}</Button>}
+      />
 
       {error && (
-        <div className="mt-4 rounded-sm border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>
+        <p className="mt-8 rounded-md border-l-2 border-danger bg-danger/10 px-4 py-3 text-sm text-danger">{error}</p>
       )}
 
-      <div className="mt-6 space-y-3">
+      {/* 密钥是一份清单，不是一叠卡片：发丝线分行，条目之间靠留白分开 */}
+      <div className="mt-12 divide-y divide-border-default border-y border-border-default">
         {keys.length === 0 ? (
           <EmptyState
             title={t("no_keys")}
@@ -180,11 +180,11 @@ export default function ApiKeysPage() {
           />
         ) : (
           keys.map((key) => (
-            <Card key={key.id} padding="md">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                <div className="min-w-0 flex-1 space-y-2">
+            <div key={key.id} className="py-8">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+                <div className="min-w-0 flex-1 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate font-display text-sm font-medium tracking-tight text-text-primary">{key.label}</h3>
+                    <h3 className="truncate font-display text-base font-medium tracking-tight text-text-primary">{key.label}</h3>
                     {key.is_primary && (
                       <Badge variant="gold" size="sm">{t("primary")}</Badge>
                     )}
@@ -234,7 +234,7 @@ export default function ApiKeysPage() {
                   {t("delete_key")}
                 </Button>
               </div>
-            </Card>
+            </div>
           ))
         )}
       </div>

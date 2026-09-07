@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
@@ -211,12 +210,12 @@ export function NotificationSettings() {
   }, [t, tPwa]);
 
   return (
-    <Card className="mt-6" padding="lg">
-      <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">
+    <section className="grid gap-8 border-t border-border-default pt-10 lg:grid-cols-12 lg:gap-10">
+      <h2 className="font-display text-lg font-medium tracking-tight text-text-primary lg:col-span-3 lg:sticky lg:top-24 lg:self-start">
         {t("notifications")}
       </h2>
 
-      <div className="mt-4 space-y-4">
+      <div className="space-y-5 lg:col-span-9">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm text-text-primary">{t("notifications_scanner")}</p>
@@ -275,7 +274,7 @@ export function NotificationSettings() {
 
         {/* iOS 上没装到主屏时 Notification API 压根不存在。给死路文案不如给出路。 */}
         {state?.kind === "ios-install-first" && (
-          <div className="rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-relaxed text-warning">
+          <div className="rounded-md border-l-2 border-warning bg-warning-bg px-4 py-3 text-xs leading-relaxed text-warning">
             <p>{tPwa("push_ios_install_first")}</p>
             <ol className="mt-2 list-decimal space-y-1 pl-4">
               <li>{tPwa("install_ios_step1")}</li>
@@ -286,7 +285,7 @@ export function NotificationSettings() {
         )}
 
         {state?.kind === "denied" && (
-          <p className="rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-relaxed text-warning">
+          <p className="rounded-md border-l-2 border-warning bg-warning-bg px-4 py-3 text-xs leading-relaxed text-warning">
             {tPwa("push_denied")}
           </p>
         )}
@@ -294,13 +293,13 @@ export function NotificationSettings() {
         {/* 三种「用不了」各说各的。合成一句「浏览器不支持」的代价是真实发生过的：
             漏配 VAPID 公钥时，看起来像浏览器的问题而实际是构建配置的问题。 */}
         {state?.kind === "no-vapid-key" && (
-          <p className="rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-relaxed text-warning">
+          <p className="rounded-md border-l-2 border-warning bg-warning-bg px-4 py-3 text-xs leading-relaxed text-warning">
             {tPwa("push_no_vapid")}
           </p>
         )}
 
         {state?.kind === "no-service-worker" && (
-          <p className="rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-relaxed text-warning">
+          <p className="rounded-md border-l-2 border-warning bg-warning-bg px-4 py-3 text-xs leading-relaxed text-warning">
             {tPwa("push_no_service_worker")}
           </p>
         )}
@@ -314,7 +313,7 @@ export function NotificationSettings() {
             不成立，不给这一句的话开关就是「开着但什么都不会来」——正是这个组件
             要消灭的那种沉默。关掉再打开会走完整的重新订阅，用户自己能修。 */}
         {on && state?.kind === "ready" && !state.subscribed && (
-          <p className="rounded-xs border border-warning/30 bg-warning-bg px-3 py-2 text-xs leading-relaxed text-warning">
+          <p className="rounded-md border-l-2 border-warning bg-warning-bg px-4 py-3 text-xs leading-relaxed text-warning">
             {t("notifications_test_stale")}
           </p>
         )}
@@ -322,10 +321,10 @@ export function NotificationSettings() {
         {notice && (
           <p
             className={cn(
-              "rounded-xs border px-3 py-2 text-xs leading-relaxed",
+              "rounded-md border-l-2 px-4 py-3 text-xs leading-relaxed",
               notice.tone === "ok"
-                ? "border-success/30 bg-success-bg text-success"
-                : "border-danger/30 bg-danger-bg text-danger"
+                ? "border-success bg-success-bg text-success"
+                : "border-danger bg-danger-bg text-danger"
             )}
           >
             {notice.text}
@@ -347,6 +346,6 @@ export function NotificationSettings() {
           </Button>
         )}
       </div>
-    </Card>
+    </section>
   );
 }

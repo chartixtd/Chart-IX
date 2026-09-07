@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RecordList, type RecordColumn } from "@/components/ui/RecordList";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SegmentTabs, StatRow } from "@/components/ui/Section";
 import { formatPrice } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useOrderHistory } from "@/hooks/useOrderHistory";
@@ -43,7 +45,19 @@ export default function OrdersPage() {
   const auth = useAuth();
   const query = useOrderHistory(auth.userId);
 
-  const orders = query.data ?? [];
+  // `query.data ?? []` 每次渲染都产生一个新数组引用，下面两个 useMemo 的
+  // 依赖因此每次都变，等于白包。用 useMemo 稳住引用。
+  const orders = useMemo(() => query.data ?? [], [query.data]);
+
+  // 表格之前的那条统计带。filled 把部分成交也算进来，与下面的筛选口径一致。
+  const summary = useMemo(() => {
+    const filled = orders.filter((o) => o.status === "filled" || o.status === "partially_filled");
+    return {
+      filled: filled.length,
+      pending: orders.filter((o) => o.status === "pending").length,
+      volume: filled.reduce((sum, o) => sum + (o.total_value ?? 0), 0),
+    };
+  }, [orders]);
 
   const filteredOrders = useMemo(() => {
     if (activeTab === "all") return orders;
@@ -193,17 +207,25 @@ export default function OrdersPage() {
 
   if (auth.loading || (auth.userId && query.isPending)) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
-        <div className="mb-8">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="mt-2 h-4 w-64" />
-        </div>
-        <div className="mb-4 flex gap-2">
-          {FILTER_TABS.map((tab) => (
-            <Skeleton key={tab} className="h-9 w-20 rounded-sm" />
+      <div className="mx-auto max-w-page px-6 py-10 lg:py-16">
+        {/* 骨架照着内容态的形状摆：标题 → 四格统计带 → 下划线标签 → 表格。
+            少了统计带那一段，数据到位时整个表格会往下跳一整块。 */}
+        <Skeleton className="h-10 w-56" />
+        <Skeleton className="mt-4 h-4 w-72" />
+        <div className="mt-10 grid grid-cols-2 gap-px border-y border-border-default bg-border-default sm:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="bg-bg-primary px-1 py-5 sm:px-5">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="mt-3 h-5 w-24" />
+            </div>
           ))}
         </div>
-        <div className="rounded-md panel">
+        <div className="mt-10 mb-6 flex gap-4 border-b border-border-default pb-3">
+          {FILTER_TABS.map((tab) => (
+            <Skeleton key={tab} className="h-4 w-14" />
+          ))}
+        </div>
+        <div className="rounded-md">
           <div className="border-b border-border-default px-4 py-3">
             <div className="flex gap-4">
               {[...Array(9)].map((_, i) => (
@@ -231,7 +253,7 @@ export default function OrdersPage() {
 
   if (!auth.loading && !auth.userId) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
+      <div className="mx-auto max-w-page px-6 py-10 lg:py-16">
         <EmptyState
           title={tSettings("please_login")}
           description={tSettings("api_keys_desc")}
@@ -242,7 +264,7 @@ export default function OrdersPage() {
 
   if (query.error && !query.data?.length) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
+      <div className="mx-auto max-w-page px-6 py-10 lg:py-16">
         <div className="text-center py-24">
           <p className="text-danger">{(query.error as Error).message}</p>
           <Button variant="outline" className="mt-4" onClick={() => query.refetch()}>
@@ -254,43 +276,48 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
-      <div className="mb-8">
-        <h1 className="display text-display-md">{t("title")}</h1>
-        <p className="mt-1 text-sm text-text-secondary">{t("subtitle")}</p>
-      </div>
+    <div className="mx-auto max-w-page px-6 py-10 lg:py-16">
+      <PageHeader
+        title={t("title")}
+        subtitle={t("subtitle")}
+        className="border-b-0 pb-0"
+        actions={
+          filteredOrders.length > 0 ? (
+            <Button variant="outline" size="sm" onClick={exportCSV}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              {t("export_csv")}
+            </Button>
+          ) : undefined
+        }
+      />
+
+      {/* 表格之前先给一句结论：这段时间一共做了多少、成了多少、成交额多大 */}
+      <StatRow
+        className="mt-10"
+        items={[
+          { label: t("all"), value: orders.length },
+          { label: t("filled"), value: summary.filled },
+          { label: t("pending"), value: summary.pending },
+          { label: t("total"), value: formatPrice(summary.volume), tone: "gold" },
+        ]}
+      />
 
       {query.error && !!query.data?.length && (
-        <div className="mb-4 rounded-sm border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+        <p className="mt-6 rounded-md border-l-2 border-danger bg-danger/10 px-4 py-3 text-sm text-danger">
           {(query.error as Error).message}
-        </div>
+        </p>
       )}
 
-      {/* Filter Tabs */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {FILTER_TABS.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`rounded-sm px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab
-                ? "foil-sm border border-transparent text-bg-primary"
-                : "bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-hover border border-border-default"
-            }`}
-          >
-            {t(tab)}
-          </button>
-        ))}
-        {filteredOrders.length > 0 && (
-          <Button variant="outline" size="sm" onClick={exportCSV} className="ml-auto">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            {t("export_csv")}
-          </Button>
-        )}
+      <div className="mt-10 border-b border-border-default">
+        <SegmentTabs
+          value={activeTab}
+          onChange={(k) => setActiveTab(k as FilterTab)}
+          options={FILTER_TABS.map((tab) => ({ key: tab, label: t(tab) }))}
+        />
       </div>
 
       {filteredOrders.length === 0 ? (

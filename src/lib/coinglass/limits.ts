@@ -5,7 +5,7 @@
  * 原因：`src/lib/screener/types.ts` 要用 `RATE_LIMIT_PER_MIN` 推导
  * `DEEP_SCAN_LIMIT`，而 `screener/types.ts` 被五个客户端组件做值导入
  * （`FactorStack.tsx`/`AlertCard.tsx` 要 `FACTOR_MAX`、`ScannerTable.tsx`
- * 要 `ALERT_TRIGGER_SCORE`、`ScanCountdown.tsx`/`useScreenerData.ts` 要
+ * 要 `ALERT_TRIGGER_SCORE`、`ScanPulse.tsx`/`useScreenerData.ts` 要
  * `SCAN_INTERVAL_MS`）。如果这两个常量继续放在 `client.ts` 里，
  * `screener/types.ts` 就必须 import `client.ts`，而 `client.ts` 里的
  * `coinglassGet`、滚动窗口限流器、`process.env.COINGLASS_API_KEY` 读取

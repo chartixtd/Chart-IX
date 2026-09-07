@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { useScannerData } from "@/hooks/useScreenerData";
 import { ScannerTable } from "@/components/screener/ScannerTable";
 import { ScreenerFilters } from "@/components/screener/ScreenerFilters";
+import { SectionHeading } from "@/components/ui/Section";
 import { applyFilters, sortRows, DEFAULT_FILTERS } from "@/lib/screener/filter";
 import type { FilterState, SortKey } from "@/lib/screener/filter";
 import type { ScannerRow } from "@/lib/screener/types";
@@ -13,8 +14,12 @@ const FILTER_STORAGE_KEY = "chart-ix:scanner-filters";
 const SORTABLE: SortKey[] = ["symbol", "direction", "total", "volumeUsd", "change24h", "marketCap"];
 
 /**
- * 主扫描表子页。标题、倒计时、图例、子页切换都在 layout.tsx 里，
- * 这里只管「这一轮扫出来的 20 个币」这一件事。
+ * 主扫描表子页。抬头、表盘、子页切换都在 layout.tsx 里，这里只管
+ * 「这一轮扫出来的 20 个币」这一件事。
+ *
+ * 构图：先一条发丝线门槛带（选币口径 + 方向切换），再一个展示级区块标题，
+ * 表格直接落在标题下面——不再套一层圆角边框盒子。表格的结构由表头那条
+ * 金色发丝线和行间线承担，外面再画一个框只是在框一个框。
  */
 export default function ScreenerTablePage() {
   const t = useTranslations("screener");
@@ -70,24 +75,24 @@ export default function ScreenerTablePage() {
 
   return (
     <>
-      <ScreenerFilters value={filters} onChange={setFilters} count={visible.length} />
-      {/* rounded-md 而不是 rounded-lg：扫描表是数据面，圆角走 2/4/6px 族，
-          与 orders 页的表格容器对齐。 */}
-      <section className="overflow-hidden rounded-md border border-border-default bg-bg-primary">
-        <div className="flex items-baseline gap-2 border-b border-border-default px-3 py-2">
-          <h2 className="font-display text-sm font-semibold tracking-tight text-text-primary">
-            {t("table_title")}
-          </h2>
-          <span className="text-[11px] text-text-muted">{t("table_hint")}</span>
-        </div>
-        <ScannerTable
-          rows={visible}
-          isLoading={isLoading}
-          sort={sort}
-          onSortChange={handleSort}
-          onSelect={handleSelectRow}
-          selectedSymbol={selected}
+      <ScreenerFilters value={filters} onChange={setFilters} />
+
+      <section className="mt-14 lg:mt-20">
+        <SectionHeading
+          title={t("table_title")}
+          count={isLoading ? null : `${visible.length}/${rows.length}`}
+          action={<span className="hidden text-xs text-text-muted md:inline">{t("table_hint")}</span>}
         />
+        <div className="mt-8">
+          <ScannerTable
+            rows={visible}
+            isLoading={isLoading}
+            sort={sort}
+            onSortChange={handleSort}
+            onSelect={handleSelectRow}
+            selectedSymbol={selected}
+          />
+        </div>
       </section>
     </>
   );

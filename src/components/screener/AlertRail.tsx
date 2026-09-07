@@ -2,6 +2,8 @@
 
 import { useTranslations } from "next-intl";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Icon } from "@/components/ui/Icon";
 import type { AlertCardData } from "@/lib/screener/cards";
 import { useCardPrices } from "@/hooks/useCardPrices";
 import { AlertCard } from "./AlertCard";
@@ -18,24 +20,29 @@ export function AlertRail({ cards, isLoading = false }: { cards: AlertCardData[]
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-72 w-full rounded-lg" />
+          <Skeleton key={i} className="h-[26rem] w-full rounded-lg" />
         ))}
       </div>
     );
   }
 
   if (cards.length === 0) {
+    // 空态用站内统一的 EmptyState，不再是一行 11px 的灰字：没有信号是这一页
+    // 最常见的状态之一，它值得被排成一个安静的画面而不是一句注脚。
     return (
-      <p className="rounded-lg panel px-3.5 py-3 text-[11px] leading-relaxed text-text-secondary">
-        {t("alerts.empty")}
-      </p>
+      <EmptyState
+        icon={<Icon name="bell" className="h-6 w-6" />}
+        title={t("alerts.empty_title")}
+        description={t("alerts.empty")}
+        className="border-y border-border-default"
+      />
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {cards.map((c) => (
         <AlertCard key={c.key} card={c} livePrice={prices[c.symbol] ?? null} />
       ))}

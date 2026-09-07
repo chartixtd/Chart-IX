@@ -889,6 +889,10 @@
     "refresh_now": "Muat semula",
     "next_scan": "Imbasan seterusnya",
     "candidate_count": "{count} calon",
+    "hero": {
+      "live_signals": "Isyarat aktif",
+      "computed_at": "Dikira pada {time}"
+    },
     "filters": {
       "volume": "Volum 24j ≥",
       "amplitude": "Amplitud 24j",
@@ -921,6 +925,7 @@
     "action_view": "Lihat",
     "alerts": {
       "rail_label": "Amaran terkini",
+      "empty_title": "Tiada amaran aktif",
       "empty": "Amaran dicetuskan apabila salah satu daripada enam senario dikesan (trend sihat / pembubaran inventori / divergens benar atau palsu). Harga pada ketika itu dikunci dan perubahan terkumpul dijejaki.",
       "trigger_line": "Semasa cetusan: skor {score}/100 · OI {oi}/60 · CVD {cvd}/40",
       "first_price": "Harga amaran",

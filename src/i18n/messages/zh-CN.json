@@ -965,6 +965,10 @@
     "refresh_now": "立即刷新",
     "next_scan": "下次扫描",
     "candidate_count": "{count} 个候选标的",
+    "hero": {
+      "live_signals": "活跃信号",
+      "computed_at": "本轮计算于 {time}"
+    },
     "filters": {
       "volume": "24H 成交量 ≥",
       "amplitude": "24H 振幅",
@@ -997,6 +1001,7 @@
     "action_view": "查看",
     "alerts": {
       "rail_label": "最新警报",
+      "empty_title": "暂无活跃警报",
       "empty": "警报在检测到六场景之一（健康趋势 / 存量清算 / 真假顶底背离）时触发，锁定当时价格并持续追踪累计涨跌幅。",
       "trigger_line": "触发时总分 {score}/100 · OI {oi}/60 · CVD {cvd}/40",
       "first_price": "首次警报价",

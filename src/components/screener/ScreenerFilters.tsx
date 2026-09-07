@@ -13,80 +13,94 @@ export { DEFAULT_FILTERS } from "@/lib/screener/filter";
 
 const DIRECTIONS: DirectionFilter[] = ["all", "long", "short"];
 
+/**
+ * 选币口径带。
+ *
+ * 此前是一张灰卡里横排四个小项。现在是一条被发丝线切开的横带（与 StatRow
+ * 同一套语法）：标签在上、值在下，四格等宽。它读起来是仪器面板上的一排刻度，
+ * 不是一个「筛选器」控件组——因为其中三格本来就不可调。
+ *
+ * 成交量、振幅、市值三条门槛全部由服务端执行，这里只读地标出来。做成静态
+ * 文字而不是禁用的控件：禁用的控件仍然长得像「可以调，只是现在不行」，
+ * 而这三条是产品定死的选币口径，不该给出可调的暗示。
+ *
+ * 振幅这一格说的是「取最安静的 20 个」而不是某个门槛值：选币取的是**最安静**
+ * 的 N 个，不是最吵的。理由见 types.ts 的 QUIET_RANK_TAKE 注释（高振幅档
+ * 捕获率只有 33%，且六成情况回吐大于延续）。
+ *
+ * 方向是唯一可调的一格。它只决定表格显示哪些行，不改变任何币的分数。
+ */
 export function ScreenerFilters({
   value,
   onChange,
-  count,
 }: {
   value: FilterState;
   onChange: (next: FilterState) => void;
-  count: number;
 }) {
   const t = useTranslations("screener");
 
   return (
-    <div className="ink mb-4 flex flex-wrap items-end gap-5 rounded-md px-4 py-3">
-      {/* 成交量、振幅、市值三条门槛全部由服务端执行，这里只读地标出来。
-          做成静态文字而不是禁用的控件：禁用的控件仍然长得像「可以调，只是
-          现在不行」，而这三条是产品定死的筛选口径，不该给出可调的暗示。 */}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] uppercase tracking-wider text-text-muted">
-          {t("filters.volume")}
-        </span>
-        <span className="tnum text-xs text-text-secondary">
-          <b className="text-text-primary">{SERVER_GATE.minVolumeUsd / 1_000_000}</b>M USDT
-        </span>
+    // 手机上是 2 列 3 行：两个数字门槛并排，「振幅」与「方向」各占整行——
+    // 「取最安静的 20 个」七个汉字与三段式方向控件都放不进半行（马来文的
+    // Semua / Short 更宽）。sm 起回到一行四格，order 把顺序摆回
+    // 成交量 → 振幅 → 市值 → 方向。
+    <dl className="grid grid-cols-2 gap-px overflow-hidden border-y border-border-default bg-border-default sm:grid-cols-4">
+      <div className="order-1 bg-bg-primary px-1 py-5 sm:px-5 sm:first:pl-0">
+        <dt className="eyebrow">{t("filters.volume")}</dt>
+        <dd className="mt-3 font-mono text-base tabular-nums text-text-primary sm:text-lg">
+          {SERVER_GATE.minVolumeUsd / 1_000_000}
+          <span className="ml-1.5 text-xs text-text-muted">M USDT</span>
+        </dd>
       </div>
 
-      {/* 振幅曾经是这里唯一可调的滑块，后来变成只读说明。现在连含义都变了：
-          选币取的是**最安静**的 N 个，不是最吵的——所以这里说的是
-          「取最安静的 20 个」，而不是某个门槛值。理由见 types.ts 的
-          QUIET_RANK_TAKE 注释（高振幅档捕获率只有 33%，且六成情况回吐
-          大于延续）。 */}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] uppercase tracking-wider text-text-muted">
-          {t("filters.amplitude")}
-        </span>
-        <span className="tnum text-xs text-text-secondary">
+      <div className="order-3 col-span-2 bg-bg-primary px-1 py-5 sm:order-2 sm:col-span-1 sm:px-5">
+        <dt className="eyebrow">{t("filters.amplitude")}</dt>
+        <dd className="mt-3 text-base text-text-primary sm:text-lg">
           {t("filters.quiet_rank", { n: QUIET_RANK_TAKE })}
-        </span>
+        </dd>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] uppercase tracking-wider text-text-muted">
-          {t("filters.market_cap")}
-        </span>
-        <span className="tnum text-xs text-text-secondary">
-          <b className="text-text-primary">{SERVER_GATE.minMarketCap / 1_000_000}</b>M
-        </span>
+      <div className="order-2 bg-bg-primary px-1 py-5 sm:order-3 sm:px-5">
+        <dt className="eyebrow">{t("filters.market_cap")}</dt>
+        <dd className="mt-3 font-mono text-base tabular-nums text-text-primary sm:text-lg">
+          {SERVER_GATE.minMarketCap / 1_000_000}
+          <span className="ml-1.5 text-xs text-text-muted">M</span>
+        </dd>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] uppercase tracking-wider text-text-muted">
-          {t("filters.direction")}
-        </span>
-        <div className="flex overflow-hidden rounded-md border border-border-default">
-          {DIRECTIONS.map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => onChange({ ...value, direction: d })}
-              className={cn(
-                "min-h-[44px] px-3 py-1.5 text-xs transition-colors lg:min-h-0",
-                value.direction === d
-                  ? "bg-gold/15 text-gold"
-                  : "text-text-secondary hover:text-text-primary"
-              )}
-            >
-              {t(`filters.dir_${d === "all" ? "all" : d}`)}
-            </button>
-          ))}
-        </div>
+      <div className="order-4 col-span-2 bg-bg-primary px-1 py-5 sm:col-span-1 sm:px-5">
+        <dt className="eyebrow">{t("filters.direction")}</dt>
+        <dd className="mt-3">
+          {/* 手机上三段等分撑满整行（每段都够 44px 命中区）；桌面收回到自然宽度 */}
+          <div
+            role="radiogroup"
+            aria-label={t("filters.direction")}
+            className="flex overflow-hidden rounded-sm border border-border-default sm:inline-flex"
+          >
+            {DIRECTIONS.map((d, i) => {
+              const active = value.direction === d;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => onChange({ ...value, direction: d })}
+                  className={cn(
+                    "min-h-[44px] flex-1 whitespace-nowrap px-3.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors sm:flex-none lg:min-h-0 lg:h-8",
+                    i > 0 && "border-l border-border-default",
+                    active
+                      ? "bg-gold/10 text-gold"
+                      : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
+                  )}
+                >
+                  {t(`filters.dir_${d}`)}
+                </button>
+              );
+            })}
+          </div>
+        </dd>
       </div>
-
-      <div className="tnum ml-auto text-xs text-text-secondary">
-        {t("candidate_count", { count })}
-      </div>
-    </div>
+    </dl>
   );
 }

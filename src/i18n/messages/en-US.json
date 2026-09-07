@@ -965,6 +965,10 @@
     "refresh_now": "Refresh now",
     "next_scan": "Next scan",
     "candidate_count": "{count} candidates",
+    "hero": {
+      "live_signals": "Live signals",
+      "computed_at": "Computed at {time}"
+    },
     "filters": {
       "volume": "24h volume ≥",
       "amplitude": "24h amplitude",
@@ -997,6 +1001,7 @@
     "action_view": "View",
     "alerts": {
       "rail_label": "Latest alerts",
+      "empty_title": "No live alerts",
       "empty": "An alert fires when one of the six scenarios (healthy trend / inventory flush / true or false divergence) is detected. It locks the price at that moment and tracks the cumulative move from there.",
       "trigger_line": "At trigger: score {score}/100 · OI {oi}/60 · CVD {cvd}/40",
       "first_price": "Alert price",

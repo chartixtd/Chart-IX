@@ -133,7 +133,7 @@ export function OnboardingModal() {
     <Modal open={shouldShow} onClose={finish} title={undefined} size="md">
       {step === 0 && (
         <div>
-          <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">欢迎来到 Chart-IX</h2>
+          <h2 className="font-display text-xl font-medium tracking-tight text-text-primary">欢迎来到 Chart-IX</h2>
           <p className="mt-2 text-sm text-text-secondary">先告诉我们你的交易经验，我们会给你更合适的建议。</p>
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {(["beginner", "experienced"] as Level[]).map((l) => (
@@ -141,8 +141,8 @@ export function OnboardingModal() {
                 key={l}
                 onClick={() => { setLevel(l); setStep(1); }}
                 className={cn(
-                  "rounded-lg border p-4 text-left transition-colors hover:border-gold/50 hover:bg-gold/5",
-                  level === l ? "border-gold bg-gold/10" : "border-border-default"
+                  "rounded-md border p-5 text-left transition-colors duration-300 hover:border-gold/50",
+                  level === l ? "border-gold" : "border-border-hover"
                 )}
               >
                 <Icon name={l === "beginner" ? "steps" : "candles"} className="h-7 w-7 text-gold" />
@@ -163,7 +163,7 @@ export function OnboardingModal() {
 
       {step === 1 && (
         <div>
-          <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">
+          <h2 className="font-display text-xl font-medium tracking-tight text-text-primary">
             {level === "beginner" ? "从这里开始最合适" : "你可以直接上手"}
           </h2>
           <p className="mt-2 text-sm text-text-secondary">
@@ -173,14 +173,14 @@ export function OnboardingModal() {
           </p>
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Link href={`/${locale}/learn`} onClick={() => setStep(2)}>
-              <div className="rounded-lg border border-border-default p-4 text-left transition-colors hover:border-gold/50 hover:bg-gold/5">
-                <Icon name="path" className="h-7 w-7 text-gold" />
+              <div className="h-full rounded-md border border-border-hover p-5 text-left transition-colors duration-300 hover:border-gold/50">
+                <Icon name="path" className="h-6 w-6 text-gold" />
                 <div className="mt-2 text-sm font-medium text-text-primary">浏览学习路径</div>
               </div>
             </Link>
             <Link href={`/${locale}/trade`} onClick={() => setStep(2)}>
-              <div className="rounded-lg border border-border-default p-4 text-left transition-colors hover:border-gold/50 hover:bg-gold/5">
-                <Icon name="candles" className="h-7 w-7 text-gold" />
+              <div className="h-full rounded-md border border-border-hover p-5 text-left transition-colors duration-300 hover:border-gold/50">
+                <Icon name="candles" className="h-6 w-6 text-gold" />
                 <div className="mt-2 text-sm font-medium text-text-primary">去模拟盘看看</div>
               </div>
             </Link>
@@ -194,11 +194,11 @@ export function OnboardingModal() {
 
       {step === 2 && (
         <div>
-          <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">快速了解一下</h2>
+          <h2 className="font-display text-xl font-medium tracking-tight text-text-primary">快速了解一下</h2>
           <div className="mt-4 space-y-3">
             {TOUR_ITEMS.map((item) => (
               <div key={item.title} className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gold/25 bg-gold/[0.06] text-gold">
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border border-gold/35 text-gold">
                   <Icon name={item.icon} className="h-4 w-4" />
                 </span>
                 <div>

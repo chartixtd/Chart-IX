@@ -39,10 +39,10 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
     <div className="mx-auto max-w-[110rem] px-4 py-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-display text-xl font-bold tracking-tight text-text-primary">
+          <h1 className="display text-display-sm">
             {t("title")}
           </h1>
-          <p className="text-[11px] tracking-wider text-text-muted">{t("subtitle")}</p>
+          <p className="mt-1 text-xs text-text-muted">{t("subtitle")}</p>
         </div>
         <div className="flex items-center gap-3">
           {/* 报错时不显示倒计时——那会是一个冻在 00:00 的假进度 */}
@@ -68,10 +68,10 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
                 key={tab.href}
                 href={tab.href}
                 className={cn(
-                  "inline-flex min-h-[44px] items-center whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors lg:min-h-0",
+                  "inline-flex min-h-[44px] items-center whitespace-nowrap border-b px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] transition-colors lg:min-h-0 lg:py-3",
                   active
                     ? "border-gold text-gold"
-                    : "border-transparent text-text-secondary hover:text-text-primary"
+                    : "border-transparent text-text-muted hover:text-text-primary"
                 )}
               >
                 {tab.label}
@@ -85,7 +85,7 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
           })}
           <Link
             href={`/${locale}/tools/position-size`}
-            className="ml-auto inline-flex min-h-[44px] items-center whitespace-nowrap px-3 py-2 text-sm text-text-secondary transition-colors hover:text-gold lg:min-h-0"
+            className="ml-auto inline-flex min-h-[44px] items-center whitespace-nowrap px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-text-muted transition-colors hover:text-gold lg:min-h-0 lg:py-3"
           >
             {tCalc("title")} →
           </Link>

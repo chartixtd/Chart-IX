@@ -14,25 +14,34 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/lib/utils";
 
-// Signed-out visitors only see Home — the product nav (videos/articles/news/trade/screener)
-// is gated behind login, so it shouldn't tease unauthenticated users on the marketing page.
-// 计算器未登录也完全可用（不是登录墙后的画饼），且它是拉新入口，
-// 所以 tools 在登录与未登录两种导航里都出现。
+// 访客只看到首页与计算器；产品导航在登录墙后。
 const GUEST_NAV_ITEMS = ["home", "tools"] as const;
 const USER_NAV_ITEMS = ["dashboard", "videos", "articles", "news", "trade", "screener", "tools"] as const;
 
-// 导航项默认按 /{locale}/{item} 拼链接；这里放例外。tools 的落地页是具体的
-// 计算器，站内没有 /tools 索引页，直接拼会 404。
 const NAV_HREF_OVERRIDES: Partial<Record<(typeof USER_NAV_ITEMS)[number], string>> = {
   tools: "/tools/position-size",
 };
 
-// 导航项的三段样式抽出来共用——upgrade / admin 两个特例链接必须和主导航
-// 长得一模一样，写三份迟早会漂移。
+/**
+ * 导航项：大写微标签。当前位置用一条从中心生长的 1px 金线标出——
+ * 在三种语言的不同字宽下都能稳定读出「我在这里」。
+ */
 const NAV_LINK =
-  "relative rounded-sm px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/70";
-const NAV_LINK_ACTIVE = "text-gold";
-const NAV_LINK_IDLE = "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary";
+  "group relative flex h-[72px] items-center px-3.5 text-[11px] font-medium uppercase tracking-[0.18em] transition-colors focus-visible:outline-none focus-visible:text-gold";
+const NAV_LINK_ACTIVE = "text-text-primary";
+const NAV_LINK_IDLE = "text-text-muted hover:text-text-primary";
+
+function ActiveLine({ active }: { active: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "absolute inset-x-3.5 bottom-0 h-px origin-center bg-gold transition-transform duration-500 ease-out",
+        active ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100 group-hover:bg-gold/50"
+      )}
+    />
+  );
+}
 
 export function Navbar() {
   const t = useTranslations("nav");
@@ -41,42 +50,25 @@ export function Navbar() {
   const router = useRouter();
   const auth = useAuth();
 
-  // Only show upgrade once auth has loaded and the user is confirmed non-pro —
-  // avoids the upgrade link flashing for pro users during the loading window.
   const showUpgrade = !auth.loading && auth.tier !== "pro";
   const isAdmin = auth.role === "admin";
 
   const segments = useMemo(() => pathname.split("/").filter(Boolean), [pathname]);
 
   const navLinks = useMemo(() => {
-    // Logged-in users land on their dashboard, not the marketing homepage —
-    // "home" only makes sense for signed-out visitors.
     const items = auth.userId ? USER_NAV_ITEMS : GUEST_NAV_ITEMS;
     return items.map((item) => {
-      // segments[0] 在每一条 i18n 路由上都等于 locale，用 || 会让首页在所有
-      // 页面上都判定 active——这里要求两个条件同时成立：整条路径只有一段，
-      // 且那一段就是 locale 本身（也就是语言根路径 /{locale}）。
-      const active = item === "home"
-        ? segments.length === 1 && segments[0] === locale
-        : segments.includes(item);
+      const active =
+        item === "home" ? segments.length === 1 && segments[0] === locale : segments.includes(item);
       return (
         <Link
           key={item}
-          href={`/${locale}${
-            item === "home" ? "" : NAV_HREF_OVERRIDES[item] ?? `/${item}`
-          }`}
+          href={`/${locale}${item === "home" ? "" : NAV_HREF_OVERRIDES[item] ?? `/${item}`}`}
           aria-current={active ? "page" : undefined}
           className={cn(NAV_LINK, active ? NAV_LINK_ACTIVE : NAV_LINK_IDLE)}
         >
           {t(item)}
-          {/* 当前位置用一条金箔下划线标出。只靠背景色块在深色底上太弱，
-              而下划线在三种语言的不同字宽下都能稳定读出"我在这里"。 */}
-          {active && (
-            <span
-              aria-hidden
-              className="foil absolute inset-x-3 -bottom-px h-[2px] rounded-none shadow-none"
-            />
-          )}
+          <ActiveLine active={active} />
         </Link>
       );
     });
@@ -84,84 +76,92 @@ export function Navbar() {
 
   const handleLogout = useCallback(async () => {
     const supabase = createClient();
-    // 退订必须排在 signOut() 之前：/api/push/unsubscribe 要鉴权，会话没了就
-    // 401，库里那一行删不掉。而留着那一行的后果跟 purgePageCache 是同一类
-    // 隐私问题、且更刺眼——共用手机上，前一个人的到价提醒会带着币种和价格
-    // 主动弹到锁屏，弹给现在拿着这台手机的另一个人。
-    // catch 掉是因为登出不能因为退订失败而卡住：网络断了也得让人走得掉。
+    // 退订必须排在 signOut() 之前（/api/push/unsubscribe 要鉴权）；失败也不能挡住登出。
     await unsubscribeFromPush().catch(() => {});
     await supabase.auth.signOut();
-    // 缓存里的仪表盘/订单页 HTML 含用户数据，登出后必须清掉
     await purgePageCache();
     router.push(`/${locale}`);
     router.refresh();
   }, [locale, router]);
 
+  const upgradeActive = segments.includes("upgrade");
+  const adminActive = segments[0] === "admin";
+
   return (
     // 顶栏是站内唯一常驻的玻璃面：它不高频重绘，blur 在这里是安全的。
-    // shadow-nav 那条 1px 金线是把导航从内容里"抬起来"的全部手段。
-    <header className="gpu sticky top-0 z-40 hidden border-b border-border-default bg-bg-primary/80 shadow-nav backdrop-blur-md lg:block">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
-        {/* Logo */}
-        <Link href={auth.userId ? `/${locale}/dashboard` : `/${locale}`} className="flex items-center gap-2 shrink-0">
-          <Image src="/logo.png" alt="Chart-IX" width={240} height={160} priority className="h-9 w-auto" />
+    <header className="gpu sticky top-0 z-40 hidden border-b border-border-default bg-bg-primary/80 shadow-nav backdrop-blur-xl lg:block">
+      <div className="mx-auto flex h-[72px] max-w-page items-center px-6">
+        {/* 品牌 */}
+        <Link
+          href={auth.userId ? `/${locale}/dashboard` : `/${locale}`}
+          className="flex shrink-0 items-center gap-3"
+          aria-label="Chart-IX"
+        >
+          <Image src="/logo.png" alt="" width={240} height={160} priority className="h-8 w-auto" />
+          <span className="font-display text-[15px] font-medium tracking-[0.02em] text-text-primary">
+            Chart<span className="text-gold">-IX</span>
+          </span>
         </Link>
 
-        {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-1">
+        {/* 导航 */}
+        <nav className="ml-12 flex items-center">
           {navLinks}
           {showUpgrade && (
             <Link
               href={`/${locale}/upgrade`}
-              aria-current={segments.includes("upgrade") ? "page" : undefined}
-              className={cn(
-                NAV_LINK,
-                segments.includes("upgrade") ? NAV_LINK_ACTIVE : NAV_LINK_IDLE
-              )}
+              aria-current={upgradeActive ? "page" : undefined}
+              className={cn(NAV_LINK, upgradeActive ? NAV_LINK_ACTIVE : "text-gold/80 hover:text-gold")}
             >
               {t("upgrade")}
-              {segments.includes("upgrade") && (
-                <span aria-hidden className="foil absolute inset-x-3 -bottom-px h-[2px] rounded-none shadow-none" />
-              )}
+              <ActiveLine active={upgradeActive} />
             </Link>
           )}
           {isAdmin && (
             <Link
               href="/admin"
-              aria-current={segments[0] === "admin" ? "page" : undefined}
-              className={cn(NAV_LINK, segments[0] === "admin" ? NAV_LINK_ACTIVE : NAV_LINK_IDLE)}
+              aria-current={adminActive ? "page" : undefined}
+              className={cn(NAV_LINK, adminActive ? NAV_LINK_ACTIVE : NAV_LINK_IDLE)}
             >
               {t("admin")}
-              {segments[0] === "admin" && (
-                <span aria-hidden className="foil absolute inset-x-3 -bottom-px h-[2px] rounded-none shadow-none" />
-              )}
+              <ActiveLine active={adminActive} />
             </Link>
           )}
         </nav>
 
-        {/* Right Section */}
-        <div className="flex items-center gap-3">
+        {/* 右侧 */}
+        <div className="ml-auto flex items-center gap-5">
           <LanguageSwitcher />
+          <span aria-hidden className="h-4 w-px bg-border-hover" />
           {auth.loading ? (
-            <Skeleton className="h-8 w-20" />
+            <Skeleton className="h-8 w-24" />
           ) : auth.userId ? (
             <>
-              <Link href={`/${locale}/settings`}>
-                <Button variant="ghost" size="sm">
-                  {auth.displayName || auth.email?.split("@")[0]}
-                </Button>
+              <Link
+                href={`/${locale}/settings`}
+                className="max-w-[10rem] truncate text-[11px] font-medium uppercase tracking-[0.14em] text-text-secondary transition-colors hover:text-text-primary"
+              >
+                {auth.displayName || auth.email?.split("@")[0]}
               </Link>
-              <Button variant="ghost" size="sm" onClick={handleLogout}>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-muted transition-colors hover:text-text-primary"
+              >
                 {t("sign_out")}
-              </Button>
+              </button>
             </>
           ) : (
             <>
-              <Link href={`/${locale}/login`}>
-                <Button variant="ghost" size="sm">{t("sign_in")}</Button>
+              <Link
+                href={`/${locale}/login`}
+                className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-secondary transition-colors hover:text-text-primary"
+              >
+                {t("sign_in")}
               </Link>
               <Link href={`/${locale}/register`}>
-                <Button size="sm">{t("sign_up")}</Button>
+                <Button size="sm" className="h-9 px-5 text-[11px] uppercase tracking-[0.16em]">
+                  {t("sign_up")}
+                </Button>
               </Link>
             </>
           )}

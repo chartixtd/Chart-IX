@@ -2,14 +2,13 @@
 
 import { useTranslations } from "next-intl";
 import Link from "next/link";
-import Image from "next/image";
 import { useState } from "react";
 import { useLocale } from "next-intl";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Card } from "@/components/ui/Card";
+import { Icon } from "@/components/ui/Icon";
 import { createClient } from "@/lib/supabase/client";
-import { AuraField } from "@/components/motion/AuraField";
+import { AuthShell, AuthLink } from "@/components/auth/AuthShell";
 
 export default function RegisterPage() {
   const t = useTranslations("auth.register");
@@ -64,82 +63,70 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div className="hero-ground grain relative flex min-h-[calc(100dvh-4rem)] items-center justify-center overflow-hidden px-4 py-16">
-      <AuraField />
-        <Card surface="glass" className="relative w-full max-w-md text-center" padding="lg">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-gold/30 bg-gold/5">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7 text-gold">
-              <rect x="3" y="5" width="18" height="14" rx="2" />
-              <path d="M3 7l9 6 9-6" />
-            </svg>
-          </div>
-          <h1 className="mt-5 font-display text-2xl font-bold tracking-tight text-text-primary">{t("title")}</h1>
-          <p className="mt-3 text-sm leading-relaxed text-text-secondary">{success}</p>
-          <Link href={`/${locale}/login`} className="mt-7 inline-block">
-            <Button variant="outline">{t("login_link")}</Button>
-          </Link>
-        </Card>
-      </div>
+      <AuthShell title={t("title")}>
+        <div className="flex h-14 w-14 items-center justify-center rounded-sm border border-gold/40 text-gold">
+          <Icon name="inbox" className="h-6 w-6" />
+        </div>
+        <p className="mt-8 text-sm leading-relaxed text-text-secondary">{success}</p>
+        <Link href={`/${locale}/login`} className="mt-10 inline-block">
+          <Button variant="outline" size="lg">
+            {t("login_link")}
+          </Button>
+        </Link>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="hero-ground grain relative flex min-h-[calc(100dvh-4rem)] items-center justify-center overflow-hidden px-4 py-16">
-      <AuraField />
-      <Card surface="glass" className="relative w-full max-w-md" padding="lg">
-        <div className="text-center">
-          <Image src="/logo.png" alt="Chart-IX" width={240} height={160} priority className="mx-auto h-11 w-auto" />
-          <h1 className="mt-5 font-display text-3xl font-bold tracking-tight">
-            <span className="text-text-primary">Chart</span>
-            <span className="text-gold">-IX</span>
-          </h1>
-          <div className="hairline-gold mx-auto mt-4 w-14" />
-          <p className="mt-4 text-sm text-text-secondary">{t("subtitle")}</p>
-        </div>
+    <AuthShell
+      title={t("title")}
+      subtitle={t("subtitle")}
+      footer={
+        <>
+          {t("has_account")} <AuthLink href={`/${locale}/login`}>{t("login_link")}</AuthLink>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-8">
+        <Input
+          id="email"
+          type="email"
+          variant="line"
+          autoComplete="email"
+          label={t("email_label")}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <Input
+          id="password"
+          type="password"
+          variant="line"
+          autoComplete="new-password"
+          label={t("password_label")}
+          hint={t("password_hint")}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <Input
+          id="confirmPassword"
+          type="password"
+          variant="line"
+          autoComplete="new-password"
+          label={t("confirm_password_label")}
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          required
+          error={error}
+        />
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            label={t("email_label")}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            label={t("password_label")}
-            hint={t("password_hint")}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <Input
-            id="confirmPassword"
-            type="password"
-            autoComplete="new-password"
-            label={t("confirm_password_label")}
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            error={error}
-          />
-
-          <Button type="submit" className="w-full" loading={loading}>
+        <div className="pt-2">
+          <Button type="submit" size="lg" className="w-full" loading={loading}>
             {t("submit")}
           </Button>
-        </form>
-
-        <div className="mt-6 text-center text-sm text-text-secondary">
-          {t("has_account")}{" "}
-          <Link href={`/${locale}/login`} className="text-gold hover:underline">
-            {t("login_link")}
-          </Link>
         </div>
-      </Card>
-    </div>
+      </form>
+    </AuthShell>
   );
 }

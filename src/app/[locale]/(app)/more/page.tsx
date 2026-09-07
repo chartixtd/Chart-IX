@@ -41,10 +41,10 @@ export default function MorePage() {
   }, [locale, router]);
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6">
+    <div className="mx-auto max-w-2xl px-6 py-8">
       {auth.userId && (
         <div className="mb-6 border-b border-border-default pb-6">
-          <p className="font-display text-xl tracking-tighter text-text-primary">
+          <p className="display text-display-sm">
             {auth.displayName || auth.email?.split("@")[0]}
           </p>
           <p className="mt-1 text-xs text-text-muted">{auth.email}</p>
@@ -57,7 +57,7 @@ export default function MorePage() {
           <li key={entry.key}>
             <Link
               href={entry.href}
-              className="flex min-h-[52px] items-center justify-between px-1 py-3.5 text-sm text-text-primary transition-colors active:bg-bg-tertiary"
+              className="flex min-h-[56px] items-center justify-between px-1 py-4 text-[15px] text-text-primary transition-colors active:bg-bg-tertiary"
             >
               <span>{t(`more_${entry.key}`)}</span>
               <svg
@@ -82,7 +82,7 @@ export default function MorePage() {
       {auth.userId && (
         <button
           onClick={handleLogout}
-          className="mt-6 w-full rounded-sm border border-border-default py-3 text-sm text-text-secondary transition-colors active:bg-bg-tertiary"
+          className="mt-8 w-full rounded-sm border border-border-hover py-3.5 text-[11px] font-medium uppercase tracking-[0.16em] text-text-secondary transition-colors active:bg-bg-tertiary"
         >
           {t("sign_out")}
         </button>

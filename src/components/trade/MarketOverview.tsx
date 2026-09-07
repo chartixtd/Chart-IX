@@ -336,12 +336,12 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
           onChange={(e) => setSearch(e.target.value)}
           className="text-xs"
         />
-        <div className="flex rounded-xs bg-bg-tertiary p-0.5">
+        <div className="flex rounded-sm border border-border-default p-0.5">
           <button
             onClick={() => setViewMode("list")}
             className={cn(
               "flex-1 rounded-xs py-1 text-xs font-medium transition-colors min-h-[44px] lg:min-h-0",
-              viewMode === "list" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+              viewMode === "list" ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
             {t("market_overview.list")}
@@ -350,7 +350,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
             onClick={() => setViewMode("orderbook")}
             className={cn(
               "flex-1 rounded-xs py-1 text-xs font-medium transition-colors min-h-[44px] lg:min-h-0",
-              viewMode === "orderbook" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+              viewMode === "orderbook" ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
             {t("market_overview.orderbook")}
@@ -359,7 +359,7 @@ export function MarketOverview({ onSelectSymbol, activeSymbol = "", onOrderBookP
             onClick={() => setViewMode("trades")}
             className={cn(
               "flex-1 rounded-xs py-1 text-xs font-medium transition-colors min-h-[44px] lg:min-h-0",
-              viewMode === "trades" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+              viewMode === "trades" ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary"
             )}
           >
             {t("market_overview.trades")}

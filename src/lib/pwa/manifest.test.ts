@@ -48,8 +48,8 @@ describe("buildManifest", () => {
 
   it("配色沿用设计令牌", () => {
     const m = buildManifest("zh-CN", copy);
-    expect(m.theme_color).toBe("#0B0A08");
-    expect(m.background_color).toBe("#0B0A08");
+    expect(m.theme_color).toBe("#09090B");
+    expect(m.background_color).toBe("#09090B");
   });
 
   it("快捷方式的链接带上对应语言前缀", () => {

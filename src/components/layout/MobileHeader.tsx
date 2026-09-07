@@ -47,13 +47,13 @@ export function MobileHeader() {
     // 半透明 + backdrop-blur 压在每 tick 重绘的 K 线画布上，正是 DESIGN.md
     // 点名的低端安卓掉帧场景。玻璃感由边框线承担，不靠 blur。
     <header className="sticky top-0 z-30 border-b border-border-default bg-bg-primary pt-safe-t lg:hidden">
-      <div className="flex h-12 items-center justify-between px-4">
+      <div className="flex h-14 items-center justify-between px-4">
         {showBack ? (
           // -ml-2 px-2 让文字仍与原 logo 左缘对齐，同时把命中区向左右各撑开
           <button
             type="button"
             onClick={handleBack}
-            className="-ml-2 flex min-h-[44px] items-center gap-1 px-2 text-sm text-text-secondary transition-colors active:text-text-primary"
+            className="-ml-2 flex min-h-[44px] items-center gap-1.5 px-2 text-[11px] font-medium uppercase tracking-[0.14em] text-text-secondary transition-colors active:text-text-primary"
           >
             <svg
               className="h-5 w-5"
@@ -62,13 +62,16 @@ export function MobileHeader() {
               stroke="currentColor"
               aria-hidden="true"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
             </svg>
             {tCommon("back")}
           </button>
         ) : (
-          <Link href={auth.userId ? `/${locale}/dashboard` : `/${locale}`}>
-            <Image src="/logo.png" alt="Chart-IX" width={240} height={160} priority className="h-7 w-auto" />
+          <Link href={auth.userId ? `/${locale}/dashboard` : `/${locale}`} className="flex items-center gap-2.5">
+            <Image src="/logo.png" alt="" width={240} height={160} priority className="h-7 w-auto" />
+            <span className="font-display text-sm font-medium tracking-[0.02em] text-text-primary">
+              Chart<span className="text-gold">-IX</span>
+            </span>
           </Link>
         )}
         {/* 价格提醒暂时隐藏（组件与路由都还在，见
@@ -77,11 +80,14 @@ export function MobileHeader() {
             两者都不在，所以已登录时右侧就是空的 */}
         {!auth.loading && !auth.userId ? (
           <div className="flex items-center gap-2">
-            <Link href={`/${locale}/login`}>
-              <Button variant="ghost" size="sm">{t("sign_in")}</Button>
+            <Link
+              href={`/${locale}/login`}
+              className="px-2 text-[11px] font-medium uppercase tracking-[0.14em] text-text-secondary"
+            >
+              {t("sign_in")}
             </Link>
             <Link href={`/${locale}/register`}>
-              <Button size="sm">{t("sign_up")}</Button>
+              <Button size="sm" className="uppercase tracking-[0.14em]">{t("sign_up")}</Button>
             </Link>
           </div>
         ) : null}

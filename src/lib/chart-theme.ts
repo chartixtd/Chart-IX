@@ -10,21 +10,21 @@
  */
 export const CHART = {
   /** = success token。涨 */
-  up: "#34C77B",
+  up: "#3CC98A",
   /** = danger token。跌 */
-  down: "#E85055",
+  down: "#EA5A5F",
   /** = gold token。选中、当前价、金色强调 */
-  gold: "#C9A24B",
+  gold: "#D3B26A",
   /** = text-muted（已修正到 5.15:1）。坐标轴刻度文字 */
-  axisText: "#8A8172",
+  axisText: "#807C74",
   /** = bg-tertiary。网格线——低对比，不与数据争视觉 */
-  grid: "#1C1913",
+  grid: "#16161A",
   /** = border-default。轴线、面板分隔 */
-  border: "#2C271C",
+  border: "#1F1F24",
   /** = border-hover。十字线 */
-  crosshair: "#3A3325",
+  crosshair: "#2C2C33",
   /** = bg-primary。画在金色标签上的深色文字 */
-  ink: "#0B0A08",
+  ink: "#09090B",
 } as const;
 
 /**
@@ -33,11 +33,11 @@ export const CHART = {
  * 冷绿冷黄在暖底上会发脏。这条把整条色带拉回暖调，两端仍是站内的涨跌语义色。
  */
 export const SENTIMENT_RAMP = [
-  { max: 25, color: "#E85055" }, // extreme fear  = danger
+  { max: 25, color: "#EA5A5F" }, // extreme fear  = danger
   { max: 45, color: "#E0783B" }, // fear          = 暖橙
-  { max: 55, color: "#E0A93B" }, // neutral       = warning
+  { max: 55, color: "#E0AE45" }, // neutral       = warning
   { max: 75, color: "#96BF4D" }, // greed         = 暖黄绿
-  { max: 100, color: "#34C77B" }, // extreme greed = success
+  { max: 100, color: "#3CC98A" }, // extreme greed = success
 ] as const;
 
 export function sentimentColor(value: number): string {

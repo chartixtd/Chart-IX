@@ -149,7 +149,7 @@ export default function ApiKeysPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-6 lg:py-12">
+      <div className="mx-auto max-w-3xl px-6 py-8 lg:py-14">
         <div className="flex items-center justify-center py-24">
           <Spinner className="h-8 w-8" />
         </div>
@@ -158,10 +158,10 @@ export default function ApiKeysPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 lg:py-12">
+    <div className="mx-auto max-w-3xl px-6 py-8 lg:py-14">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
+          <h1 className="display text-display-md">{t("title")}</h1>
           <p className="mt-1 text-sm text-text-secondary">{t("description")}</p>
         </div>
         <Button onClick={() => setShowAddModal(true)} className="w-full sm:w-auto">{t("add_key")}</Button>
@@ -184,7 +184,7 @@ export default function ApiKeysPage() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate text-sm font-semibold text-text-primary font-display tracking-tight">{key.label}</h3>
+                    <h3 className="truncate font-display text-sm font-medium tracking-tight text-text-primary">{key.label}</h3>
                     {key.is_primary && (
                       <Badge variant="gold" size="sm">{t("primary")}</Badge>
                     )}

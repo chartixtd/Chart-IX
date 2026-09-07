@@ -5,9 +5,9 @@ import { useLocale, useTranslations } from "next-intl";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader, FilterTabs, FILTER_TAB, FILTER_TAB_ACTIVE, FILTER_TAB_IDLE } from "@/components/ui/PageHeader";
 import { CommunityFeed } from "@/components/community/CommunityFeed";
 import { cn } from "@/lib/utils";
 import type { Article, ArticleCategory, Locale } from "@/types";
@@ -31,18 +31,16 @@ function formatDate(dateStr: string, localeStr: string) {
   }
 }
 
-export default function ArticlesClient({
-  articles,
-  categories,
-  fetchError,
-}: ArticlesClientProps) {
+/**
+ * 文章（Read 面）。头条一篇横排：左图右文；其余三列栅格。
+ * 分类是下划线标签，文章与社区是同一条基线上的两个大标签。
+ */
+export default function ArticlesClient({ articles, categories, fetchError }: ArticlesClientProps) {
   const locale = useLocale() as Locale;
   const t = useTranslations("article");
   const tCommunity = useTranslations("community");
   const searchParams = useSearchParams();
   const categoryParam = searchParams.get("category");
-  // 从帖子详情页点"返回社区"回来时带 ?tab=community，得读出来选中对应 tab，
-  // 不然每次都会掉回默认的 articles 分栏
   const [tab, setTab] = useState<"articles" | "community">(
     searchParams.get("tab") === "community" ? "community" : "articles"
   );
@@ -52,64 +50,97 @@ export default function ArticlesClient({
     return articles.filter((a) => a.category?.slug === categoryParam);
   }, [articles, categoryParam]);
 
-  // Error state
   if (fetchError) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-12">
-        <h1 className="text-3xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
+      <div className="mx-auto max-w-page px-6 py-12 lg:py-16">
+        <PageHeader title={t("title")} />
         <div className="mt-8">
-          <EmptyState
-            icon={<Icon name="alert" className="h-6 w-6" />}
-            title="Failed to load articles"
-            description={fetchError}
-          />
+          <EmptyState icon={<Icon name="alert" className="h-6 w-6" />} title="Failed to load articles" description={fetchError} />
         </div>
       </div>
     );
   }
 
   const selectedCategory = categories.find((c) => c.slug === categoryParam);
-  // "News" now lives on its own /news page (live RSS feed), so drop it from the tabs here
   const visibleCategories = categories.filter((c) => c.slug !== "news");
+  const [lead, ...rest] = filtered;
+
+  const ArticleMeta = ({ article }: { article: Article }) => (
+    <div className="flex flex-wrap items-center gap-3">
+      <Badge variant={article.tier_required === "pro" ? "gold" : "gray"}>
+        {article.tier_required === "pro" ? t("pro") : t("free")}
+      </Badge>
+      {article.category && <span className="eyebrow">{article.category.name[locale] ?? article.category.slug}</span>}
+    </div>
+  );
+
+  const ArticleFooter = ({ article }: { article: Article }) => (
+    <p className="mt-3 font-mono text-[11px] tabular-nums text-text-muted">
+      {article.published_at && <span>{formatDate(article.published_at, locale)}</span>}
+      {article.published_at && <span className="mx-2 text-text-faint">/</span>}
+      <span>{t("views", { count: article.view_count })}</span>
+    </p>
+  );
+
+  const Cover = ({ article, className }: { article: Article; className?: string }) => (
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-lg border border-border-default bg-bg-tertiary transition-colors duration-500 group-hover:border-gold/40",
+        className
+      )}
+    >
+      {article.cover_image ? (
+        <Image
+          src={article.cover_image}
+          alt={article.title[locale] ?? ""}
+          fill
+          className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+          loading="lazy"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-text-faint">
+          <Icon name="article" className="h-10 w-10" />
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-12">
-      <h1 className="text-3xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
+    <div className="mx-auto max-w-page px-6 py-12 lg:py-16">
+      <PageHeader title={t("title")} className="pb-0 border-b-0" />
 
-      {/* Articles vs. user-posted Community — kept as separate tabs rather than
-          one merged feed, so curated multi-locale articles don't get buried
-          under single-locale user posts (or vice versa). */}
-      <div className="mt-6 flex gap-1 rounded-sm bg-bg-tertiary p-1 w-fit">
-        {(["articles", "community"] as const).map((key) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={cn(
-              "rounded-xs px-4 py-1.5 text-sm font-medium transition-colors",
-              tab === key ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
-            )}
-          >
-            {key === "articles" ? t("title") : tCommunity("tab_label")}
-          </button>
-        ))}
+      {/* 一级：文章 / 社区 */}
+      <div className="mt-8 border-b border-border-default">
+        <FilterTabs>
+          {(["articles", "community"] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={cn(FILTER_TAB, "text-xs", tab === key ? FILTER_TAB_ACTIVE : FILTER_TAB_IDLE)}
+            >
+              {key === "articles" ? t("title") : tCommunity("tab_label")}
+            </button>
+          ))}
+        </FilterTabs>
       </div>
 
       {tab === "community" && (
-        <div className="mt-6">
+        <div className="mt-8">
           <CommunityFeed />
         </div>
       )}
 
-      {/* Category filter tabs */}
+      {/* 二级：分类 */}
       {tab === "articles" && visibleCategories.length > 0 && (
         <div className="mt-6 flex flex-wrap gap-2">
           <Link
             href={`/${locale}/articles`}
-            className={`rounded-sm border px-3 py-1.5 text-sm font-medium transition-colors ${
-              !categoryParam
-                ? "border-gold bg-gold/15 text-gold"
-                : "border-border-default text-text-secondary hover:text-text-primary hover:border-border-hover"
-            }`}
+            className={cn(
+              "rounded-sm border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors",
+              !categoryParam ? "border-gold/60 text-gold" : "border-border-default text-text-muted hover:border-border-strong hover:text-text-primary"
+            )}
           >
             {t("all_categories")}
           </Link>
@@ -117,11 +148,12 @@ export default function ArticlesClient({
             <Link
               key={cat.id}
               href={`/${locale}/articles?category=${cat.slug}`}
-              className={`rounded-sm border px-3 py-1.5 text-sm font-medium transition-colors ${
+              className={cn(
+                "rounded-sm border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors",
                 categoryParam === cat.slug
-                  ? "border-gold bg-gold/15 text-gold"
-                  : "border-border-default text-text-secondary hover:text-text-primary hover:border-border-hover"
-              }`}
+                  ? "border-gold/60 text-gold"
+                  : "border-border-default text-text-muted hover:border-border-strong hover:text-text-primary"
+              )}
             >
               {cat.name[locale] ?? cat.slug}
             </Link>
@@ -129,97 +161,53 @@ export default function ArticlesClient({
         </div>
       )}
 
-      {/* Articles grid */}
-      {tab === "articles" && (filtered.length > 0 ? (
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((article) => (
-            <Link
-              key={article.id}
-              href={`/${locale}/articles/${article.slug}`}
-              className="group block"
-            >
-              <Card hover padding="none" className="overflow-hidden">
-                {/* Cover image */}
-                <div className="relative aspect-video bg-bg-tertiary">
-                  {article.cover_image ? (
-                    <Image
-                      src={article.cover_image}
-                      alt={article.title[locale] ?? ""}
-                      fill
-                      className="object-cover"
-                      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-text-muted">
-                      <svg
-                        className="h-12 w-12"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"
-                        />
-                      </svg>
+      {tab === "articles" &&
+        (filtered.length > 0 ? (
+          <>
+            {/* 头条 */}
+            {lead && (
+              <Link href={`/${locale}/articles/${lead.slug}`} className="group mt-12 grid gap-8 lg:grid-cols-12 lg:items-center">
+                <Cover article={lead} className="aspect-[16/9] lg:col-span-7 lg:aspect-[3/2]" />
+                <div className="lg:col-span-5">
+                  <ArticleMeta article={lead} />
+                  <h2 className="display mt-5 text-display-md font-normal transition-colors group-hover:text-gold">
+                    {lead.title[locale] ?? lead.title["en-US"] ?? "Untitled"}
+                  </h2>
+                  <ArticleFooter article={lead} />
+                </div>
+              </Link>
+            )}
+
+            {rest.length > 0 && (
+              <div className="mt-16 grid gap-x-6 gap-y-12 border-t border-border-default pt-12 sm:grid-cols-2 lg:grid-cols-3">
+                {rest.map((article) => (
+                  <Link key={article.id} href={`/${locale}/articles/${article.slug}`} className="group block">
+                    <Cover article={article} className="aspect-video" />
+                    <div className="mt-5">
+                      <ArticleMeta article={article} />
+                      <h3 className="mt-3 font-display text-lg font-medium tracking-tight text-text-primary transition-colors group-hover:text-gold line-clamp-2">
+                        {article.title[locale] ?? article.title["en-US"] ?? "Untitled"}
+                      </h3>
+                      <ArticleFooter article={article} />
                     </div>
-                  )}
-                  {/* Tier badge */}
-                  <span className="absolute left-2 top-2">
-                    <Badge
-                      variant={
-                        article.tier_required === "pro" ? "gold" : "green"
-                      }
-                    >
-                      {article.tier_required === "pro" ? t("pro") : t("free")}
-                    </Badge>
-                  </span>
-                </div>
-
-                <div className="p-4">
-                  {/* Category label */}
-                  {article.category && (
-                    <p className="text-xs font-medium text-gold">
-                      {article.category.name[locale] ?? article.category.slug}
-                    </p>
-                  )}
-
-                  {/* Title */}
-                  <h3 className="mt-1 font-medium text-text-primary transition-colors group-hover:text-gold line-clamp-2">
-                    {article.title[locale] ??
-                      article.title["en-US"] ??
-                      "Untitled"}
-                  </h3>
-
-                  {/* Meta */}
-                  <div className="mt-2 flex items-center gap-3 text-xs text-text-muted">
-                    {article.published_at && (
-                      <span>{formatDate(article.published_at, locale)}</span>
-                    )}
-                    <span>{t("views", { count: article.view_count })}</span>
-                  </div>
-                </div>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      ) : (
-        /* Empty state */
-        <div className="mt-8">
-          <EmptyState
-            icon={<Icon name="article" className="h-6 w-6" />}
-            title={articles.length > 0 ? t("empty_search") : t("no_articles")}
-            description={
-              categoryParam && selectedCategory
-                ? `No articles found in "${selectedCategory.name[locale] ?? selectedCategory.slug}"`
-                : undefined
-            }
-          />
-        </div>
-      ))}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="mt-8">
+            <EmptyState
+              icon={<Icon name="article" className="h-6 w-6" />}
+              title={articles.length > 0 ? t("empty_search") : t("no_articles")}
+              description={
+                categoryParam && selectedCategory
+                  ? `No articles found in "${selectedCategory.name[locale] ?? selectedCategory.slug}"`
+                  : undefined
+              }
+            />
+          </div>
+        ))}
     </div>
   );
 }

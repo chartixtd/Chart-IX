@@ -256,7 +256,7 @@ export default function OrdersPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 lg:py-12">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary font-display tracking-tight">{t("title")}</h1>
+        <h1 className="display text-display-md">{t("title")}</h1>
         <p className="mt-1 text-sm text-text-secondary">{t("subtitle")}</p>
       </div>
 

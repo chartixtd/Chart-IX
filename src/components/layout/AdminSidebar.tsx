@@ -40,7 +40,7 @@ export function AdminSidebar({ open, onClose }: { open: boolean; onClose: () => 
 
       <aside
         className={cn(
-          "glass fixed left-0 top-14 z-50 flex h-[calc(100dvh-3.5rem)] w-56 flex-col overflow-y-auto border-r border-border-default transition-transform lg:translate-x-0",
+          "fixed left-0 top-14 z-50 flex h-[calc(100dvh-3.5rem)] w-60 flex-col overflow-y-auto border-r border-border-default bg-bg-secondary transition-transform lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -57,10 +57,10 @@ export function AdminSidebar({ open, onClose }: { open: boolean; onClose: () => 
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
                   // 后台是数据面：圆角收在 4px，密度优先
-                  "relative flex items-center gap-3 rounded-sm py-2 pl-4 pr-3 text-sm transition-colors",
+                  "relative flex items-center gap-3 rounded-sm py-2.5 pl-4 pr-3 text-[13px] transition-colors",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold/60",
                   isActive
-                    ? "bg-gold/10 font-medium text-gold"
+                    ? "bg-bg-hover font-medium text-gold"
                     : "text-text-secondary hover:bg-bg-tertiary hover:text-text-primary"
                 )}
               >
@@ -82,7 +82,7 @@ export function AdminSidebar({ open, onClose }: { open: boolean; onClose: () => 
           <Link
             href={`/${locale}/dashboard`}
             onClick={onClose}
-            className="flex items-center gap-3 rounded-sm px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
+            className="flex items-center gap-3 rounded-sm px-4 py-2.5 text-[13px] text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
           >
             <Icon name="arrowRight" className="h-[18px] w-[18px] rotate-180" />
             <span>{t("back_to_site")}</span>

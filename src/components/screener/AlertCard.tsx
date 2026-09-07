@@ -155,25 +155,25 @@ export function AlertCard({
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              "rounded-xs px-1.5 py-0.5 text-[10px] font-semibold tracking-wider",
+              "rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]",
               dirCls.pillBg,
               dirCls.pillText
             )}
           >
             {directionLabel(direction, t)}
           </span>
-          <span className="font-display text-sm font-semibold text-text-primary">
+          <span className="font-display text-sm font-medium tracking-tight text-text-primary">
             {card.symbol.replace(/-USDT$/, "")}
           </span>
         </div>
         <span className="flex items-center gap-1.5 text-[11px] text-text-muted">
           {fresh === "fresh" && (
-            <span className="rounded-xs bg-gold/15 px-1 py-px text-[9px] font-semibold tracking-wider text-gold">
+            <span className="rounded-sm border border-gold/40 px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-gold">
               {t("alerts.fresh_new")}
             </span>
           )}
           {fresh === "stale" && (
-            <span className="rounded-xs bg-text-muted/15 px-1 py-px text-[9px] font-semibold tracking-wider text-text-muted">
+            <span className="rounded-sm border border-border-hover px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-text-muted">
               {t("alerts.fresh_stale")}
             </span>
           )}
@@ -218,7 +218,7 @@ export function AlertCard({
           {dead && (
             <span
               className={cn(
-                "ml-auto rounded-xs px-1.5 py-px text-[10px] font-semibold",
+                "ml-auto rounded-sm px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.12em]",
                 card.expired ? "bg-text-muted/15 text-text-muted" : "bg-danger/15 text-danger"
               )}
             >
@@ -253,7 +253,7 @@ export function AlertCard({
           问题（这单现在怎么样了），拆成两块反而要读者来回看。 */}
       <div className="mb-3 flex items-end justify-between gap-3 rounded-sm bg-bg-tertiary px-3 py-2.5">
         <div>
-          <div className={cn("tnum text-2xl font-bold leading-none", pct >= 0 ? "text-success" : "text-danger")}>
+          <div className={cn("numeral text-2xl leading-none", pct >= 0 ? "text-success" : "text-danger")}>
             {pct >= 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(2)}%
           </div>
           <div className="mt-1 text-[10px] text-text-muted">
@@ -263,7 +263,7 @@ export function AlertCard({
         <div className="space-y-0.5 text-right">
           {/* 实时价放第一行且最重：它是唯一每秒都在变的数，也是读者最先要找的。
               首次价与失效价是两个不动的结构位，退到次级。 */}
-          <div className="tnum text-base font-semibold leading-none text-text-primary">
+          <div className="tnum font-mono text-base leading-none text-text-primary">
             {formatPrice(price)}
           </div>
           <div className="text-[10px] text-text-muted">{t("alerts.last_price")}</div>

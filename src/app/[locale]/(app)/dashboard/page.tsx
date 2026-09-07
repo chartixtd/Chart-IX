@@ -208,7 +208,7 @@ export default function DashboardPage() {
 
   if (auth.loading) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-12">
+      <div className="mx-auto max-w-page px-6 py-12">
         <Skeleton className="h-8 w-64" />
         <div className="mt-10 space-y-6">
           <Skeleton className="h-24" />
@@ -220,7 +220,7 @@ export default function DashboardPage() {
 
   if (!auth.userId) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-16">
+      <div className="mx-auto max-w-page px-6 py-16">
         <EmptyState
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className="h-10 w-10 text-gold">
@@ -243,14 +243,14 @@ export default function DashboardPage() {
   const displayName = auth.displayName || auth.email?.split("@")[0];
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-12 lg:py-16">
+    <div className="mx-auto max-w-page px-6 py-12 lg:py-16">
       {/* Masthead */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-        <h1 className="font-display text-3xl tracking-tight text-text-primary font-bold">
+        <h1 className="display text-display-lg">
           {t("welcome")}{displayName ? `, ${displayName}` : ""}
         </h1>
         {statementPeriod && (
-          <p className="font-mono text-xs uppercase tracking-wider text-text-muted">
+          <p className="eyebrow">
             {t("statement_period", { period: statementPeriod })}
           </p>
         )}
@@ -260,7 +260,7 @@ export default function DashboardPage() {
       {/* Account Summary */}
       <section className="mt-10">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-text-muted">
+          <p className="eyebrow">
             {summaryMode === "live" ? t("live_account") : t("paper_title")}
           </p>
           <div className="flex items-center gap-5 text-xs font-medium">
@@ -295,19 +295,19 @@ export default function DashboardPage() {
                 <Skeleton className="h-14 w-64" />
               ) : liveNotConnected ? (
                 <div>
-                  <div className="font-display text-3xl tracking-tight text-text-muted md:text-4xl font-bold">
+                  <div className="display text-3xl text-text-muted md:text-4xl">
                     {t("not_connected")}
                   </div>
-                  <Link href={`/${locale}/settings/api-keys`} className="mt-2 inline-block text-sm font-medium text-gold hover:underline">
+                  <Link href={`/${locale}/settings/api-keys`} className="link-underline mt-3 inline-block text-[11px] font-medium uppercase tracking-[0.14em] text-gold">
                     {t("connect_api_cta")} →
                   </Link>
                 </div>
               ) : (
                 <div className="min-w-0">
                   {/* 大额权益（六位数以上）在窄屏上以 5xl 显示会顶到边缘，缩到 4xl 并允许极端情况下断行，避免撑破容器造成横向滚动 */}
-                  <div className="break-words font-display text-4xl tracking-tight text-text-primary tabular-nums sm:text-5xl md:text-6xl font-bold">
+                  <div className="break-words numeral text-4xl sm:text-5xl md:text-6xl">
                     {formatPrice(liveTotalValue)}
-                    <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
+                    <span className="ml-2 font-sans text-base font-normal tracking-normal text-text-muted">USDT</span>
                   </div>
                   <div className="mt-2 font-mono text-sm text-text-muted">
                     {t("full_balance_summary", { count: liveHoldingsCount })}
@@ -316,7 +316,7 @@ export default function DashboardPage() {
               )}
 
               <div className="flex items-center gap-3">
-                <Link href={`/${locale}/trade`} className="text-xs font-medium text-gold hover:underline">
+                <Link href={`/${locale}/trade`} className="link-underline text-[11px] font-medium uppercase tracking-[0.14em] text-gold">
                   {t("enter_live_trade_cta")} →
                 </Link>
               </div>
@@ -367,9 +367,9 @@ export default function DashboardPage() {
               ) : (
                 <div className="min-w-0">
                   {/* 同上：大额权益换算后可能是六位数以上，窄屏先降级到 4xl 并允许断行兜底 */}
-                  <div className="break-words font-display text-4xl tracking-tight text-text-primary tabular-nums sm:text-5xl md:text-6xl font-bold">
+                  <div className="break-words numeral text-4xl sm:text-5xl md:text-6xl">
                     {formatPrice(paperTotalValue)}
-                    <span className="ml-2 font-sans text-lg font-normal text-text-muted">USDT</span>
+                    <span className="ml-2 font-sans text-base font-normal tracking-normal text-text-muted">USDT</span>
                   </div>
                   <div className={cn("mt-2 font-mono text-sm font-medium", paperPnl >= 0 ? "text-success" : "text-danger")}>
                     {paperPnl >= 0 ? "+" : ""}{formatPrice(paperPnl)} USDT ({formatPercent(paperPnlPct)}) {t("cumulative_suffix")}
@@ -387,7 +387,7 @@ export default function DashboardPage() {
                     {t("share")}
                   </Button>
                 )}
-                <Link href={`/${locale}/trade`} className="text-xs font-medium text-gold hover:underline">
+                <Link href={`/${locale}/trade`} className="link-underline text-[11px] font-medium uppercase tracking-[0.14em] text-gold">
                   {t("paper_cta")} →
                 </Link>
               </div>
@@ -425,8 +425,8 @@ export default function DashboardPage() {
       {/* Unified ledger */}
       <section className="mt-10">
         <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("ledger_title")}</h2>
-          <Link href={`/${locale}/orders`} className="text-xs font-medium text-gold hover:underline">
+          <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("ledger_title")}</h2>
+          <Link href={`/${locale}/orders`} className="link-underline text-[11px] font-medium uppercase tracking-[0.14em] text-gold">
             {t("view_all_orders_cta")} →
           </Link>
         </div>
@@ -453,13 +453,13 @@ export default function DashboardPage() {
       <div className="hairline-gold mt-10" />
 
       {/* 继续学习 + 自选行情 —— Bento 起点。
-          材质是 panel-raised 而不是 obsidian-glass：仪表盘是 Operate 面，
+          材质是 .ink（不透明墨面）而不是 .ink-glass：仪表盘是 Operate 面，
           DESIGN.md 明令零 backdrop-filter——手机上四块整宽玻璃在滚动时
           全程重算 blur(20px)。同一套边缘语言，只是不透明。 */}
       <section className="mt-10 grid gap-4 sm:grid-cols-2">
-        <div className="panel-raised min-w-0 rounded-xl p-5">
+        <div className="ink min-w-0 rounded-lg p-6">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("continue_learning_title")}</h2>
+            <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("continue_learning_title")}</h2>
             {/* 纯箭头图标链接，视觉上很小；移动端补足到 44px 触控高度，桌面端不变 */}
             <Link href={`/${locale}/videos`} aria-label={t("continue_learning_cta")} className="inline-flex min-h-[44px] items-center px-1 text-text-muted hover:text-gold lg:min-h-0 lg:px-0"><Icon name="arrowRight" className="h-4 w-4" /></Link>
           </div>
@@ -469,7 +469,7 @@ export default function DashboardPage() {
             ) : !continueWatching || continueWatching.length === 0 ? (
               <div className="pt-4">
                 <p className="text-xs text-text-muted">{t("continue_learning_empty")}</p>
-                <Link href={`/${locale}/videos`} className="mt-2 inline-block text-xs font-medium text-gold hover:underline">
+                <Link href={`/${locale}/videos`} className="link-underline mt-3 inline-block text-[11px] font-medium uppercase tracking-[0.14em] text-gold">
                   {t("continue_learning_cta")} →
                 </Link>
               </div>
@@ -489,8 +489,8 @@ export default function DashboardPage() {
                       {item.video.title[locale] ?? item.video.title["en-US"]}
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
-                      <span className="h-1 w-16 overflow-hidden rounded-full bg-bg-tertiary">
-                        <span className="block h-full rounded-full bg-gold" style={{ width: `${pct}%` }} />
+                      <span className="h-px w-16 overflow-hidden bg-border-strong">
+                        <span className="block h-full bg-gold" style={{ width: `${pct}%` }} />
                       </span>
                       <span className="font-mono text-xs tabular-nums text-text-muted">{pct}%</span>
                     </span>
@@ -501,16 +501,16 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="panel-raised min-w-0 rounded-xl p-5">
+        <div className="ink min-w-0 rounded-lg p-6">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("favorites_title")}</h2>
+            <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("favorites_title")}</h2>
             <Link href={`/${locale}/trade`} aria-label={t("favorites_cta")} className="inline-flex min-h-[44px] items-center px-1 text-text-muted hover:text-gold lg:min-h-0 lg:px-0"><Icon name="arrowRight" className="h-4 w-4" /></Link>
           </div>
           <div className="mt-4 border-t border-border-default/70">
             {favorites.length === 0 ? (
               <div className="pt-4">
                 <p className="text-xs text-text-muted">{t("favorites_empty")}</p>
-                <Link href={`/${locale}/trade`} className="mt-2 inline-block text-xs font-medium text-gold hover:underline">
+                <Link href={`/${locale}/trade`} className="link-underline mt-3 inline-block text-[11px] font-medium uppercase tracking-[0.14em] text-gold">
                   {t("favorites_cta")} →
                 </Link>
               </div>
@@ -528,9 +528,9 @@ export default function DashboardPage() {
       {/* 最新内容。间距与其余区段一致走 mt-10——此前这一段是 mt-6，
           五段里唯独它窄 16px，节奏不齐。 */}
       <section className="mt-10 grid gap-4 sm:grid-cols-2">
-        <div className="panel-raised min-w-0 rounded-xl p-5">
+        <div className="ink min-w-0 rounded-lg p-6">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("latest_videos_title")}</h2>
+            <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("latest_videos_title")}</h2>
             <Link href={`/${locale}/videos`} aria-label={t("latest_videos_title")} className="inline-flex min-h-[44px] items-center px-1 text-text-muted hover:text-gold lg:min-h-0 lg:px-0"><Icon name="arrowRight" className="h-4 w-4" /></Link>
           </div>
           <div className="mt-4 border-t border-border-default/70">
@@ -567,9 +567,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="panel-raised min-w-0 rounded-xl p-5">
+        <div className="ink min-w-0 rounded-lg p-6">
           <div className="flex items-baseline justify-between">
-            <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("latest_articles_title")}</h2>
+            <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("latest_articles_title")}</h2>
             <Link href={`/${locale}/articles`} aria-label={t("latest_articles_title")} className="inline-flex min-h-[44px] items-center px-1 text-text-muted hover:text-gold lg:min-h-0 lg:px-0"><Icon name="arrowRight" className="h-4 w-4" /></Link>
           </div>
           <div className="mt-4 border-t border-border-default/70">
@@ -600,7 +600,7 @@ export default function DashboardPage() {
           <div className="hairline-gold mt-10" />
           <section className="mt-10">
             <div className="flex items-baseline justify-between">
-              <h2 className="font-display text-lg font-semibold tracking-tight text-text-primary">{t("achievements_title")}</h2>
+              <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("achievements_title")}</h2>
               <span className="font-mono text-xs tabular-nums text-text-muted">
                 {achievements.filter((a) => a.earned).length}/{achievements.length}
               </span>

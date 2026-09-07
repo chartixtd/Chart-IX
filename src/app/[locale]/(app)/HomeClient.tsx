@@ -2,85 +2,28 @@ import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { AuraField } from "@/components/motion/AuraField";
-import { MetallicMonogram } from "@/components/motion/MetallicMonogram";
+import { GoldChart } from "@/components/motion/GoldChart";
 import { ScrollReveal } from "@/components/motion/ScrollReveal";
+import { Icon } from "@/components/ui/Icon";
 import { HotCoinsRail } from "./HotCoinsRail";
+
+/**
+ * 首页（Persuade 面，8 / 7 / 3）
+ *
+ * 第一屏：左五右七的分栏。左侧是超大轻字重标题，右侧是真实 BTC 行情渲染成的
+ * 香槟金曲线——产品本身就是视觉，不用假截图。金只出现在四处：发丝线、数字、
+ * 唯一的实心 CTA、那条曲线。
+ *
+ * 版式家族逐段不重复：分栏英雄 → 行情条 → 双栏编号台账 → 三栏时间线 →
+ * Bento → 居中铭牌 → 风险声明。
+ */
 
 const TRUST_KEYS = ["trust_1", "trust_2", "trust_3", "trust_4"] as const;
 const HOW_KEYS = ["how_1", "how_2", "how_3"] as const;
 
-// Hairline gold line-icons drawn in the world's own grammar (no emoji).
-function TrustIcon({ i, className }: { i: number; className?: string }) {
-  const paths = [
-    // vault / funds stay on exchange
-    <g key="0">
-      <rect x="3" y="6" width="18" height="13" rx="1.5" />
-      <circle cx="12" cy="12.5" r="3" />
-      <path d="M12 12.5v2.5M3 6l3-3h12l3 3" />
-    </g>,
-    // beginner friendly / seedling steps
-    <g key="1">
-      <path d="M4 20h16M7 20V9M12 20V5M17 20v-8" />
-      <path d="M7 9l5-4 5 7" />
-    </g>,
-    // globe / multi-language
-    <g key="2">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18" />
-    </g>,
-    // shield / risk control
-    <g key="3">
-      <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" />
-      <path d="M9 12l2 2 4-4" />
-    </g>,
-  ];
+function Numeral({ n, className = "" }: { n: number; className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.25"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      {paths[i]}
-    </svg>
-  );
-}
-
-function FeatureIcon({ i, className }: { i: number; className?: string }) {
-  const paths = [
-    // learn / stacked pages
-    <g key="0">
-      <path d="M4 5h7a2 2 0 012 2v12a2 2 0 00-2-2H4V5zM20 5h-7a2 2 0 00-2 2v12a2 2 0 012-2h7V5z" />
-    </g>,
-    // trade / candles
-    <g key="1">
-      <path d="M6 4v4M6 16v4M18 4v6M18 18v2" />
-      <rect x="4" y="8" width="4" height="8" rx="0.5" />
-      <rect x="16" y="10" width="4" height="8" rx="0.5" />
-      <path d="M12 3v18" strokeDasharray="1.5 2.5" />
-    </g>,
-    // control / sliders
-    <g key="2">
-      <path d="M4 8h10M18 8h2M4 16h4M12 16h8" />
-      <circle cx="16" cy="8" r="2.2" />
-      <circle cx="10" cy="16" r="2.2" />
-    </g>,
-  ];
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.25"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      {paths[i]}
-    </svg>
+    <span className={`numeral tabular-nums text-gold ${className}`}>{String(n).padStart(2, "0")}</span>
   );
 }
 
@@ -89,226 +32,203 @@ export default async function HomeClient({ locale }: { locale: string }) {
 
   return (
     <div>
-      {/* GSAP 滚动编排只在营销/阅读面注入；交易终端不会下载这段 */}
       <ScrollReveal />
 
-      {/* ── Hero ──────────────────────────────────────────────────────────
-          金属 IX 是第一眼的冲击点：9 段金箔 + 高光横扫 + 指针视差。
-          它压在标题右侧而非居中，让超大标题保持左对齐的编辑式阅读起点。 */}
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="hero-ground grain relative overflow-hidden">
         <AuraField />
+        <div aria-hidden className="ruled-grid pointer-events-none absolute inset-0 opacity-70" />
 
-        <MetallicMonogram className="absolute -right-10 top-1/2 -translate-y-1/2 text-[42vw] opacity-[0.13] sm:text-[30rem]" />
-
-        <div className="relative mx-auto max-w-6xl px-4 pb-20 pt-24 sm:pt-32">
-          <div className="max-w-4xl">
-            <span className="inline-flex animate-rise-in items-center gap-3 text-xs font-medium uppercase tracking-[0.24em] text-gold">
-              <span className="h-px w-10 bg-gold/50" />
-              {t("hero_eyebrow")}
-            </span>
-            <h1 className="mt-8 animate-rise-in font-display text-[clamp(3rem,10vw,7rem)] font-bold leading-[0.94] tracking-tightest text-text-primary [animation-delay:60ms]">
-              {t("hero_title")}
-            </h1>
-            <p className="mt-8 max-w-2xl animate-rise-in text-lg leading-relaxed text-text-secondary [animation-delay:120ms] sm:text-xl">
-              {t("hero_subtitle")}
-            </p>
-            <div className="mt-11 flex animate-rise-in flex-wrap items-center gap-4 [animation-delay:180ms]">
-              <Link href={`/${locale}/register`}>
-                <Button size="lg">{t("hero_cta")}</Button>
-              </Link>
-              <Link href={`/${locale}/videos`}>
-                <Button variant="ghost" size="lg" className="text-text-primary">
-                  {t("hero_secondary")}
-                  <span aria-hidden className="ml-1 text-gold">→</span>
-                </Button>
-              </Link>
+        <div className="relative mx-auto max-w-page px-6 pb-16 pt-14 lg:pb-24 lg:pt-20">
+          <div className="grid items-center gap-14 lg:grid-cols-12 lg:gap-10">
+            <div className="lg:col-span-5">
+              <p className="section-mark eyebrow-gold animate-rise-in">{t("hero_eyebrow")}</p>
+              <h1 className="display mt-9 animate-rise-in text-[clamp(2.75rem,5.4vw,5rem)] leading-[1.02] [animation-delay:80ms]">
+                {t("hero_title")}
+              </h1>
+              <p className="mt-8 max-w-md animate-rise-in text-base leading-relaxed text-text-secondary [animation-delay:160ms] lg:text-lg">
+                {t("hero_subtitle")}
+              </p>
+              <div className="mt-11 flex animate-rise-in flex-wrap items-center gap-3 [animation-delay:240ms]">
+                <Link href={`/${locale}/register`}>
+                  <Button size="lg">{t("hero_cta")}</Button>
+                </Link>
+                <Link href={`/${locale}/videos`}>
+                  <Button variant="ghost" size="lg" className="text-text-primary">
+                    {t("hero_secondary")}
+                    <Icon name="arrowRight" className="h-4 w-4 text-gold" />
+                  </Button>
+                </Link>
+              </div>
             </div>
-            <p className="mt-8 max-w-md animate-rise-in text-xs leading-relaxed text-text-muted [animation-delay:220ms]">
-              {t("risk_caption")}
-            </p>
+
+            {/* 曲线铭牌：一圈发丝描边，顶边一线金光 */}
+            <div className="animate-blur-in [animation-delay:200ms] lg:col-span-7">
+              <div className="ink-glass relative rounded-xl p-5 sm:p-7">
+                <div className="h-[280px] sm:h-[380px] lg:h-[460px]">
+                  <GoldChart symbol="BTC-USDT" interval="1h" limit={168} height={320} />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Hot-coins quote rail — silent proof at the base of the hero */}
-        <div className="relative border-y border-border-default bg-bg-primary/40 backdrop-blur-sm">
-          <div className="mx-auto max-w-6xl px-4 py-4">
+        {/* 行情条 */}
+        <div className="relative border-y border-border-default bg-bg-primary/60">
+          <div className="mx-auto max-w-page px-6 py-4">
             <HotCoinsRail />
           </div>
         </div>
       </section>
 
-      {/* ── Trust ─────────────────────────────────────────────────────────
-          非对称 Bento：首条（资金留在交易所）占 4×2 的主格，是整段的论点；
-          其余三条围绕它。玻璃面板在这里是安全的——营销页没有高频重绘。 */}
-      <section className="relative border-t border-border-default py-24">
-        <div className="mx-auto max-w-6xl px-4">
-          <div className="max-w-2xl" data-reveal>
-            <h2 className="font-display text-3xl font-bold leading-tight tracking-tight text-text-primary sm:text-5xl">
-              {t("trust_title")}
-            </h2>
-            <div className="hairline-gold mt-6 w-16" />
-          </div>
-
-          <div
-            className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-6 lg:grid-rows-[repeat(3,minmax(0,auto))]"
-            data-reveal-group
-          >
-            {TRUST_KEYS.map((key, i) => {
-              // 0 → 主格（4 列 × 2 行）  1,2 → 右侧窄格  3 → 底部通栏
-              const span = [
-                "lg:col-span-4 lg:row-span-2",
-                "lg:col-span-2",
-                "lg:col-span-2",
-                "sm:col-span-2 lg:col-span-6",
-              ][i];
-              const isLead = i === 0;
-              return (
-                <div
-                  key={key}
-                  className={`obsidian-glass group relative flex flex-col overflow-hidden rounded-xl p-7 transition-colors duration-300 hover:border-gold/30 ${span}`}
-                >
-                  <TrustIcon
-                    i={i}
-                    className={isLead ? "h-10 w-10 text-gold" : "h-8 w-8 text-gold"}
-                  />
-                  <h3
-                    className={`mt-6 font-display font-semibold tracking-tight text-text-primary ${
-                      isLead ? "text-2xl sm:text-3xl" : "text-lg"
-                    }`}
-                  >
-                    {t(`${key}_title`)}
-                  </h3>
-                  <p
-                    className={`mt-3 max-w-xl leading-relaxed text-text-secondary ${
-                      isLead ? "text-base" : "text-sm"
-                    }`}
-                  >
-                    {t(`${key}_desc`)}
-                  </p>
-                  {isLead && (
-                    <span
-                      aria-hidden
-                      className="foil-text-static pointer-events-none absolute -bottom-8 -right-4 select-none font-display text-[9rem] font-bold leading-none opacity-[0.07]"
-                    >
-                      01
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+      {/* ── Trust：双栏编号台账 ─────────────────────────────────────────── */}
+      <section className="py-24 lg:py-36">
+        <div className="mx-auto max-w-page px-6">
+          <div className="grid gap-14 lg:grid-cols-12 lg:gap-8">
+            <div className="lg:col-span-4">
+              <h2 className="display text-display-lg lg:sticky lg:top-28" data-reveal>
+                {t("trust_title")}
+              </h2>
+            </div>
+            <div className="lg:col-span-8">
+              <ul className="grid gap-x-10 sm:grid-cols-2" data-reveal-group>
+                {TRUST_KEYS.map((key, i) => (
+                  <li key={key} className="border-t border-border-hover py-9">
+                    <Numeral n={i + 1} className="text-2xl" />
+                    <h3 className="mt-7 font-display text-xl font-medium tracking-tight text-text-primary lg:text-2xl">
+                      {t(`${key}_title`)}
+                    </h3>
+                    <p className="mt-3 max-w-sm text-sm leading-relaxed text-text-secondary lg:text-[15px]">
+                      {t(`${key}_desc`)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ── How it works ──────────────────────────────────────────────────
-          三步保持台账式而非 Bento：连续编号的节奏感需要等宽栅格，
-          紧跟在非对称 Bento 之后也提供了必要的版式对比。 */}
-      <section className="border-t border-border-default bg-bg-secondary/30 py-24">
-        <div className="mx-auto max-w-6xl px-4">
-          <h2
-            className="text-center font-display text-3xl font-bold tracking-tight text-text-primary sm:text-4xl"
-            data-reveal
-          >
+      {/* ── How it works：三栏时间线 ────────────────────────────────────── */}
+      <section className="border-t border-border-default bg-bg-secondary/40 py-24 lg:py-36">
+        <div className="mx-auto max-w-page px-6">
+          <h2 className="display max-w-2xl text-display-lg" data-reveal>
             {t("how_title")}
           </h2>
-          <div
-            className="mx-auto mt-16 grid max-w-5xl gap-px overflow-hidden rounded-xl border border-border-default bg-border-default sm:grid-cols-3"
-            data-reveal-group
-          >
+          <ol className="relative mt-20 grid gap-12 md:grid-cols-3 md:gap-8" data-reveal-group>
+            {/* 顶部一条贯穿的发丝线，每一步从它上面生长出来 */}
+            <span aria-hidden className="absolute inset-x-0 top-0 hidden h-px bg-border-hover md:block" />
             {HOW_KEYS.map((key, i) => (
-              <div key={key} className="bg-bg-secondary p-8">
-                <div className="flex items-baseline gap-3">
-                  {/* 可读版金箔：序号是要看清的，不能用两端收在暗金上的 --foil-x */}
-                  <span className="foil-text-bright font-display text-5xl font-bold leading-none">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span className="h-px flex-1 bg-border-hover" />
-                </div>
-                <h3 className="mt-6 font-display text-lg font-semibold tracking-tight text-text-primary">
+              <li key={key} className="relative md:pt-12">
+                <span
+                  aria-hidden
+                  className="absolute -top-px left-0 hidden h-[3px] w-12 bg-gold md:block"
+                />
+                <span className="numeral text-display-lg text-text-primary/90">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <h3 className="mt-8 font-display text-xl font-medium tracking-tight text-text-primary">
                   {t(`${key}_title`)}
                 </h3>
-                <p className="mt-2.5 text-sm leading-relaxed text-text-secondary">
+                <p className="mt-3 max-w-xs text-sm leading-relaxed text-text-secondary">
                   {t(`${key}_desc`)}
                 </p>
-              </div>
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
       </section>
 
-      {/* ── Features ──────────────────────────────────────────────────────
-          三块等宽 Bento，中间一块用金箔图标底衬做重心。 */}
-      <section id="features" className="py-24">
-        <div className="mx-auto max-w-6xl px-4">
-          <h2
-            className="font-display text-3xl font-bold tracking-tight text-text-primary sm:text-4xl"
-            data-reveal
-          >
+      {/* ── Features：Bento（3 项 = 3 格）────────────────────────────────── */}
+      <section id="features" className="py-24 lg:py-36">
+        <div className="mx-auto max-w-page px-6">
+          <h2 className="display max-w-2xl text-display-lg" data-reveal>
             {t("features_title")}
           </h2>
-          <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-reveal-group>
-            {(["feature_learn", "feature_trade", "feature_control"] as const).map((key, i) => (
-              <div
-                key={key}
-                className="obsidian-glass flex flex-col rounded-xl p-7 transition-colors duration-300 hover:border-gold/30"
-              >
-                <div
-                  className={
-                    i === 1
-                      ? "foil-sm flex h-12 w-12 items-center justify-center rounded-lg"
-                      : "flex h-12 w-12 items-center justify-center rounded-lg border border-gold/25 bg-gold/[0.06] text-gold"
-                  }
-                >
-                  <FeatureIcon i={i} className="h-6 w-6" />
+
+          <div className="mt-16 grid gap-4 lg:grid-cols-12 lg:grid-rows-2" data-reveal-group>
+            {/* 实盘交易：真实 ETH 曲线 */}
+            <div className="ink ink-hover relative flex flex-col overflow-hidden rounded-lg lg:col-span-7 lg:row-span-2">
+              <div className="relative flex-1 p-7 pb-0 sm:p-9 sm:pb-0">
+                <div className="h-56 sm:h-72 lg:h-full lg:min-h-[280px]">
+                  <GoldChart symbol="ETH-USDT" interval="4h" limit={120} height={240} />
                 </div>
-                <h3 className="mt-6 font-display text-lg font-semibold tracking-tight text-text-primary">
-                  {t(`${key}_title`)}
+              </div>
+              <div className="border-t border-border-default p-7 sm:p-9">
+                <h3 className="font-display text-xl font-medium tracking-tight text-text-primary lg:text-2xl">
+                  {t("feature_trade_title")}
                 </h3>
-                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-                  {t(`${key}_desc`)}
+                <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">
+                  {t("feature_trade_desc")}
                 </p>
               </div>
-            ))}
+            </div>
+
+            {/* 系统化学习：发丝栅格 + 环境光 */}
+            <div className="hero-ground ink-hover relative overflow-hidden rounded-lg border border-border-default p-7 sm:p-9 lg:col-span-5">
+              <div aria-hidden className="ruled-grid absolute inset-0" />
+              <div aria-hidden className="aura aura-gold -right-24 -top-24 h-64 w-64" />
+              <div className="relative">
+                <span className="flex h-11 w-11 items-center justify-center rounded-sm border border-gold/40 text-gold">
+                  <Icon name="book" className="h-5 w-5" />
+                </span>
+                <h3 className="mt-14 font-display text-xl font-medium tracking-tight text-text-primary">
+                  {t("feature_learn_title")}
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-text-secondary">{t("feature_learn_desc")}</p>
+              </div>
+            </div>
+
+            {/* 风险控制：深金色调的墨面 */}
+            <div className="ink-hover relative overflow-hidden rounded-lg border border-border-default bg-gradient-to-br from-gold-deep/25 via-bg-secondary to-bg-secondary p-7 sm:p-9 lg:col-span-5">
+              <span className="flex h-11 w-11 items-center justify-center rounded-sm border border-gold/40 text-gold">
+                <Icon name="lock" className="h-5 w-5" />
+              </span>
+              <h3 className="mt-14 font-display text-xl font-medium tracking-tight text-text-primary">
+                {t("feature_control_title")}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-text-secondary">{t("feature_control_desc")}</p>
+            </div>
           </div>
-          <div className="mt-14" data-reveal>
-            <Link href={`/${locale}/trade`}>
-              <Button variant="outline">{t("view_full_trading")}</Button>
+
+          <div className="mt-12" data-reveal>
+            <Link
+              href={`/${locale}/trade`}
+              className="link-underline inline-flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.18em] text-gold"
+            >
+              {t("view_full_trading")}
+              <Icon name="arrowRight" className="h-3.5 w-3.5" />
             </Link>
           </div>
         </div>
       </section>
 
-      {/* ── Final CTA — engraved plate ────────────────────────────────── */}
-      <section className="border-t border-border-default py-24">
-        <div
-          className="hero-ground grain relative mx-auto max-w-4xl overflow-hidden rounded-2xl border border-gold/20 px-6 py-20 text-center"
-          data-reveal
-        >
+      {/* ── Final CTA：铭牌 ─────────────────────────────────────────────── */}
+      <section className="border-t border-border-default">
+        <div className="hero-ground grain relative overflow-hidden py-28 lg:py-40" data-reveal>
           <AuraField />
-          <div className="relative">
-            <div className="hairline-gold mx-auto mb-8 w-16" />
-            <h2 className="font-display text-4xl font-bold tracking-tight text-text-primary sm:text-5xl">
-              {t("final_cta_title")}
-            </h2>
-            <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-text-secondary">
+          <div className="relative mx-auto max-w-3xl px-6 text-center">
+            <div className="hairline-gold mx-auto w-20" />
+            <h2 className="display mt-10 text-display-xl">{t("final_cta_title")}</h2>
+            <p className="mx-auto mt-6 max-w-lg text-base leading-relaxed text-text-secondary lg:text-lg">
               {t("final_cta_subtitle")}
             </p>
-            <div className="mt-10">
+            <div className="mt-12">
               <Link href={`/${locale}/register`}>
-                <Button size="lg">{t("final_cta_button")}</Button>
+                <Button size="lg">{t("hero_cta")}</Button>
               </Link>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Risk disclosure */}
+      {/* 风险声明 */}
       <section className="border-t border-border-default py-14">
-        <div className="mx-auto max-w-4xl px-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
-            {t("risk_title")}
-          </h3>
-          <p className="mt-3 text-xs leading-relaxed text-text-muted">{t("risk_body")}</p>
+        <div className="mx-auto max-w-page px-6">
+          <div className="grid gap-6 lg:grid-cols-12">
+            <h3 className="text-sm font-medium text-text-secondary lg:col-span-3">{t("risk_title")}</h3>
+            <p className="text-xs leading-relaxed text-text-muted lg:col-span-7">{t("risk_body")}</p>
+          </div>
         </div>
       </section>
     </div>

@@ -34,7 +34,7 @@ export function CommunityPostClient({ postId }: { postId: string }) {
   const isPro = auth.tier === "pro";
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6">
+    <div className="mx-auto max-w-3xl px-6 py-8 lg:py-12">
       <Link href={`/${locale}/articles?tab=community`} className="mb-4 hidden text-sm text-text-muted hover:text-gold lg:inline-block">
         {t("back_to_community")}
       </Link>
@@ -48,7 +48,7 @@ export function CommunityPostClient({ postId }: { postId: string }) {
       )}
 
       {(error || (!isPending && !post)) && (
-        <p className="rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+        <p className="rounded-md border-l-2 border-danger bg-danger/10 px-4 py-3 text-sm text-danger">
           {t("post_not_found")}
         </p>
       )}
@@ -66,7 +66,7 @@ export function CommunityPostClient({ postId }: { postId: string }) {
           <div className="p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold text-text-primary font-display tracking-tight">{post.title}</h1>
+                <h1 className="display text-display-sm">{post.title}</h1>
                 <p className="mt-1 text-xs text-text-muted">
                   {post.author?.display_name ?? t("anonymous")} · {formatRelativeTime(post.created_at, locale, t)}
                   {post.updated_at !== post.created_at && ` · ${t("edited")}`}

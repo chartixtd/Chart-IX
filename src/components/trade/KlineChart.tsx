@@ -337,7 +337,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: CHART.axisText,
-        panes: { separatorColor: CHART.border, separatorHoverColor: "rgba(201,162,75,0.3)" },
+        panes: { separatorColor: CHART.border, separatorHoverColor: "rgba(211,178,106,0.3)" },
         attributionLogo: false,
       },
       grid: {

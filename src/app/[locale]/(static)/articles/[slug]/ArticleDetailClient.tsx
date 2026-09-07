@@ -57,11 +57,11 @@ export function ArticleDetailClient({ article, isGated }: Props) {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className="mx-auto max-w-3xl px-6 py-10 lg:py-16">
       {/* Loading fallback for client-side hydration */}
       <Link
         href={`/${locale}/articles`}
-        className="mb-6 hidden w-fit items-center gap-1 text-sm text-text-secondary transition-colors hover:text-text-primary lg:flex"
+        className="mb-10 hidden w-fit items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-text-muted transition-colors hover:text-text-primary lg:flex"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -73,19 +73,19 @@ export function ArticleDetailClient({ article, isGated }: Props) {
       {article.category && (
         <Link
           href={`/${locale}/articles?category=${article.category.slug}`}
-          className="mb-3 block w-fit text-sm font-medium text-gold hover:underline"
+          className="eyebrow-gold mb-5 block w-fit hover:text-gold-hover"
         >
           {article.category.name[locale] ?? article.category.slug}
         </Link>
       )}
 
       {/* Title */}
-      <h1 className="text-3xl font-bold text-text-primary leading-tight font-display tracking-tight">
+      <h1 className="display text-display-lg">
         {article.title[locale] ?? article.title["en-US"] ?? "Untitled"}
       </h1>
 
       {/* Meta row */}
-      <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-text-secondary">
+      <div className="mt-6 flex flex-wrap items-center gap-5 text-xs text-text-muted">
         {article.published_at && (
           <span className="flex items-center gap-1">
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -113,7 +113,7 @@ export function ArticleDetailClient({ article, isGated }: Props) {
       {article.cover_image ? (
         // aspect-[21/9] gives the fill-based Image a definite box (was
         // width-only sizing with natural aspect ratio on the plain <img>).
-        <div className="relative mt-6 aspect-[21/9] overflow-hidden rounded-lg">
+        <div className="relative mt-10 aspect-[21/9] overflow-hidden rounded-lg border border-border-default">
           <Image
             src={article.cover_image}
             alt={article.title[locale] ?? ""}
@@ -143,13 +143,12 @@ export function ArticleDetailClient({ article, isGated }: Props) {
         {isGated && (
           <>
             {/* Pro gate CTA */}
-            <div className="relative mt-4 flex flex-col items-center rounded-md border border-gold/30 bg-bg-secondary py-10 text-center">
-              <div className="mb-2 rounded-sm border border-gold/30 bg-gold/10 px-4 py-2">
-                <span className="text-sm font-medium text-gold">{t("pro_lock_title")}</span>
-              </div>
+            <div className="ink-glass relative mt-4 flex flex-col items-center rounded-lg py-14 text-center">
+              <div className="hairline-gold w-12" />
+              <span className="eyebrow-gold mt-6">{t("pro_lock_title")}</span>
               <p className="mt-3 max-w-md text-text-secondary">{t("pro_lock_desc")}</p>
               <Link href={`/${locale}/upgrade`} className="mt-6">
-                <Button variant="primary" size="lg">⚡ {t("upgrade_cta")}</Button>
+                <Button variant="primary" size="lg">{t("upgrade_cta")}</Button>
               </Link>
             </div>
           </>

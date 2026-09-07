@@ -505,7 +505,7 @@ export function VideosManager({ videos, categories, isLoading = false }: VideosM
                   "border-t border-border-default transition-colors hover:bg-bg-tertiary/50",
                   isDragging && "opacity-40",
                   // 落点用一条金箔线标出来，而不是整行变色——后者会和 hover 混淆
-                  isOver && "shadow-[inset_0_2px_0_0_#C9A24B]"
+                  isOver && "shadow-[inset_0_2px_0_0_#D3B26A]"
                 )}
               >
                 <td className="px-3 py-3">

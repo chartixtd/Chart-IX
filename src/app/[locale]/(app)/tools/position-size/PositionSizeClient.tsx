@@ -133,8 +133,8 @@ export default function PositionSizeClient() {
     );
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 lg:py-10">
-      <h1 className="font-display text-2xl tracking-tighter text-text-primary lg:text-3xl">
+    <div className="mx-auto max-w-5xl px-6 py-8 lg:py-14">
+      <h1 className="display text-display-md">
         {t("title")}
       </h1>
       <p className="mt-2 text-sm text-text-secondary">{t("subtitle")}</p>
@@ -296,7 +296,7 @@ export default function PositionSizeClient() {
             <>
               <div className="border-b border-border-default pb-4">
                 <p className="text-xs text-text-muted">{t("position_size")}</p>
-                <p className="mt-1 font-display text-3xl tracking-tighter text-gold font-bold">
+                <p className="numeral mt-1 text-3xl text-gold">
                   {fmt(result.lots ?? result.units, result.lots !== null ? 3 : 2)}{" "}
                   <span className="text-base text-text-secondary">{unitLabel}</span>
                 </p>

@@ -65,7 +65,7 @@ function Gauge({ value, size = 80 }: { value: number; size?: number }) {
       <path
         d={`M ${strokeWidth} ${cy} A ${radius} ${radius} 0 0 1 ${size - strokeWidth} ${cy}`}
         fill="none"
-        stroke="#2C271C"
+        stroke="#1F1F24"
         strokeWidth={strokeWidth}
         strokeLinecap="round"
         transform={`rotate(180, ${cx}, ${cy})`}
@@ -83,10 +83,10 @@ function Gauge({ value, size = 80 }: { value: number; size?: number }) {
         className="transition-all duration-700 ease-out"
       />
       {/* Pointer dot */}
-      <circle cx={px} cy={py} r="3" fill="#F5F0E6" />
+      <circle cx={px} cy={py} r="3" fill="#F4F1EA" />
       {/* Pointer line from center */}
-      <line x1={cx} y1={cy} x2={px} y2={py} stroke="#F5F0E6" strokeWidth="1.5" />
-      <circle cx={cx} cy={cy} r="2.5" fill="#F5F0E6" />
+      <line x1={cx} y1={cy} x2={px} y2={py} stroke="#F4F1EA" strokeWidth="1.5" />
+      <circle cx={cx} cy={cy} r="2.5" fill="#F4F1EA" />
     </svg>
   );
 }

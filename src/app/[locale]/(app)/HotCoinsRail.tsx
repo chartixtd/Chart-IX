@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 
 const HOT_SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT"] as const;
 
-// A restrained live quote — silent proof, not a trading panel.
+// 一条克制的实时报价——静默的证明，不是交易面板。
 function HotQuote({ symbol }: { symbol: string }) {
   const { data: ticker } = useSpotTicker(symbol);
   const base = symbol.split("-")[0];
@@ -17,47 +17,50 @@ function HotQuote({ symbol }: { symbol: string }) {
   const up = pct >= 0;
 
   return (
-    <div className="flex items-baseline gap-2.5 whitespace-nowrap">
-      <span className="font-display text-sm tracking-tight text-text-primary">{base}</span>
+    <div className="flex items-baseline gap-3 whitespace-nowrap">
+      <span className="font-display text-[13px] font-medium tracking-[0.04em] text-text-primary">{base}</span>
       {ticker ? (
         <>
-          <span className="font-mono text-sm tabular-nums text-text-secondary">
+          <span className="font-mono text-[13px] tabular-nums text-text-secondary">
             {formatPrice(Number(ticker.lastPrice))}
           </span>
-          <span className={cn("font-mono text-xs tabular-nums", up ? "text-success" : "text-danger")}>
+          <span className={cn("font-mono text-[11px] tabular-nums", up ? "text-success" : "text-danger")}>
             {formatPercent(pct)}
           </span>
         </>
       ) : (
-        <Skeleton className="h-3 w-16 rounded-xs" />
+        <Skeleton className="h-3 w-16" />
       )}
     </div>
   );
 }
 
-// Full-width quote rail across the top of the hero — a private-bank ticker,
-// four hot pairs only, hairline-separated.
+/**
+ * 英雄底部的行情条：四个热门币，发丝竖线分隔。
+ * 左侧一枚绿点是唯一的状态点——它传达的是「实时」这个事实。
+ */
 export function HotCoinsRail() {
   const t = useTranslations("home");
   useBingXWebSocket([...HOT_SYMBOLS]);
 
   return (
-    <div className="flex items-center gap-5 overflow-x-auto sm:gap-8">
-      <span className="flex shrink-0 items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-text-muted">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
-        {t("market_overview")}
+    <div className="flex items-center gap-6 overflow-x-auto sm:gap-10">
+      <span className="flex shrink-0 items-center gap-2.5">
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+        </span>
+        <span className="eyebrow">{t("market_overview")}</span>
       </span>
-      <div className="flex items-center gap-5 sm:gap-7">
+      <div className="flex items-center gap-6 sm:gap-10">
         {HOT_SYMBOLS.map((s, i) => (
-          <div key={s} className="flex items-center gap-5 sm:gap-7">
-            {i > 0 && <span className="h-4 w-px bg-border-default" />}
+          <div key={s} className="flex items-center gap-6 sm:gap-10">
+            {i > 0 && <span className="hairline-gold-v h-5" />}
             <HotQuote symbol={s} />
           </div>
         ))}
       </div>
-      <span className="ml-auto hidden shrink-0 text-[10px] uppercase tracking-[0.18em] text-text-muted md:inline">
-        BingX · Live
-      </span>
+      <span className="eyebrow ml-auto hidden shrink-0 md:inline">BingX</span>
     </div>
   );
 }

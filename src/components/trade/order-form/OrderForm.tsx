@@ -312,7 +312,7 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
 
       <div className="flex-1 space-y-2.5 p-3">
         <div className="flex items-center justify-end">
-          <div className="flex rounded-xs bg-bg-tertiary p-0.5 text-xs">
+          <div className="flex rounded-sm border border-border-default p-0.5 text-xs">
             {(["simple", "pro"] as const).map((m) => (
               <button
                 key={m}
@@ -321,7 +321,7 @@ export function OrderForm({ symbol, market, initialSide, priceLinkSignal }: Orde
                 className={cn(
                   // min-h-[44px]：手机下单主路径上的触控目标补到 44px；桌面保持密度
                   "rounded-xs px-2 py-0.5 min-h-[44px] lg:min-h-0",
-                  uiMode === m ? "bg-bg-primary text-text-primary" : "text-text-muted"
+                  uiMode === m ? "bg-bg-hover text-text-primary" : "text-text-muted hover:text-text-secondary"
                 )}
               >
                 {t(`trading.ui_mode.${m}`)}

@@ -110,7 +110,7 @@ export function InstallPrompt() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-tabbar right-4 z-40 rounded-full border border-gold/35 bg-bg-secondary px-4 py-2 text-xs text-gold shadow-card lg:hidden"
+        className="fixed bottom-tabbar right-4 z-40 rounded-sm border border-gold/40 bg-bg-secondary px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.14em] text-gold shadow-card lg:hidden"
       >
         {isInApp ? t("install_inapp_title") : t("install_action")}
       </button>
@@ -139,7 +139,7 @@ export function InstallPrompt() {
                 {[t("install_ios_step1"), t("install_ios_step2"), t("install_ios_step3")].map(
                   (step, i) => (
                     <li key={i} className="flex gap-3">
-                      <span className="font-display text-gold">{i + 1}</span>
+                      <span className="numeral text-gold">{String(i + 1).padStart(2, "0")}</span>
                       <span>{step}</span>
                     </li>
                   )

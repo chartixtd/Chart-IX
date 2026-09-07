@@ -19,9 +19,9 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 // 颜色不是唯一线索——每种类型都配一个图标，色盲用户与静音截图里同样读得出状态
 const colors: Record<ToastType, string> = {
-  success: "border-success/30 text-success",
-  error: "border-danger/30 text-danger",
-  info: "border-border-hover text-text-primary",
+  success: "border-l-success text-success",
+  error: "border-l-danger text-danger",
+  info: "border-l-gold text-text-primary",
 };
 
 function ToastIcon({ type }: { type: ToastType }) {
@@ -95,7 +95,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             className={cn(
-              "obsidian-glass-sm pointer-events-auto flex items-center gap-2.5 rounded-lg px-4 py-2.5 text-sm animate-slide-up",
+              "ink-raised pointer-events-auto flex items-center gap-3 rounded-md border-l-2 px-4 py-3 text-sm animate-slide-up",
               colors[t.type]
             )}
           >

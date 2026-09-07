@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { Inter, JetBrains_Mono, Manrope } from "next/font/google";
 import { SITE_URL } from "@/lib/constants";
 import "./globals.css";
 
@@ -17,15 +17,13 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
 });
 
-// 展示字体：几何无衬线。奢感全部交给材质（金箔/黑曜石玻璃），
-// 字体只负责当代性与超大字号下的体量——这是细笔画衬线做不到的。
-const spaceGrotesk = Space_Grotesk({
+// 展示字体：Manrope。轻字重（300/400）撑起超大标题的体量，600 给卡片小标题。
+// 奢感来自「超大 + 轻」的对比，不来自粗黑体或衬线。CJK 回落 Noto Sans SC 300/400/500/700。
+const manrope = Manrope({
   subsets: ["latin"],
-  // 400 必须一起加载：站内有 font-display 但没写字重的标题，缺 400 时浏览器会
-  // 回退到最近的 500，同一页上就会出现两种没人指定过的字重。
-  weight: ["400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600", "700"],
   display: "swap",
-  variable: "--font-space-grotesk",
+  variable: "--font-manrope",
 });
 
 export const metadata: Metadata = {
@@ -53,7 +51,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0B0A08",
+  themeColor: "#09090B",
 };
 
 export default function RootLayout({
@@ -73,7 +71,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${inter.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable}`}
+      className={`dark ${inter.variable} ${jetbrainsMono.variable} ${manrope.variable}`}
       suppressHydrationWarning
     >
       <head>
@@ -96,7 +94,7 @@ export default function RootLayout({
         <link
           id="noto-sc-stylesheet"
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap"
           media="print"
           // The inline script below can flip this to media="all" in the live DOM
           // before React hydrates, which would otherwise read as a hydration
@@ -112,7 +110,7 @@ export default function RootLayout({
         <noscript>
           <link
             rel="stylesheet"
-            href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap"
           />
         </noscript>
         <meta name="view-transition" content="same-origin" />

@@ -53,7 +53,7 @@ export function AdminHeader({ onMenuClick }: { onMenuClick: () => void }) {
         <Image src="/logo.png" alt="Chart-IX" width={240} height={160} className="h-8 w-auto" />
         {/* 后台标识用实心金箔：它是"你现在在一个有权限的地方"的提示，
             不该和页面里其它金色描边标签长得一样 */}
-        <span className="foil-sm rounded-sm px-2 py-0.5 text-xs font-semibold tracking-wide">
+        <span className="foil-sm rounded-sm px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]">
           Admin
         </span>
       </div>
@@ -61,7 +61,7 @@ export function AdminHeader({ onMenuClick }: { onMenuClick: () => void }) {
       <div className="flex items-center gap-3">
         <Link
           href={`/${locale}/dashboard`}
-          className="hidden items-center gap-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary lg:flex"
+          className="hidden items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-text-muted transition-colors hover:text-text-primary lg:flex"
         >
           <Icon name="arrowRight" className="h-4 w-4 rotate-180" />
           <span>{t("back_to_site")}</span>
@@ -74,7 +74,7 @@ export function AdminHeader({ onMenuClick }: { onMenuClick: () => void }) {
             </span>
             <button
               onClick={handleLogout}
-              className="text-sm text-text-secondary hover:text-danger transition-colors"
+              className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-muted transition-colors hover:text-danger"
             >
               {t("sign_out")}
             </button>

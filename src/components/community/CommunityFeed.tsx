@@ -60,7 +60,7 @@ export function CommunityFeed() {
       )}
 
       {error && (
-        <p className="rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+        <p className="rounded-md border-l-2 border-danger bg-danger/10 px-4 py-3 text-sm text-danger">
           {t("load_failed")}
         </p>
       )}

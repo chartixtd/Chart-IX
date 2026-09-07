@@ -25,7 +25,7 @@ export function ScreenerFilters({
   const t = useTranslations("screener");
 
   return (
-    <div className="mb-4 flex flex-wrap items-end gap-5 rounded-lg panel px-4 py-3">
+    <div className="ink mb-4 flex flex-wrap items-end gap-5 rounded-md px-4 py-3">
       {/* 成交量、振幅、市值三条门槛全部由服务端执行，这里只读地标出来。
           做成静态文字而不是禁用的控件：禁用的控件仍然长得像「可以调，只是
           现在不行」，而这三条是产品定死的筛选口径，不该给出可调的暗示。 */}

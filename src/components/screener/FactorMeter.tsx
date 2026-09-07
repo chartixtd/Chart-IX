@@ -42,12 +42,12 @@ export function FactorMeter({
               {label}
             </span>
             <span
-              className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-bg-tertiary"
+              className="relative h-1 flex-1 overflow-hidden rounded-none bg-bg-hover"
               role="img"
               aria-label={`${label} ${value}/${max}`}
             >
               <span
-                className={cn("absolute inset-y-0 left-0 rounded-full", fillClassName)}
+                className={cn("absolute inset-y-0 left-0", fillClassName)}
                 // 最短也留 3px：0 分和「没渲染出来」在视觉上必须能区分。
                 style={{ width: `max(3px, ${(ratio * 100).toFixed(1)}%)` }}
               />

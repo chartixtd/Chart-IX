@@ -103,7 +103,7 @@ export default function SettingsPage() {
   // 空占位再跳变成真实值。查询依赖 userId（enabled），所以只在已登录时看它。
   if (auth.loading || (!!auth.userId && profileQuery.isPending)) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-6 lg:py-12">
+      <div className="mx-auto max-w-2xl px-6 py-8 lg:py-14">
         <Skeleton className="h-8 w-40" />
         <Skeleton className="mt-8 h-64 w-full" />
         <Skeleton className="mt-6 h-32 w-full" />
@@ -112,35 +112,35 @@ export default function SettingsPage() {
   }
   if (!auth.userId) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-6 lg:py-12">
+      <div className="mx-auto max-w-2xl px-6 py-8 lg:py-14">
         <p className="text-text-muted">{t("please_login")}</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6 lg:py-12">
-      <h1 className="text-2xl font-bold text-text-primary lg:text-3xl font-display tracking-tight">{t("title")}</h1>
+    <div className="mx-auto max-w-2xl px-6 py-8 lg:py-14">
+      <h1 className="display text-display-md">{t("title")}</h1>
 
       {/* Profile */}
       <Card className="mt-6 lg:mt-8" padding="lg">
-        <h2 className="text-lg font-semibold text-text-primary font-display tracking-tight">{t("profile")}</h2>
+        <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("profile")}</h2>
         <div className="mt-4 space-y-4">
           {/* 只读展示行：不是表单控件，不用 <label>；label 样式与 Input 的 label 规范对齐 */}
           <div>
-            <span className="block text-xs font-medium uppercase tracking-wider text-text-secondary">
+            <span className="eyebrow block">
               {t("email")}
             </span>
             <p className="mt-2 break-all text-text-primary">{auth.email ?? ""}</p>
           </div>
           <div>
-            <span className="block text-xs font-medium uppercase tracking-wider text-text-secondary">
+            <span className="eyebrow block">
               {t("role")}
             </span>
             <p className="mt-2 text-text-primary capitalize">{profileQuery.data?.role ?? "-"}</p>
           </div>
           <div>
-            <span className="block text-xs font-medium uppercase tracking-wider text-text-secondary">
+            <span className="eyebrow block">
               {t("tier")}
             </span>
             <p className="mt-2 text-text-primary">
@@ -171,7 +171,7 @@ export default function SettingsPage() {
 
       {/* Language */}
       <Card className="mt-6" padding="lg">
-        <h2 className="text-lg font-semibold text-text-primary font-display tracking-tight">{t("language")}</h2>
+        <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("language")}</h2>
         <div className="mt-4 flex flex-wrap gap-2">
           {PUBLIC_LOCALES.map((l) => (
             <Button
@@ -190,7 +190,7 @@ export default function SettingsPage() {
       <Card className="mt-6" padding="lg">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-text-primary font-display tracking-tight">{t("api_keys")}</h2>
+            <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{t("api_keys")}</h2>
             <p className="mt-1 break-words text-sm text-text-secondary">{t("api_keys_desc")}</p>
           </div>
           <Button

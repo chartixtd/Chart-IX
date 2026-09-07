@@ -44,8 +44,8 @@ export function buildManifest(locale: string, copy: ManifestCopy): WebManifest {
     scope: "/",
     display: "standalone",
     display_override: ["standalone", "minimal-ui"],
-    background_color: "#0B0A08",
-    theme_color: "#0B0A08",
+    background_color: "#09090B",
+    theme_color: "#09090B",
     lang: locale,
     dir: "ltr",
     icons: [

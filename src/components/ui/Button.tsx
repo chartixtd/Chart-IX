@@ -4,34 +4,34 @@ import { type ButtonHTMLAttributes, forwardRef } from "react";
 type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "green" | "red";
 type ButtonSize = "sm" | "md" | "lg";
 
+/**
+ * 按钮语法（Ink & Gilt）
+ *
+ * - primary  = .gilt 实心香槟金。整页只能有一个主操作是它。
+ * - outline  = 金色发丝描边，文字金。次级操作。
+ * - secondary= 墨面 + 中性描边。表单里的普通操作。
+ * - ghost    = 只有文字。导航与低权重操作。
+ * - green/red= 涨跌语义按钮，只在下单与筛选器上出现。
+ *
+ * 全部锐角（2px）。大写 + 宽字距是营销面按钮的签名；CJK 字形不受 uppercase
+ * 影响，但 tracking 仍然生效——中文「立即注册」在 0.14em 字距下同样读得出仪式感。
+ */
 const variants: Record<ButtonVariant, string> = {
-  // .foil = 9 段金箔渐变 + 斜面 inset。不要在这里叠任何 shadow-* 工具类：
-  // utilities 层会整条覆盖掉 .foil 的 box-shadow，斜面一没金就退回成一块黄色。
-  primary: "foil foil-sheen font-semibold hover:brightness-[1.06] active:brightness-95",
+  primary: "gilt foil-sheen font-semibold",
   secondary:
-    "bg-bg-tertiary text-text-primary border border-border-default hover:bg-bg-hover hover:border-border-hover",
+    "border border-border-hover bg-bg-tertiary text-text-primary hover:border-border-strong hover:bg-bg-hover",
   outline:
-    "border border-gold/60 text-gold hover:bg-gold/10 hover:border-gold active:bg-gold/15",
-  ghost: "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary",
-  danger: "bg-danger/10 text-danger border border-danger/25 hover:bg-danger/20",
-  // 底色用 /15 而不是 /12：**Tailwind 不会为 /12 生成任何规则**（实测
-  // 整份 CSS 里查不到 bg-success\/12 这条选择器，而 bg-success\/15 有），
-  // 所以这两个变体的底色一直是透明的——只有边框和字色在起作用。按钮小的
-  // 时候看不太出来，做成整宽的主操作按钮就很明显了。
-  // /15 是这个代码库里的主力档位（28 处在用），换过来同时也统一了口径。
-  green: "bg-success/15 text-success border border-success/25 hover:bg-success/20 font-semibold",
-  red: "bg-danger/15 text-danger border border-danger/25 hover:bg-danger/20 font-semibold",
+    "border border-gold/50 text-gold hover:border-gold hover:bg-gold/[0.07] active:bg-gold/10",
+  ghost: "text-text-secondary hover:bg-bg-tertiary hover:text-text-primary",
+  danger: "border border-danger/30 bg-danger/10 text-danger hover:bg-danger/20",
+  green: "border border-success/30 bg-success/15 text-success hover:bg-success/25 font-semibold",
+  red: "border border-danger/30 bg-danger/15 text-danger hover:bg-danger/25 font-semibold",
 };
 
-/**
- * 尺寸同时决定圆角族：sm/md 落在数据面（密集 UI、交易终端、后台），用锐利的
- * 2–6px；lg 落在内容面（营销 CTA、空状态），用圆润的 16px。全站 100 处 size="sm"
- * 都在密集布局里，这个映射不需要额外 API 就能把两族圆角分开。
- */
 const sizes: Record<ButtonSize, string> = {
-  sm: "px-3.5 py-1.5 text-xs rounded-sm",
-  md: "px-5 py-2.5 text-sm rounded-md",
-  lg: "px-8 py-4 text-base rounded-xl",
+  sm: "h-8 px-3.5 text-[11px] tracking-[0.06em] rounded-sm",
+  md: "h-11 px-6 text-xs uppercase tracking-[0.14em] rounded-sm",
+  lg: "h-14 px-9 text-[13px] uppercase tracking-[0.18em] rounded-sm",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -46,14 +46,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={cn(
-          "inline-flex items-center justify-center gap-2 font-medium tracking-tight transition-all duration-200",
-          // 触摸设备上把命中区补到 44px，视觉尺寸不变（见 globals.css 的 .tap-44）
+          "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap font-medium transition-all duration-300 ease-out",
           "tap-44",
-          "active:scale-[0.97] active:duration-75",
-          // 键盘可见焦点环。用 focus-visible 而非 focus，鼠标点击不会留下焦点框。
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/70",
-          "focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary",
-          "disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100",
+          "active:translate-y-px active:duration-75",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary",
+          "disabled:cursor-not-allowed disabled:opacity-40 disabled:active:translate-y-0",
           variants[variant],
           sizes[size],
           className
@@ -62,9 +59,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {loading && (
-          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
-            <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-75" />
+          <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" className="opacity-25" />
+            <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="opacity-80" />
           </svg>
         )}
         {children}

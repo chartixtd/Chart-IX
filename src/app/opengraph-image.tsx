@@ -8,11 +8,11 @@ export const contentType = "image/png";
  * 这里原本是 #0a0a0a / #d4a843 / #a0a0a0 —— 一套没人维护的旧值。
  * Satori 不认 Tailwind，只能写字面量，改色板时记得同步。
  */
-const INK = "#0B0A08";
-const GOLD = "#C9A24B";
-const GOLD_LIGHT = "#EBD08A";
-const TEXT = "#F5F0E6";
-const MUTED = "#8A8172";
+const INK = "#09090B";
+const GOLD = "#D3B26A";
+const GOLD_LIGHT = "#EEDCA6";
+const TEXT = "#F4F1EA";
+const MUTED = "#A7A39A";
 
 export default function OpengraphImage() {
   return new ImageResponse(
@@ -27,7 +27,7 @@ export default function OpengraphImage() {
           justifyContent: "center",
           backgroundColor: INK,
           // 环境光晕：站内 .aura 的静态等价物
-          backgroundImage: `radial-gradient(circle at 50% 30%, rgba(201,162,75,0.16) 0%, rgba(11,10,8,0) 62%)`,
+          backgroundImage: `radial-gradient(circle at 50% 30%, rgba(211,178,106,0.14) 0%, rgba(9,9,11,0) 62%)`,
           fontFamily: "system-ui, sans-serif",
         }}
       >
@@ -36,8 +36,8 @@ export default function OpengraphImage() {
             display: "flex",
             alignItems: "baseline",
             fontSize: 128,
-            fontWeight: 700,
-            letterSpacing: -4,
+            fontWeight: 300,
+            letterSpacing: -5,
           }}
         >
           <span style={{ color: TEXT }}>Chart</span>
@@ -51,7 +51,7 @@ export default function OpengraphImage() {
             width: 220,
             height: 1,
             marginTop: 36,
-            backgroundImage: `linear-gradient(90deg, rgba(201,162,75,0), ${GOLD_LIGHT}, rgba(201,162,75,0))`,
+            backgroundImage: `linear-gradient(90deg, rgba(211,178,106,0), ${GOLD_LIGHT}, rgba(211,178,106,0))`,
           }}
         />
 

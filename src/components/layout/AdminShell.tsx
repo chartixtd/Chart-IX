@@ -39,7 +39,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <AdminHeader onMenuClick={toggleSidebar} />
       <div className="flex">
         <AdminSidebar open={sidebarOpen} onClose={closeSidebar} />
-        <main className="ml-0 flex-1 p-4 lg:ml-56 lg:p-6">{children}</main>
+        <main className="ml-0 min-w-0 flex-1 p-5 lg:ml-60 lg:p-8">{children}</main>
       </div>
     </div>
   );

@@ -1,16 +1,13 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import Link from "next/link";
-import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Card } from "@/components/ui/Card";
 import { createClient } from "@/lib/supabase/client";
-import { AuraField } from "@/components/motion/AuraField";
+import { AuthShell, AuthLink } from "@/components/auth/AuthShell";
 
 export default function LoginPage() {
   const t = useTranslations("auth.login");
@@ -53,63 +50,54 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="hero-ground grain relative flex min-h-[calc(100dvh-4rem)] items-center justify-center overflow-hidden px-4 py-16">
-      <AuraField />
-      <Card surface="glass" className="relative w-full max-w-md" padding="lg">
-        <div className="text-center">
-          <Image src="/logo.png" alt="Chart-IX" width={240} height={160} priority className="mx-auto h-11 w-auto" />
-          <h1 className="mt-5 font-display text-3xl font-bold tracking-tight">
-            <span className="text-text-primary">Chart</span>
-            <span className="text-gold">-IX</span>
-          </h1>
-          <div className="hairline-gold mx-auto mt-4 w-14" />
-          <p className="mt-4 text-sm text-text-secondary">{t("subtitle")}</p>
-        </div>
+    <AuthShell
+      title={t("title")}
+      subtitle={t("subtitle")}
+      footer={
+        <>
+          {t("no_account")} <AuthLink href={`/${locale}/register`}>{t("register_link")}</AuthLink>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-8">
+        <Input
+          id="email"
+          type="email"
+          variant="line"
+          autoComplete="email"
+          label={t("email_label")}
+          placeholder={t("email_placeholder")}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <Input
+          id="password"
+          type="password"
+          variant="line"
+          autoComplete="current-password"
+          label={t("password_label")}
+          placeholder={t("password_placeholder")}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            label={t("email_label")}
-            placeholder={t("email_placeholder")}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <Input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            label={t("password_label")}
-            placeholder={t("password_placeholder")}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        )}
 
-          {error && (
-            <p role="alert" className="text-sm text-danger">{error}</p>
-          )}
-
-          <Button type="submit" className="w-full" loading={loading}>
+        <div className="flex flex-col gap-5 pt-2">
+          <Button type="submit" size="lg" className="w-full" loading={loading}>
             {t("submit")}
           </Button>
-        </form>
-
-        <div className="mt-6 text-center text-sm">
-          <Link href={`/${locale}/forgot-password`} className="text-gold hover:underline">
-            {t("forgot_password")}
-          </Link>
+          <AuthLink href={`/${locale}/forgot-password`}>
+            <span className="text-xs uppercase tracking-[0.14em]">{t("forgot_password")}</span>
+          </AuthLink>
         </div>
-
-        <div className="mt-4 text-center text-sm text-text-secondary">
-          {t("no_account")}{" "}
-          <Link href={`/${locale}/register`} className="text-gold hover:underline">
-            {t("register_link")}
-          </Link>
-        </div>
-      </Card>
-    </div>
+      </form>
+    </AuthShell>
   );
 }

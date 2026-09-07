@@ -8,11 +8,11 @@ export const runtime = "nodejs";
  * 这里原本是 #0a0a0a / #d4a843 / #a0a0a0 / Tailwind 默认红绿，跟站内对不上；
  * 分享卡是产品在站外唯一的门面，色板漂移在这里代价最大。改色板时同步这几个值。
  */
-const INK = "#0B0A08";
-const GOLD = "#C9A24B";
-const GOLD_LIGHT = "#EBD08A";
-const TEXT = "#F5F0E6";
-const MUTED = "#8A8172";
+const INK = "#09090B";
+const GOLD = "#D3B26A";
+const GOLD_LIGHT = "#EEDCA6";
+const TEXT = "#F4F1EA";
+const MUTED = "#A7A39A";
 const UP = "#34C77B";
 const DOWN = "#E85055";
 
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
           justifyContent: "center",
           backgroundColor: INK,
           backgroundImage:
-            "radial-gradient(circle at 50% 30%, rgba(201,162,75,0.16) 0%, rgba(11,10,8,0) 62%)",
+            "radial-gradient(circle at 50% 30%, rgba(211,178,106,0.16) 0%, rgba(9,9,11,0) 62%)",
           fontFamily: "system-ui, sans-serif",
         }}
       >
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
             width: 180,
             height: 1,
             marginTop: 28,
-            backgroundImage: `linear-gradient(90deg, rgba(201,162,75,0), ${GOLD_LIGHT}, rgba(201,162,75,0))`,
+            backgroundImage: `linear-gradient(90deg, rgba(211,178,106,0), ${GOLD_LIGHT}, rgba(211,178,106,0))`,
           }}
         />
 
@@ -83,8 +83,8 @@ export async function GET(request: NextRequest) {
               alignItems: "center",
               gap: 10,
               borderRadius: 999,
-              border: `1px solid rgba(201,162,75,0.4)`,
-              backgroundColor: "rgba(201,162,75,0.1)",
+              border: `1px solid rgba(211,178,106,0.4)`,
+              backgroundColor: "rgba(211,178,106,0.1)",
               padding: "10px 24px",
               fontSize: 20,
               color: GOLD,

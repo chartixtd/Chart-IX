@@ -1,13 +1,12 @@
 import Image from "next/image";
-import { useTranslations } from "next-intl";
+import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import type { SiteSettings } from "@/lib/site-settings";
 
 /**
+ * 页脚：编辑式四栏。品牌一栏占半幅，导航与社群两栏，联系与法务一栏。
+ * 底部压一行超大的淡金水印字「CHART-IX」——它是页面的收束，不是内容。
  * 纯展示组件：设置由服务端布局取好后传进来。
- *
- * 原先这里自己在 useEffect 里查一次 admin_settings 拿 telegram_group，
- * 结果是每个页面多一次客户端往返 + 链接迟一拍才出现。现在整份设置在
- * LocaleLayout 里读（getSiteSettings 带请求级缓存），一次都不多查。
  */
 
 const SOCIAL_ICONS = {
@@ -24,89 +23,157 @@ const SOCIAL_ICONS = {
 
 type SocialKey = keyof typeof SOCIAL_ICONS;
 
+const TELEGRAM_PATH =
+  "M9.036 15.803l-.396 5.57c.567 0 .812-.244 1.108-.537l2.66-2.545 5.513 4.03c1.01.556 1.73.264 1.99-.933L23.94 3.94c.36-1.464-.53-2.037-1.51-1.68L1.11 10.44c-1.44.556-1.42 1.35-.245 1.708l5.462 1.704L18.9 6.297c.545-.36 1.04-.16.633.2z";
+
+const FOOTER_LINK =
+  "text-sm text-text-secondary transition-colors hover:text-text-primary";
+
 export function Footer({ settings }: { settings: SiteSettings }) {
   const t = useTranslations("footer");
+  const tNav = useTranslations("nav");
+  const locale = useLocale();
 
   const socials = (Object.keys(SOCIAL_ICONS) as SocialKey[])
     .map((key) => ({ key, url: settings.socialLinks[key] }))
     .filter((s): s is { key: SocialKey; url: string } => Boolean(s.url));
 
+  const exploreLinks = [
+    { key: "videos", href: `/${locale}/videos` },
+    { key: "articles", href: `/${locale}/articles` },
+    { key: "news", href: `/${locale}/news` },
+    { key: "screener", href: `/${locale}/screener` },
+    { key: "tools", href: `/${locale}/tools/position-size` },
+  ] as const;
+
   return (
-    // 页脚是每一页的收束点：暖黑曜石底 + 顶边一条金色发丝，
-    // 与顶栏 shadow-nav 的那条金线上下呼应
-    <footer className="grain relative border-t border-border-default bg-bg-secondary/40">
-      <div className="hairline-gold absolute inset-x-0 top-0 opacity-40" />
-      <div className="mx-auto max-w-2xl px-4 py-10">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <div className="flex items-center gap-2.5">
-            <Image
-              src="/logo.png"
-              alt={settings.siteName ?? "Chart-IX"}
-              width={240}
-              height={160}
-              className="h-8 w-auto opacity-90"
-            />
-            <span className="font-display text-lg font-semibold leading-none tracking-tight text-text-primary">
-              {settings.siteName ? (
-                settings.siteName
-              ) : (
-                <>
-                  Chart<span className="text-gold">-IX</span>
-                </>
-              )}
-            </span>
-          </div>
+    <footer className="relative overflow-hidden border-t border-border-default bg-bg-primary">
+      <div className="hairline-gold absolute inset-x-0 top-0 opacity-50" />
 
-          <div className="hairline-gold w-24" />
-
-          <p className="max-w-md text-sm leading-relaxed text-text-secondary">
-            {settings.siteDescription ?? t("description")}
-          </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {settings.telegramGroup && (
-              <a
-                href={settings.telegramGroup}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-full border border-gold/25 px-4 py-2 text-xs font-medium text-gold transition-all duration-200 hover:border-gold/60 hover:bg-gold/5"
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M9.036 15.803l-.396 5.57c.567 0 .812-.244 1.108-.537l2.66-2.545 5.513 4.03c1.01.556 1.73.264 1.99-.933L23.94 3.94c.36-1.464-.53-2.037-1.51-1.68L1.11 10.44c-1.44.556-1.42 1.35-.245 1.708l5.462 1.704L18.9 6.297c.545-.36 1.04-.16.633.2z" />
-                </svg>
-                {t("join_telegram")}
-              </a>
+      <div className="mx-auto max-w-page px-6 pb-12 pt-20">
+        <div className="grid gap-12 lg:grid-cols-12 lg:gap-8">
+          {/* 品牌 */}
+          <div className="lg:col-span-5">
+            <div className="flex items-center gap-3">
+              <Image
+                src="/logo.png"
+                alt={settings.siteName ?? "Chart-IX"}
+                width={240}
+                height={160}
+                className="h-9 w-auto"
+              />
+              <span className="font-display text-lg font-medium tracking-tight text-text-primary">
+                {settings.siteName ? (
+                  settings.siteName
+                ) : (
+                  <>
+                    Chart<span className="text-gold">-IX</span>
+                  </>
+                )}
+              </span>
+            </div>
+            <p className="mt-6 max-w-sm text-sm leading-relaxed text-text-secondary">
+              {settings.siteDescription ?? t("description")}
+            </p>
+            {socials.length > 0 && (
+              <div className="mt-8 flex items-center gap-2">
+                {socials.map(({ key, url }) => (
+                  <a
+                    key={key}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={key}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-sm border border-border-hover text-text-secondary transition-colors duration-300 hover:border-gold/60 hover:text-gold"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      {SOCIAL_ICONS[key]}
+                    </svg>
+                  </a>
+                ))}
+              </div>
             )}
-
-            {socials.map(({ key, url }) => (
-              <a
-                key={key}
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={key}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border-default text-text-secondary transition-all duration-200 hover:border-gold/60 hover:text-gold"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  {SOCIAL_ICONS[key]}
-                </svg>
-              </a>
-            ))}
           </div>
 
-          {settings.contactEmail && (
-            <a
-              href={`mailto:${settings.contactEmail}`}
-              className="text-xs text-text-secondary transition-colors hover:text-gold"
-            >
-              {settings.contactEmail}
-            </a>
-          )}
+          {/* 探索 */}
+          <div className="lg:col-span-3">
+            <p className="eyebrow">{tNav("tab_learn")}</p>
+            <ul className="mt-6 space-y-3.5">
+              {exploreLinks.map((l) => (
+                <li key={l.key}>
+                  <Link href={l.href} className={FOOTER_LINK}>
+                    {tNav(l.key)}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
 
-          <p className="text-xs tracking-wide text-text-muted">
-            {settings.footerText ?? t("copyright")}
-          </p>
+          {/* 社群 */}
+          <div className="lg:col-span-2">
+            <p className="eyebrow">{tNav("account")}</p>
+            <ul className="mt-6 space-y-3.5">
+              <li>
+                <Link href={`/${locale}/login`} className={FOOTER_LINK}>
+                  {tNav("sign_in")}
+                </Link>
+              </li>
+              <li>
+                <Link href={`/${locale}/register`} className={FOOTER_LINK}>
+                  {tNav("sign_up")}
+                </Link>
+              </li>
+              <li>
+                <Link href={`/${locale}/upgrade`} className={FOOTER_LINK}>
+                  {tNav("upgrade")}
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* 联系 */}
+          <div className="lg:col-span-2">
+            <p className="eyebrow">{t("contact")}</p>
+            <ul className="mt-6 space-y-3.5">
+              {settings.telegramGroup && (
+                <li>
+                  <a
+                    href={settings.telegramGroup}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`${FOOTER_LINK} inline-flex items-center gap-2`}
+                  >
+                    <svg className="h-3.5 w-3.5 text-gold" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                      <path d={TELEGRAM_PATH} />
+                    </svg>
+                    Telegram
+                  </a>
+                </li>
+              )}
+              {settings.contactEmail && (
+                <li>
+                  <a href={`mailto:${settings.contactEmail}`} className={`${FOOTER_LINK} break-all`}>
+                    {settings.contactEmail}
+                  </a>
+                </li>
+              )}
+            </ul>
+          </div>
         </div>
+
+        <div className="mt-20 flex flex-col gap-4 border-t border-border-default pt-8 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs tracking-wide text-text-muted">{settings.footerText ?? t("copyright")}</p>
+          <p className="max-w-lg text-xs leading-relaxed text-text-faint">{t("description")}</p>
+        </div>
+      </div>
+
+      {/* 收束水印：超大淡金字，只露出上半截 */}
+      <div
+        aria-hidden
+        className="foil-text-static pointer-events-none select-none whitespace-nowrap text-center font-display text-[18vw] font-light leading-[0.7] tracking-tightest opacity-[0.05]"
+        style={{ marginBottom: "-6vw" }}
+      >
+        CHART-IX
       </div>
     </footer>
   );

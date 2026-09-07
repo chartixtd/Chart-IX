@@ -24,7 +24,7 @@ export function AdminPageHeading({
   // 后台每个页面的标题都走这里，所以展示字与发丝金分隔只需要在这一处落地
   return (
     <div className="mb-6">
-      <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">
+      <h1 className="display text-display-sm">
         {t(titleKey)}
       </h1>
       <div className="hairline-gold mt-3 w-16 opacity-70" />

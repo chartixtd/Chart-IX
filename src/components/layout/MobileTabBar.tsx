@@ -20,7 +20,7 @@ function TabIcon({ tab, className }: { tab: TabKey; className?: string }) {
     fill: "none",
     viewBox: "0 0 24 24",
     stroke: "currentColor",
-    strokeWidth: 1.6,
+    strokeWidth: 1.5,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
   };
@@ -56,12 +56,11 @@ function TabIcon({ tab, className }: { tab: TabKey; className?: string }) {
     case "more":
       return (
         <svg {...common}>
-          <circle cx="5" cy="12" r="1.4" />
-          <circle cx="12" cy="12" r="1.4" />
-          <circle cx="19" cy="12" r="1.4" />
+          <circle cx="5" cy="12" r="1.2" />
+          <circle cx="12" cy="12" r="1.2" />
+          <circle cx="19" cy="12" r="1.2" />
         </svg>
       );
-    // 访客底栏专用的两格
     case "home":
       return (
         <svg {...common}>
@@ -80,14 +79,16 @@ function TabIcon({ tab, className }: { tab: TabKey; className?: string }) {
   }
 }
 
+/**
+ * 手机底栏。已登录五格、访客三格。中央凸起的金圆盘给「选币」——
+ * 它是全站每天要你做的第一件事。选中态是一枚真金箔圆章。
+ */
 export function MobileTabBar() {
   const locale = useLocale();
   const pathname = usePathname();
   const t = useTranslations("nav");
   const auth = useAuth();
 
-  // 确认未登录才切访客底栏。auth.loading 期间沿用已登录那套，避免冷启动时
-  // 底栏先闪一下 3 格再变成 5 格。
   const isGuest = !auth.loading && !auth.userId;
   const tabs = isGuest ? GUEST_MOBILE_TABS : MOBILE_TABS;
 
@@ -96,22 +97,14 @@ export function MobileTabBar() {
     [isGuest, pathname, locale]
   );
 
-  // 此前这里对未登录用户整个 return null，理由是「5 个 tab 都会撞登录墙」。
-  // 那条理由已经不成立了（筛选器、交易、学习内容对访客都是开放的），而且
-  // 后果很实际：搜索进来的手机访客落在公开内容页上，除了返回键之外没有
-  // 任何站内导航，桌面访客却仍有一整条顶栏。现在改成给访客一套与桌面
-  // GUEST_NAV_ITEMS 同门槛的三格底栏。
-
   return (
     <nav
-      // data-tabbar 供 globals.css 的 :has() 判断该给内容区留多少底部空间——
-      // 访客底栏没有中央凸起，不需要为它让位
       data-tabbar={isGuest ? "guest" : "user"}
-      // 不透明底：fixed 底栏在交易页正压着 K 线画布，backdrop-blur 会让
-      // 低端安卓掉帧（DESIGN.md 的 Operate 面禁令）。
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border-default bg-bg-secondary pb-safe-b lg:hidden"
+      // 不透明底：fixed 底栏在交易页正压着 K 线画布，backdrop-blur 会让低端安卓掉帧
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border-default bg-bg-primary pb-safe-b lg:hidden"
       aria-label={t("tab_more")}
     >
+      <div className="hairline-gold absolute inset-x-0 top-0 opacity-40" />
       <div className="flex items-stretch">
         {tabs.map((tab) => {
           const isActive = active === tab.key;
@@ -122,18 +115,11 @@ export function MobileTabBar() {
                 <Link
                   href={tab.href(locale)}
                   aria-current={isActive ? "page" : undefined}
-                  // 圆盘不显示文字标签，所以标签必须走 aria-label——而且要跟着
-                  // 中央那一格实际是谁走，不能写死成某一个 tab
                   aria-label={t(`tab_${tab.key}`)}
                   className={cn(
-                    // 凸起圆盘的上沿会侵入内容区，页面内容用 pb-tabbar 让位
                     "-mt-4 flex h-14 w-14 items-center justify-center rounded-full border transition-all",
                     "active:scale-[0.94] active:duration-75",
-                    isActive
-                      ? // 选中态是一枚真金箔圆章——底栏中央是全站视觉重心，
-                        // 平涂金在这里撑不住
-                        "foil border-transparent"
-                      : "border-gold/40 bg-bg-tertiary text-gold"
+                    isActive ? "foil border-transparent" : "border-gold/50 bg-bg-secondary text-gold"
                   )}
                 >
                   <TabIcon tab={tab.key} className="h-6 w-6" />
@@ -148,21 +134,17 @@ export function MobileTabBar() {
               href={tab.href(locale)}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                // min-h 44px 满足 iOS HIG 的触摸目标下限
-                "relative flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-colors",
+                "relative flex min-h-[44px] flex-1 flex-col items-center justify-center gap-1 py-2.5 transition-colors",
                 isActive ? "text-gold" : "text-text-muted hover:text-text-secondary"
               )}
             >
-              {/* 顶端一小段金箔：图标+文字变色之外再加一层位置指示，
-                  色觉障碍用户不靠颜色也能看出当前在哪一栏 */}
               {isActive && (
-                <span
-                  aria-hidden
-                  className="foil-hairline absolute inset-x-0 top-0 mx-auto h-[2px] w-8"
-                />
+                <span aria-hidden className="absolute inset-x-0 top-0 mx-auto h-px w-8 bg-gold" />
               )}
               <TabIcon tab={tab.key} className="h-5 w-5" />
-              <span className="text-[11px] leading-none">{t(`tab_${tab.key}`)}</span>
+              <span className="text-[10px] uppercase leading-none tracking-[0.12em]">
+                {t(`tab_${tab.key}`)}
+              </span>
             </Link>
           );
         })}

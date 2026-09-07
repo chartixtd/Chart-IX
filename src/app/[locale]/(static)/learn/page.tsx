@@ -29,7 +29,7 @@ export default async function LearnPage({
   const { locale } = await params;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 lg:py-12">
+    <div className="mx-auto max-w-page px-6 py-12 lg:py-16">
       <LearnHub locale={locale} />
     </div>
   );

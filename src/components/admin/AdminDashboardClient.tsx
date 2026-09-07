@@ -73,7 +73,7 @@ function Stat({
   const inner = (
     <>
       <p className="text-xs text-text-muted">{label}</p>
-      <p className={cn("mt-1 text-2xl font-bold tabular-nums", color ?? "text-text-primary")}>
+      <p className={cn("numeral mt-2 text-3xl", color ?? "text-text-primary")}>
         {value}
       </p>
       {hint && <p className="mt-0.5 text-xs text-text-muted">{hint}</p>}
@@ -97,7 +97,7 @@ function Stat({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-3">
-      <h2 className="text-sm font-semibold text-text-secondary font-display tracking-tight">{title}</h2>
+      <h2 className="eyebrow">{title}</h2>
       {children}
     </section>
   );
@@ -124,7 +124,7 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text-primary font-display tracking-tight">{t("dashboard")}</h1>
+        <h1 className="display text-display-sm">{t("dashboard")}</h1>
         <button
           onClick={() => router.refresh()}
           title={t("refresh")}

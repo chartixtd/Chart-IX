@@ -103,12 +103,12 @@ function MarketSwitch({
   const t = useTranslations("trade");
 
   return (
-    <div className="flex shrink-0 rounded-xs bg-bg-tertiary p-0.5">
+    <div className="flex shrink-0 items-stretch gap-0.5">
       <button
         onClick={() => onMarketChange("spot")}
         className={cn(
-          "min-h-[44px] rounded-xs px-3 text-xs font-medium transition-colors lg:min-h-0 lg:py-1",
-          market === "spot" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+          "min-h-[44px] border-b px-3 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors lg:min-h-0 lg:py-1.5",
+          market === "spot" ? "border-gold text-gold" : "border-transparent text-text-muted hover:text-text-primary"
         )}
       >
         Spot
@@ -118,8 +118,8 @@ function MarketSwitch({
           <button
             onClick={() => onMarketChange("paper")}
             className={cn(
-              "min-h-[44px] rounded-xs px-3 text-xs font-medium transition-colors lg:min-h-0 lg:py-1",
-              market === "paper" ? "bg-bg-primary text-gold" : "text-text-muted hover:text-text-secondary"
+              "min-h-[44px] border-b px-3 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors lg:min-h-0 lg:py-1.5",
+              market === "paper" ? "border-gold text-gold" : "border-transparent text-text-muted hover:text-text-primary"
             )}
           >
             {t("paper_trading")}
@@ -127,7 +127,7 @@ function MarketSwitch({
         ) : (
           <Link
             href={`/${locale}/login`}
-            className="inline-flex min-h-[44px] items-center rounded-xs px-3 text-xs font-medium text-text-muted hover:text-gold transition-colors lg:min-h-0 lg:py-1"
+            className="inline-flex min-h-[44px] items-center border-b border-transparent px-3 text-[11px] font-medium uppercase tracking-[0.12em] text-text-faint transition-colors hover:text-gold lg:min-h-0 lg:py-1.5"
             title={t("paper_trading_locked")}
           >
             {t("paper_trading")}
@@ -140,8 +140,8 @@ function MarketSwitch({
           <button
             onClick={() => onMarketChange("futures")}
             className={cn(
-              "min-h-[44px] rounded-xs px-3 text-xs font-medium transition-colors lg:min-h-0 lg:py-1",
-              market === "futures" ? "bg-bg-primary text-text-primary" : "text-text-muted hover:text-text-secondary"
+              "min-h-[44px] border-b px-3 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors lg:min-h-0 lg:py-1.5",
+              market === "futures" ? "border-gold text-gold" : "border-transparent text-text-muted hover:text-text-primary"
             )}
           >
             Futures
@@ -149,7 +149,7 @@ function MarketSwitch({
         ) : (
           <Link
             href={`/${locale}/upgrade`}
-            className="inline-flex min-h-[44px] items-center rounded-xs px-3 text-xs font-medium text-text-muted hover:text-gold transition-colors lg:min-h-0 lg:py-1"
+            className="inline-flex min-h-[44px] items-center border-b border-transparent px-3 text-[11px] font-medium uppercase tracking-[0.12em] text-text-faint transition-colors hover:text-gold lg:min-h-0 lg:py-1.5"
             title={t("futures.pro_required")}
           >
             Futures
@@ -220,9 +220,9 @@ const TickerBar = memo(function TickerBar({
       onClick={onPickSymbol}
       className={cn("flex shrink-0 items-center gap-2", onPickSymbol && "lg:pointer-events-none")}
     >
-      <h2 className="font-display text-lg font-semibold tracking-tight">{displaySymbol}</h2>
+      <h2 className="font-display text-lg font-medium tracking-tight text-text-primary">{displaySymbol}</h2>
       {marketClosed && (
-        <span className="shrink-0 rounded-xs bg-bg-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-muted">
+        <span className="shrink-0 rounded-sm border border-border-hover px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-text-muted">
           {t("market_overview.closed")}
         </span>
       )}
@@ -261,7 +261,7 @@ const TickerBar = memo(function TickerBar({
             <div className="ml-auto flex min-w-0 items-center gap-1.5">
               <span
                 className={cn(
-                  "truncate font-mono text-lg font-semibold tabular-nums",
+                  "truncate font-mono text-lg tabular-nums",
                   isPositive ? "text-success" : "text-danger"
                 )}
               >
@@ -294,7 +294,7 @@ const TickerBar = memo(function TickerBar({
 
         {ticker && (
           <>
-            <span className={cn("shrink-0 font-mono text-xl font-semibold tabular-nums", isPositive ? "text-success" : "text-danger")}>
+            <span className={cn("shrink-0 font-mono text-xl tabular-nums", isPositive ? "text-success" : "text-danger")}>
               {formatPrice(Number(ticker.lastPrice))}
             </span>
             <Badge variant={isPositive ? "green" : "red"}>
@@ -369,7 +369,7 @@ const SetAlertButton = memo(function SetAlertButton({ symbol, currentPrice }: { 
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title={t("alerts.modal_title", { symbol })} size="sm" surface="panel">
         <div className="space-y-3">
-          <div className="flex rounded-xs bg-bg-tertiary p-0.5 text-xs">
+          <div className="flex rounded-sm border border-border-default p-0.5 text-xs">
             <button
               onClick={() => setDirection("above")}
               className={cn("flex-1 rounded-xs py-1.5", direction === "above" ? "bg-bg-primary text-success" : "text-text-muted")}
@@ -451,7 +451,7 @@ const IntervalBar = memo(function IntervalBar({
       {moreOpen && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
-          <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-md panel p-2 shadow-modal">
+          <div className="ink-raised absolute left-0 top-full z-20 mt-1 w-56 rounded-md p-2 shadow-modal">
             <p className="mb-1 px-1 text-[11px] text-text-muted">{t("pin_hint")}</p>
             <div className="grid grid-cols-4 gap-1">
               {ALL_INTERVALS.map((int) => {

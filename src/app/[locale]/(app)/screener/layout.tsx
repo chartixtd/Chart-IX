@@ -6,15 +6,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { useScannerData } from "@/hooks/useScreenerData";
 import { ScanCountdown } from "@/components/screener/ScanCountdown";
 import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
-import {
-  SCENARIO_KINDS,
-  TRAP_KINDS,
-  TONE_CLASSES,
-  IGNITION_TONE,
-  scenarioVars,
-} from "@/components/screener/scenario-ui";
 
 /**
  * 主扫描表与警报卡片的公共外壳：标题、倒计时、刷新、图例、以及两个子页的
@@ -100,38 +92,16 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
         </div>
       </nav>
 
-      <details className="mb-4 rounded-lg panel">
-        <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-text-primary">
-          {t("guide.title")}
-        </summary>
-        <div className="space-y-2.5 border-t border-border-default px-4 py-3 text-xs leading-relaxed text-text-secondary">
-          <div>
-            <ul className="space-y-1">
-              {/* 点火排在六场景之前：选币口径改成「最安静」之后，警报栏里
-                  绝大多数是点火卡（安静的币判不出场景），把最常见的那一类
-                  排在最后面会让这张速查表读起来跟实际看到的东西对不上。 */}
-              {(["up", "down"] as const).map((dir) => (
-                <li key={dir} className="flex items-baseline gap-1.5">
-                  <span className={cn("inline-flex items-center gap-1 font-medium", IGNITION_TONE.text)}>
-                    <Icon name="bolt" className="h-3 w-3" />
-                    {t(`ignition.${dir}.name`)}
-                  </span>
-                  <span>— {t(`ignition.${dir}.action`)}</span>
-                </li>
-              ))}
-              {SCENARIO_KINDS.map((kind) => (
-                <li key={kind} className="flex items-baseline gap-1.5">
-                  <span className={cn("inline-flex items-center gap-1 font-medium", TONE_CLASSES[kind].text)}>
-                    {TRAP_KINDS.has(kind) && <Icon name="alert" className="h-3 w-3" />}
-                    {t(`scenarios.${kind}.name`, scenarioVars())}
-                  </span>
-                  <span>— {t(`scenarios.${kind}.action`, scenarioVars())}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </details>
+      {/* 这里原本有一张「场景速查表」（可折叠，列出点火 + 全部八个场景各自的
+          名称与操作建议）。**拿掉了，而且它当时已经在说假话**：卡片场景收敛到
+          a2/b2/a3/b3、点火不再出卡之后（见 factors/scenario.ts 的
+          ENABLED_SCENARIO_KINDS 与 cards.ts 的 IGNITION_CARDS_ENABLED），
+          速查表照旧列着 a1/a4/b1/b4/陷阱/点火——把一批**根本不会出现**的卡片
+          当成使用说明摆在页面顶上。
+
+          日后若要恢复，别再写成「把所有 kind 遍历一遍」：那种写法跟实际会出
+          什么卡是脱钩的，收敛一次就假一次。要么直接从 ENABLED_SCENARIO_KINDS
+          生成，要么不要。 */}
 
       {error ? (
         <div className="flex flex-col items-center justify-center gap-2 py-10 text-text-secondary">

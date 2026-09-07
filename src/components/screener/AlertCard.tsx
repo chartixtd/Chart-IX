@@ -302,7 +302,15 @@ export function AlertCard({
           size="sm"
           className="min-h-[38px] w-full text-xs"
         >
-          {direction === "manage" ? t("action_view") : t("alerts.trade")}
+          {/* 按钮文案直接说方向（做多 / 做空），不再是笼统的「交易 →」。
+              复用主扫描表操作列已有的 action_long / action_short，三个语言包
+              都现成，不新增文案。manage 仍然是中性的「查看」——它按定义就不是
+              一个可下单方向，给它安一个方向词等于凭空造一个系统没给出的结论。 */}
+          {direction === "manage"
+            ? t("action_view")
+            : direction === "long"
+              ? t("action_long")
+              : t("action_short")}
         </Button>
       </Link>
     </div>

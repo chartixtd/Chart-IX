@@ -150,13 +150,19 @@ export type OiState = "surge" | "up" | "flat" | "down" | "plunge";
  * ±7% 取自旧引擎实测的 90% 分位（18 个深度扫描币、17 个新极值样本），
  * ±1% 是中位数下方的噪音线。这两个数是量出来的，改之前先重新量。
  */
-export function oiState(values: number[], from: number, to: number): OiState | null {
+export function oiState(
+  values: number[],
+  from: number,
+  to: number,
+  flatPct: number = OI_FLAT_PCT,
+  surgePct: number = OI_SURGE_PCT
+): OiState | null {
   const pct = pctChange(values, from, to);
   if (pct === null) return null;
-  if (pct >= OI_SURGE_PCT) return "surge";
-  if (pct >= OI_FLAT_PCT) return "up";
-  if (pct <= -OI_SURGE_PCT) return "plunge";
-  if (pct <= -OI_FLAT_PCT) return "down";
+  if (pct >= surgePct) return "surge";
+  if (pct >= flatPct) return "up";
+  if (pct <= -surgePct) return "plunge";
+  if (pct <= -flatPct) return "down";
   return "flat";
 }
 
@@ -188,7 +194,25 @@ export function findSweep(
   bars: CoinGlassPriceBar[],
   side: "low" | "high",
   lookback: number,
-  n: number = PIVOT_N
+  n: number = PIVOT_N,
+  /**
+   * 插破得够不够深：`|影线 − 结构位| ÷ 结构位`，%。默认 0 = 不设门槛，
+   * 与这个参数加入之前的行为完全一致。
+   *
+   * 存在的理由：PIVOT_N=1 的摆动点很浅，日内任何一次小回抽都算一个结构位，
+   * 于是「插破 0.02% 又收回」这种四舍五入级别的触碰也会被判成一次扫单。
+   * 实测这道门槛能把「触发后出现 ≥2% 行情」的比例明显推高（完整六档数据
+   * 见 scenario.ts 的 SWEEP_MIN_PIERCE_PCT）。
+   *
+   * **它推高的只有波动幅度，不是方向准确度。** 一个并行实验里同一招曾经
+   * 测出「胜率 49%→57%」，看着像是把方向也判准了，但样本从 111 拉到 283
+   * 之后胜率塌回 51%（= 基准）——那次跳升是小样本噪音。真正稳定的只有
+   * 幅度那一半，别把这道门槛当成提高胜率的手段。
+   *
+   * 判定放在循环内部而不是拿到结果再过滤：一次很浅的插针不该挡住更早
+   * 那次够深的扫单。
+   */
+  minPiercePct: number = 0
 ): Sweep | null {
   const values = side === "low" ? lows(bars) : highs(bars);
   const pivots = findPivots(values, n, side);
@@ -209,7 +233,14 @@ export function findSweep(
 
     const pierced = side === "low" ? wick < level : wick > level;
     const reclaimed = side === "low" ? close > level : close < level;
-    if (pierced && reclaimed) return { level, at: i };
+    if (!pierced || !reclaimed) continue;
+
+    if (minPiercePct > 0) {
+      if (level <= 0) continue;
+      const piercePct = (Math.abs(wick - level) / level) * 100;
+      if (!Number.isFinite(piercePct) || piercePct < minPiercePct) continue;
+    }
+    return { level, at: i };
   }
   return null;
 }

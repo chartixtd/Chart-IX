@@ -14,6 +14,7 @@ import {
   CVD_ALIGN_PCT,
   CVD_EXTREME_PCT,
   OI_SURGE_PCT,
+  OI_FLAT_PCT,
 } from "./series";
 import type { OiState, Sweep } from "./series";
 
@@ -154,6 +155,110 @@ export const RECLAIM_PCT_MIN = 30;
 /** 判定回看窗口：往回找 sweep 的最大根数。48 根 = 24 小时。 */
 export const SCENARIO_LOOKBACK = 48;
 
+/**
+ * A2/B2 的 sweep 至少要插破结构位这么多 %（`|影线 − 结构位| ÷ 结构位`）。
+ *
+ * **这个数是量出来的**（189 币 × 90 天 × 30m，前瞻 6 小时，事件去重）。
+ * 此前没有这道门槛（等价于 0%），后果是 PIVOT_N=1 的浅摆动点配上「插破
+ * 0.02% 又收回」这种四舍五入级的触碰也算一次扫单——a2 一个场景就出
+ * 13383 次信号，占全部事件的一半，一个每两次评估就触发一次的信号，
+ * 信息含量本来就很低。
+ *
+ * 六档实测（a2 / b2 的「≥2% 大涨占比」，同期基准 34%）：
+ *
+ *   门槛     a2 样本   a2 ≥2%    b2 样本   b2 ≥2%
+ *   0%       13383     37%       4656      39%
+ *   0.5%      7022     41%       3096      41%
+ *   1%        2504     50%       1285      52%     ← 取这里
+ *   1.5%      1092     57%        642      58%
+ *   2%         578     68%        370      63%
+ *
+ * 大涨占比随门槛**单调上升**，六档全中、两个场景同步，是真实关系不是噪音。
+ *
+ * **但必须写清楚它到底改善了什么：它是个「波动放大器选择器」，不是
+ * 「准确度提升器」。** 胜率在每一档都没动（a2 46–50%、b2 49–54%，同期
+ * 基准 50%）——插破越深，后面的行情越大，但**两个方向一起变大**。
+ * 尤其 a2（做多侧）收紧之后 MAE 反而超过 MFE（1% 档 2.14% vs 2.00%），
+ * 也就是逆风波动比顺风还大；b2（做空侧）没有这个毛病（2.03% vs 2.10%）。
+ * 所以这道门槛的正确用途是「筛出接下来会动得大的币」，卡片上的方向标签
+ * 不因为它变得更可信。
+ *
+ * 取 1% 而不是更高：2% 那档大涨占比最漂亮（68%），但样本只剩 578，
+ * 而且 81% 的削减已经发生在 1% 这一档，再往上是拿信号数量换一个
+ * 无法用胜率兑现的数字。1% 也跟 oi-divergence.ts 的 PRICE_EXTREME_MIN_PCT
+ * 同值，两处「多大才算真的动过」的口径因此是统一的。
+ */
+export const SWEEP_MIN_PIERCE_PCT = 1;
+
+/**
+ * 真正会产出卡片的场景。**不在名单里的连判定函数都不会被调用。**
+ *
+ * 为什么是白名单而不是把代码删掉：这些判定逻辑里积着大量实测记录（阈值
+ * 怎么来的、哪些写法踩过坑），删了就没了；而加回来只要往这个 Set 里补一项。
+ * 决定是可逆的，别为了「干净」把知识一起扔掉。
+ *
+ * 取舍依据（189 币 × 90 天 × 30m，与同期基准比）：
+ *
+ *   a2 / b2   留。样本最大（2504 / 1285），「触发后 ≥2% 行情」50% / 52%，
+ *             基准 34%。1% 插破门槛就是为这一对标定的。
+ *   a3 / b3   留。刚修完那个「永不触发」的 bug（见 detectAbsorption），
+ *             还没有真实运行数据，让它们跑一段时间再定去留。两个是同一个
+ *             函数的镜像，**不拆开**——「b3 比 a3 好」这个结论换个指标就翻
+ *             （命中率 b3 赢 +12/+4，实盘期望 a3 赢 −0.025 vs −0.124），
+ *             而 b3 的样本一直只有 46–60 笔，不足以支撑只留一半。
+ *   a1 / b1   关。命中率在两种选币口径、三个前瞻窗口下都在基准或以下。
+ *   a4 / b4   关。同上，且「≥2% 大涨占比」稳定低于基准（29% vs 35%）。
+ *   陷阱两个  关。样本只有 3–71 笔，无法判断，却拥有覆盖所有场景的最高
+ *             优先级——「很少出现 + 没验证过 + 一出现就压掉别人」的风险不对称。
+ *
+ * **关掉的那些不是「有害」，是「没有可测量的信息量」**——它们的命中率跟
+ * 「从同一批币里随便挑一个」区分不开。留着不会亏钱，只是占屏幕。哪天想让
+ * 卡片多一些，第一个该加回来的是 a4/b4（它们至少胜率不低，只是幅度小）。
+ */
+export const ENABLED_SCENARIO_KINDS: ReadonlySet<ScenarioKind> = new Set<ScenarioKind>([
+  "a2_accum_bottom_div",
+  "b2_distrib_top_div",
+  "a3_e1_absorb",
+  "b3_e5_distrib",
+]);
+
+/**
+ * 全部场景，给测试和校准脚本用。
+ *
+ * 名单必须能被覆盖，否则关掉一个场景等于**永久失去测量它的能力**——
+ * 想知道 a4/b4 值不值得加回来，就得能在回测里把它们打开。第一版把名单写成
+ * 模块常量，结果是六个测既有判定逻辑的用例当场挂掉，正是这个问题的预演。
+ */
+export const ALL_SCENARIO_KINDS: ReadonlySet<ScenarioKind> = new Set(
+  Object.keys(OI_STATES_BY_KIND) as ScenarioKind[]
+);
+
+/**
+ * 场景判定用到的可调阈值，集中成一个对象只是为了给校准脚本一个注入点——
+ * 生产路径不传这个参数，默认值就是原来散落各处的模块常量，行为完全不变。
+ * 不要在这里加新阈值又不给默认值：那会让现有调用方在没有感知的情况下
+ * 悄悄换了口径。
+ */
+export interface ScenarioConfig {
+  oiFlatPct: number;
+  oiSurgePct: number;
+  cvdAlignPct: number;
+  cvdExtremePct: number;
+  /** A2/B2 的 sweep 要插破结构位多少 %。见 SWEEP_MIN_PIERCE_PCT。 */
+  sweepMinPiercePct: number;
+  /** 哪些场景会被判定。见 ENABLED_SCENARIO_KINDS / ALL_SCENARIO_KINDS。 */
+  enabledKinds: ReadonlySet<ScenarioKind>;
+}
+
+export const DEFAULT_SCENARIO_CONFIG: ScenarioConfig = {
+  oiFlatPct: OI_FLAT_PCT,
+  oiSurgePct: OI_SURGE_PCT,
+  cvdAlignPct: CVD_ALIGN_PCT,
+  cvdExtremePct: CVD_EXTREME_PCT,
+  sweepMinPiercePct: SWEEP_MIN_PIERCE_PCT,
+  enabledKinds: ENABLED_SCENARIO_KINDS,
+};
+
 interface Ctx {
   bars: CoinGlassPriceBar[];
   h: number[];
@@ -163,6 +268,7 @@ interface Ctx {
   cvd: number[];
   taker: CoinGlassTakerBar[];
   last: number;
+  config: ScenarioConfig;
 }
 
 /**
@@ -177,7 +283,7 @@ function leg(ctx: Ctx, from: number, to: number) {
   const pricePct = pctChange(ctx.c, from, to);
   const oiPct = pctChange(ctx.oi, from, to);
   const cvdPct = cvdNetPct(ctx.taker, from, to);
-  const oi = oiState(ctx.oi, from, to);
+  const oi = oiState(ctx.oi, from, to, ctx.config.oiFlatPct, ctx.config.oiSurgePct);
   if (pricePct === null || oiPct === null || cvdPct === null || oi === null) return null;
   return { pricePct, oiPct, cvdPct, oi };
 }
@@ -268,11 +374,13 @@ function detectTrap(ctx: Ctx): Scenario | null {
     if (!st) continue;
 
     // 「新高/高位盘整」= 没有往反方向走掉。跌回去就不是这个局面了。
-    const holding = side === "high" ? st.pricePct > -CVD_ALIGN_PCT : st.pricePct < CVD_ALIGN_PCT;
+    const holding =
+      side === "high" ? st.pricePct > -ctx.config.cvdAlignPct : st.pricePct < ctx.config.cvdAlignPct;
     if (!holding) continue;
-    if (st.oiPct < OI_SURGE_PCT) continue;
+    if (st.oiPct < ctx.config.oiSurgePct) continue;
 
-    const violent = side === "high" ? st.cvdPct <= -CVD_EXTREME_PCT : st.cvdPct >= CVD_EXTREME_PCT;
+    const violent =
+      side === "high" ? st.cvdPct <= -ctx.config.cvdExtremePct : st.cvdPct >= ctx.config.cvdExtremePct;
     if (!violent) continue;
 
     const level = values[pv.curr];
@@ -347,11 +455,11 @@ function detectHealthyPullback(ctx: Ctx, dir: "long" | "short"): Scenario | null
   const signedCvd = up ? back.cvdPct : -back.cvdPct;
 
   // CVD 急速创新极值并跌破推进起点 + OI 增 = 新的反向力量介入，排除
-  if (signedCvd <= -CVD_EXTREME_PCT && back.oiPct > 0) return null;
+  if (signedCvd <= -ctx.config.cvdExtremePct && back.oiPct > 0) return null;
 
   let strength: ScenarioStrength;
   if (
-    signedCvd <= -CVD_ALIGN_PCT &&
+    signedCvd <= -ctx.config.cvdAlignPct &&
     (back.oi === "up" || back.oi === "flat" || back.oi === "surge")
   ) {
     strength = "trend_best"; // CVD 跌得比价格多 + OI 增或平
@@ -391,7 +499,13 @@ function detectSweepDivergence(ctx: Ctx, dir: "long" | "short"): Scenario | null
   const up = dir === "long";
   const side = up ? "low" : "high";
 
-  const sweep: Sweep | null = findSweep(ctx.bars, side, SCENARIO_LOOKBACK);
+  const sweep: Sweep | null = findSweep(
+    ctx.bars,
+    side,
+    SCENARIO_LOOKBACK,
+    PIVOT_N,
+    ctx.config.sweepMinPiercePct
+  );
   if (!sweep) return null;
 
   // CVD 有没有跟着创新极值。跟了 = 同步，不是背离。
@@ -446,17 +560,45 @@ function detectAbsorption(ctx: Ctx, dir: "long" | "short"): Scenario | null {
   const priceSide = up ? "low" : "high";
   const priceVals = up ? ctx.l : ctx.h;
 
-  // ── 第一层：E1 / E5 定位
-  // CVD 创新极值，而价格没有——这正是「CVD 跌得比价格多」的结构表达。
-  if (newExtreme(ctx.cvd, cvdSide) !== true) return null;
-  if (newExtreme(priceVals, priceSide) !== false) return null;
-
-  // CVD 需要三个摆动点：L1→L2 是 E1 那段，L2→L3 是转向。
+  // CVD 需要三个摆动点：L1→L2 是 E1 那段（创新低/新高），L2→L3 是转向。
+  // 顺序在这里先取——第一层判定要用 L1→L2 这一对，不能等到判完第一层
+  // 再取，否则又会退回下面这个 bug。
   const cvdPivots = findPivots(ctx.cvd, PIVOT_N, cvdSide);
   if (cvdPivots.length < 3) return null;
   const [i1, i2, i3] = cvdPivots.slice(-3);
 
-  // ① CVD 转向：最新的摆动点比上一个更靠顺方向
+  // ── 第一层：E1 / E5 定位
+  // CVD 创新极值，而价格没有——这正是「CVD 跌得比价格多」的结构表达。
+  //
+  // **这里曾经用 `newExtreme(ctx.cvd, cvdSide)` 判「CVD 创新极值」，是一个
+  // 从写下那天起就无法触发的 bug**：`newExtreme` 内部用 `lastTwoPivots`
+  // 取的是 CVD **最新的两个**摆动点，跟下面 `cvdPivots.slice(-3)` 里的
+  // i2/i3 是同一对点。第一层要求这对点「i3 < i2」（创新低），下面①转向
+  // 又要求同一对点「i3 > i2」（转向），两个条件互斥，回测实测 7475 个
+  // 通过第一层的候选，① 一个都没通过——不是信号稀少，是这两层根本
+  // 不可能同时成立。改法：第一层改用 L1→L2（i1/i2）判「创新低」，
+  // 把 L2→L3（i2/i3）单独留给下面的转向判定，两层就不再抢用同一对点。
+  const cvdMadeExtreme = up ? ctx.cvd[i2] < ctx.cvd[i1] : ctx.cvd[i2] > ctx.cvd[i1];
+  if (!cvdMadeExtreme) return null;
+  if (newExtreme(priceVals, priceSide) !== false) return null;
+
+  /*
+   * 这里试过加一道「附近要扫到一个价格结构位」的附加闸门（复用 a2/b2 用的
+   * findSweep），**实测无效，已撤掉**，记录下来免得有人再走一遍：
+   *
+   *   · 灵感来自一个并行实验（五字段规格里的 context=B）：87 个样本时
+   *     胜率 62% 很亮眼，样本拉到 283 个之后塌回 51%，跟不加这条完全打平。
+   *   · 真的加进这里之后（窗口 48 根）几乎筛不掉任何东西：a3 样本
+   *     819→795、b3 228→226，胜率纹丝不动——24 小时内总能扫到点什么。
+   *   · 把窗口从 48 根一路收紧到 24/12/6/3 根扫了一轮：样本确实被砍掉八成
+   *     （a3 779→145），但胜率在每一档都钉在 50%（= 基准），而「≥2% 大涨
+   *     占比」反而越收越差（33%→27%）——被砍掉的样本里并没有集中着坏信号，
+   *     反倒连会走出大行情的那部分也一起砍了。
+   *
+   * 三次独立验证都指向同一件事：sweep 的远近在这个象限里不携带信息。
+   */
+
+  // ① CVD 转向：最新的摆动点（L3）比上一个（L2）更靠顺方向
   const turned = up ? ctx.cvd[i3] > ctx.cvd[i2] : ctx.cvd[i3] < ctx.cvd[i2];
   if (!turned) return null;
 
@@ -569,7 +711,8 @@ function detectFlush(ctx: Ctx, dir: "long" | "short"): Scenario | null {
 export function classifyScenario(
   priceBars: CoinGlassPriceBar[],
   oiBars: CoinGlassOiBar[],
-  taker: CoinGlassTakerBar[]
+  taker: CoinGlassTakerBar[],
+  config: ScenarioConfig = DEFAULT_SCENARIO_CONFIG
 ): Scenario | null {
   const n = priceBars.length;
   if (n < PIVOT_N * 2 + 2 || oiBars.length !== n || taker.length !== n) return null;
@@ -586,22 +729,34 @@ export function classifyScenario(
     cvd,
     taker,
     last: n - 1,
+    config,
   };
 
-  const trap = detectTrap(ctx);
-  if (trap) return trap;
+  // 陷阱在启用时优先级最高（会覆盖所有场景）；不在名单里就整个跳过——
+  // 注意这不只是「少一张卡」：陷阱本来会压掉同一时刻的 a2/b2，关掉之后
+  // 那些时刻会改由背离场景出卡。这是关掉它的预期后果，不是漏改。
+  const enabled = ctx.config.enabledKinds;
+  if (enabled.has("trap_false_top_div") || enabled.has("trap_false_bottom_div")) {
+    const trap = detectTrap(ctx);
+    if (trap && enabled.has(trap.kind)) return trap;
+  }
+
+  // 每个判定函数产出哪个 kind 是静态已知的，所以在**调用之前**就按名单过滤，
+  // 而不是算完再筛——关掉的场景连算都不算。
+  const detectors: Array<[ScenarioKind, () => Scenario | null]> = [
+    ["a2_accum_bottom_div", () => detectSweepDivergence(ctx, "long")],
+    ["b2_distrib_top_div", () => detectSweepDivergence(ctx, "short")],
+    ["a3_e1_absorb", () => detectAbsorption(ctx, "long")],
+    ["b3_e5_distrib", () => detectAbsorption(ctx, "short")],
+    ["a1_healthy_pullback", () => detectHealthyPullback(ctx, "long")],
+    ["b1_healthy_bounce", () => detectHealthyPullback(ctx, "short")],
+    ["a4_e4_flush", () => detectFlush(ctx, "long")],
+    ["b4_e8_cover_stall", () => detectFlush(ctx, "short")],
+  ];
 
   const found: Scenario[] = [];
-  for (const f of [
-    () => detectSweepDivergence(ctx, "long"),
-    () => detectSweepDivergence(ctx, "short"),
-    () => detectAbsorption(ctx, "long"),
-    () => detectAbsorption(ctx, "short"),
-    () => detectHealthyPullback(ctx, "long"),
-    () => detectHealthyPullback(ctx, "short"),
-    () => detectFlush(ctx, "long"),
-    () => detectFlush(ctx, "short"),
-  ]) {
+  for (const [kind, f] of detectors) {
+    if (!enabled.has(kind)) continue;
     const s = f();
     if (s) found.push(s);
   }

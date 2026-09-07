@@ -117,6 +117,26 @@ describe("findSweep", () => {
     expect(findSweep(withSsl([112, 96, 100]), "low", 48)).toBeNull();
   });
 
+  /*
+   * 插破深度门槛（minPiercePct）。没有它的时候，PIVOT_N=1 的浅摆动点配上
+   * 「插破 0.02% 又收回」这种四舍五入级别的触碰也算一次扫单，a2 因此每两次
+   * 评估就触发一次。实测把门槛提到 1% 之后，a2 样本从 13383 降到 2504，
+   * 而「≥2% 大涨占比」从 37% 升到 50%（同期基准 34%）——完整六档数据见
+   * scenario.ts 的 SWEEP_MIN_PIERCE_PCT。
+   */
+  it("插破得不够深 = 不算 sweep（默认 0 不设门槛时算）", () => {
+    // 结构位 100，影线 99.5 = 只插破 0.5%
+    const shallow = withSsl([112, 99.5, 108]);
+    expect(findSweep(shallow, "low", 48)).not.toBeNull();
+    expect(findSweep(shallow, "low", 48, undefined, 1)).toBeNull();
+  });
+
+  it("插破够深就照常成立", () => {
+    // 影线 96 = 插破 4%，1% 的门槛拦不住
+    const deep = withSsl([112, 96, 108]);
+    expect(findSweep(deep, "low", 48, undefined, 1)!.level).toBe(100);
+  });
+
   it("高点侧镜像成立", () => {
     const b = bars([
       [106, 96, 101],

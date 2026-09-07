@@ -79,7 +79,9 @@ describe("buildScanTargets", () => {
     expect(out.map((t) => t.candidate.coin)).toEqual(["TIGHT", "MID", "LOOSE"]);
   });
 
-  it("量能比不达标的从前 20 里剔除，主表因此可能不足 20 行", () => {
+  it("量能比不达标的剔除掉——候选不够时主表仍会不足 20 行", () => {
+    // 剔除本身跟次序无关；只有在合格候选**本来就不到 20 个**时，主表才会
+    // 缺行（这里只有 2 个候选，没有第 21 名可以递补）。
     const out = build([
       { coin: "OK", amp: 1, comp: 0.1 },
       { coin: "SHRINKING", amp: 1, comp: 0.2, vr: VOLUME_RATIO_MIN - 0.01 },
@@ -97,9 +99,17 @@ describe("buildScanTargets", () => {
     expect(out).toHaveLength(1);
   });
 
-  it("量能比是在取前 20 之后才剔除的，空位不会被第 21 名补上", () => {
-    // 顺序反过来（先筛量能比再取前 20）等于放宽了压缩度那道排名——
-    // 被剔掉的位置会由压缩度更差的币顶上来，而那正是我们不想要的币。
+  it("量能比是在取前 20 之前剔除的，空位由第 21 名补上", () => {
+    // 这条**曾经是反的**（先取前 20 再剔量能比，主表因此经常不足 20 行），
+    // 理由是「先筛再取」等于放宽压缩度那道排名，会让压缩度更差的币顶上来。
+    //
+    // 实测这个担心没有发生：189 币 × 90 天两种次序各跑一遍，所有质量指标
+    // （胜率、≥2% 大涨占比）差异都在噪音里，而信号多了 10%。原因是量能比
+    // 只剔掉前 20 里的约 2 个，递补最多伸到第 22 名。完整数据见 pipeline.ts
+    // 里 picked 上方的注释。
+    //
+    // **这条结论绑定在 VOLUME_RATIO_MIN = 0.8 上**：门槛提高的话递补会伸得
+    // 更深，稀释就可能真的发生，那时这个顺序要重测。
     const specs = Array.from({ length: QUIET_RANK_TAKE + 5 }, (_, i) => ({
       coin: `C${String(i).padStart(2, "0")}`,
       amp: 1,
@@ -108,9 +118,10 @@ describe("buildScanTargets", () => {
       vr: i === 0 ? 0.1 : 1,
     }));
     const out = build(specs);
-    expect(out).toHaveLength(QUIET_RANK_TAKE - 1);
+    expect(out).toHaveLength(QUIET_RANK_TAKE);
     expect(out.map((t) => t.candidate.coin)).not.toContain("C00");
-    expect(out.map((t) => t.candidate.coin)).not.toContain("C20");
+    // 空出来的那一格由压缩度紧随其后的第 21 名（C20）补上
+    expect(out.map((t) => t.candidate.coin)).toContain("C20");
   });
 
   it("压缩度查不到的币排除——没有排序键就没法排队", () => {

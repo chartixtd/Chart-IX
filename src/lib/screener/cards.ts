@@ -129,6 +129,15 @@ export interface BuildCardInput {
   memo: ScenarioMemo | undefined;
   /** 当前时刻，ms。注入而不是直接读 Date.now()，测试才能构造确定的场景 */
   now: number;
+  /**
+   * 点火要不要出卡。默认跟生产开关一致（现在是关的，见
+   * IGNITION_CARDS_ENABLED）；测试传 true 来验那条逻辑本身。
+   *
+   * 做成可注入而不是直接读常量，是因为「暂时关掉」不该等于「失去测量与
+   * 测试它的能力」——scenario.ts 的 enabledKinds 是同一个道理，那边第一版
+   * 写成模块常量，当场挂掉六个既有用例。
+   */
+  ignitionCards?: boolean;
 }
 
 export interface BuildCardResult {
@@ -138,18 +147,42 @@ export interface BuildCardResult {
 }
 
 /**
+ * 点火还要不要出卡片。
+ *
+ * **关掉了，但 `ScannerRow.ignition` 照常计算、主扫描表那一列照常显示。**
+ * 这个拆分是刻意的：
+ *   · 表格里的「▲ 2.3%」是一句事实——这个币刚收盘突破了前 6 小时的区间。
+ *     事实不预测什么，留着是有用的上下文。
+ *   · 卡片是一句行动建议——「这里值得看/值得做」。而点火恰恰在这一点上
+ *     被实测否掉了，见下面。
+ *
+ * 关掉的依据（189 币 × 90 天）：
+ *   · **捕获率只有 36–47%**（三种选币口径下都垫底，基准 65%）。点火在最吵
+ *     的币上触发时，那个币前 6 小时**已经涨了 9.23%**——你是在一段行情的
+ *     尾巴上进场，之后延续 5.23% / 回吐 4.99%，几乎对称。
+ *   · 固定止损止盈网格 20 格**全负，而且是全场最差**（−0.18% ~ −0.59%）。
+ *     止损 1% 时胜率只有 31%，基准 43%——突破币插针最凶。
+ *   · 这跟它的 MFE 命中率最高（≥5% 达成率 51%，基准 30%）并不矛盾：
+ *     **命中率只看「之后还会不会动」，看不到「你已经错过了多少」。**
+ *     这是这一路测下来对「MFE 命中率」这个指标最有力的一次证伪。
+ *   · types.ts 里 QUIET_RANK_TAKE 那段旧实测（「最吵那档捕获率 33%」）
+ *     和我们的新数据在这一点上是一致的。
+ *
+ * 想连表格那一列一起去掉，就把 pipeline.ts 里的 detectIgnition 调用也摘了；
+ * 想恢复出卡，把这里改回 true。
+ */
+export const IGNITION_CARDS_ENABLED = false;
+
+/**
  * 决定这一行由什么触发卡片。**场景优先于点火。**
  *
  * 两者同时成立时只出一张卡：场景把「资金流与持仓在这段行情里做了什么」
  * 也说清楚了，是严格更多的信息，而点火只说「突破了」。同一个币出两张卡
  * 只会让人以为是两个独立信号。
- *
- * 实际分布上这个优先级几乎不会被用到——安静的币判不出场景（见 CardTrigger
- * 的注释），所以警报栏里绝大多数会是点火卡。
  */
-function pickTrigger(row: ScannerRow): CardTrigger | null {
+function pickTrigger(row: ScannerRow, ignitionCards: boolean): CardTrigger | null {
   if (row.scenario) return { type: "scenario", scenario: row.scenario };
-  if (row.ignition) return { type: "ignition", ignition: row.ignition };
+  if (ignitionCards && row.ignition) return { type: "ignition", ignition: row.ignition };
   return null;
 }
 
@@ -165,8 +198,14 @@ function pickTrigger(row: ScannerRow): CardTrigger | null {
  * 这里仍然算失效线，但只为了**显示**——卡片上那个「失效价」是给你看的
  * 止损参考位，不是判据。
  */
-export function buildCard({ row, priceBars, memo, now }: BuildCardInput): BuildCardResult {
-  const trigger = pickTrigger(row);
+export function buildCard({
+  row,
+  priceBars,
+  memo,
+  now,
+  ignitionCards = IGNITION_CARDS_ENABLED,
+}: BuildCardInput): BuildCardResult {
+  const trigger = pickTrigger(row, ignitionCards);
   if (!trigger) return { card: null };
 
   const isScenario = trigger.type === "scenario";

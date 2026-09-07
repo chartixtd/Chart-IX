@@ -5,8 +5,23 @@ import {
   RECLAIM_PCT_MIN,
   SLOPE_RATIO_MIN,
   SLOPE_MIN_BARS,
+  DEFAULT_SCENARIO_CONFIG,
+  ALL_SCENARIO_KINDS,
 } from "./scenario";
 import type { CoinGlassPriceBar, CoinGlassOiBar, CoinGlassTakerBar } from "@/lib/coinglass/types";
+
+/**
+ * 这个文件测的是**判定逻辑本身**，所以一律打开全部场景。
+ *
+ * 生产默认只开 4 个（见 ENABLED_SCENARIO_KINDS），关掉的那些逻辑照样要有
+ * 测试盯着——否则「暂时关掉」会悄悄变成「无人看管的坏代码」，等哪天想
+ * 加回来才发现早就不能用了。
+ */
+const classify = (
+  bars: CoinGlassPriceBar[],
+  oi: CoinGlassOiBar[],
+  taker: CoinGlassTakerBar[]
+) => classifyScenario(bars, oi, taker, { ...DEFAULT_SCENARIO_CONFIG, enabledKinds: ALL_SCENARIO_KINDS });
 
 const B = 1_800_000;
 const GROSS = 1000;
@@ -64,24 +79,24 @@ const ramp = (n: number, a: number, b: number) =>
 describe("classifyScenario —— 守卫", () => {
   it("三条序列长度对不上时直接判空，绝不拿错位的数据出场景", () => {
     const [b, o, t] = build(rep(30, 100), rep(30, 0), rep(30, 1000));
-    expect(classifyScenario(b, o.slice(0, 29), t)).toBeNull();
-    expect(classifyScenario(b, o, t.slice(0, 29))).toBeNull();
+    expect(classify(b, o.slice(0, 29), t)).toBeNull();
+    expect(classify(b, o, t.slice(0, 29))).toBeNull();
   });
 
   it("根数不足以产生摆动点时判空", () => {
     const [b, o, t] = build(rep(8, 100), rep(8, 0), rep(8, 1000));
-    expect(classifyScenario(b, o, t)).toBeNull();
+    expect(classify(b, o, t)).toBeNull();
   });
 
   it("CVD 序列有坏数据时判空——累积线断一根，后面全是错的", () => {
     const [b, o, t] = build(rep(30, 100), rep(30, 0), rep(30, 1000));
     t[10] = { ...t[10], aggregated_buy_volume_usd: "abc" };
-    expect(classifyScenario(b, o, t)).toBeNull();
+    expect(classify(b, o, t)).toBeNull();
   });
 
   it("完全没有结构的横盘不产生任何场景", () => {
     const [b, o, t] = build(rep(40, 100), rep(40, 0), rep(40, 1000));
-    expect(classifyScenario(b, o, t)).toBeNull();
+    expect(classify(b, o, t)).toBeNull();
   });
 });
 
@@ -101,7 +116,7 @@ describe("classifyScenario —— 陷阱优先", () => {
     // OI 暴增：远超 +7%
     const oi = [...rep(11, 1000), ...ramp(9, 1000, 1400)];
     const [b, o, t] = build(price, cvd, oi);
-    const s = classifyScenario(b, o, t)!;
+    const s = classify(b, o, t)!;
     expect(s.kind).toBe("trap_false_top_div");
     expect(s.direction).toBe("long");
     expect(s.trap).toBe(true);
@@ -112,7 +127,7 @@ describe("classifyScenario —— 陷阱优先", () => {
     const cvd = [...rep(11, 0), ...ramp(9, 0, 8000)];
     const oi = [...rep(11, 1000), ...ramp(9, 1000, 1400)];
     const [b, o, t] = build(price, cvd, oi);
-    const s = classifyScenario(b, o, t)!;
+    const s = classify(b, o, t)!;
     expect(s.kind).toBe("trap_false_bottom_div");
     expect(s.direction).toBe("short");
     expect(s.trap).toBe(true);
@@ -123,7 +138,7 @@ describe("classifyScenario —— 陷阱优先", () => {
     const cvd = [...rep(11, 0), ...ramp(9, 0, -300)]; // 净流占比远达不到 -10%
     const oi = [...rep(11, 1000), ...ramp(9, 1000, 1400)];
     const [b, o, t] = build(price, cvd, oi);
-    const s = classifyScenario(b, o, t);
+    const s = classify(b, o, t);
     expect(s?.trap ?? false).toBe(false);
   });
 
@@ -132,7 +147,7 @@ describe("classifyScenario —— 陷阱优先", () => {
     const cvd = [...rep(11, 0), ...ramp(9, 0, -8000)];
     const oi = [...rep(11, 1000), ...ramp(9, 1000, 1030)]; // 只 +3%
     const [b, o, t] = build(price, cvd, oi);
-    const s = classifyScenario(b, o, t);
+    const s = classify(b, o, t);
     expect(s?.trap ?? false).toBe(false);
   });
 });
@@ -155,7 +170,7 @@ describe("classifyScenario —— 输出契约", () => {
     ];
     for (const [p, c, o] of cases) {
       const [bb, oo, tt] = build(p, c, o);
-      const s = classifyScenario(bb, oo, tt);
+      const s = classify(bb, oo, tt);
       if (!s) continue;
       expect(Number.isFinite(s.invalidation.price)).toBe(true);
       expect(s.invalidation.price).toBeGreaterThan(0);
@@ -169,7 +184,7 @@ describe("classifyScenario —— 输出契约", () => {
     const cvd = [...rep(11, 0), ...ramp(9, 0, -8000)];
     const oi = [...rep(11, 1000), ...ramp(9, 1000, 1400)];
     const [b, o, t] = build(price, cvd, oi);
-    const s = classifyScenario(b, o, t)!;
+    const s = classify(b, o, t)!;
     expect(b.some((x) => x.time === s.triggeredAt)).toBe(true);
   });
 });

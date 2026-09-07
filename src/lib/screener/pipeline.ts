@@ -20,7 +20,14 @@ import type { PreselectCandidate } from "./universe";
 import { readVolumeCache } from "./volume-cache";
 import type { CachedVolume } from "./volume-cache";
 import { readMemos, saveMemos } from "./cards-store";
-import { buildCard, sortCards, memoKey, ignitionMemoKey, carryForwardExpired } from "./cards";
+import {
+  buildCard,
+  sortCards,
+  memoKey,
+  ignitionMemoKey,
+  carryForwardExpired,
+  IGNITION_CARDS_ENABLED,
+} from "./cards";
 import { readLastScannerPayload } from "./cache";
 import { readPushedKeys } from "./alert-push";
 import type { AlertCardData, ScenarioMemo } from "./cards";
@@ -166,17 +173,29 @@ export function buildScanTargets(
       a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol)
   );
 
-  // 先按压缩度取前 20，**再**从这 20 个里剔掉成交量萎缩的——顺序是刻意的：
-  // 「前 20 里不合格的剔除」和「合格的里面取前 20」是两回事，后者会用第 21、
-  // 第 22 名把空位补满，等于放宽了压缩度这道排名。
+  // **先剔掉成交量萎缩的，再取前 20**——这个顺序换过一次，换之前是反的
+  // （先取前 20、再从这 20 个里剔），当时的理由是：「合格的里面取前 20」会用
+  // 第 21、22 名把空位补满，等于放宽了压缩度这道排名。
   //
-  // 所以这一步之后主表可能不足 20 行，那是预期行为。
+  // 那个担心实测没有发生（189 币 × 90 天，两种次序各跑一遍）：
+  //
+  //   次序        每轮选中   信号数   基准胜率/≥2%   a2 胜率/≥2%   b2 胜率/≥2%
+  //   先排名后剔    18.0 个    1826     52% / 39%     53% / 58%    42% / 45%
+  //   先剔后排名    20.0 个    2003     52% / 39%     52% / 57%    43% / 44%
+  //
+  // 所有质量指标的差异都在噪音里，而信号多了 10%、主表不再缺行。原因是量能比
+  // 只从前 20 里剔掉约 2 个，递补最多伸到第 22 名，跟第 20 名的压缩度几乎
+  // 没有差别。
+  //
+  // **这个「无害」是在 VOLUME_RATIO_MIN = 0.8 下测的。** 如果哪天把它提到
+  // 1.0 甚至 1.2（讨论过，没做），被剔掉的就不止 2 个，递补会伸到第 25、30 名，
+  // 稀释就可能真的发生——到那时要重新测这个顺序，不要默认它还成立。
   //
   // 量能比算不出来（null）时放行：证明不了在萎缩不等于在萎缩，拿一个算不
   // 出来的指标删行只会让榜单无声变短。
   const picked = targets
-    .slice(0, QUIET_RANK_TAKE)
-    .filter((t) => t.volumeRatio === null || t.volumeRatio >= VOLUME_RATIO_MIN);
+    .filter((t) => t.volumeRatio === null || t.volumeRatio >= VOLUME_RATIO_MIN)
+    .slice(0, QUIET_RANK_TAKE);
 
   // 已有卡片但这轮掉出前 20 的币，坐配额里空着的那几个名额继续扫。
   // 不这么做的话，它们这一轮算不出场景，卡片会因为「排名掉了」而消失
@@ -443,9 +462,13 @@ export async function runScan(): Promise<ScannerPayload> {
     // 钥匙要按触发源分别拼，所以这里跟 buildCard 里的优先级必须一致：
     // 场景优先。不一致的话会拿场景的钥匙去查点火卡的备忘，每轮都查不到，
     // 卡片的首次价与计时永远重置。
+    // 点火那一支现在默认关着（IGNITION_CARDS_ENABLED，理由见 cards.ts），
+    // 但这里的分支保持原样、跟着同一个开关走——两处一旦不一致，就会拿
+    // 一把点火钥匙去 buildCard，而那边 pickTrigger 返回 null，结果是每轮
+    // 都白查一次备忘、卡片不出也不报错，属于最难发现的那类不一致。
     const cardKey = scenario
       ? memoKey(row.symbol, scenario)
-      : ignition
+      : IGNITION_CARDS_ENABLED && ignition
         ? ignitionMemoKey(row.symbol, ignition)
         : null;
     if (cardKey) {

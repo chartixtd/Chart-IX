@@ -243,17 +243,29 @@ describe("extremesSince / signedPct", () => {
 });
 
 /**
- * 点火卡这一路。它现在是警报栏里的主力——选币翻成「最安静」之后六场景
- * 几乎判不出来（安静的币不创新极值，实测过门率 8% vs 最吵那组的 48%），
- * 线上表现是场景数从每天 8–26 个掉到 0。这几条把点火卡的关键行为钉死。
+ * 点火卡这一路。**它在生产上已经关掉了**（IGNITION_CARDS_ENABLED=false，
+ * 理由见 cards.ts：捕获率 36–47%、止损止盈网格 20 格全负且全场最差），
+ * 但判定逻辑保留着，所以这些用例照样要跑——传 `ignitionCards: true` 显式
+ * 打开。「暂时关掉」不该等于「无人看管的坏代码」。
  */
-describe("buildCard —— 点火卡", () => {
-  it("没场景但有点火 = 出点火卡，向上突破对应做多", () => {
+describe("buildCard —— 点火卡（生产已关，逻辑保留）", () => {
+  it("默认（跟生产一致）不出点火卡", () => {
     const r = buildCard({
       row: row({ scenario: null, ignition: ignition() }),
       priceBars: [],
       memo: undefined,
       now: T0,
+    });
+    expect(r.card).toBeNull();
+  });
+
+  it("显式打开后：没场景但有点火 = 出点火卡，向上突破对应做多", () => {
+    const r = buildCard({
+      row: row({ scenario: null, ignition: ignition() }),
+      priceBars: [],
+      memo: undefined,
+      now: T0,
+      ignitionCards: true,
     });
     expect(r.card?.trigger.type).toBe("ignition");
     expect(r.card?.direction).toBe("long");
@@ -265,6 +277,7 @@ describe("buildCard —— 点火卡", () => {
       priceBars: [],
       memo: undefined,
       now: T0,
+      ignitionCards: true,
     });
     expect(r.card?.direction).toBe("short");
   });
@@ -277,6 +290,7 @@ describe("buildCard —— 点火卡", () => {
       priceBars: [],
       memo: undefined,
       now: T0,
+      ignitionCards: true,
     }).card!;
     expect(up.invalidation).toEqual({ price: 98, breach: "below" });
 
@@ -288,6 +302,7 @@ describe("buildCard —— 点火卡", () => {
       priceBars: [],
       memo: undefined,
       now: T0,
+      ignitionCards: true,
     }).card!;
     expect(down.invalidation).toEqual({ price: 122, breach: "above" });
   });
@@ -300,6 +315,7 @@ describe("buildCard —— 点火卡", () => {
       priceBars: [],
       memo: undefined,
       now: T0,
+      ignitionCards: true,
     });
     expect(r.card?.trigger.type).toBe("scenario");
   });

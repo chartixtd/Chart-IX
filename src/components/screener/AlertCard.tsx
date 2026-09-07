@@ -9,7 +9,7 @@ import { isInvalidated } from "@/lib/screener/invalidation";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { FactorMeter } from "./FactorMeter";
-import { toneFor, DIRECTION_CLASSES, STRENGTH_CLASSES } from "./scenario-ui";
+import { toneFor, DIRECTION_CLASSES } from "./scenario-ui";
 
 // 接收 t 而不是硬编码文案——页面其余文案全部走 i18n，这里也不能例外
 // （英文/马来语环境下直接冒出一个中文"刚刚"是真的会发生的 bug）。
@@ -112,11 +112,10 @@ export function AlertCard({
   const fresh = freshness(triggeredAt);
 
   // 场景卡与点火卡在这三格上说的是不同的话，其余版式完全共用。
-  let title: string;
+  // （原本还有一格 title = 场景名，已不再显示，理由见下面渲染处的注释。）
   let verdict: string;
   let action: string;
   let trap = false;
-  let strengthBadge: { bg: string; text: string; label: string } | null = null;
   if (trigger.type === "scenario") {
     const sc = trigger.scenario;
     trap = sc.trap;
@@ -132,14 +131,10 @@ export function AlertCard({
       oiState: sc.oiState,
       strength: sc.strength,
     };
-    title = t(`scenarios.${sc.kind}.name`, vars);
     action = t(`scenarios.${sc.kind}.action`, vars);
     verdict = t(`scenarios.${sc.kind}.reading`, vars);
-    const cls = STRENGTH_CLASSES[sc.strength];
-    strengthBadge = { ...cls, label: t(`strength.${sc.strength}`) };
   } else {
     const ig = trigger.ignition;
-    title = t(`ignition.${ig.direction}.name`);
     action = t(`ignition.${ig.direction}.action`);
     verdict = t(`ignition.reading.${ig.direction}`, {
       level: formatPrice(ig.level),
@@ -186,50 +181,52 @@ export function AlertCard({
         </span>
       </div>
 
-      <div className="mb-2.5 flex items-center gap-1.5">
-        {/* 场景名做成填色徽章而不是裸的彩色文字：基调色此前只落在一条 2px
-            边框和一行 13px 文字上，颜色面积太小，几张卡并排时看不出区别。
-            徽章给了基调一块真正的surface，一眼就能认出这是哪一类场景。 */}
-        <span
-          className={cn(
-            "rounded-xs px-1.5 py-0.5 font-display text-[12px] font-bold",
-            toneCls.badgeBg,
-            toneCls.text
-          )}
-        >
-          {trigger.type === "ignition" && <Icon name="bolt" className="mr-0.5 inline h-3 w-3" />}
-          {title}
-        </span>
+      {/* 这一行现在只剩「陷阱」和「已结束/已失效」两个状态标签，两个都没有
+          时整行不渲染——否则会留下一条 10px 的空 margin。 */}
+      {(trap || dead) && (
+        <div className="mb-2.5 flex items-center gap-1.5">
+          {/* 场景名（「增仓型底背离」这类）**不显示**。
+         *
+         * 它读起来像一个已经读懂市场的结论，而实测下来不同场景之间的方向
+         * 准确度全部落在 50% 附近、彼此区分不开（见 factors/scenario.ts 的
+         * ENABLED_SCENARIO_KINDS 里那份取舍依据）。下面那句 verdict 用大白话
+         * 说**发生了什么**（插破前低又收回、CVD 没跟上、OI 增了多少），信息量
+         * 一样，但不冒充结论。
+         *
+         * i18n 的 `scenarios.*.name` 没删——事后归因统计要按场景名分组，
+         * 数据里的 kind 字段也照常带着，只是不摆在卡片上。
+         *
+         * **代价记一笔**：这个徽章当初是刻意加的，因为基调色原本只落在一条
+         * 2px 左边框和一行 13px 文字上，「颜色面积太小，几张卡并排时看不出
+         * 区别」。现在色彩识别退回到左边框 + verdict 的边框浅色，如果并排时
+         * 又变得难分辨，优先把基调色补到别处（比如给 verdict 那块加底色），
+         * 而不是把场景名放回来。 */}
         {/* 陷阱标签跟着场景自身的基调色走（假顶=紫 / 假底=品红），
             写死一个紫会让品红卡片上出现两个对不上的"陷阱色"。 */}
-        {trap && (
-          <span className={cn("inline-flex items-center gap-0.5 text-[11px] font-semibold", toneCls.text)}>
-            <Icon name="alert" className="h-3 w-3" />
-            {t("scenarios.trap_label")}
-          </span>
-        )}
-        {strengthBadge && (
-          <span
-            className={cn(
-              "rounded-xs px-1.5 py-0.5 text-[10px] font-semibold",
-              strengthBadge.bg,
-              strengthBadge.text
-            )}
-          >
-            {strengthBadge.label}
-          </span>
-        )}
-        {dead && (
-          <span
-            className={cn(
-              "ml-auto rounded-xs px-1.5 py-px text-[10px] font-semibold",
-              card.expired ? "bg-text-muted/15 text-text-muted" : "bg-danger/15 text-danger"
-            )}
-          >
-            {card.expired ? t("alerts.ended") : t("alerts.invalidated")}
-          </span>
-        )}
-      </div>
+          {/* 强度徽章（最强 / 最强顺势 / 中强 / 健康）也**不显示**了，理由跟
+              场景名同一条：它暗示了一个可信度排序，而实测下来不同强度档之间
+              的表现没有可区分的差异——胜率在每一档都是 50% 上下。留着只会让
+              人以为系统对某些卡「更有把握」。
+              strength 字段本身没删，卡片文案里描述 OI/强度的定语仍然靠它做
+              ICU select 选词（见 scenario.ts 的 Scenario.oiState 注释）。 */}
+          {trap && (
+            <span className={cn("inline-flex items-center gap-0.5 text-[11px] font-semibold", toneCls.text)}>
+              <Icon name="alert" className="h-3 w-3" />
+              {t("scenarios.trap_label")}
+            </span>
+          )}
+          {dead && (
+            <span
+              className={cn(
+                "ml-auto rounded-xs px-1.5 py-px text-[10px] font-semibold",
+                card.expired ? "bg-text-muted/15 text-text-muted" : "bg-danger/15 text-danger"
+              )}
+            >
+              {card.expired ? t("alerts.ended") : t("alerts.invalidated")}
+            </span>
+          )}
+        </div>
+      )}
 
       <p
         className={cn(

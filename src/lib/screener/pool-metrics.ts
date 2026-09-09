@@ -1,4 +1,6 @@
 import { getFuturesKlines } from "@/lib/bingx/market";
+import type { BingXKline } from "@/types/bingx";
+import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
 
 /**
  * 选币用的两个全池指标，来自**同一批 K 线、同一次请求**。
@@ -49,6 +51,24 @@ interface Bar {
   /** 计价货币成交额（≈USDT）。用它而不是 base volume：14 天里价格会变， */
   /** 同样的币数量在不同价位代表的资金完全不同。 */
   quoteVolume: number;
+}
+
+/**
+ * 复核活卡要回看多久。24 小时足够：扫描每 15 分钟一轮，两轮之间最多差
+ * 半根 K 线，48 根是给「上一轮没跑成 / 部署间隔」留的余量。
+ */
+export const REVIEW_BARS = BARS_24H;
+
+/** BingX 的 K 线转成流水线内部通用的形状（失效判定只读 time/high/low/close）。 */
+function toPriceBar(k: BingXKline): CoinGlassPriceBar {
+  return {
+    time: k.openTime,
+    open: String(k.open),
+    high: String(k.high),
+    low: String(k.low),
+    close: String(k.close),
+    volume_usd: String(k.quoteVolume),
+  };
 }
 
 export interface PoolMetrics {
@@ -113,15 +133,38 @@ export function volumeRatio(bars: Bar[]): number | null {
   return Number.isFinite(ratio) ? ratio : null;
 }
 
+export interface PoolScan {
+  /** 压缩度算得出来的币。选币的排序键。 */
+  metrics: Map<string, PoolMetrics>;
+  /**
+   * `keepBarsFor` 点名的币的最近 24 小时 K 线。
+   *
+   * 存在的理由是卡片的失效复核：判「有没有碰到失效线」只要价格 K 线，
+   * 而这一批 K 线**已经在手上**了——全池 250 个币本来就要拉一遍来算压缩度。
+   * 不复用它，复核就只能走 CoinGlass 明细层，而那里每轮只够扫 24 个币，
+   * 活卡一旦掉出那 24 个就再也没人复核，只能一直挂着。
+   */
+  bars: Map<string, CoinGlassPriceBar[]>;
+}
+
 /**
- * 给全池算这两个指标。**压缩度算不出来的币不进结果 Map**——它是排序键，
- * 没有键就没法排队。量能比算不出来的仍然进，只是 volumeRatio 为 null。
+ * 给全池算这两个指标，顺带留下点名那几个币的 K 线。
+ *
+ * **压缩度算不出来的币不进 metrics**——它是排序键，没有键就没法排队。
+ * 量能比算不出来的仍然进，只是 volumeRatio 为 null。
+ *
+ * `bars` 的收集**在压缩度那道门之前**：一个币可能 K 线不足 48 根算不出
+ * 压缩度，却有一张活卡等着复核，这两件事没有关系。
  *
  * 单个币失败只丢它自己：一个币的 K 线拿不到就把整轮扫描拖垮，是这套
  * 流水线里最不该出现的失败模式。
  */
-export async function fetchPoolMetrics(symbols: string[]): Promise<Map<string, PoolMetrics>> {
-  const out = new Map<string, PoolMetrics>();
+export async function fetchPoolMetrics(
+  symbols: string[],
+  keepBarsFor: ReadonlySet<string> = new Set()
+): Promise<PoolScan> {
+  const metrics = new Map<string, PoolMetrics>();
+  const kept = new Map<string, CoinGlassPriceBar[]>();
   let cursor = 0;
 
   async function worker(): Promise<void> {
@@ -131,9 +174,12 @@ export async function fetchPoolMetrics(symbols: string[]): Promise<Map<string, P
       const symbol = symbols[i];
       try {
         const bars = await getFuturesKlines(symbol, "30m", BARS_14D);
+        if (keepBarsFor.has(symbol)) {
+          kept.set(symbol, bars.slice(-REVIEW_BARS).map(toPriceBar));
+        }
         const compression = compressionRatio(bars);
         if (compression === null) continue;
-        out.set(symbol, { compression, volumeRatio: volumeRatio(bars) });
+        metrics.set(symbol, { compression, volumeRatio: volumeRatio(bars) });
       } catch {
         // 静默跳过；调用方对「查不到」的处理见 pipeline 的选币段。
       }
@@ -141,5 +187,27 @@ export async function fetchPoolMetrics(symbols: string[]): Promise<Map<string, P
   }
 
   await Promise.all(Array.from({ length: FETCH_CONCURRENCY }, worker));
+  return { metrics, bars: kept };
+}
+
+/**
+ * 补拉几个币的 K 线。给「有活卡、但这一轮根本没进候选池」的币用。
+ *
+ * 这种币通常是 0 个（粗筛只看市值与成交量，有卡的币多半还在池子里），
+ * 但只要出现一个，它的卡就会因为没人复核而一直挂着——而这条路径上
+ * 「没人复核」是唯一会让「碰线才失效」失灵的缺口，所以宁可多拉几次。
+ */
+export async function fetchReviewBars(symbols: string[]): Promise<Map<string, CoinGlassPriceBar[]>> {
+  const out = new Map<string, CoinGlassPriceBar[]>();
+  await Promise.all(
+    symbols.map(async (symbol) => {
+      try {
+        const bars = await getFuturesKlines(symbol, "30m", REVIEW_BARS);
+        if (bars.length > 0) out.set(symbol, bars.map(toPriceBar));
+      } catch {
+        // 拉不到就是这一轮复核不了，卡片继续活着。
+      }
+    })
+  );
   return out;
 }

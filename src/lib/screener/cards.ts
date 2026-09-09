@@ -57,23 +57,26 @@ export type CardTrigger =
   | { type: "ignition"; ignition: Ignition };
 
 /**
- * 一张卡为什么结束了。**只在它结束的那一轮判一次**，之后灰着的每一轮原样带着。
+ * 卡片只有两种状态：**活着**，或者**已失效**。
  *
- *   · invalidated —— 价格穿了失效线。场景按 K 线极值判（插针也算），点火按
- *     收盘判，跟活卡那一路各自的口径一致（见 invalidation.ts）。
- *   · structure_changed —— 这个币这一轮扫了、K 线也拿到了，但按同一套判定
- *     已经算不出这张卡了：条件不再全部成立，或者判成了别的场景 / 锚点换了。
- *     **价格没有碰到失效线。** 这是最容易被误读的一种——线上一张 OP 的
- *     b3 卡，价格离失效价还有 1.7%，卡片却打着「已结束」，读的人自然以为
- *     是止损被扫了，其实是反弹把「下行力度 / OI 同增」那几条打掉了。
- *   · not_scanned —— 这个币这一轮根本不在扫描名单里：掉出主表而复核名额
- *     又不够，或者掉出了候选池。信号本身还成不成立，系统不知道。
- *   · no_data —— 扫了，但这个币的 K 线没拿到（上游失败），判不了。
+ * 「已失效」只有一个含义，也只有一个来源：价格碰到了这张卡自己的失效线。
+ * 除此之外没有任何东西能让一张卡结束——场景条件不再成立、判成了别的场景、
+ * 锚点漂了、这个币掉出扫描名单、K 线拿不到，全都**不算**，卡片照常活着。
  *
- * 前两种是「市场说了话」，后两种是「系统没看」。分开写，是因为对一个可能
- * 正持着仓的人，这两类的含义完全不同：前者该走了，后者该自己去看一眼。
+ * 这是一次刻意的语义收窄。此前卡片是「当轮扫描的视图」：算得出来就在，
+ * 算不出来就没。后果是绝大多数卡片的消失跟价格无关，而页面上又画着一条
+ * 很显眼的失效线，读的人只能理解成「碰线了」。线上那张 OP 的卡是典型：
+ * 失效价 0.1135 是本波高点，之后没有一根 K 线的最高价超过它，价格离线还有
+ * 1.7%，卡却结束了——真实原因是反弹把「下行力度 / OI 同增」那几条打掉了。
+ *
+ * 现在换成：**卡片有自己的生命周期，起点是信号出现，终点是价格证伪它。**
+ * 一张卡在这两点之间一直挂着，即使系统这一轮判不出这个场景了。
+ *
+ * 代价是明确的，写在这里免得日后当成 bug：主扫描表的场景列仍然每轮重算
+ * （它回答的是「这个币现在是什么局面」），所以会出现**表格那一行没有场景、
+ * 而这个币的卡片还活着**的情况。两者回答的不是同一个问题——表格说的是
+ * 现在，卡片说的是「那个还没被证伪的信号」。
  */
-export type ExpiredReason = "invalidated" | "structure_changed" | "not_scanned" | "no_data";
 
 export interface AlertCardData {
   key: string;
@@ -93,25 +96,21 @@ export interface AlertCardData {
   /** 失效线；锚点价格非法时为 null */
   invalidation: InvalidationLine | null;
   /**
-   * 这张卡的信号**已经结束**，留在这里只是为了让人找得到。
+   * 价格已经碰到失效线，这个信号被证伪了。
    *
-   * 存在的理由是一个真实抱怨：Telegram 推过来的币，点进页面找不到。
-   * 推送是某一刻的快照（推的那一批就是当轮 payload.cards 的子集），而页面
-   * 是「现在」——中间隔了几十分钟到几小时，卡片早就因为失效/结构变了/
-   * 点火过期而不再被算出来。页面上什么都不留，看起来就像推送在乱报。
-   *
-   * 现在这种卡会**灰着留一段时间**（CARD_GRACE_MS），标成「已结束」。
-   * 这跟前端实时穿线只变灰不消失是同一个取舍：消失让人无从判断发生过什么，
-   * 而「发生过、已经结束」是一个有用的答案。
+   * 失效之后卡片不立刻消失，而是**灰着留一段时间**（CARD_GRACE_MS），
+   * 让人看得到它死在哪里：消失让人无从判断发生过什么，而「它到过失效价」
+   * 是一个有用的答案。这跟前端实时穿线只变灰不消失是同一个取舍。
    */
   expired: boolean;
   /**
-   * 结束原因，只在 expired 为 true 时有意义。缺失 = 这张卡是在这个字段加上
-   * 之前就结束的（从旧 payload 接过来的灰卡），前端退回只显示「已结束」，
-   * 不去猜。可选字段，所以不必抬 SCANNER_PAYLOAD_VERSION：旧形状读出来是
-   * undefined，而 undefined 正是这里的合法取值之一。
+   * 失效发生的时刻。宽限期从**这里**算起，不是从 firstSeenAt 算起。
+   *
+   * 早先的宽限期是拿 firstSeenAt 量的，那在卡片只活一两轮的年代还看得过去；
+   * 现在一张卡可以活很久，再用出生时间量，一张活了三天才碰线的卡会在失效的
+   * 同一秒就超期消失——恰恰是最该被看见的那一刻。
    */
-  expiredReason?: ExpiredReason;
+  expiredAt?: string;
 }
 
 /** 触发价 → 现价的顺方向涨跌幅。做空时符号翻过来，跌了才是正的。 */
@@ -310,73 +309,103 @@ export function triggerInvalidated(trigger: CardTrigger, bars: CoinGlassPriceBar
 }
 
 /**
- * 判一张刚结束的卡的结束原因。
+ * 用本轮扫到的新数据刷新一张**还活着**的卡。
  *
- * `scannedBars` 是本轮**实际扫过**的每个币 → 它的价格 K 线。没扫的币不在
- * 里面，扫了但没拿到 K 线的是空数组——两者要分开（一个是「没看」，一个是
- * 「看了但看不见」），所以传 Map 而不是只传一个 symbol 集合。
- *
- * 顺序有讲究：先查穿线，再归为「条件已变」。一张穿了线的卡在分类器里同样
- * 是算不出来的（b3 一创新高就被第一道门否掉），只看「算不算得出」分不开
- * 这两种；而穿线是更具体、对持仓者更要紧的那个答案。
+ * 只动会变的那几样：分数、两个因子、峰值、以及「现在多少钱」所依赖的价格。
+ * 身份那几样一律不动——key、trigger、firstSeenAt、firstPrice、invalidation
+ * 都锚在信号出现的那一刻，改了就等于把这张卡换成了另一张。失效线尤其不能
+ * 跟着重算：一条会移动的失效线没法当判据，也没法让人照着操作。
  */
-export function resolveExpiredReason(
+export function refreshCard(
   card: AlertCardData,
-  scannedBars: ReadonlyMap<string, CoinGlassPriceBar[]>
-): ExpiredReason {
-  const bars = scannedBars.get(card.symbol);
-  if (bars === undefined) return "not_scanned";
-  if (bars.length === 0) return "no_data";
-  if (triggerInvalidated(card.trigger, bars)) return "invalidated";
-  return "structure_changed";
+  row: ScannerRow,
+  priceBars: CoinGlassPriceBar[]
+): AlertCardData {
+  const ext = extremesSince(priceBars, new Date(card.firstSeenAt).getTime()) ?? {
+    high: row.price,
+    low: row.price,
+  };
+  const best = card.direction === "short" ? ext.low : ext.high;
+  // 跟 buildCard 同一个算法，而且**只增不减**：峰值是「最好到过哪儿」，
+  // 一段回撤不该把它抹掉。
+  const peakPct = Math.max(
+    card.peakPct,
+    0,
+    signedPct(card.firstPrice, best, card.direction),
+    signedPct(card.firstPrice, row.price, card.direction)
+  );
+  return { ...card, factors: row.factors, total: row.total, peakPct };
+}
+
+export interface AdvanceCardsInput {
+  /** 上一轮 payload 里的全部卡片，活的和灰的都在。 */
+  previous: AlertCardData[];
+  /**
+   * 本轮能用来**复核碰线**的价格 K 线，按 symbol。
+   *
+   * 不在这张表里的币，这一轮无法判定它有没有碰线——那时卡片**继续活着**，
+   * 而不是被当成结束。这是「只有碰线才算失效」的直接推论：判不了不等于死了。
+   * 漏判的那部分由前端兜底（实时成交价每帧都在跟失效线比，见 AlertCard）。
+   */
+  bars: ReadonlyMap<string, CoinGlassPriceBar[]>;
+  /** 本轮扫描出的行，按 symbol。有就用来刷新活卡的分数与峰值，没有就保持原样。 */
+  rows: ReadonlyMap<string, ScannerRow>;
+  now: number;
+}
+
+export interface AdvanceCardsResult {
+  /** 仍然活着的卡（含这一轮判不了的）。 */
+  live: AlertCardData[];
+  /** 已失效、还在宽限期里的灰卡。 */
+  expired: AlertCardData[];
 }
 
 /**
- * 挑出「信号已经结束、但还值得灰着留一会儿」的卡片。
+ * 把上一轮的卡片推进到这一轮。**这是卡片去留的唯一裁决处。**
  *
- * 灰卡存在的唯一理由是**让推送里的币找得到**：推送推的就是当轮 cards 的
- * 子集，推的那一刻它一定在页面上；人隔几十分钟才点开，那时卡片早已不再被
- * 算出来，页面什么都不留就像推送在乱报。
+ * 三条路，仅此三条：
+ *   ① 已经是灰卡 → 宽限期没过就留着，过了就丢。灰卡不会复活。
+ *   ② 活卡，这轮能复核 → 碰线了就失效（记下时刻），没碰就刷新数据继续活。
+ *   ③ 活卡，这轮复核不了 → 原样继续活着。
  *
- * 三条筛选缺一不可，每一条都是线上问题逼出来的：
- *
- * ① **这个币没有活卡。** 一张灰一张亮并排放着，等于在同一个币上给出两个
- *    互相矛盾的结论，而灰的那张多半只是被新卡换掉的旧身份。
- *
- * ② **这张卡推送过。** 初版没有这条，线上 21 张里 12 张是灰的，绝大多数
- *    根本不是「信号结束」而是**卡片换了身份**：场景抢占点火（场景优先，
- *    点火就不再产出，可那张点火卡明明还成立、价格离失效线还有 1%）、
- *    场景在 kind 之间切换、锚点漂移导致钥匙变化。用户看到的就是
- *    「价格还没到失效价，卡片却显示已结束」。没推过的卡本来就不需要找回。
- *
- * ③ **没超过宽限期。**
- *
- * 传空的 pushedKeys 会让结果为空——那等于回到「卡片直接消失」，也就是加
- * 宽限期之前的行为，是安全的退化方向。
- *
- * `reasonFor` 只对**这一轮刚结束**的卡调用（上一轮还是活的、这一轮没了）。
- * 上一轮已经是灰卡的，原样带着它的原因不再重判——这一轮再判会判错：它当初
- * 是「条件已变」，这一轮币掉出了名单，重判就成了「本轮未扫」。上一轮就是
- * 灰卡却没有原因的（字段加上之前结束的旧卡），保持没有，前端退回「已结束」。
+ * 注意这里**没有**「场景还在不在」这一问。判定只问价格，不问结构：一张卡
+ * 一旦出现，除了价格证伪它，没有别的东西能把它撤下来。
  */
-export function carryForwardExpired(
-  previous: AlertCardData[],
-  liveCards: AlertCardData[],
-  pushedKeys: Set<string>,
-  now: number,
-  reasonFor: (card: AlertCardData) => ExpiredReason
-): AlertCardData[] {
-  const liveKeys = new Set(liveCards.map((c) => c.key));
-  const liveSymbols = new Set(liveCards.map((c) => c.symbol));
-  return previous
-    .filter((c) => !liveKeys.has(c.key))
-    .filter((c) => !liveSymbols.has(c.symbol))
-    .filter((c) => pushedKeys.has(c.key))
-    .filter((c) => now - new Date(c.firstSeenAt).getTime() < CARD_GRACE_MS)
-    .slice(0, CARD_GRACE_MAX)
-    .map((c) => ({
-      ...c,
-      expired: true,
-      expiredReason: c.expired ? c.expiredReason : reasonFor(c),
-    }));
+export function advanceCards({ previous, bars, rows, now }: AdvanceCardsInput): AdvanceCardsResult {
+  const live: AlertCardData[] = [];
+  const expired: AlertCardData[] = [];
+
+  for (const card of previous) {
+    if (card.expired) {
+      // 没有 expiredAt 的是这个字段加上之前失效的旧卡。用 firstSeenAt 顶上
+      // 只会把它们立刻判超期，那是安全的方向——旧灰卡本来就活不过一轮部署。
+      const since = new Date(card.expiredAt ?? card.firstSeenAt).getTime();
+      if (now - since < CARD_GRACE_MS) expired.push(card);
+      continue;
+    }
+
+    const b = bars.get(card.symbol);
+    if (b === undefined || b.length === 0) {
+      live.push(card);
+      continue;
+    }
+
+    if (triggerInvalidated(card.trigger, b)) {
+      expired.push({ ...card, expired: true, expiredAt: new Date(now).toISOString() });
+      continue;
+    }
+
+    const row = rows.get(card.symbol);
+    live.push(row ? refreshCard(card, row, b) : card);
+  }
+
+  // 灰卡按失效时刻倒序取前 N 张：行情剧烈时一批卡同时碰线，全留会把警报栏
+  // 淹掉，而最该被看见的是**刚刚**死掉的那几张。
+  expired.sort(
+    (a, b2) =>
+      new Date(b2.expiredAt ?? b2.firstSeenAt).getTime() -
+      new Date(a.expiredAt ?? a.firstSeenAt).getTime()
+  );
+
+  return { live, expired: expired.slice(0, CARD_GRACE_MAX) };
 }

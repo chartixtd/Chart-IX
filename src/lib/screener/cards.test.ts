@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   buildCard,
   memoKey,
@@ -6,10 +6,11 @@ import {
   sortCards,
   extremesSince,
   signedPct,
-  carryForwardExpired,
-  resolveExpiredReason,
+  advanceCards,
+  refreshCard,
+  triggerInvalidated,
 } from "./cards";
-import type { AlertCardData, ScenarioMemo, ExpiredReason } from "./cards";
+import type { AlertCardData, ScenarioMemo } from "./cards";
 import type { Scenario } from "./factors/scenario";
 import type { Ignition } from "./ignition";
 import type { ScannerRow } from "./types";
@@ -356,158 +357,186 @@ describe("新出的卡不带 expired 标记", () => {
  * 结果 21 张卡里 12 张是灰的，而绝大多数根本不是信号结束，是**卡片换了
  * 身份**——用户看到的现象是「价格离失效价还有 1%，卡片却显示已结束」。
  */
-describe("carryForwardExpired", () => {
+/**
+ * 卡片的生命周期。**唯一的终点是价格碰到失效线。**
+ *
+ * 这组用例的原型是线上那张 OP 的 b3 卡：失效价 0.1135 是本波高点，之后
+ * 没有一根 K 线的最高价超过它，价格离线还有 1.7%，卡却结束了——旧行为下
+ * 卡片是「当轮扫描的视图」，场景一判不出来就没。现在它必须活着。
+ */
+describe("advanceCards", () => {
   const T = 1_700_000_000_000;
+  const HOUR = 3_600_000;
+
   const card = (o: Partial<AlertCardData> & { key: string; symbol: string }): AlertCardData => ({
     coin: o.symbol.replace("-USDT", ""),
-    trigger: { type: "scenario", scenario: scenario() },
+    trigger: { type: "scenario", scenario: scenario({ triggeredAt: T - 4 * HOUR }) },
     direction: "long",
     factors: { oi: 0, cvd: 0 },
     total: 10,
-    firstSeenAt: new Date(T - 10 * 60000).toISOString(),
-    firstPrice: 1,
-    peakPct: 0,
-    invalidation: null,
-    expired: false,
-    ...o,
-  });
-  const pushed = (...keys: string[]) => new Set(keys);
-  const why = (): ExpiredReason => "structure_changed";
-
-  it("推送过、这个币没有活卡、没过期 → 留下并标成 expired", () => {
-    const prev = [card({ key: "k1", symbol: "AAA-USDT" })];
-    const out = carryForwardExpired(prev, [], pushed("k1"), T, why);
-    expect(out).toHaveLength(1);
-    expect(out[0].expired).toBe(true);
-  });
-
-  it("这个币已经有活卡 → 不留灰卡", () => {
-    // 线上真实情况：BTC 同时挂着一张活的 a4 和一张灰的点火卡，
-    // 而那张点火卡的价格离失效线还有 1%——它不是失效了，是被场景抢占了。
-    // 一张灰一张亮并排，等于对同一个币给出两个互相矛盾的结论。
-    const prev = [card({ key: "old", symbol: "BTC-USDT" })];
-    const liveNow = [card({ key: "new", symbol: "BTC-USDT" })];
-    expect(carryForwardExpired(prev, liveNow, pushed("old"), T, why)).toHaveLength(0);
-  });
-
-  it("没推送过的卡不留——灰卡的唯一用途就是让推送里的币找得到", () => {
-    const prev = [card({ key: "k1", symbol: "AAA-USDT" })];
-    expect(carryForwardExpired(prev, [], pushed(), T, why)).toHaveLength(0);
-  });
-
-  it("台账读不出来时一张灰卡都不留，退回「卡片直接消失」的旧行为", () => {
-    // readPushedKeys 读失败会返回空集合。这时宁可什么都不留，
-    // 也不要把一堆换过身份的旧卡当成「已结束」摆出来。
-    const prev = [card({ key: "k1", symbol: "AAA-USDT" }), card({ key: "k2", symbol: "BBB-USDT" })];
-    expect(carryForwardExpired(prev, [], new Set(), T, why)).toHaveLength(0);
-  });
-
-  it("还在当轮活着的卡不会被复制成灰卡", () => {
-    const c = card({ key: "k1", symbol: "AAA-USDT" });
-    expect(carryForwardExpired([c], [c], pushed("k1"), T, why)).toHaveLength(0);
-  });
-
-  it("超过宽限期的丢掉", () => {
-    const old = card({
-      key: "k1",
-      symbol: "AAA-USDT",
-      firstSeenAt: new Date(T - 5 * 60 * 60 * 1000).toISOString(),
-    });
-    expect(carryForwardExpired([old], [], pushed("k1"), T, why)).toHaveLength(0);
-  });
-
-  it("不改原对象——上一轮的 payload 是从缓存读来的，就地改会污染它", () => {
-    const c = card({ key: "k1", symbol: "AAA-USDT" });
-    carryForwardExpired([c], [], pushed("k1"), T, why);
-    expect(c.expired).toBe(false);
-  });
-
-  it("这一轮刚结束的卡带上原因", () => {
-    const prev = [card({ key: "k1", symbol: "AAA-USDT" })];
-    const out = carryForwardExpired(prev, [], pushed("k1"), T, () => "invalidated");
-    expect(out[0].expiredReason).toBe("invalidated");
-  });
-
-  it("上一轮已经是灰卡的，原样带着原因，不重判", () => {
-    // 它当初是「条件已变」；这一轮币掉出了名单，重判会变成「本轮未扫」——
-    // 那是在描述这一轮，不是在描述它为什么结束。
-    const grey = card({ key: "k1", symbol: "AAA-USDT", expired: true, expiredReason: "structure_changed" });
-    const spy = vi.fn((): ExpiredReason => "not_scanned");
-    const out = carryForwardExpired([grey], [], pushed("k1"), T, spy);
-    expect(out[0].expiredReason).toBe("structure_changed");
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it("旧灰卡没有原因的保持没有——前端退回「已结束」，不去猜", () => {
-    const grey = card({ key: "k1", symbol: "AAA-USDT", expired: true });
-    const out = carryForwardExpired([grey], [], pushed("k1"), T, () => "not_scanned");
-    expect(out[0].expired).toBe(true);
-    expect(out[0].expiredReason).toBeUndefined();
-  });
-});
-
-/**
- * 结束原因的判定。线上那张 OP 的 b3 卡是这组用例的原型：失效价 0.1135 是
- * 本波高点，之后没有一根 K 线的最高价超过它，价格离线还有 1.7%，卡片却
- * 打着「已结束」——读的人以为是止损被扫了，其实是反弹把场景条件打掉了。
- */
-describe("resolveExpiredReason", () => {
-  const card = (o: Partial<AlertCardData> = {}): AlertCardData => ({
-    key: "k",
-    symbol: "OP-USDT",
-    coin: "OP",
-    trigger: { type: "scenario", scenario: scenario() },
-    direction: "long",
-    factors: { oi: 0, cvd: 0 },
-    total: 10,
-    firstSeenAt: new Date(T0).toISOString(),
-    firstPrice: 1,
+    firstSeenAt: new Date(T - 3 * HOUR).toISOString(),
+    firstPrice: 110,
     peakPct: 0,
     invalidation: { price: 100, breach: "below" },
     expired: false,
     ...o,
   });
-  const scanned = (entries: Array<[string, CoinGlassPriceBar[]]>) => new Map(entries);
 
-  it("这一轮没扫这个币 → not_scanned", () => {
-    expect(resolveExpiredReason(card(), scanned([["BTC-USDT", bars([[T0, 1, 1]])]]))).toBe("not_scanned");
-  });
+  /** 一段没碰到失效线（100）的 K 线 */
+  const safe = bars([
+    [T - 2 * HOUR, 115, 105],
+    [T - HOUR, 114, 103],
+  ]);
+  /** 最后一根跌破了 100 */
+  const broken = bars([
+    [T - 2 * HOUR, 115, 105],
+    [T - HOUR, 114, 99],
+  ]);
+  const noRows = new Map<string, ScannerRow>();
 
-  it("扫了但 K 线是空的 → no_data，跟「没扫」分开", () => {
-    expect(resolveExpiredReason(card(), scanned([["OP-USDT", []]]))).toBe("no_data");
-  });
-
-  it("场景卡：触发之后有一根 K 线的极值穿了失效线 → invalidated（插针也算）", () => {
-    // scenario() 默认 triggeredAt=0、失效线 100 往下穿
-    const b = bars([
-      [T0, 105, 101],
-      [T0 + 1_800_000, 104, 99],
-    ]);
-    expect(resolveExpiredReason(card(), scanned([["OP-USDT", b]]))).toBe("invalidated");
-  });
-
-  it("场景卡：扫了、没穿线、但这张卡算不出来了 → structure_changed", () => {
-    // OP 的真实形状：做空，失效线 0.1135 = 本波高点。有一根最高价**恰好**
-    // 等于失效价（就是那根高点本身），严格不等所以不算穿。
-    const c = card({
-      direction: "short",
-      trigger: {
-        type: "scenario",
-        scenario: scenario({ direction: "short", invalidation: { price: 0.1135, breach: "above" } }),
-      },
-      invalidation: { price: 0.1135, breach: "above" },
+  it("场景已经判不出来了，只要没碰线，卡片照常活着", () => {
+    // 这就是 OP 那张卡：这一轮扫到了这个币、K 线也在手上、价格离失效线还远，
+    // 而本轮 rows 里根本没有它的场景。旧行为会让它消失。
+    const c = card({ key: "k1", symbol: "OP-USDT" });
+    const out = advanceCards({
+      previous: [c],
+      bars: new Map([["OP-USDT", safe]]),
+      rows: noRows,
+      now: T,
     });
-    const b = bars([
-      [T0, 0.1135, 0.1109],
-      [T0 + 1_800_000, 0.1131, 0.1102],
-      [T0 + 3_600_000, 0.1118, 0.1097],
-    ]);
-    expect(resolveExpiredReason(c, scanned([["OP-USDT", b]]))).toBe("structure_changed");
+    expect(out.live).toHaveLength(1);
+    expect(out.expired).toHaveLength(0);
   });
 
-  it("点火卡：按收盘判——收盘跌破失效线是 invalidated，只有影线穿过不是", () => {
-    const ig = ignition({ direction: "up", invalidationPrice: 98, ignitedAt: T0 });
-    const c = card({ trigger: { type: "ignition", ignition: ig }, invalidation: { price: 98, breach: "below" } });
+  it("碰线了才失效，并记下失效时刻", () => {
+    const c = card({ key: "k1", symbol: "OP-USDT" });
+    const out = advanceCards({
+      previous: [c],
+      bars: new Map([["OP-USDT", broken]]),
+      rows: noRows,
+      now: T,
+    });
+    expect(out.live).toHaveLength(0);
+    expect(out.expired[0].expired).toBe(true);
+    expect(out.expired[0].expiredAt).toBe(new Date(T).toISOString());
+  });
+
+  it("这个币这一轮没被复核 → 继续活着，不当成结束", () => {
+    // 判不了不等于死了。漏掉的这部分由前端实时价兜底。
+    const c = card({ key: "k1", symbol: "OP-USDT" });
+    const out = advanceCards({ previous: [c], bars: new Map(), rows: noRows, now: T });
+    expect(out.live).toHaveLength(1);
+  });
+
+  it("K 线拿到了但是空的，也算复核不了", () => {
+    const c = card({ key: "k1", symbol: "OP-USDT" });
+    const out = advanceCards({
+      previous: [c],
+      bars: new Map([["OP-USDT", []]]),
+      rows: noRows,
+      now: T,
+    });
+    expect(out.live).toHaveLength(1);
+  });
+
+  it("卡片活多久都不会自己过期——只有价格能结束它", () => {
+    const ancient = card({
+      key: "k1",
+      symbol: "OP-USDT",
+      firstSeenAt: new Date(T - 30 * 24 * HOUR).toISOString(),
+      trigger: { type: "scenario", scenario: scenario({ triggeredAt: T - 30 * 24 * HOUR }) },
+    });
+    const out = advanceCards({
+      previous: [ancient],
+      bars: new Map([["OP-USDT", safe]]),
+      rows: noRows,
+      now: T,
+    });
+    expect(out.live).toHaveLength(1);
+  });
+
+  it("活卡跟着本轮的行刷新分数与因子，身份那几样一动不动", () => {
+    const c = card({ key: "k1", symbol: "TIA-USDT", total: 10, factors: { oi: 1, cvd: 1 } });
+    const fresh = row({ symbol: "TIA-USDT", total: 88, factors: { oi: 50, cvd: 38 }, price: 120 });
+    const out = advanceCards({
+      previous: [c],
+      bars: new Map([["TIA-USDT", safe]]),
+      rows: new Map([["TIA-USDT", fresh]]),
+      now: T,
+    });
+    const got = out.live[0];
+    expect(got.total).toBe(88);
+    expect(got.factors).toEqual({ oi: 50, cvd: 38 });
+    expect(got.key).toBe("k1");
+    expect(got.firstSeenAt).toBe(c.firstSeenAt);
+    expect(got.firstPrice).toBe(c.firstPrice);
+    expect(got.invalidation).toEqual(c.invalidation);
+  });
+
+  it("灰卡的宽限期从失效那一刻算，不是从卡片出现算", () => {
+    // 一张活了三天才碰线的卡，如果拿 firstSeenAt 量，会在失效的同一秒消失。
+    const justDied = card({
+      key: "k1",
+      symbol: "AAA-USDT",
+      firstSeenAt: new Date(T - 3 * 24 * HOUR).toISOString(),
+      expired: true,
+      expiredAt: new Date(T - 60_000).toISOString(),
+    });
+    const out = advanceCards({ previous: [justDied], bars: new Map(), rows: noRows, now: T });
+    expect(out.expired).toHaveLength(1);
+  });
+
+  it("灰卡超过宽限期就丢掉", () => {
+    const old = card({
+      key: "k1",
+      symbol: "AAA-USDT",
+      expired: true,
+      expiredAt: new Date(T - 3 * HOUR).toISOString(),
+    });
+    const out = advanceCards({ previous: [old], bars: new Map(), rows: noRows, now: T });
+    expect(out.expired).toHaveLength(0);
+  });
+
+  it("灰卡不会因为价格又回到线内而复活", () => {
+    const dead = card({
+      key: "k1",
+      symbol: "OP-USDT",
+      expired: true,
+      expiredAt: new Date(T - 60_000).toISOString(),
+    });
+    const out = advanceCards({
+      previous: [dead],
+      bars: new Map([["OP-USDT", safe]]),
+      rows: noRows,
+      now: T,
+    });
+    expect(out.live).toHaveLength(0);
+    expect(out.expired).toHaveLength(1);
+  });
+
+  it("灰卡多于上限时留最近死的那几张", () => {
+    const many = Array.from({ length: 20 }, (_, i) =>
+      card({
+        key: `k${i}`,
+        symbol: `C${i}-USDT`,
+        expired: true,
+        // i 越大死得越晚
+        expiredAt: new Date(T - (20 - i) * 60_000).toISOString(),
+      })
+    );
+    const out = advanceCards({ previous: many, bars: new Map(), rows: noRows, now: T });
+    expect(out.expired).toHaveLength(12);
+    expect(out.expired[0].key).toBe("k19");
+  });
+
+  it("不改原对象——上一轮的 payload 是从缓存读来的，就地改会污染它", () => {
+    const c = card({ key: "k1", symbol: "OP-USDT" });
+    advanceCards({ previous: [c], bars: new Map([["OP-USDT", broken]]), rows: noRows, now: T });
+    expect(c.expired).toBe(false);
+    expect(c.expiredAt).toBeUndefined();
+  });
+
+  it("点火卡按收盘判：影线穿过不算，收盘穿过才算", () => {
     const mk = (time: number, high: number, low: number, close: number): CoinGlassPriceBar => ({
       time,
       open: String(close),
@@ -516,9 +545,66 @@ describe("resolveExpiredReason", () => {
       close: String(close),
       volume_usd: "1",
     });
-    const wickOnly = [mk(T0, 103, 100, 102), mk(T0 + 1_800_000, 103, 96, 99)];
-    expect(resolveExpiredReason(c, scanned([["OP-USDT", wickOnly]]))).toBe("structure_changed");
-    const closedBelow = [mk(T0, 103, 100, 102), mk(T0 + 1_800_000, 103, 96, 97)];
-    expect(resolveExpiredReason(c, scanned([["OP-USDT", closedBelow]]))).toBe("invalidated");
+    const c = card({
+      key: "k1",
+      symbol: "OP-USDT",
+      trigger: { type: "ignition", ignition: ignition({ ignitedAt: T - 2 * HOUR, invalidationPrice: 98 }) },
+      invalidation: { price: 98, breach: "below" },
+    });
+    const wick = [mk(T - HOUR, 105, 96, 101)];
+    expect(advanceCards({ previous: [c], bars: new Map([["OP-USDT", wick]]), rows: noRows, now: T }).live).toHaveLength(1);
+    const closed = [mk(T - HOUR, 105, 96, 97)];
+    expect(advanceCards({ previous: [c], bars: new Map([["OP-USDT", closed]]), rows: noRows, now: T }).expired).toHaveLength(1);
+  });
+});
+
+describe("refreshCard", () => {
+  const T = 1_700_000_000_000;
+  const base: AlertCardData = {
+    key: "k",
+    symbol: "TIA-USDT",
+    coin: "TIA",
+    trigger: { type: "scenario", scenario: scenario() },
+    direction: "long",
+    factors: { oi: 1, cvd: 1 },
+    total: 5,
+    firstSeenAt: new Date(T - 3_600_000).toISOString(),
+    firstPrice: 100,
+    peakPct: 4,
+    invalidation: { price: 90, breach: "below" },
+    expired: false,
+  };
+
+  it("峰值只增不减——一段回撤不该把最好成绩抹掉", () => {
+    const flat = bars([[T - 1_800_000, 101, 99]]);
+    const got = refreshCard(base, row({ symbol: "TIA-USDT", price: 100 }), flat);
+    expect(got.peakPct).toBe(4);
+  });
+
+  it("创了新高就把峰值抬上去", () => {
+    const up = bars([[T - 1_800_000, 110, 99]]);
+    const got = refreshCard(base, row({ symbol: "TIA-USDT", price: 108 }), up);
+    expect(got.peakPct).toBeCloseTo(10, 6);
+  });
+
+  it("做空看的是最低价", () => {
+    const short = { ...base, direction: "short" as const, peakPct: 0 };
+    const down = bars([[T - 1_800_000, 101, 90]]);
+    const got = refreshCard(short, row({ symbol: "TIA-USDT", price: 95 }), down);
+    expect(got.peakPct).toBeCloseTo(10, 6);
+  });
+});
+
+describe("triggerInvalidated", () => {
+  const T = 1_700_000_000_000;
+
+  it("场景看 K 线极值，插针也算数", () => {
+    const t = { type: "scenario" as const, scenario: scenario({ triggeredAt: 0, invalidation: { price: 100, breach: "below" as const } }) };
+    expect(triggerInvalidated(t, bars([[T, 110, 99]]))).toBe(true);
+  });
+
+  it("恰好碰到失效价不算穿", () => {
+    const t = { type: "scenario" as const, scenario: scenario({ triggeredAt: 0, invalidation: { price: 100, breach: "below" as const } }) };
+    expect(triggerInvalidated(t, bars([[T, 110, 100]]))).toBe(false);
   });
 });

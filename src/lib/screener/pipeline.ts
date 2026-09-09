@@ -14,7 +14,7 @@ import type {
 } from "@/lib/coinglass/types";
 import type { BingXTicker } from "@/types/bingx";
 import { preselect, amplitudeFromTicker, SERVER_GATE } from "./universe";
-import { fetchPoolMetrics, VOLUME_RATIO_MIN } from "./pool-metrics";
+import { fetchPoolMetrics, fetchReviewBars, VOLUME_RATIO_MIN } from "./pool-metrics";
 import type { PoolMetrics } from "./pool-metrics";
 import type { PreselectCandidate } from "./universe";
 import { readVolumeCache } from "./volume-cache";
@@ -25,12 +25,10 @@ import {
   sortCards,
   memoKey,
   ignitionMemoKey,
-  carryForwardExpired,
-  resolveExpiredReason,
+  advanceCards,
   IGNITION_CARDS_ENABLED,
 } from "./cards";
 import { readLastScannerPayload } from "./cache";
-import { readPushedKeys } from "./alert-push";
 import type { AlertCardData, ScenarioMemo } from "./cards";
 import { pickDirection, amplitudeFromBars } from "./score";
 import { pickFundingRate } from "./funding";
@@ -38,7 +36,7 @@ import { classifyScenario } from "./factors/scenario";
 import { scenarioInvalidated } from "./invalidation";
 import { detectIgnition } from "./ignition";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
-import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS, SCANNER_PAYLOAD_VERSION } from "./types";
+import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS, CARD_MAX_LIVE, SCANNER_PAYLOAD_VERSION } from "./types";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -331,8 +329,21 @@ export async function runScan(): Promise<ScannerPayload> {
   // tickerBySymbol 是为了把 preselect() 已经消费过的 ticker 按 symbol 找回来
   // ——PreselectCandidate 本身不携带价格与振幅（粗筛不需要它们）。
   const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
-  const cardSymbols = new Set([...memos.values()].map((m) => m.symbol));
-  const metrics = await fetchPoolMetrics(candidates.map((c) => c.bingxSymbol));
+
+  // 上一轮还活着的卡。这一轮它们的去留只由一件事决定：价格有没有碰到各自的
+  // 失效线（见 cards.ts advanceCards）。所以这里要的不是「谁有备忘」，而是
+  // **谁有活卡**——备忘会为一个从未出过卡的结构留记录，拿它当名单会把复核
+  // 名额浪费在没有卡片的币上。
+  const previousCards = (await readLastScannerPayload())?.cards ?? [];
+  const liveCards = previousCards.filter((c) => !c.expired);
+  const cardSymbols = new Set(liveCards.map((c) => c.symbol));
+
+  // 全池那趟 K 线顺手把有活卡的币留下来（不额外发请求，它本来就要拉全池）。
+  const pool = await fetchPoolMetrics(
+    candidates.map((c) => c.bingxSymbol),
+    cardSymbols
+  );
+  const metrics = pool.metrics;
   if (metrics.size === 0) {
     // 全池一个都没拉到 = BingX 那一侧整个挂了。排序键全缺，榜单必然是空的，
     // 与其返回一份空榜让人以为「市场没机会」，不如把原因喊出来。
@@ -369,7 +380,9 @@ export async function runScan(): Promise<ScannerPayload> {
   const detail = await runWithConcurrency(detailTasks);
 
   const rows: ScannerRow[] = [];
-  const cards: AlertCardData[] = [];
+  // 本轮**新判出**的卡片候选。是不是真的出卡，要等下面跟上一轮的活卡对过
+  // （同一个币已经有活卡就不出）。
+  const builtCards: AlertCardData[] = [];
   const newMemos: ScenarioMemo[] = [];
   // 本轮扫过的每个币 → 它的价格 K 线。给下面判「灰卡为什么结束」用：不在
   // 这张表里 = 这一轮没扫它；在但是空数组 = 扫了但 K 线没拿到。两者要分开。
@@ -479,13 +492,47 @@ export async function runScan(): Promise<ScannerPayload> {
     if (cardKey) {
       const built = buildCard({ row, priceBars, memo: memos.get(cardKey), now });
       if (built.newMemo) newMemos.push(built.newMemo);
-      if (built.card) cards.push(built.card);
+      if (built.card) builtCards.push(built.card);
     }
   }
 
   // 写备忘顺带清过期。放在返回之前而不是 await 之后再算，是因为写失败
   // 不该影响这一轮的产出——saveMemos 内部吞掉错误，只记录。
   await saveMemos(newMemos, now);
+
+  // ⑤ 卡片的去留。**唯一的判据是价格有没有碰到失效线。**
+  //
+  // 复核要的只是价格 K 线，三个来源按「越同源越优先」叠：全池那趟 BingX
+  // K 线覆盖面最广（有活卡的币基本都在里面），CoinGlass 明细层是深扫那 24
+  // 个币的，跟场景判定同源所以放最后覆盖上去。
+  //
+  // 补拉是为了堵最后一个缺口：有活卡、却连候选池都没进的币（市值或成交量
+  // 掉出粗筛）。这种币通常一个都没有，但只要出现一个，它的卡就会因为没人
+  // 复核而一直挂着——而「没人复核」是唯一能让「碰线才失效」失灵的路径。
+  const missing = [...cardSymbols].filter((sym) => !pool.bars.has(sym));
+  if (missing.length > 0) {
+    console.warn(`[screener] ${missing.length} 个有活卡的币不在候选池里，单独补拉 K 线复核`);
+  }
+  const reviewBars = new Map<string, CoinGlassPriceBar[]>([
+    ...pool.bars,
+    ...(missing.length > 0 ? await fetchReviewBars(missing) : []),
+    ...[...scannedBars].filter(([, b]) => b.length > 0),
+  ]);
+
+  const advanced = advanceCards({
+    previous: previousCards,
+    bars: reviewBars,
+    rows: new Map(rows.map((r) => [r.symbol, r])),
+    now,
+  });
+
+  // 本轮新判出的信号里，**这个币已经有活卡的一律不出新卡**。
+  //
+  // 老卡还没被价格证伪，就还是那个没结束的信号；这时再出一张新卡，等于对
+  // 同一个币同时给两个结论，而且多半只是同一段行情被判成了另一个场景。
+  // 老卡碰线之后，同一个结构如果还成立，下一轮自然会补上来。
+  const liveSymbols = new Set(advanced.live.map((c) => c.symbol));
+  const fresh = builtCards.filter((c) => !liveSymbols.has(c.symbol));
 
   // 数据不全的行一律沉底，不参与分数排序——它们的分数是缺失回退值，
   // 拿它跟真实算出来的分数比大小没有意义。
@@ -497,35 +544,24 @@ export async function runScan(): Promise<ScannerPayload> {
   );
 
   const newKeys = new Set(newMemos.map((m) => m.key));
+  const live = [...advanced.live, ...fresh];
 
-  // 信号已经结束、但结束得还不久的卡片，灰着留一会儿（见 CARD_GRACE_MS）。
-  //
-  // 修的是一个真实抱怨：Telegram 推过来的币，点进页面找不到。推送推的就是
-  // 当轮 payload.cards 的子集，所以推的那一刻它一定在页面上；找不到是因为
-  // 中间隔了几十分钟到几小时，卡片早就不再被算出来了。页面什么都不留，
-  // 看起来就像推送在乱报。
-  //
-  // 只接**上一轮**的卡片，不去翻更早的历史：上一轮的 payload 里已经含着它
-  // 自己接过来的灰卡，于是「结束多久」是靠 firstSeenAt + 宽限期截断的，
-  // 不需要额外记一张台账。
-  //
-  // 每张灰卡都带着**它为什么结束**（见 cards.ts ExpiredReason）。判定用的是
-  // 上一轮那张卡自己的触发源对上本轮的 K 线——不是本轮判出的新场景，那个
-  // 可能根本不存在。
-  const expired = carryForwardExpired(
-    (await readLastScannerPayload())?.cards ?? [],
-    cards,
-    await readPushedKeys(),
-    now,
-    (c) => resolveExpiredReason(c, scannedBars)
-  );
+  // 安全阀，不是失效条件。卡片现在只会因为碰线而结束，所以理论上它们可以
+  // 一直堆下去；这条线只保证 payload 不会无限膨胀。真撞上了要出声——那说明
+  // 该回头看看是不是有一批卡的失效线画得太远，而不是默默截断。
+  if (live.length > CARD_MAX_LIVE) {
+    console.warn(`[screener] 活卡 ${live.length} 张，超过上限 ${CARD_MAX_LIVE}，按总分截断`);
+  }
+  const capped = sortCards(live).slice(0, CARD_MAX_LIVE);
 
   return {
     version: SCANNER_PAYLOAD_VERSION,
     rows,
-    // 活着的排前面，已结束的一律沉底——警报栏第一眼要看的是「现在能做什么」。
-    cards: [...sortCards(cards), ...expired],
-    newCards: cards.filter((c) => newKeys.has(c.key)),
+    // 活着的排前面，已失效的一律沉底——警报栏第一眼要看的是「现在能做什么」。
+    cards: [...capped, ...advanced.expired],
+    // 推送只推**这一轮新出**的卡。延续下来的老卡早就推过了，再推一遍就是
+    // 把同一件事重复报警。
+    newCards: fresh.filter((c) => newKeys.has(c.key)),
     computedAt: now,
   };
 }

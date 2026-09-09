@@ -86,31 +86,19 @@ export function AlertCard({
   // 两次扫描之间创了新高时卡片会自相矛盾：「现在 +2.1%，最高到过 0.00%」。
   const peak = Math.max(card.peakPct, pct);
 
-  // 两种「这张卡别再按它操作了」：
-  //   expired —— 服务端已经算不出这个信号了（失效/结构变了/点火过期）。
-  //     卡片不立刻消失而是灰着留一段时间，是为了让 Telegram 推过来的币
-  //     在页面上找得到——推的那一刻它一定在，几十分钟后就不一定了。
-  //   dead —— 实时价刚刚穿了失效线，但服务端下一轮（最多 15 分钟）才会确认。
-  //     先变灰是因为「别再按它操作」这件事应该在一秒内知道，不该等一刻钟。
+  // 「这张卡别再按它操作了」只有一个意思：**价格碰到了失效线。**
+  //
+  //   card.expired —— 服务端上一轮复核时确认碰线了。
+  //   实时那一路 —— 现在这一秒就穿了，服务端最多还要 15 分钟才确认。先变灰
+  //     是因为「别再按它操作」应该在一秒内知道，不该等一刻钟。
+  //
+  // 两者说的是同一件事，所以标签也是同一个。除此之外没有别的东西能让一张卡
+  // 结束——场景不成立了、这个币没被扫到，卡片照常活着（见 cards.ts 顶部）。
   const dead =
     card.expired ||
     (card.invalidation !== null &&
       livePrice !== null &&
       isInvalidated(card.invalidation, livePrice, livePrice));
-
-  // 结束标签怎么写、用什么色：
-  //   实时穿线（服务端还没确认）→ 红「已失效」。
-  //   服务端结束 → 按它记下的原因分：穿线也是红的；条件已变 / 本轮未扫 /
-  //     数据缺失是灰的。红 = 市场证伪了它，灰 = 系统不再算它。
-  //   旧 payload 里没带原因的灰卡 → 退回「已结束」，不猜。
-  // 原因只对服务端结束的卡有意义，实时穿线那一路没有原因字段可读。
-  const reason = card.expired ? card.expiredReason : undefined;
-  const endedLabel = !card.expired
-    ? t("alerts.invalidated")
-    : reason
-      ? t(`alerts.ended_reason.${reason}`)
-      : t("alerts.ended");
-  const endedDanger = !card.expired || reason === "invalidated";
 
   const toneCls = toneFor(trigger);
   const dirCls = DIRECTION_CLASSES[direction];
@@ -198,13 +186,8 @@ export function AlertCard({
               单独另起一行会在抬头下面留一条只有右端有字的空行。dead 时新鲜度
               徽章不再显示——已经结束的信号无所谓新不新。 */}
           {dead && (
-            <span
-              className={cn(
-                "rounded-sm border px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em]",
-                endedDanger ? "border-danger/40 text-danger" : "border-border-hover text-text-muted"
-              )}
-            >
-              {endedLabel}
+            <span className="rounded-sm border border-danger/40 px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-danger">
+              {t("alerts.invalidated")}
             </span>
           )}
         </div>
@@ -265,13 +248,10 @@ export function AlertCard({
         <p className={cn("text-[13px] font-semibold leading-snug", dirCls.actionText, dead && "line-through")}>
           {action}
         </p>
-        {/* 指令被划掉了，紧跟着说清楚**为什么**。一张失效线画得很显眼的卡打着
-            「已结束」，读的人多半会以为是碰线了——而多数情况恰恰不是。 */}
-        {reason && (
+        {/* 指令被划掉了，紧跟着说清楚为什么。只有一句话可说：它到过失效价。 */}
+        {dead && card.invalidation && (
           <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
-            {t(`alerts.ended_detail.${reason}`, {
-              price: card.invalidation ? formatPrice(card.invalidation.price) : "—",
-            })}
+            {t("alerts.invalidated_detail", { price: formatPrice(card.invalidation.price) })}
           </p>
         )}
         <p className="mt-2 text-xs leading-relaxed text-text-secondary">{verdict}</p>

@@ -10,16 +10,16 @@ import {
 } from "./tabs";
 
 describe("MOBILE_TABS", () => {
-  it("共 5 个位置，选币在正中间且标记为凸起", () => {
+  it("共 5 个位置，选币在正中间且是唯一的中心档位", () => {
     expect(MOBILE_TABS).toHaveLength(5);
     expect(MOBILE_TABS[2].key).toBe("screener");
-    expect(MOBILE_TABS[2].center).toBe(true);
-    expect(MOBILE_TABS.filter((t) => t.center)).toHaveLength(1);
+    expect(MOBILE_TABS[2].anchor).toBe(true);
+    expect(MOBILE_TABS.filter((t) => t.anchor)).toHaveLength(1);
   });
 
   it("交易退到第 4 格，仍然一步可达", () => {
     expect(MOBILE_TABS[3].key).toBe("trade");
-    expect(MOBILE_TABS[3].center).toBe(false);
+    expect(MOBILE_TABS[3].anchor).toBe(false);
   });
 
   it("链接带上语言前缀", () => {
@@ -34,9 +34,9 @@ describe("MOBILE_TABS", () => {
 });
 
 describe("GUEST_MOBILE_TABS", () => {
-  it("门槛与桌面访客顶栏一致：只有首页、计算器、更多，没有凸起圆盘", () => {
+  it("门槛与桌面访客顶栏一致：只有首页、计算器、更多，三格等分", () => {
     expect(GUEST_MOBILE_TABS.map((t) => t.key)).toEqual(["home", "tools", "more"]);
-    expect(GUEST_MOBILE_TABS.some((t) => t.center)).toBe(false);
+    expect(GUEST_MOBILE_TABS.some((t) => t.anchor)).toBe(false);
   });
 
   it("不放开桌面对访客也不开放的产品页", () => {

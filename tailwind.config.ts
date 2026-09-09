@@ -66,7 +66,7 @@ const config: Config = {
         "safe-b": "env(safe-area-inset-bottom)",
         "safe-l": "env(safe-area-inset-left)",
         "safe-r": "env(safe-area-inset-right)",
-        tabbar: "calc(var(--tabbar-h, 70px) + env(safe-area-inset-bottom))",
+        tabbar: "calc(var(--tabbar-h, 68px) + env(safe-area-inset-bottom))",
       },
       height: {
         dvh: "100dvh",
@@ -133,6 +133,7 @@ const config: Config = {
         obsidian: "var(--obsidian)",
         "hairline-gold": "var(--hairline-gold)",
         "ink-fade": "linear-gradient(180deg, rgba(9,9,11,0) 0%, #09090B 100%)",
+        "tabbar-lit": "var(--tabbar-lit)",
       },
       transitionTimingFunction: {
         out: "cubic-bezier(0.16, 1, 0.3, 1)",

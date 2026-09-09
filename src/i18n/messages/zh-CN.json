@@ -28,6 +28,7 @@
     "of": "共 {total} 页"
   },
   "nav": {
+    "primary": "主导航",
     "home": "首页",
     "dashboard": "我的主页",
     "videos": "视频库",

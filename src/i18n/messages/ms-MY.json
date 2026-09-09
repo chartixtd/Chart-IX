@@ -28,6 +28,7 @@
     "of": "daripada {total}"
   },
   "nav": {
+    "primary": "Navigasi utama",
     "home": "Laman Utama",
     "dashboard": "Papan Pemuka",
     "videos": "Perpustakaan Video",

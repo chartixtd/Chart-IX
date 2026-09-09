@@ -3,8 +3,12 @@ export type TabKey = "dashboard" | "learn" | "trade" | "screener" | "more" | "ho
 export interface MobileTab {
   key: TabKey;
   href: (locale: string) => string;
-  /** 中央凸起的金色圆盘。它是目的地不是动作——点了直接跳转并显示选中态 */
-  center: boolean;
+  /**
+   * 轨道的中心档位。层级由**结构**给而不由材质给：格宽多两成、图标大一档、
+   * 未选中时文字亮一阶。上一版这里是一枚凸起的金箔圆盘，见
+   * MobileTabBar 顶部的注释为什么拿掉了。
+   */
+  anchor: boolean;
 }
 
 /**
@@ -16,27 +20,27 @@ export interface MobileTab {
  * 为什么访客也要有底栏：公开内容页（文章 / 视频 / 学习）的流量大头是搜索
  * 进来的手机访客，而此前底栏对未登录用户整个 return null——他们落到
  * /articles 之后，除了返回键之外没有任何站内导航，桌面访客却仍有一整条顶栏。
- * 没有凸起圆盘：访客这三个入口里没有哪个够格当全站视觉重心。
+ * 没有中心档位：访客这三个入口里没有哪个够格当全站视觉重心，三格等分。
  */
 export const GUEST_MOBILE_TABS: MobileTab[] = [
-  { key: "home", href: (l) => `/${l}`, center: false },
-  { key: "tools", href: (l) => `/${l}/tools/position-size`, center: false },
-  { key: "more", href: (l) => `/${l}/more`, center: false },
+  { key: "home", href: (l) => `/${l}`, anchor: false },
+  { key: "tools", href: (l) => `/${l}/tools/position-size`, anchor: false },
+  { key: "more", href: (l) => `/${l}/more`, anchor: false },
 ];
 
 /**
  * 已登录用户的底栏。
  *
- * 中央凸起的金圆盘给「选币」而不是「交易」：底栏正中是全站视觉重心，
- * 该给的是这个产品每天要你做的第一件事——先扫出值得看的标的。交易页
- * 是你选完之后才去的地方，退到第 4 格，仍然一步可达。
+ * 中心档位给「选币」而不是「交易」：五格正中是拇指的自然落点，该给的是这个
+ * 产品每天要你做的第一件事——先扫出值得看的标的。交易页是你选完之后才去的
+ * 地方，退到第 4 格，仍然一步可达。
  */
 export const MOBILE_TABS: MobileTab[] = [
-  { key: "dashboard", href: (l) => `/${l}/dashboard`, center: false },
-  { key: "learn", href: (l) => `/${l}/learn`, center: false },
-  { key: "screener", href: (l) => `/${l}/screener`, center: true },
-  { key: "trade", href: (l) => `/${l}/trade`, center: false },
-  { key: "more", href: (l) => `/${l}/more`, center: false },
+  { key: "dashboard", href: (l) => `/${l}/dashboard`, anchor: false },
+  { key: "learn", href: (l) => `/${l}/learn`, anchor: false },
+  { key: "screener", href: (l) => `/${l}/screener`, anchor: true },
+  { key: "trade", href: (l) => `/${l}/trade`, anchor: false },
+  { key: "more", href: (l) => `/${l}/more`, anchor: false },
 ];
 
 /**

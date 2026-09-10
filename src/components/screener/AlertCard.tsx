@@ -6,6 +6,7 @@ import { cn, formatPrice, formatPercent } from "@/lib/utils";
 import type { AlertCardData } from "@/lib/screener/cards";
 import { signedPct } from "@/lib/screener/cards";
 import { isInvalidated } from "@/lib/screener/invalidation";
+import { CARD_MAX_AGE_MS } from "@/lib/screener/types";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { FactorMeter } from "./FactorMeter";
@@ -41,7 +42,8 @@ function directionLabel(dir: "long" | "short" | "manage", t: ReturnType<typeof u
  *
  * 4 小时这条线：这类结构事件的生命周期实测是几十分钟到几小时，叠上
  * 30 分钟的确认延迟，超过 4 小时的卡片基本已经从「入场信号」退化成
- * 「趋势确认」——还有参考价值，但不该照着它进场。
+ * 「趋势确认」——还有参考价值，但不该照着它进场。它比 CARD_MAX_AGE_MS
+ * （6 小时，卡片直接失效）早两小时，正好当那条线的预告。
  */
 function freshness(iso: string): "fresh" | "normal" | "stale" {
   const mins = (Date.now() - new Date(iso).getTime()) / 60000;
@@ -89,16 +91,28 @@ export function AlertCard({
   // 「这张卡别再按它操作了」只有一个意思：**价格碰到了失效线。**
   //
   //   card.expired —— 服务端上一轮复核时确认碰线了。
-  //   实时那一路 —— 现在这一秒就穿了，服务端最多还要 15 分钟才确认。先变灰
-  //     是因为「别再按它操作」应该在一秒内知道，不该等一刻钟。
+  //   实时那一路 —— 现在这一秒就穿了，或者刚好活满 6 小时，而服务端最多还要
+  //     15 分钟才确认。先变灰是因为「别再按它操作」应该在一秒内知道。
   //
-  // 两者说的是同一件事，所以标签也是同一个。除此之外没有别的东西能让一张卡
-  // 结束——场景不成立了、这个币没被扫到，卡片照常活着（见 cards.ts 顶部）。
-  const dead =
-    card.expired ||
-    (card.invalidation !== null &&
-      livePrice !== null &&
-      isInvalidated(card.invalidation, livePrice, livePrice));
+  // 三种说的是同一件事，所以标签也是同一个「已失效」。除此之外没有别的东西
+  // 能让一张卡结束——场景不成立了、这个币没被扫到，卡片照常活着。
+  const crossed =
+    card.invalidation !== null &&
+    livePrice !== null &&
+    isInvalidated(card.invalidation, livePrice, livePrice);
+  const agedOut = Date.now() - new Date(card.firstSeenAt).getTime() >= CARD_MAX_AGE_MS;
+  const dead = card.expired || crossed || agedOut;
+
+  // 底下那句解释按死因分。服务端记下的优先（它是权威，而且带着精确的失效
+  // 时刻）；前端自己算出来的那两种按「碰线优先于超时」——一张既穿了线又
+  // 到点的卡，碰线是更具体、对持仓的人更要紧的那个答案。
+  //
+  // 最后那个 "invalidation" 是兜底，接的是**服务端说它死了、但没说怎么死的**
+  // 那种卡（expiredBy 这个字段加上之前留下的旧灰卡）。少了它这类卡会一句
+  // 解释都没有——划掉的指令底下空着，比说错还费解。
+  const deadBy = !dead
+    ? undefined
+    : (card.expiredBy ?? (agedOut && !crossed ? "timeout" : "invalidation"));
 
   const toneCls = toneFor(trigger);
   const dirCls = DIRECTION_CLASSES[direction];
@@ -248,8 +262,11 @@ export function AlertCard({
         <p className={cn("text-[13px] font-semibold leading-snug", dirCls.actionText, dead && "line-through")}>
           {action}
         </p>
-        {/* 指令被划掉了，紧跟着说清楚为什么。只有一句话可说：它到过失效价。 */}
-        {dead && card.invalidation && (
+        {/* 指令被划掉了，紧跟着说清楚为什么：它到过失效价，还是它过气了。 */}
+        {dead && deadBy === "timeout" && (
+          <p className="mt-2 text-[11px] leading-relaxed text-text-muted">{t("alerts.timeout_detail")}</p>
+        )}
+        {dead && deadBy === "invalidation" && card.invalidation && (
           <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
             {t("alerts.invalidated_detail", { price: formatPrice(card.invalidation.price) })}
           </p>

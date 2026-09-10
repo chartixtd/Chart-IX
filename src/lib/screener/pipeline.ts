@@ -546,11 +546,11 @@ export async function runScan(): Promise<ScannerPayload> {
   const newKeys = new Set(newMemos.map((m) => m.key));
   const live = [...advanced.live, ...fresh];
 
-  // 安全阀，不是失效条件。卡片现在只会因为碰线而结束，所以理论上它们可以
-  // 一直堆下去；这条线只保证 payload 不会无限膨胀。真撞上了要出声——那说明
-  // 该回头看看是不是有一批卡的失效线画得太远，而不是默默截断。
+  // 安全阀，不是失效条件。卡片只会因为碰线或超时而结束（见 cards.ts 顶部），
+  // 这条线只保证 payload 不会无限膨胀。sortCards 是新的在前，所以截断砍掉的
+  // 是最老的那几张——跟 6 小时超时同一个方向。真撞上了要出声。
   if (live.length > CARD_MAX_LIVE) {
-    console.warn(`[screener] 活卡 ${live.length} 张，超过上限 ${CARD_MAX_LIVE}，按总分截断`);
+    console.warn(`[screener] 活卡 ${live.length} 张，超过上限 ${CARD_MAX_LIVE}，砍掉最老的几张`);
   }
   const capped = sortCards(live).slice(0, CARD_MAX_LIVE);
 

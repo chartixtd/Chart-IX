@@ -1,7 +1,7 @@
 import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
 import type { Scenario, ScenarioDirection } from "./factors/scenario";
 import type { FactorBreakdown, ScannerRow } from "./types";
-import { CARD_GRACE_MS, CARD_GRACE_MAX } from "./types";
+import { CARD_GRACE_MS, CARD_GRACE_MAX, CARD_MAX_AGE_MS } from "./types";
 import type { Ignition } from "./ignition";
 import { invalidationLine, ignitionLine, scenarioInvalidated, ignitionInvalidated } from "./invalidation";
 import type { InvalidationLine } from "./invalidation";
@@ -59,9 +59,13 @@ export type CardTrigger =
 /**
  * 卡片只有两种状态：**活着**，或者**已失效**。
  *
- * 「已失效」只有一个含义，也只有一个来源：价格碰到了这张卡自己的失效线。
- * 除此之外没有任何东西能让一张卡结束——场景条件不再成立、判成了别的场景、
- * 锚点漂了、这个币掉出扫描名单、K 线拿不到，全都**不算**，卡片照常活着。
+ * 失效只有两个条件，谁先到算谁：
+ *   ① 价格碰到了这张卡自己的失效线（市场证伪了它）；
+ *   ② 卡片出现满 6 小时（CARD_MAX_AGE_MS，它过气了）。
+ *
+ * 除这两条之外没有任何东西能让一张卡结束——场景条件不再成立、判成了别的
+ * 场景、锚点漂了、这个币掉出扫描名单、K 线拿不到，全都**不算**，卡片照常
+ * 活着。
  *
  * 这是一次刻意的语义收窄。此前卡片是「当轮扫描的视图」：算得出来就在，
  * 算不出来就没。后果是绝大多数卡片的消失跟价格无关，而页面上又画着一条
@@ -69,8 +73,8 @@ export type CardTrigger =
  * 失效价 0.1135 是本波高点，之后没有一根 K 线的最高价超过它，价格离线还有
  * 1.7%，卡却结束了——真实原因是反弹把「下行力度 / OI 同增」那几条打掉了。
  *
- * 现在换成：**卡片有自己的生命周期，起点是信号出现，终点是价格证伪它。**
- * 一张卡在这两点之间一直挂着，即使系统这一轮判不出这个场景了。
+ * 现在换成：**卡片有自己的生命周期，起点是信号出现，终点是它被证伪或者
+ * 过气。** 一张卡在这两点之间一直挂着，即使系统这一轮判不出这个场景了。
  *
  * 代价是明确的，写在这里免得日后当成 bug：主扫描表的场景列仍然每轮重算
  * （它回答的是「这个币现在是什么局面」），所以会出现**表格那一行没有场景、
@@ -96,13 +100,24 @@ export interface AlertCardData {
   /** 失效线；锚点价格非法时为 null */
   invalidation: InvalidationLine | null;
   /**
-   * 价格已经碰到失效线，这个信号被证伪了。
+   * 这张卡已经结束了：价格碰到了失效线，或者它活满了 6 小时。
    *
    * 失效之后卡片不立刻消失，而是**灰着留一段时间**（CARD_GRACE_MS），
-   * 让人看得到它死在哪里：消失让人无从判断发生过什么，而「它到过失效价」
-   * 是一个有用的答案。这跟前端实时穿线只变灰不消失是同一个取舍。
+   * 让人看得到它是怎么死的：消失让人无从判断发生过什么，而「它到过失效价」
+   * 或「它过气了」都是有用的答案。这跟前端实时穿线只变灰不消失是同一个取舍。
    */
   expired: boolean;
+  /**
+   * 死于两个条件里的哪一个。只在 expired 为 true 时有意义。
+   *
+   * 标签上两者都叫「已失效」——对读的人来说结论是同一个：别再按它操作。
+   * 但底下那句解释必须分开，「价格已穿过失效价 X」按在一张超时卡上就是
+   * 一句假话，而那张卡的价格可能离失效线还很远。
+   *
+   * 缺失 = 这个字段加上之前失效的旧灰卡，前端退回按碰线解释。旧灰卡最多
+   * 活过一轮部署，代价有限。
+   */
+  expiredBy?: "invalidation" | "timeout";
   /**
    * 失效发生的时刻。宽限期从**这里**算起，不是从 firstSeenAt 算起。
    *
@@ -286,16 +301,25 @@ export function buildCard({
 }
 
 /**
- * 卡片排序：总分从高到低，最强的信号在最上面。
+ * 卡片排序：**最新出现的在最上面。**
  *
- * 曾经按触发时间倒序（新的在上）。改成按分数，是因为你打开警报栏想问的
- * 是「现在最值得看的是哪个」，而不是「最近发生了什么」——后者由卡片上的
- * NEW 徽章回答就够了。
+ * 这里来回改过一次，记下来免得再翻烙饼。曾经按分数排，理由是「打开警报栏
+ * 想问的是现在最值得看的是哪个」。但那个理由建立在卡片只活一两轮的旧模型
+ * 上——那时榜上的卡片新鲜度都差不多，按分数排才是在同一批里挑最强的。
  *
- * 分数相同时按 symbol，保证顺序稳定可复现。
+ * 现在一张卡最多活 6 小时（CARD_MAX_AGE_MS），榜上同时挂着刚出的和快过气的，
+ * 而这类信号的价值随时间衰减得很快：一个 5 小时前的高分信号，不如一个刚
+ * 出来的中分信号有用，因为前者的行情多半已经走完了。时间在这里比分数更
+ * 接近「值不值得现在看」。
+ *
+ * 同一刻出现的按 symbol，保证顺序稳定可复现。
  */
 export function sortCards(cards: AlertCardData[]): AlertCardData[] {
-  return [...cards].sort((a, b) => b.total - a.total || a.symbol.localeCompare(b.symbol));
+  return [...cards].sort(
+    (a, b) =>
+      new Date(b.firstSeenAt).getTime() - new Date(a.firstSeenAt).getTime() ||
+      a.symbol.localeCompare(b.symbol)
+  );
 }
 
 /**
@@ -363,13 +387,15 @@ export interface AdvanceCardsResult {
 /**
  * 把上一轮的卡片推进到这一轮。**这是卡片去留的唯一裁决处。**
  *
- * 三条路，仅此三条：
+ * 四条路，仅此四条：
  *   ① 已经是灰卡 → 宽限期没过就留着，过了就丢。灰卡不会复活。
- *   ② 活卡，这轮能复核 → 碰线了就失效（记下时刻），没碰就刷新数据继续活。
- *   ③ 活卡，这轮复核不了 → 原样继续活着。
+ *   ② 活卡，出现满 6 小时 → 超时失效。**这一条排在最前面，因为它不需要
+ *      K 线**：一个这轮没被复核的币照样会超时，否则「拿不到数据的卡继续
+ *      活着」会变成一条永远不过期的后门。
+ *   ③ 活卡，这轮能复核 → 碰线了就失效（记下时刻），没碰就刷新数据继续活。
+ *   ④ 活卡，这轮复核不了 → 原样继续活着，等下一轮或者等它超时。
  *
- * 注意这里**没有**「场景还在不在」这一问。判定只问价格，不问结构：一张卡
- * 一旦出现，除了价格证伪它，没有别的东西能把它撤下来。
+ * 注意这里**没有**「场景还在不在」这一问。判定只问价格和时间，不问结构。
  */
 export function advanceCards({ previous, bars, rows, now }: AdvanceCardsInput): AdvanceCardsResult {
   const live: AlertCardData[] = [];
@@ -384,6 +410,20 @@ export function advanceCards({ previous, bars, rows, now }: AdvanceCardsInput): 
       continue;
     }
 
+    // 超时那一刻记的是**它真正到期的时刻**（出现时间 + 6 小时），不是我们
+    // 发现它的时刻。扫描 15 分钟一轮，用 now 会让每张超时卡的宽限期平白
+    // 多出最多一刻钟，而「它什么时候过的期」是个确定的事实，没必要糊掉。
+    const deadline = new Date(card.firstSeenAt).getTime() + CARD_MAX_AGE_MS;
+    if (now >= deadline) {
+      expired.push({
+        ...card,
+        expired: true,
+        expiredAt: new Date(deadline).toISOString(),
+        expiredBy: "timeout",
+      });
+      continue;
+    }
+
     const b = bars.get(card.symbol);
     if (b === undefined || b.length === 0) {
       live.push(card);
@@ -391,7 +431,12 @@ export function advanceCards({ previous, bars, rows, now }: AdvanceCardsInput): 
     }
 
     if (triggerInvalidated(card.trigger, b)) {
-      expired.push({ ...card, expired: true, expiredAt: new Date(now).toISOString() });
+      expired.push({
+        ...card,
+        expired: true,
+        expiredAt: new Date(now).toISOString(),
+        expiredBy: "invalidation",
+      });
       continue;
     }
 
@@ -399,7 +444,7 @@ export function advanceCards({ previous, bars, rows, now }: AdvanceCardsInput): 
     live.push(row ? refreshCard(card, row, b) : card);
   }
 
-  // 灰卡按失效时刻倒序取前 N 张：行情剧烈时一批卡同时碰线，全留会把警报栏
+  // 灰卡按失效时刻倒序取前 N 张：行情剧烈时一批卡同时失效，全留会把警报栏
   // 淹掉，而最该被看见的是**刚刚**死掉的那几张。
   expired.sort(
     (a, b2) =>

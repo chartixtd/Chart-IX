@@ -197,7 +197,8 @@ describe("buildCard", () => {
 });
 
 describe("sortCards", () => {
-  const card = (symbol: string, total: number): AlertCardData => ({
+  const T = 1_700_000_000_000;
+  const card = (symbol: string, total: number, minutesAgo: number): AlertCardData => ({
     key: symbol,
     symbol,
     coin: symbol,
@@ -205,23 +206,32 @@ describe("sortCards", () => {
     direction: "long",
     factors: { oi: 0, cvd: 0 },
     total,
-    firstSeenAt: "",
+    firstSeenAt: new Date(T - minutesAgo * 60_000).toISOString(),
     firstPrice: 1,
     peakPct: 0,
     invalidation: null,
     expired: false,
   });
 
-  it("总分高的在上——打开警报栏要问的是「现在最值得看哪个」", () => {
-    expect(sortCards([card("A", 30), card("B", 70), card("C", 50)]).map((c) => c.symbol)).toEqual([
-      "B",
-      "C",
-      "A",
-    ]);
+  it("最新出现的在最上面", () => {
+    const out = sortCards([card("A", 30, 120), card("B", 70, 10), card("C", 50, 60)]);
+    expect(out.map((c) => c.symbol)).toEqual(["B", "C", "A"]);
   });
 
-  it("同分按 symbol，顺序稳定可复现", () => {
-    expect(sortCards([card("B", 50), card("A", 50)]).map((c) => c.symbol)).toEqual(["A", "B"]);
+  it("分数不参与排序——一个 5 小时前的高分信号不如刚出的中分信号有用", () => {
+    // 90 分但 5 小时前，vs 10 分但刚出来
+    const out = sortCards([card("OLD", 90, 300), card("NEW", 10, 1)]);
+    expect(out.map((c) => c.symbol)).toEqual(["NEW", "OLD"]);
+  });
+
+  it("同一刻出现的按 symbol，顺序稳定可复现", () => {
+    expect(sortCards([card("B", 50, 5), card("A", 20, 5)]).map((c) => c.symbol)).toEqual(["A", "B"]);
+  });
+
+  it("不改原数组", () => {
+    const input = [card("A", 10, 1), card("B", 10, 99)];
+    sortCards(input);
+    expect(input.map((c) => c.symbol)).toEqual(["A", "B"]);
   });
 });
 
@@ -419,9 +429,10 @@ describe("advanceCards", () => {
     expect(out.live).toHaveLength(0);
     expect(out.expired[0].expired).toBe(true);
     expect(out.expired[0].expiredAt).toBe(new Date(T).toISOString());
+    expect(out.expired[0].expiredBy).toBe("invalidation");
   });
 
-  it("这个币这一轮没被复核 → 继续活着，不当成结束", () => {
+  it("这个币这一轮没被复核、又还没到期 → 继续活着，不当成结束", () => {
     // 判不了不等于死了。漏掉的这部分由前端实时价兜底。
     const c = card({ key: "k1", symbol: "OP-USDT" });
     const out = advanceCards({ previous: [c], bars: new Map(), rows: noRows, now: T });
@@ -439,20 +450,72 @@ describe("advanceCards", () => {
     expect(out.live).toHaveLength(1);
   });
 
-  it("卡片活多久都不会自己过期——只有价格能结束它", () => {
-    const ancient = card({
+  it("出现满 6 小时就超时失效，哪怕价格离失效线还很远", () => {
+    const old = card({
       key: "k1",
       symbol: "OP-USDT",
-      firstSeenAt: new Date(T - 30 * 24 * HOUR).toISOString(),
-      trigger: { type: "scenario", scenario: scenario({ triggeredAt: T - 30 * 24 * HOUR }) },
+      firstSeenAt: new Date(T - 6 * HOUR).toISOString(),
     });
     const out = advanceCards({
-      previous: [ancient],
+      previous: [old],
+      bars: new Map([["OP-USDT", safe]]),
+      rows: noRows,
+      now: T,
+    });
+    expect(out.live).toHaveLength(0);
+    expect(out.expired[0].expiredBy).toBe("timeout");
+  });
+
+  it("差一分钟到 6 小时的还活着", () => {
+    const almost = card({
+      key: "k1",
+      symbol: "OP-USDT",
+      firstSeenAt: new Date(T - 6 * HOUR + 60_000).toISOString(),
+    });
+    const out = advanceCards({
+      previous: [almost],
       bars: new Map([["OP-USDT", safe]]),
       rows: noRows,
       now: T,
     });
     expect(out.live).toHaveLength(1);
+  });
+
+  it("超时不需要 K 线——这轮没被复核的币照样会超时", () => {
+    // 否则「拿不到数据的卡继续活着」就成了一条永不过期的后门。
+    const old = card({
+      key: "k1",
+      symbol: "OP-USDT",
+      firstSeenAt: new Date(T - 7 * HOUR).toISOString(),
+    });
+    const out = advanceCards({ previous: [old], bars: new Map(), rows: noRows, now: T });
+    expect(out.live).toHaveLength(0);
+    expect(out.expired).toHaveLength(1);
+  });
+
+  it("超时记的是真正到期那一刻，不是我们发现它的那一刻", () => {
+    // 扫描 15 分钟一轮，用 now 会让宽限期平白多出最多一刻钟。
+    const bornAt = T - 6 * HOUR - 10 * 60_000;
+    const old = card({ key: "k1", symbol: "OP-USDT", firstSeenAt: new Date(bornAt).toISOString() });
+    const out = advanceCards({ previous: [old], bars: new Map(), rows: noRows, now: T });
+    expect(out.expired[0].expiredAt).toBe(new Date(bornAt + 6 * HOUR).toISOString());
+  });
+
+  it("碰线优先于超时——两者都成立时记碰线", () => {
+    // 排序上超时在前，所以这条用一张「刚好没到 6 小时、但已经碰线」的卡来验
+    // 另一半：没到期的卡走碰线那条路，死因记的是 invalidation。
+    const c = card({
+      key: "k1",
+      symbol: "OP-USDT",
+      firstSeenAt: new Date(T - 5 * HOUR).toISOString(),
+    });
+    const out = advanceCards({
+      previous: [c],
+      bars: new Map([["OP-USDT", broken]]),
+      rows: noRows,
+      now: T,
+    });
+    expect(out.expired[0].expiredBy).toBe("invalidation");
   });
 
   it("活卡跟着本轮的行刷新分数与因子，身份那几样一动不动", () => {

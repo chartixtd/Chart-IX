@@ -1018,10 +1018,11 @@
       "never_confirmed": "尚未确认",
       "invalidation": "失效价",
       "invalidated": "已失效",
-      "page_hint": "卡片只有在价格碰到失效价时才会结束",
+      "page_hint": "卡片在价格碰到失效价、或挂满 6 小时之后结束",
       "trade": "交易 →",
       "ended_hint": "已失效，留一会儿方便你对照推送",
-      "invalidated_detail": "价格已穿过失效价 {price}，市场证伪了这个信号。"
+      "invalidated_detail": "价格已穿过失效价 {price}，市场证伪了这个信号。",
+      "timeout_detail": "这张卡已经挂满 6 小时，信号过了时效，不再适合照着进场。"
     },
     "source_note": "数据源 CoinGlass · 价格与下单 BingX · K线取自 {exchange}",
     "scenarios": {

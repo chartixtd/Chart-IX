@@ -942,10 +942,11 @@
       "never_confirmed": "belum disahkan",
       "invalidation": "Tidak sah pada",
       "invalidated": "Tidak sah",
-      "page_hint": "Kad hanya tamat apabila harga mencapai paras tidak sahnya",
+      "page_hint": "Kad tamat apabila harga mencapai paras tidak sah, atau selepas 6 jam",
       "trade": "Dagang →",
       "ended_hint": "Tidak sah — dikekalkan sebentar untuk padanan dengan tolakan",
-      "invalidated_detail": "Harga menembusi paras tidak sah {price}. Pasaran membuktikan isyarat ini salah."
+      "invalidated_detail": "Harga menembusi paras tidak sah {price}. Pasaran membuktikan isyarat ini salah.",
+      "timeout_detail": "Kad ini telah dipaparkan selama 6 jam. Isyarat sudah lapuk dan bukan lagi titik masuk."
     },
     "source_note": "Data daripada CoinGlass · harga dan dagangan di BingX · lilin daripada {exchange}",
     "scenarios": {

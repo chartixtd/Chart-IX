@@ -1018,10 +1018,11 @@
       "never_confirmed": "not yet confirmed",
       "invalidation": "Invalid at",
       "invalidated": "Invalidated",
-      "page_hint": "A card ends only when price reaches its invalidation level",
+      "page_hint": "A card ends when price reaches its invalidation level, or after 6 hours",
       "trade": "Trade →",
       "ended_hint": "Invalidated — kept briefly so you can match it to the push",
-      "invalidated_detail": "Price broke through the invalidation level {price}. The market proved this signal wrong."
+      "invalidated_detail": "Price broke through the invalidation level {price}. The market proved this signal wrong.",
+      "timeout_detail": "This card has been up for 6 hours. The signal has aged out and is no longer an entry."
     },
     "source_note": "Data from CoinGlass · price and execution on BingX · candles from {exchange}",
     "scenarios": {

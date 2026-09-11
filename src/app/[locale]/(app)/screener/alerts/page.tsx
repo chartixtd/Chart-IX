@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { useScannerData } from "@/hooks/useScreenerData";
+import { cardDeadReason } from "@/lib/screener/cards";
 import { AlertRail } from "@/components/screener/AlertRail";
 import { SectionHeading } from "@/components/ui/Section";
 
@@ -19,7 +20,13 @@ import { SectionHeading } from "@/components/ui/Section";
 export default function ScreenerAlertsPage() {
   const t = useTranslations("screener");
   const { cards, isLoading } = useScannerData();
-  const liveCount = useMemo(() => cards.filter((c) => !c.expired).length, [cards]);
+  // 超时的卡在服务端下一轮才会标成 expired，但它此刻已经不是活信号了，
+  // 不该算进这个数——否则抬头写着 4 个活跃信号，而底下有一张已经灰了。
+  // 实时价穿线那一路算不进来（这里没有行情订阅），那种卡最多错一刻钟。
+  const liveCount = useMemo(
+    () => cards.filter((c) => cardDeadReason(c, null, Date.now()) === null).length,
+    [cards]
+  );
 
   return (
     <section>

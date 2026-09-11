@@ -5,8 +5,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { cn, formatPrice, formatPercent } from "@/lib/utils";
 import type { AlertCardData } from "@/lib/screener/cards";
 import { signedPct } from "@/lib/screener/cards";
-import { isInvalidated } from "@/lib/screener/invalidation";
-import { CARD_MAX_AGE_MS } from "@/lib/screener/types";
+import type { DeadReason } from "@/lib/screener/cards";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { FactorMeter } from "./FactorMeter";
@@ -71,13 +70,19 @@ function freshness(iso: string): "fresh" | "normal" | "stale" {
  * livePrice 是 BingX 永续行情推送的最新成交价（见 useCardPrices），亚秒级。
  * 拿不到时回落到扫描价，**涨跌幅要跟着一起回落**——用实时价配一个按扫描价
  * 算好的百分比，会拼出价格是新的、百分比是旧的卡片，两个数对不上账。
+ *
+ * deadBy 由 AlertRail 算好传进来，而不是这里自己算。同一个结论既要决定这张卡
+ * 长什么样，又要决定它排在哪儿，两处各算一次迟早会错位——线上出过一次：卡片
+ * 自己判出失效变灰了，而排序那边不知道，于是一张灰卡夹在活卡中间。
  */
 export function AlertCard({
   card,
   livePrice = null,
+  deadBy = null,
 }: {
   card: AlertCardData;
   livePrice?: number | null;
+  deadBy?: DeadReason | null;
 }) {
   const t = useTranslations("screener");
   const locale = useLocale();
@@ -88,31 +93,9 @@ export function AlertCard({
   // 两次扫描之间创了新高时卡片会自相矛盾：「现在 +2.1%，最高到过 0.00%」。
   const peak = Math.max(card.peakPct, pct);
 
-  // 「这张卡别再按它操作了」只有一个意思：**价格碰到了失效线。**
-  //
-  //   card.expired —— 服务端上一轮复核时确认碰线了。
-  //   实时那一路 —— 现在这一秒就穿了，或者刚好活满 6 小时，而服务端最多还要
-  //     15 分钟才确认。先变灰是因为「别再按它操作」应该在一秒内知道。
-  //
-  // 三种说的是同一件事，所以标签也是同一个「已失效」。除此之外没有别的东西
-  // 能让一张卡结束——场景不成立了、这个币没被扫到，卡片照常活着。
-  const crossed =
-    card.invalidation !== null &&
-    livePrice !== null &&
-    isInvalidated(card.invalidation, livePrice, livePrice);
-  const agedOut = Date.now() - new Date(card.firstSeenAt).getTime() >= CARD_MAX_AGE_MS;
-  const dead = card.expired || crossed || agedOut;
-
-  // 底下那句解释按死因分。服务端记下的优先（它是权威，而且带着精确的失效
-  // 时刻）；前端自己算出来的那两种按「碰线优先于超时」——一张既穿了线又
-  // 到点的卡，碰线是更具体、对持仓的人更要紧的那个答案。
-  //
-  // 最后那个 "invalidation" 是兜底，接的是**服务端说它死了、但没说怎么死的**
-  // 那种卡（expiredBy 这个字段加上之前留下的旧灰卡）。少了它这类卡会一句
-  // 解释都没有——划掉的指令底下空着，比说错还费解。
-  const deadBy = !dead
-    ? undefined
-    : (card.expiredBy ?? (agedOut && !crossed ? "timeout" : "invalidation"));
+  // 死活与死因都由 AlertRail 用 cardDeadReason 算好（那边还负责让它粘住、
+  // 并把死掉的排到最后），这里只管长什么样。
+  const dead = deadBy !== null;
 
   const toneCls = toneFor(trigger);
   const dirCls = DIRECTION_CLASSES[direction];

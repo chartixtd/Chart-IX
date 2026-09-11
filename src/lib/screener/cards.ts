@@ -3,7 +3,7 @@ import type { Scenario, ScenarioDirection } from "./factors/scenario";
 import type { FactorBreakdown, ScannerRow } from "./types";
 import { CARD_GRACE_MS, CARD_GRACE_MAX, CARD_MAX_AGE_MS } from "./types";
 import type { Ignition } from "./ignition";
-import { invalidationLine, ignitionLine, scenarioInvalidated, ignitionInvalidated } from "./invalidation";
+import { invalidationLine, ignitionLine, scenarioInvalidated, ignitionInvalidated, isInvalidated } from "./invalidation";
 import type { InvalidationLine } from "./invalidation";
 
 /**
@@ -82,6 +82,9 @@ export type CardTrigger =
  * 现在，卡片说的是「那个还没被证伪的信号」。
  */
 
+/** 一张卡死于哪一条：价格碰到失效线，还是活满了 6 小时。 */
+export type DeadReason = "invalidation" | "timeout";
+
 export interface AlertCardData {
   key: string;
   symbol: string;
@@ -117,7 +120,7 @@ export interface AlertCardData {
    * 缺失 = 这个字段加上之前失效的旧灰卡，前端退回按碰线解释。旧灰卡最多
    * 活过一轮部署，代价有限。
    */
-  expiredBy?: "invalidation" | "timeout";
+  expiredBy?: DeadReason;
   /**
    * 失效发生的时刻。宽限期从**这里**算起，不是从 firstSeenAt 算起。
    *
@@ -378,6 +381,38 @@ export function refreshCard(
     signedPct(card.firstPrice, row.price, card.direction)
   );
   return { ...card, factors: row.factors, total: row.total, peakPct };
+}
+
+/**
+ * 这张卡**此刻**该不该当成已失效，以及死于哪一条。活着返回 null。
+ *
+ * 三个来源，服务端那个最权威（它带着精确的失效时刻），另外两个是前端抢在
+ * 服务端确认之前就把结论说出来——扫描 15 分钟一轮，而「别再按它操作」这件事
+ * 应该在一秒内知道。
+ *
+ * **这个判断必须是共享的。** 它曾经只长在 AlertCard 里，于是一张前端判定
+ * 失效的卡在服务端眼里还是活卡，排序照活卡排——线上的样子是一张灰着的
+ * BOME 夹在两张亮卡中间，而它后面还跟着别的活卡。判定和排序读同一个函数，
+ * 那种错位才不会再出现。
+ *
+ * 碰线优先于超时：一张既穿了线又到点的卡，碰线是更具体、对持仓的人更要紧的
+ * 那个答案。兜底的 "invalidation" 接的是服务端说它死了、却没说怎么死的旧卡。
+ */
+export function cardDeadReason(
+  card: AlertCardData,
+  livePrice: number | null,
+  now: number
+): DeadReason | null {
+  const crossed =
+    card.invalidation !== null &&
+    livePrice !== null &&
+    isInvalidated(card.invalidation, livePrice, livePrice);
+  const agedOut = now - new Date(card.firstSeenAt).getTime() >= CARD_MAX_AGE_MS;
+
+  if (card.expired) return card.expiredBy ?? (agedOut && !crossed ? "timeout" : "invalidation");
+  if (crossed) return "invalidation";
+  if (agedOut) return "timeout";
+  return null;
 }
 
 /**

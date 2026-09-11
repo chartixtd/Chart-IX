@@ -10,6 +10,7 @@ import {
   refreshCard,
   triggerInvalidated,
   pickVisibleCards,
+  cardDeadReason,
 } from "./cards";
 import type { AlertCardData, ScenarioMemo } from "./cards";
 import type { Scenario } from "./factors/scenario";
@@ -720,6 +721,77 @@ describe("卡片不会自我复制", () => {
  *
  * 这条规则原本写在旧的 carryForwardExpired 里，重写成 advanceCards 时弄丢了。
  */
+/**
+ * 死活判定必须是共享的一份。线上出过的错位：一张前端用实时价判出失效的卡，
+ * 在服务端眼里还是活卡，于是排序照活卡排——灰着的 BOME 夹在两张亮卡中间，
+ * 后面还跟着别的活卡。判定和排序读同一个函数，那种错位才不会再出现。
+ */
+describe("cardDeadReason", () => {
+  const T = 1_700_000_000_000;
+  const HOUR = 3_600_000;
+  const mk = (o: Partial<AlertCardData> = {}): AlertCardData => ({
+    key: "k",
+    symbol: "BOME-USDT",
+    coin: "BOME",
+    trigger: { type: "scenario", scenario: scenario() },
+    direction: "long",
+    factors: { oi: 0, cvd: 0 },
+    total: 10,
+    firstSeenAt: new Date(T - HOUR).toISOString(),
+    firstPrice: 1,
+    peakPct: 0,
+    invalidation: { price: 0.0008303, breach: "below" },
+    expired: false,
+    ...o,
+  });
+
+  it("活卡返回 null", () => {
+    expect(cardDeadReason(mk(), 0.00084, T)).toBeNull();
+  });
+
+  it("实时价穿了失效线 → invalidation，服务端还没确认也算", () => {
+    // 截图里那张 BOME：做多、失效价 0.00083030，实时价已经跌到下面。
+    expect(cardDeadReason(mk(), 0.0008282, T)).toBe("invalidation");
+  });
+
+  it("恰好等于失效价不算穿", () => {
+    expect(cardDeadReason(mk(), 0.0008303, T)).toBeNull();
+  });
+
+  it("拿不到实时价时不误判", () => {
+    expect(cardDeadReason(mk(), null, T)).toBeNull();
+  });
+
+  it("活满 6 小时 → timeout", () => {
+    expect(cardDeadReason(mk({ firstSeenAt: new Date(T - 6 * HOUR).toISOString() }), 0.00084, T)).toBe(
+      "timeout"
+    );
+  });
+
+  it("既穿线又到点 → 报碰线，那是更具体的答案", () => {
+    const c = mk({ firstSeenAt: new Date(T - 7 * HOUR).toISOString() });
+    expect(cardDeadReason(c, 0.0008282, T)).toBe("invalidation");
+  });
+
+  it("服务端记下的死因优先于前端算的", () => {
+    const c = mk({ expired: true, expiredBy: "timeout" });
+    // 实时价没穿线，但服务端说它超时死的
+    expect(cardDeadReason(c, 0.00084, T)).toBe("timeout");
+  });
+
+  it("服务端说死了却没说怎么死的旧卡 → 兜底按碰线解释", () => {
+    expect(cardDeadReason(mk({ expired: true }), 0.00084, T)).toBe("invalidation");
+  });
+
+  it("没有失效线的卡只可能死于超时", () => {
+    const c = mk({ invalidation: null });
+    expect(cardDeadReason(c, 0.0001, T)).toBeNull();
+    expect(cardDeadReason({ ...c, firstSeenAt: new Date(T - 6 * HOUR).toISOString() }, 0.0001, T)).toBe(
+      "timeout"
+    );
+  });
+});
+
 describe("pickVisibleCards", () => {
   const T = 1_700_000_000_000;
   const HOUR = 3_600_000;

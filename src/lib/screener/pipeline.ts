@@ -526,13 +526,16 @@ export async function runScan(): Promise<ScannerPayload> {
     now,
   });
 
-  // 本轮新判出的信号里，**这个币已经有活卡的一律不出新卡**。
+  // 本轮新判出的信号里，两种情况不出新卡：
   //
-  // 老卡还没被价格证伪，就还是那个没结束的信号；这时再出一张新卡，等于对
-  // 同一个币同时给两个结论，而且多半只是同一段行情被判成了另一个场景。
-  // 老卡碰线之后，同一个结构如果还成立，下一轮自然会补上来。
+  //   · **这个币已经有活卡。** 老卡还没结束就还是那个信号，这时再出一张等于
+  //     对同一个币同时给两个结论，而且多半只是同一段行情被判成了另一个场景。
+  //   · **这个 key 这一轮刚失效。** 它的灰卡就在下面的 expired 里，同一个
+  //     结构事件不能同时以活卡和灰卡的身份出现两次。（buildCard 里那道备忘
+  //     年龄的门已经挡掉绝大多数，这里是最后一道。）
   const liveSymbols = new Set(advanced.live.map((c) => c.symbol));
-  const fresh = builtCards.filter((c) => !liveSymbols.has(c.symbol));
+  const deadKeys = new Set(advanced.expired.map((c) => c.key));
+  const fresh = builtCards.filter((c) => !liveSymbols.has(c.symbol) && !deadKeys.has(c.key));
 
   // 数据不全的行一律沉底，不参与分数排序——它们的分数是缺失回退值，
   // 拿它跟真实算出来的分数比大小没有意义。

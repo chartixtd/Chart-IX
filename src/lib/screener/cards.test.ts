@@ -621,6 +621,96 @@ describe("advanceCards", () => {
   });
 });
 
+/**
+ * 卡片重复的那个 bug。线上实测：ASTER 一个币堆了 5 张 key、firstSeenAt、
+ * expiredAt 全都一模一样的灰卡，每 15 分钟多一张。
+ *
+ * 循环是这样跑起来的：卡超时变灰 → 这个币没有活卡了 → 同一个结构还判得出来
+ * → 拿着那条 6 小时前的备忘再造一张卡 → 新卡一出生就已超时 → 下一轮又变成
+ * 一张一模一样的灰卡，而上一张还在 2 小时宽限期里。
+ */
+describe("卡片不会自我复制", () => {
+  const T = 1_700_000_000_000;
+  const HOUR = 3_600_000;
+
+  it("备忘已经满 6 小时的 key 不再出新卡", () => {
+    const memo = {
+      key: memoKey("TIA-USDT", scenario()),
+      symbol: "TIA-USDT",
+      firstSeenAt: new Date(T - 6 * HOUR).toISOString(),
+      firstPrice: 100,
+    };
+    const out = buildCard({ row: row(), priceBars: [], memo, now: T });
+    expect(out.card).toBeNull();
+  });
+
+  it("备忘还没满 6 小时的照常出卡，首次价与计时接得上", () => {
+    const memo = {
+      key: memoKey("TIA-USDT", scenario()),
+      symbol: "TIA-USDT",
+      firstSeenAt: new Date(T - 5 * HOUR).toISOString(),
+      firstPrice: 100,
+    };
+    const out = buildCard({ row: row(), priceBars: [], memo, now: T });
+    expect(out.card).not.toBeNull();
+    expect(out.card!.firstSeenAt).toBe(memo.firstSeenAt);
+    expect(out.card!.firstPrice).toBe(100);
+  });
+
+  it("结构翻新了就是另一把钥匙，查不到旧备忘，照常出卡", () => {
+    const fresh = scenario({ triggeredAt: T - HOUR });
+    const out = buildCard({ row: row({ scenario: fresh }), priceBars: [], memo: undefined, now: T });
+    expect(out.card).not.toBeNull();
+    expect(out.card!.firstSeenAt).toBe(new Date(T).toISOString());
+  });
+
+  it("advanceCards 把 previous 里重复的 key 收成一张", () => {
+    // 线上缓存里已经堆着的那 5 张，下一轮就该自愈成 1 张。
+    const dead: AlertCardData = {
+      key: "ASTER-USDT|a2_accum_bottom_div|long|1789057800000",
+      symbol: "ASTER-USDT",
+      coin: "ASTER",
+      trigger: { type: "scenario", scenario: scenario() },
+      direction: "long",
+      factors: { oi: 0, cvd: 0 },
+      total: 10,
+      firstSeenAt: new Date(T - 7 * HOUR).toISOString(),
+      firstPrice: 1,
+      peakPct: 0,
+      invalidation: null,
+      expired: true,
+      expiredAt: new Date(T - HOUR).toISOString(),
+      expiredBy: "timeout",
+    };
+    const out = advanceCards({
+      previous: [dead, { ...dead }, { ...dead }, { ...dead }, { ...dead }],
+      bars: new Map(),
+      rows: new Map(),
+      now: T,
+    });
+    expect(out.expired).toHaveLength(1);
+  });
+
+  it("活卡重复也只留一张", () => {
+    const c: AlertCardData = {
+      key: "k1",
+      symbol: "AAA-USDT",
+      coin: "AAA",
+      trigger: { type: "scenario", scenario: scenario() },
+      direction: "long",
+      factors: { oi: 0, cvd: 0 },
+      total: 10,
+      firstSeenAt: new Date(T - HOUR).toISOString(),
+      firstPrice: 1,
+      peakPct: 0,
+      invalidation: null,
+      expired: false,
+    };
+    const out = advanceCards({ previous: [c, { ...c }], bars: new Map(), rows: new Map(), now: T });
+    expect(out.live).toHaveLength(1);
+  });
+});
+
 describe("refreshCard", () => {
   const T = 1_700_000_000_000;
   const base: AlertCardData = {

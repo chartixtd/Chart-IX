@@ -248,6 +248,25 @@ export function buildCard({
   const trigger = pickTrigger(row, ignitionCards);
   if (!trigger) return { card: null };
 
+  // 这个结构事件的卡已经活完 6 小时了——**不再出新卡**。
+  //
+  // 修的是一个会自我复制的 bug。备忘的 TTL 是 8 天，而卡片只活 6 小时
+  // （CARD_MAX_AGE_MS），中间那段空档里，只要这个结构还判得出来，每一轮都会
+  // 拿着同一条备忘再造一张卡；而备忘里的 firstSeenAt 是 6 小时前，所以新卡
+  // **一出生就已经超时**，下一轮立刻又变成一张灰卡——firstSeenAt 与 expiredAt
+  // 跟上一张一模一样。线上实测每 15 分钟多一张，ASTER 一个币堆了 5 张完全
+  // 相同的灰卡。
+  //
+  // 判据用备忘而不是「有没有灰卡」：灰卡只留 2 小时（CARD_GRACE_MS），过了
+  // 宽限期它就不在 payload 里了，而备忘还在——那正是复制会一直继续下去的
+  // 原因。备忘的存在期覆盖得住这个空档。
+  //
+  // 结构本身真的翻新了怎么办？那它的 triggeredAt 会变，memoKey 跟着变，这里
+  // 查到的是一条全新的备忘（memo 为 undefined），照常出卡。
+  if (memo && now - new Date(memo.firstSeenAt).getTime() >= CARD_MAX_AGE_MS) {
+    return { card: null };
+  }
+
   const isScenario = trigger.type === "scenario";
   const direction: ScenarioDirection = isScenario
     ? trigger.scenario.direction
@@ -401,7 +420,15 @@ export function advanceCards({ previous, bars, rows, now }: AdvanceCardsInput): 
   const live: AlertCardData[] = [];
   const expired: AlertCardData[] = [];
 
+  // 同一个 key 只推进一次。上一轮的 payload 理论上不该有重复，但这里是所有
+  // 卡片的必经之路，去重放在这儿，任何一条产生重复的路径都会在下一轮被自愈
+  // ——而不是把重复原样传下去，一轮轮地攒着。
+  const seen = new Set<string>();
+
   for (const card of previous) {
+    if (seen.has(card.key)) continue;
+    seen.add(card.key);
+
     if (card.expired) {
       // 没有 expiredAt 的是这个字段加上之前失效的旧卡。用 firstSeenAt 顶上
       // 只会把它们立刻判超期，那是安全的方向——旧灰卡本来就活不过一轮部署。

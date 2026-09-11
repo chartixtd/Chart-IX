@@ -9,6 +9,7 @@ import {
   advanceCards,
   refreshCard,
   triggerInvalidated,
+  pickVisibleCards,
 } from "./cards";
 import type { AlertCardData, ScenarioMemo } from "./cards";
 import type { Scenario } from "./factors/scenario";
@@ -708,6 +709,99 @@ describe("卡片不会自我复制", () => {
     };
     const out = advanceCards({ previous: [c, { ...c }], bars: new Map(), rows: new Map(), now: T });
     expect(out.live).toHaveLength(1);
+  });
+});
+
+/**
+ * 一个币只占一张卡。线上复现过的样子：BOME 的做空卡碰线失效变灰，同一轮又
+ * 判出一个做多场景出了新卡，于是同一个币并排挂着一张灰的「派发力度到位，
+ * 做空」和一张亮的「吸筹力度到位，做多」——方向相反，而它们其实是同一段
+ * 行情的前后两截。
+ *
+ * 这条规则原本写在旧的 carryForwardExpired 里，重写成 advanceCards 时弄丢了。
+ */
+describe("pickVisibleCards", () => {
+  const T = 1_700_000_000_000;
+  const HOUR = 3_600_000;
+  const mk = (o: Partial<AlertCardData> & { key: string; symbol: string }): AlertCardData => ({
+    coin: o.symbol.replace("-USDT", ""),
+    trigger: { type: "scenario", scenario: scenario() },
+    direction: "long",
+    factors: { oi: 0, cvd: 0 },
+    total: 10,
+    firstSeenAt: new Date(T - HOUR).toISOString(),
+    firstPrice: 1,
+    peakPct: 0,
+    invalidation: null,
+    expired: false,
+    ...o,
+  });
+
+  it("同一个币有活卡时，它的灰卡不上榜", () => {
+    const greyShort = mk({
+      key: "BOME|b3|short",
+      symbol: "BOME-USDT",
+      direction: "short",
+      firstSeenAt: new Date(T - 51 * 60_000).toISOString(),
+      expired: true,
+      expiredAt: new Date(T - 60_000).toISOString(),
+      expiredBy: "invalidation",
+    });
+    const liveLong = mk({
+      key: "BOME|a3|long",
+      symbol: "BOME-USDT",
+      firstSeenAt: new Date(T - 11 * 60_000).toISOString(),
+    });
+    const out = pickVisibleCards([liveLong], [greyShort], 60);
+    expect(out).toHaveLength(1);
+    expect(out[0].key).toBe("BOME|a3|long");
+  });
+
+  it("同一个币两张活卡只留最新的那张", () => {
+    const older = mk({ key: "k1", symbol: "AAA-USDT", firstSeenAt: new Date(T - 3 * HOUR).toISOString() });
+    const newer = mk({ key: "k2", symbol: "AAA-USDT", firstSeenAt: new Date(T - 5 * 60_000).toISOString() });
+    const out = pickVisibleCards([older, newer], [], 60);
+    expect(out.map((c) => c.key)).toEqual(["k2"]);
+  });
+
+  it("同一个币两张灰卡只留最近死的那张（灰卡进来时已按失效时刻倒序）", () => {
+    const recent = mk({ key: "k1", symbol: "AAA-USDT", expired: true, expiredAt: new Date(T - 60_000).toISOString() });
+    const older = mk({ key: "k2", symbol: "AAA-USDT", expired: true, expiredAt: new Date(T - HOUR).toISOString() });
+    const out = pickVisibleCards([], [recent, older], 60);
+    expect(out.map((c) => c.key)).toEqual(["k1"]);
+  });
+
+  it("不同的币各留各的，活的全排在灰的前面", () => {
+    const live = [
+      mk({ key: "a", symbol: "AAA-USDT", firstSeenAt: new Date(T - 60_000).toISOString() }),
+      mk({ key: "b", symbol: "BBB-USDT", firstSeenAt: new Date(T - 2 * HOUR).toISOString() }),
+    ];
+    const grey = [mk({ key: "c", symbol: "CCC-USDT", expired: true, expiredAt: new Date(T).toISOString() })];
+    expect(pickVisibleCards(live, grey, 60).map((c) => c.symbol)).toEqual([
+      "AAA-USDT",
+      "BBB-USDT",
+      "CCC-USDT",
+    ]);
+  });
+
+  it("上限只管活卡，砍掉的是最老的", () => {
+    const live = [
+      mk({ key: "old", symbol: "AAA-USDT", firstSeenAt: new Date(T - 5 * HOUR).toISOString() }),
+      mk({ key: "new", symbol: "BBB-USDT", firstSeenAt: new Date(T - 60_000).toISOString() }),
+    ];
+    const out = pickVisibleCards(live, [], 1);
+    expect(out.map((c) => c.key)).toEqual(["new"]);
+  });
+
+  it("被上限砍掉的活卡，不会让同一个币的灰卡顶上来", () => {
+    // 否则「砍掉最老的活卡」会变成「把它换成一张灰卡」，白占一格。
+    const live = [
+      mk({ key: "l1", symbol: "AAA-USDT", firstSeenAt: new Date(T - 60_000).toISOString() }),
+      mk({ key: "l2", symbol: "BBB-USDT", firstSeenAt: new Date(T - 2 * HOUR).toISOString() }),
+    ];
+    const grey = [mk({ key: "g", symbol: "BBB-USDT", expired: true, expiredAt: new Date(T).toISOString() })];
+    const out = pickVisibleCards(live, grey, 1);
+    expect(out.map((c) => c.key)).toEqual(["l1"]);
   });
 });
 

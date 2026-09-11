@@ -380,6 +380,53 @@ export function refreshCard(
   return { ...card, factors: row.factors, total: row.total, peakPct };
 }
 
+/**
+ * 最终摆上警报栏的那一份名单。**一个币只占一张卡。**
+ *
+ * 这条规则曾经写在旧的 carryForwardExpired 里，重写成 advanceCards 时弄丢了，
+ * 线上立刻复现：BOME 的做空卡碰线失效变灰，同一轮又判出一个做多场景出了新卡，
+ * 于是同一个币并排挂着一张灰的「派发力度到位，做空」和一张亮的「吸筹力度
+ * 到位，做多」。两张卡对同一个币给出方向相反的结论，而它们其实是同一段行情
+ * 的前后两截。
+ *
+ * 取舍是「活的压过灰的」：灰卡的用处是让推送过来的人找得到这个币，而这个币
+ * 要是已经有了新的活卡，人点进来照样找得到它，还能顺带看到现在该怎么看。
+ *
+ * 同一个币有多张活卡时留**最新**的那张，跟 sortCards 一个方向：卡片的价值
+ * 随时间衰减得快，同一个币上更晚出现的那张说的是更近的事。
+ */
+export function pickVisibleCards(
+  live: AlertCardData[],
+  expired: AlertCardData[],
+  maxLive: number
+): AlertCardData[] {
+  // 「有活卡的币」要在截断**之前**收齐。用截断之后的名单去挡灰卡，会让一个
+  // 撞上 CARD_MAX_LIVE 被砍掉活卡的币转而显示它的灰卡——等于把一张有用的卡
+  // 换成一张没用的，还照样占一格。
+  const hasLive = new Set(live.map((c) => c.symbol));
+
+  const shown = new Set<string>();
+  const keptLive: AlertCardData[] = [];
+  for (const c of sortCards(live)) {
+    if (shown.has(c.symbol)) continue;
+    shown.add(c.symbol);
+    keptLive.push(c);
+    if (keptLive.length >= maxLive) break;
+  }
+
+  // 灰卡沿用 advanceCards 排好的顺序（失效时刻倒序），这里只做减法：
+  // 有活卡的币不留，同一个币也只留最近死的那一张。
+  const greySeen = new Set<string>();
+  const keptExpired: AlertCardData[] = [];
+  for (const c of expired) {
+    if (hasLive.has(c.symbol) || greySeen.has(c.symbol)) continue;
+    greySeen.add(c.symbol);
+    keptExpired.push(c);
+  }
+
+  return [...keptLive, ...keptExpired];
+}
+
 export interface AdvanceCardsInput {
   /** 上一轮 payload 里的全部卡片，活的和灰的都在。 */
   previous: AlertCardData[];

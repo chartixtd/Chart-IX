@@ -22,10 +22,10 @@ import type { CachedVolume } from "./volume-cache";
 import { readMemos, saveMemos } from "./cards-store";
 import {
   buildCard,
-  sortCards,
   memoKey,
   ignitionMemoKey,
   advanceCards,
+  pickVisibleCards,
   IGNITION_CARDS_ENABLED,
 } from "./cards";
 import { readLastScannerPayload } from "./cache";
@@ -550,18 +550,20 @@ export async function runScan(): Promise<ScannerPayload> {
   const live = [...advanced.live, ...fresh];
 
   // 安全阀，不是失效条件。卡片只会因为碰线或超时而结束（见 cards.ts 顶部），
-  // 这条线只保证 payload 不会无限膨胀。sortCards 是新的在前，所以截断砍掉的
-  // 是最老的那几张——跟 6 小时超时同一个方向。真撞上了要出声。
+  // CARD_MAX_LIVE 只保证 payload 不会无限膨胀，砍掉的是最老的那几张——跟
+  // 6 小时超时同一个方向。真撞上了要出声。
   if (live.length > CARD_MAX_LIVE) {
     console.warn(`[screener] 活卡 ${live.length} 张，超过上限 ${CARD_MAX_LIVE}，砍掉最老的几张`);
   }
-  const capped = sortCards(live).slice(0, CARD_MAX_LIVE);
+
+  // 活的排前面、灰的沉底，一个币只占一张——警报栏第一眼要看的是「现在能做
+  // 什么」，而同一个币两张卡（尤其一张做多一张做空）只会让人不知道信哪个。
+  const visible = pickVisibleCards(live, advanced.expired, CARD_MAX_LIVE);
 
   return {
     version: SCANNER_PAYLOAD_VERSION,
     rows,
-    // 活着的排前面，已失效的一律沉底——警报栏第一眼要看的是「现在能做什么」。
-    cards: [...capped, ...advanced.expired],
+    cards: visible,
     // 推送只推**这一轮新出**的卡。延续下来的老卡早就推过了，再推一遍就是
     // 把同一件事重复报警。
     newCards: fresh.filter((c) => newKeys.has(c.key)),

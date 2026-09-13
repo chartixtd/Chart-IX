@@ -13,9 +13,11 @@ import {
 } from "@/lib/nav/tabs";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useLiveSignalCount } from "@/hooks/useLiveSignalCount";
 
-/** 光柱的基准宽度。实际宽度靠 scaleX 缩到当前格宽——只动 transform，不动 width */
-const LIT_BASE_W = 100;
+/** 选中格那块牌子左右各留的空。牌宽 = 最窄一格 − 这个数的两倍 */
+const TILE_INSET_X = 7;
 
 /**
  * 底栏图标。全部共用 24 viewBox / currentColor / 1.5 描边，与 ui/Icon.tsx 同源。
@@ -23,9 +25,8 @@ const LIT_BASE_W = 100;
  * 两个刻意的选择：
  *   - dashboard 与 home 是同一枚房子。两条底栏（已登录 / 访客）永不同时出现，
  *     而这两格的文案都是「首页」——画两枚不同的房子只是让同一个意思有两张脸。
- *   - screener 是表盘而不是放大镜。这一页在产品里就是一台「十五分钟扫描表盘」，
- *     放大镜说的是「搜索」，那是另一件事。表盘 + 扫描臂 + 一个已捕获的光点，
- *     说的正是它每十五分钟替你做的那件事。
+ *   - screener 是同心弧的雷达而不是放大镜。这一页在产品里是一台每十五分钟
+ *     扫一轮的机器，放大镜说的是「搜索」，那是另一件事。
  */
 function TabIcon({ tab, className }: { tab: TabKey; className?: string }) {
   const common = {
@@ -58,9 +59,13 @@ function TabIcon({ tab, className }: { tab: TabKey; className?: string }) {
     case "screener":
       return (
         <svg {...common}>
-          <circle cx="12" cy="12" r="8.2" />
-          <path d="M12 12l5.6-5.6" />
-          <circle cx="15.1" cy="15.4" r="1.15" fill="currentColor" stroke="none" />
+          <path d="M12 3.9a8.1 8.1 0 1 1-5.73 2.37" />
+          <path d="M12 8.5a3.5 3.5 0 1 1-2.47 1.03" />
+          <path
+            d="M11.5 11.5h3a.7.7 0 0 1 .5 1.2l-3 3a.7.7 0 0 1-1.2-.5v-3a.7.7 0 0 1 .7-.7z"
+            fill="currentColor"
+            stroke="none"
+          />
         </svg>
       );
     case "trade":
@@ -93,32 +98,27 @@ function TabIcon({ tab, className }: { tab: TabKey; className?: string }) {
 }
 
 /**
- * 手机底栏 —— 一块浮起的基座。
+ * 手机底栏 —— 一块浮起的基座，选中格上压一面金牌。
  *
- * 上一版底栏正中顶着一枚 56px 的金箔圆盘。三个理由把它拿掉了：
+ * 上一版底栏正中顶着一枚 56px 的金箔圆盘，三个理由把它拿掉了：它把整页的金
+ * 额度花在了固定装饰上（`/upgrade` 那页会同时出现两枚一样的 56px 金圆盘）；
+ * 交易终端上它是纯装饰；而凸起圆盘在手机语法里意味着「动作」，点下去该升起
+ * 一张 sheet，这里点下去只是换页。
  *
- *  1. **它把整页的金额度花在了固定装饰上。** DESIGN.md 的硬规则是「一屏之内实心金
- *     最多一次」，而这枚圆盘出现在每一屏上——于是 /upgrade 那页会同时出现两枚
- *     一模一样的 56px 金圆盘（页面自己那枚 .foil 徽记 + 底栏这枚），任何带
- *     Button primary 的页面也都超额。规则没被违反过一次，是被违反了每一次。
- *  2. **交易终端上它是纯装饰。** 同一条底栏压在 K 线页最下沿，那一面的规矩是
- *     「金退为选中态与关键数据，零装饰」。
- *  3. **凸起圆盘在手机语法里意味着「动作」**（发布 / 新建 / 扫一扫），点下去该
- *     升起一张 sheet。这里点下去只是换页。旧注释自己写着「它是目的地不是动作」——
- *     那句话是在给一个错误的手势打补丁。
- *
- * 换成什么：**体量由那块板承担，不由金承担。** 底栏脱开屏幕边缘 10px，成为一块
- * 有 1px 描边、14px 圆角、顶棱一线微光的墨色石板；选中格被一道金光柱托住，
- * 光柱顶端压一段 30px 金线。整条栏上没有一处实心金，金只剩「一条线 + 一层
- * 15% 的光 + 选中格的字」，额度因此还给了页面本身。
+ * 现在的构造是三层，每一层只负责一件事：
+ *   1. **基座**：底栏脱开屏幕边缘 10px，成为一块 18px 圆角、1px 描边、顶棱
+ *      一线微光的墨色石板。体量由它承担，不由金承担。
+ *   2. **金牌**：选中格上压一面金渐变的牌子，顶棱一线亮金。它是**定宽**的，
+ *      在格与格之间平移——不用 scaleX 缩，缩会把 14px 的圆角一起压扁。
+ *   3. **角标**：「选币」那一格上写着现在有几个活着的信号。它是这条底栏上
+ *      唯一一处会自己变的东西，也是唯一值得打断你的东西。
  *
  * 板浮起来之后，两侧 10px 与底下 12px 是透的。内容不会从缝里漏出来靠两层：
- *   - pb-tabbar（= --tabbar-h + 安全区）把内容挡在整条 nav 之上；
- *   - 滚动过程中内容仍会从缝里穿过去，所以 nav 自己是不透明墨底，
- *     再在它上沿盖一段 24px 的 bg-ink-fade，内容在碰到板之前就化进墨里。
+ * `pb-tabbar`（= --tabbar-h + 安全区）把内容挡在整条 nav 之上；滚动过程中
+ * 内容仍会从缝里穿过去，所以 nav 自己是不透明墨底，再在它上沿盖一段 24px 的
+ * `bg-ink-fade`，内容在碰到板之前就化进墨里。
  *
- * 「选币」的中心地位改由结构承担而不是材质：它仍在五格正中（拇指的自然落点），
- * 格宽多出 20%，图标大一档，未选中时文字亮一阶。层级由尺寸与明度给，不由金给。
+ * 不用 `backdrop-filter`：这条底栏挂在交易页上正压着 K 线画布。
  */
 export function MobileTabBar() {
   const locale = useLocale();
@@ -129,6 +129,10 @@ export function MobileTabBar() {
   const isGuest = !auth.loading && !auth.userId;
   const tabs = isGuest ? GUEST_MOBILE_TABS : MOBILE_TABS;
 
+  // 底栏是 lg:hidden——桌面上它仍然挂载，但一个看不见的角标不该去拉数据
+  const isMobile = useMediaQuery("(max-width: 1023px)");
+  const signals = useLiveSignalCount(!isGuest && isMobile);
+
   const active = useMemo(
     () => (isGuest ? resolveActiveGuestTab(pathname, locale) : resolveActiveTab(pathname, locale)),
     [isGuest, pathname, locale]
@@ -136,9 +140,9 @@ export function MobileTabBar() {
 
   const railRef = useRef<HTMLDivElement>(null);
   const cellRefs = useRef(new Map<TabKey, HTMLAnchorElement | null>());
-  /** 选中格的中心与宽度，px，相对板的左内缘。null = 当前路径不属于任何一格 */
-  const [lit, setLit] = useState<{ x: number; w: number } | null>(null);
-  // 首帧不滑：刚挂载时光柱该直接出现在当前格上，而不是从板的最左边滑过来
+  /** 金牌的中心与宽度，px，相对板的左内缘。null = 当前路径不属于任何一格 */
+  const [tile, setTile] = useState<{ x: number; w: number } | null>(null);
+  // 首帧不滑：刚挂载时金牌该直接出现在当前格上，而不是从板的最左边滑过来
   const [glide, setGlide] = useState(false);
 
   useLayoutEffect(() => {
@@ -148,10 +152,18 @@ export function MobileTabBar() {
     const measure = () => {
       const cell = active ? cellRefs.current.get(active) : null;
       if (!cell) {
-        setLit(null);
+        setTile(null);
         return;
       }
-      setLit({ x: cell.offsetLeft + cell.offsetWidth / 2, w: cell.offsetWidth });
+      // 牌宽取最窄的一格：定宽才能只平移不缩放，圆角因此不会被压扁
+      let narrowest = Infinity;
+      for (const node of cellRefs.current.values()) {
+        if (node) narrowest = Math.min(narrowest, node.offsetWidth);
+      }
+      setTile({
+        x: cell.offsetLeft + cell.offsetWidth / 2,
+        w: Math.max(0, narrowest - TILE_INSET_X * 2),
+      });
     };
 
     measure();
@@ -162,16 +174,14 @@ export function MobileTabBar() {
   }, [active, tabs]);
 
   useEffect(() => {
-    if (!lit || glide) return;
+    if (!tile || glide) return;
     const id = requestAnimationFrame(() => setGlide(true));
     return () => cancelAnimationFrame(id);
-  }, [lit, glide]);
+  }, [tile, glide]);
 
   return (
     <nav
       data-tabbar={isGuest ? "guest" : "user"}
-      // 不透明墨底 + 上沿一段渐隐：这条底栏挂在交易页上正压着 K 线画布，
-      // backdrop-blur 会让低端安卓掉帧，所以玻璃感一律由描边与顶棱微光承担。
       className={cn(
         "fixed inset-x-0 bottom-0 z-40 bg-bg-primary px-2.5 lg:hidden",
         "pb-[calc(12px+env(safe-area-inset-bottom))]"
@@ -184,43 +194,35 @@ export function MobileTabBar() {
       <div
         ref={railRef}
         className={cn(
-          "relative grid h-14 overflow-hidden rounded-2xl border border-border-default bg-bg-elevated",
+          "relative grid h-16 rounded-[18px] border border-border-default bg-bg-elevated",
           // 顶棱一线微光 + 一层向下扩散的投影，让板读起来是浮着的而不是贴着的
           "shadow-[inset_0_1px_0_rgba(238,220,166,0.10),0_-14px_44px_-18px_rgba(0,0,0,0.95)]"
         )}
         style={{
-          // 中心格宽 20%——拇指的落点，也是 CJK 里最容易折行的那两个字
-          gridTemplateColumns: tabs.map((tab) => (tab.anchor ? "1.2fr" : "1fr")).join(" "),
+          // 中心格宽一点。纯粹是拇指落点——层级由金牌与角标给，不由格宽给
+          gridTemplateColumns: tabs.map((tab) => (tab.anchor ? "1.15fr" : "1fr")).join(" "),
         }}
       >
-        {lit && (
-          <>
-            {/* 光柱：宽度靠 scaleX 缩，不动 width——动 width 会每帧重排 */}
-            <span
-              aria-hidden
-              className={cn(
-                "pointer-events-none absolute inset-y-0 left-0 bg-tabbar-lit",
-                glide && "transition-transform duration-300 ease-out"
-              )}
-              style={{
-                width: LIT_BASE_W,
-                transform: `translate3d(${lit.x - LIT_BASE_W / 2}px, 0, 0) scaleX(${lit.w / LIT_BASE_W})`,
-              }}
-            />
-            {/* 金线单独滑，不跟着光柱缩——被 scaleX 拉过的线会宽窄不一 */}
-            <span
-              aria-hidden
-              className={cn(
-                "pointer-events-none absolute left-0 top-0 h-[2px] w-[30px] bg-gold",
-                glide && "transition-transform duration-300 ease-out"
-              )}
-              style={{ transform: `translate3d(${lit.x - 15}px, 0, 0)` }}
-            />
-          </>
+        {tile && (
+          <span
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-y-2 left-0 rounded-[13px] bg-tabbar-tile",
+              "shadow-[inset_0_1px_0_rgba(238,220,166,0.16)]",
+              glide && "transition-transform duration-300 ease-out"
+            )}
+            style={{
+              width: tile.w,
+              transform: `translate3d(${tile.x - tile.w / 2}px, 0, 0)`,
+            }}
+          />
         )}
 
         {tabs.map((tab) => {
           const isActive = active === tab.key;
+          // 角标只挂在「选币」上，且只在真的有活着的信号时出现——不闪一个 0
+          const badge = tab.key === "screener" && signals ? signals : null;
+
           return (
             <Link
               key={tab.key}
@@ -232,24 +234,31 @@ export function MobileTabBar() {
               className={cn(
                 "group relative z-10 flex flex-col items-center justify-center gap-1.5",
                 "transition-colors duration-200",
-                isActive
-                  ? "text-gold"
-                  : tab.anchor
-                    // 中心格未选中时亮一阶。层级用明度给，不用色相给——
-                    // 暗金标签会与选中的金标签撞成「半选中」
-                    ? "text-text-secondary"
-                    : "text-text-muted"
+                isActive ? "text-gold" : "text-text-muted"
               )}
             >
-              <TabIcon
-                tab={tab.key}
-                // 按下即刻见反馈。悬停什么都不做——这一面的规矩是悬停只变描边
-                className={cn(
-                  "transition-transform duration-100 group-active:scale-90",
-                  tab.anchor ? "h-6 w-6" : "h-5 w-5"
+              <span className="relative">
+                <TabIcon
+                  tab={tab.key}
+                  // 按下即刻见反馈。悬停什么都不做——这一面的规矩是悬停只变描边
+                  className="h-[22px] w-[22px] transition-transform duration-100 group-active:scale-90"
+                />
+                {badge !== null && (
+                  <>
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "absolute -right-2.5 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center",
+                        "rounded-full bg-gold px-1 text-[10px] font-semibold leading-none text-bg-primary"
+                      )}
+                    >
+                      {badge > 99 ? "99+" : badge}
+                    </span>
+                    <span className="sr-only">{t("live_signals", { count: badge })}</span>
+                  </>
                 )}
-              />
-              <span className="text-[10px] font-medium uppercase leading-none tracking-label">
+              </span>
+              <span className="text-[11px] font-medium leading-none tracking-[0.02em]">
                 {t(`tab_${tab.key}`)}
               </span>
             </Link>

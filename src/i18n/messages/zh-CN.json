@@ -28,6 +28,7 @@
     "of": "共 {total} 页"
   },
   "nav": {
+    "live_signals": "{count} 个活跃信号",
     "primary": "主导航",
     "home": "首页",
     "dashboard": "我的主页",
@@ -1309,7 +1310,25 @@
     "hub_articles": "文章",
     "hub_articles_desc": "深度解读与策略拆解",
     "hub_news": "行业资讯",
-    "hub_news_desc": "每日市场动态与要闻速览"
+    "hub_news_desc": "每日市场动态与要闻速览",
+    "progress_complete": "已完成 {percent}%",
+    "resume_eyebrow": "继续学习",
+    "start_eyebrow": "从这里开始",
+    "resume_meta": "{course} · 第 {index}/{total} 课 · 还剩 {minutes} 分钟",
+    "start_meta": "{course} · 第 {index}/{total} 课 · {minutes} 分钟",
+    "see_all": "查看全部",
+    "course_done": "已学完",
+    "course_lessons": "{count} 节课",
+    "course_progress": "{done}/{total} 节",
+    "course_locked": "Pro 专享",
+    "empty_courses": "课程正在准备中",
+    "empty_courses_desc": "先去看看文章与行业资讯，课程上线后会出现在这里。",
+    "news_updated": "{time}更新",
+    "news_recent": "24 小时内 {count} 条",
+    "articles_empty": "还没有文章",
+    "guest_prompt": "登录后记录你的学习进度",
+    "guest_desc": "看到哪一课、还剩几节，下次打开就在这里等着你。",
+    "guest_cta": "登录"
   },
   "calculator": {
     "title": "仓位计算器",

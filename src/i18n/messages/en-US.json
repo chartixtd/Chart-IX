@@ -28,6 +28,7 @@
     "of": "of {total}"
   },
   "nav": {
+    "live_signals": "{count} live signals",
     "primary": "Primary navigation",
     "home": "Home",
     "dashboard": "Dashboard",
@@ -1309,7 +1310,25 @@
     "hub_articles": "Articles",
     "hub_articles_desc": "Deep dives and strategy breakdowns",
     "hub_news": "Industry news",
-    "hub_news_desc": "Daily market moves and headlines at a glance"
+    "hub_news_desc": "Daily market moves and headlines at a glance",
+    "progress_complete": "{percent}% complete",
+    "resume_eyebrow": "Resume",
+    "start_eyebrow": "Start here",
+    "resume_meta": "{course} · lesson {index} of {total} · {minutes} min left",
+    "start_meta": "{course} · lesson {index} of {total} · {minutes} min",
+    "see_all": "See all",
+    "course_done": "Done",
+    "course_lessons": "{count} lessons",
+    "course_progress": "{done} of {total}",
+    "course_locked": "Pro only",
+    "empty_courses": "Courses are on the way",
+    "empty_courses_desc": "Start with the articles and industry news below — courses will appear here as they go live.",
+    "news_updated": "Updated {time}",
+    "news_recent": "{count} new in 24h",
+    "articles_empty": "No articles yet",
+    "guest_prompt": "Sign in to keep your place",
+    "guest_desc": "Which lesson you are on and how many are left will be waiting here next time.",
+    "guest_cta": "Sign in"
   },
   "calculator": {
     "title": "Position Size Calculator",

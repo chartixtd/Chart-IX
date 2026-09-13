@@ -7,7 +7,16 @@ import type { AlertCardData } from "@/lib/screener/cards";
 
 type ScannerResponse = ScannerPayload;
 
-async function fetchScannerPayload(): Promise<ScannerResponse> {
+/**
+ * 这一份扫描结果全站只订阅一次。
+ *
+ * 除了扫描器页自己，手机底栏也要它——「选币」那一格上的角标写的就是
+ * 「现在有几个活着的信号」。两处共用同一个 queryKey 与同一个 queryFn，
+ * react-query 因此只发一次请求；同时开着扫描器页时，底栏不再多发一次。
+ */
+export const SCANNER_QUERY_KEY = ["scanner"] as const;
+
+export async function fetchScannerPayload(): Promise<ScannerResponse> {
   const res = await fetch("/api/screener");
   if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   const json = await res.json();
@@ -30,7 +39,7 @@ export interface ScannerData {
 
 export function useScannerData(): ScannerData {
   const query = useQuery<ScannerResponse>({
-    queryKey: ["scanner"],
+    queryKey: SCANNER_QUERY_KEY,
     queryFn: fetchScannerPayload,
     // 客户端跟着服务端的扫描节奏走。服务端有 TTL + DB 双层缓存兜底，
     // 早到的请求只会读到同一份结果，不会触发重复计算。

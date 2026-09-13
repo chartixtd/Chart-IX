@@ -28,6 +28,7 @@
     "of": "daripada {total}"
   },
   "nav": {
+    "live_signals": "{count} isyarat aktif",
     "primary": "Navigasi utama",
     "home": "Laman Utama",
     "dashboard": "Papan Pemuka",
@@ -1216,7 +1217,25 @@
     "hub_articles": "Artikel",
     "hub_articles_desc": "Analisis mendalam dan pecahan strategi",
     "hub_news": "Berita industri",
-    "hub_news_desc": "Pergerakan pasaran harian dan berita utama sepintas lalu"
+    "hub_news_desc": "Pergerakan pasaran harian dan berita utama sepintas lalu",
+    "progress_complete": "{percent}% selesai",
+    "resume_eyebrow": "Sambung",
+    "start_eyebrow": "Mula di sini",
+    "resume_meta": "{course} · pelajaran {index} drpd {total} · tinggal {minutes} min",
+    "start_meta": "{course} · pelajaran {index} drpd {total} · {minutes} min",
+    "see_all": "Lihat semua",
+    "course_done": "Selesai",
+    "course_lessons": "{count} pelajaran",
+    "course_progress": "{done} drpd {total}",
+    "course_locked": "Pro sahaja",
+    "empty_courses": "Kursus sedang disiapkan",
+    "empty_courses_desc": "Mulakan dengan artikel dan berita industri di bawah — kursus akan muncul di sini apabila siap.",
+    "news_updated": "Dikemas kini {time}",
+    "news_recent": "{count} baharu dalam 24j",
+    "articles_empty": "Tiada artikel lagi",
+    "guest_prompt": "Log masuk untuk simpan kemajuan",
+    "guest_desc": "Pelajaran mana anda berada dan berapa lagi yang tinggal akan menunggu di sini.",
+    "guest_cta": "Log masuk"
   },
   "calculator": {
     "title": "Kalkulator Saiz Posisi",

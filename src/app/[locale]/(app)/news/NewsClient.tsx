@@ -7,6 +7,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import type { NewsItem, NewsLang } from "@/types";
 import { Icon } from "@/components/ui/Icon";
+// 学习中心要的是同一句「多久以前」，所以这一份提到了 lib/format
+import { formatRelativeMs } from "@/lib/format/relative-time";
 
 interface NewsClientProps {
   initialItems: NewsItem[];
@@ -15,22 +17,6 @@ interface NewsClientProps {
 }
 
 const REFRESH_MS = 5 * 60 * 1000;
-
-function formatRelativeTime(ms: number, localeStr: string, t: ReturnType<typeof useTranslations>) {
-  const diffMs = Date.now() - ms;
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return t("just_now");
-  if (diffMin < 60) return t("minutes_ago", { count: diffMin });
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return t("hours_ago", { count: diffHour });
-  const diffDay = Math.floor(diffHour / 24);
-  if (diffDay < 7) return t("days_ago", { count: diffDay });
-  try {
-    return new Intl.DateTimeFormat(localeStr, { year: "numeric", month: "short", day: "numeric" }).format(new Date(ms));
-  } catch {
-    return new Date(ms).toLocaleDateString();
-  }
-}
 
 /**
  * 行业资讯（Read 面）。资讯是按时间读的流水——所以是台账，不是卡片墙：
@@ -84,7 +70,7 @@ export default function NewsClient({ initialItems, fetchError: initialError, lan
                 className="group grid gap-4 py-7 sm:grid-cols-12 sm:items-start sm:gap-6"
               >
                 <span className="font-mono text-[11px] tabular-nums text-text-muted sm:col-span-2 sm:pt-1.5">
-                  {formatRelativeTime(item.publishedAt, locale, t)}
+                  {formatRelativeMs(item.publishedAt, locale, t)}
                 </span>
                 <div className="min-w-0 sm:col-span-7">
                   <h3 className="font-display text-lg font-medium leading-snug tracking-tight text-text-primary transition-colors group-hover:text-gold lg:text-xl">

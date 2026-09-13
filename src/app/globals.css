@@ -52,19 +52,19 @@
     --gilt: linear-gradient(180deg, #e2c784 0%, #d3b26a 55%, #c4a45c 100%);
     --gilt-hover: linear-gradient(180deg, #eedca6 0%, #e2c784 55%, #d3b26a 100%);
     --obsidian: linear-gradient(180deg, rgba(30, 30, 35, 0.6), rgba(9, 9, 11, 0.82));
-    /* 底栏总高（不含安全区）= 浮起那块板 56px + 板下方留白 12px。
+    /* 底栏总高（不含安全区）= 浮起那块板 64px + 板下方留白 12px。
        已登录与访客同高——上一版正中那枚凸起的金箔圆盘要把底栏撑到 70px，
        还得靠 html:has(nav[data-tabbar="guest"]) 给访客单独改矮，
        圆盘拿掉之后两条底栏就是同一块板。
        改这个值时一并核对 tailwind.config.ts 的 spacing.tabbar 与
        app/[locale]/(app)/trade/shell.ts 里的 fallback。 */
-    --tabbar-h: 68px;
-    /* 底栏选中格那道金光柱。顶端最亮，向下 74% 处收干——
-       它托住选中格，不是给它描边。 */
-    --tabbar-lit: linear-gradient(
+    --tabbar-h: 76px;
+    /* 底栏选中格上压的那面金牌。一个几乎察觉不到的纵向明暗，配上组件里
+       那条 inset 顶棱高光，读起来是一块压上去的薄金属而不是一块色块。 */
+    --tabbar-tile: linear-gradient(
       180deg,
-      rgba(211, 178, 106, 0.15),
-      rgba(211, 178, 106, 0) 74%
+      rgba(211, 178, 106, 0.16),
+      rgba(211, 178, 106, 0.07)
     );
     --hairline-gold: linear-gradient(
       90deg,

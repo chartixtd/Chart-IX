@@ -2,7 +2,7 @@
  * 交易页外壳高度的唯一出处。
  *
  * 手机：100dvh 减去手机 header(3rem) + 顶部安全区 + 底部 tab bar（含其安全区，
- * 高度走 --tabbar-h = 浮起的板 56px + 板下留白 12px，已登录与访客同高）；
+ * 高度走 --tabbar-h = 浮起的板 64px + 板下留白 12px，已登录与访客同高）；
  * 桌面：减 4rem 顶栏。
  *
  * page.tsx 的水合骨架、loading.tsx 的路由骨架、真实容器三处必须用同一条
@@ -10,4 +10,4 @@
  * 每次进入交易页都先撑到底栏底下再缩回来，跳一次布局。
  */
 export const TRADE_SHELL_HEIGHT =
-  "h-[calc(100dvh-3rem-env(safe-area-inset-top)-var(--tabbar-h,68px)-env(safe-area-inset-bottom))] lg:h-[calc(100dvh-4rem)]";
+  "h-[calc(100dvh-3rem-env(safe-area-inset-top)-var(--tabbar-h,76px)-env(safe-area-inset-bottom))] lg:h-[calc(100dvh-4rem)]";

@@ -182,7 +182,16 @@ export function AlertCard({
           {/* 「已结束 / 已失效」跟新鲜度徽章同属「这张卡的状态」，放同一行；
               单独另起一行会在抬头下面留一条只有右端有字的空行。dead 时新鲜度
               徽章不再显示——已经结束的信号无所谓新不新。 */}
-          {dead && (
+          {/* 两种死法给两个徽章，字眼和颜色都分开：
+                碰线 = 市场证伪了它，红的，语气该重；
+                超时 = 它只是过气了，价格可能离失效线还很远，中性灰就够，
+                  用红色会让人以为止损被扫了。 */}
+          {deadBy === "timeout" && (
+            <span className="rounded-sm border border-border-hover px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-text-muted">
+              {t("alerts.timed_out")}
+            </span>
+          )}
+          {deadBy === "invalidation" && (
             <span className="rounded-sm border border-danger/40 px-1 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-danger">
               {t("alerts.invalidated")}
             </span>

@@ -1019,6 +1019,7 @@
       "never_confirmed": "not yet confirmed",
       "invalidation": "Invalid at",
       "invalidated": "Invalidated",
+      "timed_out": "Expired",
       "page_hint": "A card ends when price reaches its invalidation level, or after 6 hours",
       "trade": "Trade →",
       "ended_hint": "Invalidated — kept briefly so you can match it to the push",

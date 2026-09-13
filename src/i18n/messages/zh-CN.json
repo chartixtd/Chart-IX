@@ -1019,6 +1019,7 @@
       "never_confirmed": "尚未确认",
       "invalidation": "失效价",
       "invalidated": "已失效",
+      "timed_out": "已过时",
       "page_hint": "卡片在价格碰到失效价、或挂满 6 小时之后结束",
       "trade": "交易 →",
       "ended_hint": "已失效，留一会儿方便你对照推送",

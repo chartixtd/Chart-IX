@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import zh from "@/i18n/messages/zh-CN.json";
+import en from "@/i18n/messages/en-US.json";
+import ms from "@/i18n/messages/ms-MY.json";
 import { AlertRail } from "./AlertRail";
 import type { AlertCardData } from "@/lib/screener/cards";
 
@@ -51,11 +53,11 @@ const mk = (symbol: string, minutesAgo: number, o: Partial<AlertCardData> = {}):
   ...o,
 });
 
-function render(cards: AlertCardData[]): string {
+function render(cards: AlertCardData[], locale = "zh-CN", messages: object = zh): string {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderToStaticMarkup(
     <QueryClientProvider client={qc}>
-      <NextIntlClientProvider locale="zh-CN" messages={zh}>
+      <NextIntlClientProvider locale={locale} messages={messages}>
         <AlertRail cards={cards} />
       </NextIntlClientProvider>
     </QueryClientProvider>
@@ -126,13 +128,45 @@ describe("警报栏的排列", () => {
     expect(orderOf(render(cards), ["AAA", "BBB", "CCC"])).toEqual(["AAA", "BBB", "CCC"]);
   });
 
-  it("死掉的卡显示红「已失效」，活的不显示", () => {
+  it("碰线的卡标「已失效」，活的不标", () => {
     setPrices({ "AAA-USDT": 0.5, "BBB-USDT": 10 });
     const html = render([mk("AAA-USDT", 10), mk("BBB-USDT", 20)]);
     expect(html).toContain("已失效");
     expect(html).toContain("价格已穿过失效价");
     // 两张卡里只有一张带标签
     expect(html.split("已失效").length - 1).toBe(1);
+    expect(html).not.toContain("已过时");
+  });
+
+  it("超时的卡标「已过时」，不是「已失效」——它的价格可能离失效线还很远", () => {
+    setPrices({ "OLD-USDT": 10 });
+    const html = render([mk("OLD-USDT", 7 * 60)]);
+    expect(html).toContain("已过时");
+    expect(html).toContain("挂满 6 小时");
+    expect(html).not.toContain("已失效");
+    expect(html).not.toContain("价格已穿过失效价");
+  });
+
+  it("两种死法同时在榜上时各标各的", () => {
+    setPrices({ "CROSS-USDT": 0.5, "OLD-USDT": 10, "LIVE-USDT": 10 });
+    const html = render([mk("LIVE-USDT", 5), mk("CROSS-USDT", 10), mk("OLD-USDT", 7 * 60)]);
+    expect(html).toContain("已失效");
+    expect(html).toContain("已过时");
+  });
+
+  it("三种语言都分得开这两个徽章", () => {
+    setPrices({ "CROSS-USDT": 0.5, "OLD-USDT": 10 });
+    const cards = [mk("CROSS-USDT", 10), mk("OLD-USDT", 7 * 60)];
+    for (const [locale, messages, crossed, timedOut] of [
+      ["zh-CN", zh, "已失效", "已过时"],
+      ["en-US", en, "Invalidated", "Expired"],
+      ["ms-MY", ms, "Tidak sah", "Tamat tempoh"],
+    ] as const) {
+      const html = render(cards, locale, messages);
+      expect(html, locale).toContain(crossed);
+      expect(html, locale).toContain(timedOut);
+      expect(crossed).not.toBe(timedOut);
+    }
   });
 
   it("一张卡都没有时给空态", () => {

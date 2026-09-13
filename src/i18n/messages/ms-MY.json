@@ -943,6 +943,7 @@
       "never_confirmed": "belum disahkan",
       "invalidation": "Tidak sah pada",
       "invalidated": "Tidak sah",
+      "timed_out": "Tamat tempoh",
       "page_hint": "Kad tamat apabila harga mencapai paras tidak sah, atau selepas 6 jam",
       "trade": "Dagang →",
       "ended_hint": "Tidak sah — dikekalkan sebentar untuk padanan dengan tolakan",

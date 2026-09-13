@@ -15,7 +15,7 @@ import { renderBriefingHtml } from "@/lib/briefing/render";
 import { fallbackTitle, renderFallbackHtml } from "@/lib/briefing/fallback";
 import { normalizeBriefingTitle } from "@/lib/briefing/title";
 import { alertBriefing as alert } from "@/lib/briefing/alert";
-import { pushBriefingToTelegram, BRIEFING_TELEGRAM_BUDGET_MS } from "@/lib/briefing/telegram";
+import { deliverBriefingLinkOnce, BRIEFING_TELEGRAM_BUDGET_MS } from "@/lib/briefing/telegram";
 import {
   readPublishState,
   writePublishState,
@@ -673,7 +673,12 @@ async function runPipeline(
   // 端点足以把函数拖到被平台掐断。让无上界的那个跑在后面，它最多饿死自己。
   //
   // 没有目标就什么都不发——这个功能默认关闭，要管理员在后台勾选目标才生效。
-  // force 重跑会再推一条：那是操作者显式点了「重新生成」，文章本身也换了。
+  //
+  // 走 deliverBriefingLinkOnce 而不是直接发：今天这条链接要么由这里发、要么由
+  // 补投 tick 发，两边抢同一份认领，抢不到的那边不发。升级成功后流水线再推
+  // 一次、force 重跑再推一次，都会被这道闸门挡住——文章换了，链接却是同一条，
+  // 频道里多出来的只是重复消息。要重发就点后台那个「立即推送早报链接」，
+  // 那是显式动作，不认领、直接发。
   //
   // **兜底稿先不推。** 后面还有几十个 tick 会试着把它升级成 AI 稿，现在推
   // 出去等于把读者领到一篇待会儿就要被替换掉的稿子前面；而链接只能发一次，
@@ -687,7 +692,7 @@ async function runPipeline(
     } else if (remaining < BRIEFING_TELEGRAM_BUDGET_MS) {
       trace(diag, `剩余投递预算 ${Math.max(0, remaining)}ms 不足，跳过 Telegram 早报推送`);
     } else {
-      const outcome = await pushBriefingToTelegram(slug, title);
+      const outcome = await deliverBriefingLinkOnce(slug, title);
       if (outcome.skippedReason) {
         // 只记诊断、不告警：没配目标是一种配置状态，不是故障。
         trace(diag, `Telegram 早报推送跳过（${outcome.skippedReason}）`);

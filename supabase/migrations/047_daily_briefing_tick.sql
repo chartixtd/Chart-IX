@@ -72,4 +72,5 @@ SELECT cron.schedule(
 --   SELECT jobname, status, start_time FROM cron.job_run_details
 --     ORDER BY start_time DESC LIMIT 20;
 --   SELECT key, value FROM public.admin_settings
---     WHERE key IN ('daily_briefing_publish_state', 'daily_briefing_telegram_delivery');
+--     WHERE key = 'daily_briefing_publish_state'
+--        OR key LIKE 'daily_briefing_telegram_delivery%';  -- 投递记录一天一行

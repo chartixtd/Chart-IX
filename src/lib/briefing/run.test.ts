@@ -49,7 +49,7 @@ const fetchArticleBodies = vi.fn(async (sources: BriefingSource[]) =>
   sources.map((s) => ({ ...s, body: "" }))
 );
 const revalidateArticleLists = vi.fn();
-const pushBriefingToTelegram =
+const deliverBriefingLinkOnce =
   vi.fn<
     (slug: string, titles: Record<string, string>) => Promise<{
       skippedReason?: string;
@@ -96,8 +96,8 @@ vi.mock("@/lib/briefing/extract", async (importOriginal) => ({
 // 一份，是为了让这条测试完全不依赖那整条栈。
 vi.mock("@/lib/briefing/telegram", () => ({
   BRIEFING_TELEGRAM_BUDGET_MS: 9_000,
-  pushBriefingToTelegram: (slug: string, titles: Record<string, string>) =>
-    pushBriefingToTelegram(slug, titles),
+  deliverBriefingLinkOnce: (slug: string, titles: Record<string, string>) =>
+    deliverBriefingLinkOnce(slug, titles),
 }));
 // translateBriefingJson 现在用的是带失败原因的 translateTextDetailed。替身仍然
 // 复用同一个 translateText mock（用例里到处都是 `mockResolvedValue(null)` 这种
@@ -374,7 +374,7 @@ beforeEach(() => {
     sources.map((s) => ({ ...s, body: "" }))
   );
   revalidateArticleLists.mockClear();
-  pushBriefingToTelegram.mockReset().mockResolvedValue({ skippedReason: "no_targets", results: [] });
+  deliverBriefingLinkOnce.mockReset().mockResolvedValue({ skippedReason: "no_targets", results: [] });
   process.env.DEEPSEEK_API_KEY = "test-key";
   process.env.BRIEFING_AUTHOR_ID = "author-1";
 });
@@ -1055,8 +1055,8 @@ describe("runDailyBriefing — Telegram 早报推送", () => {
 
     await runDailyBriefing(NOW);
 
-    expect(pushBriefingToTelegram).toHaveBeenCalledTimes(1);
-    const [slug, titles] = pushBriefingToTelegram.mock.calls[0];
+    expect(deliverBriefingLinkOnce).toHaveBeenCalledTimes(1);
+    const [slug, titles] = deliverBriefingLinkOnce.mock.calls[0];
     expect(slug).toBe("daily-briefing-2026-08-08");
     // 传的必须是落库那份标题，否则 Telegram 里的标题和站上那篇对不上
     expect(titles["zh-CN"]).toBe(db.inserted[0].title["zh-CN"]);
@@ -1067,7 +1067,7 @@ describe("runDailyBriefing — Telegram 早报推送", () => {
   // 那会让运维以为今天没出稿，而稿子明明在站上。
   it("推送抛出时文章照常算发布成功", async () => {
     callDeepSeek.mockResolvedValue(ok(ZH_JSON));
-    pushBriefingToTelegram.mockRejectedValue(new Error("telegram down"));
+    deliverBriefingLinkOnce.mockRejectedValue(new Error("telegram down"));
 
     const r = await runDailyBriefing(NOW);
 
@@ -1078,7 +1078,7 @@ describe("runDailyBriefing — Telegram 早报推送", () => {
 
   it("部分目标失败时把失败目标写进诊断，供后台事后排查", async () => {
     callDeepSeek.mockResolvedValue(ok(ZH_JSON));
-    pushBriefingToTelegram.mockResolvedValue({
+    deliverBriefingLinkOnce.mockResolvedValue({
       results: [
         { label: "主频道", ok: true },
         { label: "内部群", ok: false, error: "chat not found" },
@@ -1109,7 +1109,7 @@ describe("runDailyBriefing — Telegram 早报推送", () => {
     const r = await pending;
 
     expect(r.status).toBe("published");
-    expect(pushBriefingToTelegram).toHaveBeenCalledTimes(1);
+    expect(deliverBriefingLinkOnce).toHaveBeenCalledTimes(1);
   });
 
   // 链接只能发一次。兜底稿发出去等于把读者领到一篇待会儿就要被升级重试
@@ -1120,7 +1120,7 @@ describe("runDailyBriefing — Telegram 早报推送", () => {
     const r = await runDailyBriefing(NOW);
 
     expect(r.status).toBe("fallback");
-    expect(pushBriefingToTelegram).not.toHaveBeenCalled();
+    expect(deliverBriefingLinkOnce).not.toHaveBeenCalled();
     // 不是放弃，是交给补投——诊断里必须说清楚，否则看起来就是又丢了一条
     expect((db.lastRun?.reasons ?? []).join("\n")).toContain("暂不推送");
   });
@@ -1128,18 +1128,18 @@ describe("runDailyBriefing — Telegram 早报推送", () => {
   it("正常 AI 稿是定稿，立即推链接", async () => {
     callDeepSeek.mockResolvedValue(ok(ZH_JSON));
     await runDailyBriefing(NOW);
-    expect(pushBriefingToTelegram).toHaveBeenCalledTimes(1);
+    expect(deliverBriefingLinkOnce).toHaveBeenCalledTimes(1);
   });
 
   it("今天已有稿而早退时不推送——否则同一条链接每个 tick 发一次", async () => {
     db.existingArticle = { id: "a1" };
     await runDailyBriefing(NOW);
-    expect(pushBriefingToTelegram).not.toHaveBeenCalled();
+    expect(deliverBriefingLinkOnce).not.toHaveBeenCalled();
   });
 
   it("窗口外的 tick 不推送", async () => {
     await runDailyBriefing(MIDNIGHT_UTC8);
-    expect(pushBriefingToTelegram).not.toHaveBeenCalled();
+    expect(deliverBriefingLinkOnce).not.toHaveBeenCalled();
   });
 });
 

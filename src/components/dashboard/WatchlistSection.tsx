@@ -26,13 +26,15 @@ function WatchRow({ symbol }: { symbol: string }) {
 
   return (
     <li className="flex items-center gap-4 border-b border-border-default py-3 last:border-b-0">
-      <span className="w-14 shrink-0 font-mono text-[15px] font-medium tracking-tight text-text-primary">
+      {/* 最小宽度让短代号对齐，但不设上限：NCCOGOLD2USD 这类长代号必须
+          完整读得出来，挤掉一点曲线的宽度是对的取舍 */}
+      <span className="min-w-[3.5rem] shrink-0 font-mono text-[15px] font-medium tracking-tight text-text-primary">
         {coin}
       </span>
 
       {/* 曲线是这一行的「形状」，不是它的读数——不加标签、不加坐标 */}
       <span className="h-6 min-w-0 flex-1 opacity-70">
-        <GoldChart symbol={symbol} interval="1h" limit={48} labels={false} grid={false} height={24} />
+        <GoldChart symbol={symbol} interval="1h" limit={48} labels={false} grid={false} dot={false} height={28} />
       </span>
 
       <span className="shrink-0 text-right">

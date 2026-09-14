@@ -129,9 +129,11 @@ export function MobileTabBar() {
   const isGuest = !auth.loading && !auth.userId;
   const tabs = isGuest ? GUEST_MOBILE_TABS : MOBILE_TABS;
 
-  // 底栏是 lg:hidden——桌面上它仍然挂载，但一个看不见的角标不该去拉数据
+  // 底栏是 lg:hidden——桌面上它仍然挂载，但一个看不见的角标不该去拉数据。
+  // 门槛用 auth.userId 而不是 !isGuest：auth 还在加载时 isGuest 是 false，
+  // 用它做门槛会让每个访客在那个窗口里也拉一次扫描结果。
   const isMobile = useMediaQuery("(max-width: 1023px)");
-  const signals = useLiveSignalCount(!isGuest && isMobile);
+  const signals = useLiveSignalCount(!!auth.userId && isMobile);
 
   const active = useMemo(
     () => (isGuest ? resolveActiveGuestTab(pathname, locale) : resolveActiveTab(pathname, locale)),

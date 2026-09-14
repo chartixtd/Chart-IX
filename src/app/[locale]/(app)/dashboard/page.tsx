@@ -34,6 +34,7 @@
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { AccountHeader } from "@/components/dashboard/AccountHeader";
@@ -86,10 +87,28 @@ export default function DashboardPage() {
   return (
     <div className="mx-auto max-w-page px-6 pb-10 pt-10 lg:pt-14">
       <AccountHeader />
-      <SignalsSection />
-      <WatchlistSection />
-      <LearningSection />
-      <BriefingSection />
+
+      {/*
+        桌面不是把手机版拉宽——1280px 宽的单列会让按钮撑满半屏、信号行中间
+        空出一大片、行情曲线拉成一条 900px 的平线。
+
+        桌面是一张 2×2 的非对称网格（1.55fr / 1fr），自动落位正好是：
+            信号 | 自选行情
+            学习 | 早报
+        左栏是「要你做决定的」，右栏是「扫一眼的」；两栏各自的行高由内容定，
+        同一行的两个区块标题对齐。手机上它退回单列，顺序不变。
+      */}
+      <div
+        className={cn(
+          "mt-10 flex flex-col gap-10",
+          "lg:mt-14 lg:grid lg:grid-cols-[1.55fr_1fr] lg:items-start lg:gap-x-14 lg:gap-y-14"
+        )}
+      >
+        <SignalsSection />
+        <WatchlistSection />
+        <LearningSection />
+        <BriefingSection />
+      </div>
 
       {/* 风险声明压在最后，用 text-muted（4.79:1，AA 的下限）。
           不要再调暗——它是必须读得懂的文字，不是装饰 */}

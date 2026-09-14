@@ -27,6 +27,8 @@ interface GoldChartProps {
   labels?: boolean;
   /** 是否画那四条发丝刻度线。行内的迷你曲线要关掉——24px 高的图上它们是噪声 */
   grid?: boolean;
+  /** 是否画末端那枚「现在」金点。它有 10px，压在 24px 高的行上太重 */
+  dot?: boolean;
   /** 曲线相对高度（SVG viewBox 高度），默认 320 */
   height?: number;
 }
@@ -70,6 +72,7 @@ export function GoldChart({
   className,
   labels = true,
   grid = true,
+  dot = true,
   height = 320,
 }: GoldChartProps) {
   const gradId = useId();
@@ -100,8 +103,11 @@ export function GoldChart({
     const min = Math.min(...closes);
     const max = Math.max(...closes);
     const range = max - min || 1;
-    const padTop = 28;
-    const padBottom = 20;
+    // 内边距必须跟着高度缩：写死 28 / 20 时，一条 24px 高的行内曲线
+    // usable 会算成负数，曲线被画到 viewBox 外面去，看起来是一条压扁的
+    // 直线加一枚落单的端点。320 高的英雄图上 min() 取的仍是 28 / 20。
+    const padTop = Math.min(28, height * 0.22);
+    const padBottom = Math.min(20, height * 0.18);
     const usable = height - padTop - padBottom;
     const pts: [number, number][] = closes.map((v, i) => [
       (i / (closes.length - 1)) * W,
@@ -218,7 +224,7 @@ export function GoldChart({
       </svg>
 
       {/* 末端金点：标出「现在」。用 HTML 定位而非 SVG，避免 preserveAspectRatio 拉伸成椭圆 */}
-      {geom && (
+      {dot && geom && (
         <span
           aria-hidden
           className={cn(

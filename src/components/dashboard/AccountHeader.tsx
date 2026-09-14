@@ -131,7 +131,9 @@ export function AccountHeader() {
   const total = isPaper ? paperTotal : spotTotal + futuresEquity;
 
   return (
-    <header>
+    // 桌面：数字与刻度在左，两枚按钮在右端对齐底线。手机：上下堆叠
+    <header className="lg:flex lg:items-end lg:justify-between lg:gap-12">
+      <div className="min-w-0 lg:flex-1">
       <div className="flex items-start justify-between gap-4">
         {/* 微标签就是切换器本身 */}
         <div className="flex items-center gap-3">
@@ -154,7 +156,7 @@ export function AccountHeader() {
         <Link
           href={`/${locale}/settings`}
           aria-label={t("account_settings")}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border-hover text-text-muted transition-colors hover:border-gold/50 hover:text-gold"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border-hover lg:hidden text-text-muted transition-colors hover:border-gold/50 hover:text-gold"
         >
           <Icon name="users" className="h-4 w-4" />
         </Link>
@@ -172,7 +174,7 @@ export function AccountHeader() {
       ) : (
         <>
           <p className="mt-3 flex items-baseline gap-2">
-            <span className="numeral text-[clamp(2.5rem,11vw,3.5rem)] leading-none text-text-primary">
+            <span className="numeral text-[clamp(2.5rem,11vw,3.5rem)] lg:text-[4rem] leading-none text-text-primary">
               {formatPrice(total)}
             </span>
             <span className="font-mono text-[13px] text-text-muted">USDT</span>
@@ -203,13 +205,23 @@ export function AccountHeader() {
         </>
       )}
 
-      <div className="mt-6 grid grid-cols-2 gap-3">
-        <Link href={`/${locale}/trade`} className={cn(BTN_BASE, "gilt foil-sheen font-semibold")}>
+      </div>
+
+      {/* 手机上两枚按钮平分整行；桌面上它们收成自己的宽度靠右——
+          一枚撑满半屏的按钮不会因为更大而更容易点中 */}
+      <div className="mt-6 flex gap-3 lg:mt-0 lg:shrink-0">
+        <Link
+          href={`/${locale}/trade`}
+          className={cn(BTN_BASE, "flex-1 gilt foil-sheen font-semibold lg:flex-none lg:w-40")}
+        >
           {t("trade_cta")}
         </Link>
         <Link
           href={`/${locale}/orders`}
-          className={cn(BTN_BASE, "border border-gold/50 text-gold hover:border-gold hover:bg-gold/[0.07]")}
+          className={cn(
+            BTN_BASE,
+            "flex-1 border border-gold/50 text-gold hover:border-gold hover:bg-gold/[0.07] lg:flex-none lg:w-40"
+          )}
         >
           {t("orders_cta")}
         </Link>

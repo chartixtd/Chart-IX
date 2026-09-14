@@ -25,7 +25,9 @@ export function DashSection({
   className?: string;
 }) {
   return (
-    <section className={cn("mt-10 lg:mt-12", className)}>
+    // 上外边距不写在这里：桌面要把四个区块摆进一张 2×2 的网格，
+    // 行距由那张网格的 gap 给
+    <section className={cn(className)}>
       <div className="flex items-baseline justify-between gap-4">
         <h2 className="font-display text-xl font-medium tracking-tight text-text-primary lg:text-2xl">
           {title}

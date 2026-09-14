@@ -48,30 +48,61 @@ export interface VolumeUpsert {
   price: number | null;
 }
 
+/** 这张表读回来的一行。`price` 是选读的——见 readVolumeCache 顶部那段。 */
+interface VolumeCacheRow {
+  coin: string;
+  volume_usd: number | string;
+  price?: number | string | null;
+  updated_at: string;
+}
+
 /**
  * 读取整张缓存表。
  *
- * 整表读而不是按 coin 过滤：表最多两三百行，一次全取比拼一个长 in() 更简单，
+ * 整表读而不是按 coin 过滤：表最多几百行，一次全取比拼一个长 in() 更简单，
  * 也让调用方能直接判断「哪些币还没被刷过」——那是轮转调度的输入。
  *
  * 读失败返回空 Map 而不是抛错：这一层挂掉的正确降级是「所有币都当作
  * 未验证成交量」，由调用方决定怎么处理，绝不能让整轮扫描失败。
+ *
+ * **`price` 那一列是选读的，缺了要能照常跑。** 这一条是踩出来的：加上
+ * `price`（撞名探测用，migration 055）之后先部署了代码、migration 还没跑，
+ * 于是这个 select 报 `column ... does not exist` → 走下面的 catch → 空 Map
+ * → 没有任何标的能证明成交量达标 → **三栏全空**，而那张表 362 行数据
+ * 好端端地躺在那里，只是少一列。
+ *
+ * 一个只服务于「可选的错配探测」的字段，不该有能力清空整个榜单
+ * ——`price` 为 null 本来就有明确语义（不做这道校验，见 CachedVolume.price）。
+ * 所以这里先按带 price 的形状读，失败就退回不带 price 再读一次，
+ * 两次都失败才当成真的读不到。顺带把「先跑 migration 还是先部署代码」
+ * 这个部署次序约束整个消掉了。
  */
 export async function readVolumeCache(): Promise<Map<string, CachedVolume>> {
   const out = new Map<string, CachedVolume>();
-  try {
-    const client = createServiceRoleClient();
-    const { data, error } = await client
-      .from("screener_volume_cache")
-      .select("coin, volume_usd, price, updated_at");
+
+  // 两个分支各自写成**字面量**的列清单，不要用三元拼字符串：supabase-js
+  // 会在类型层面解析 select 的字面量，喂它一个联合类型会得到 ParserError。
+  const load = async (withPrice: boolean): Promise<VolumeCacheRow[]> => {
+    const table = createServiceRoleClient().from("screener_volume_cache");
+    const { data, error } = withPrice
+      ? await table.select("coin, volume_usd, price, updated_at")
+      : await table.select("coin, volume_usd, updated_at");
     if (error) throw new Error(error.message);
-    for (const row of data ?? []) {
-      const r = row as {
-        coin: string;
-        volume_usd: number | string;
-        price: number | string | null;
-        updated_at: string;
-      };
+    return (data ?? []) as unknown as VolumeCacheRow[];
+  };
+
+  try {
+    let rows;
+    try {
+      rows = await load(true);
+    } catch (err) {
+      console.warn(
+        "[screener] volume cache: price 列读不到，退回不带 price 的读法（撞名探测这一轮不生效）",
+        err
+      );
+      rows = await load(false);
+    }
+    for (const r of rows) {
       const v = typeof r.volume_usd === "number" ? r.volume_usd : parseFloat(r.volume_usd);
       if (!Number.isFinite(v)) continue;
       const rawPrice = typeof r.price === "string" ? parseFloat(r.price) : r.price;
@@ -84,21 +115,41 @@ export async function readVolumeCache(): Promise<Map<string, CachedVolume>> {
   return out;
 }
 
-/** 写失败只记录不抛出：这一批没刷上，下一跳会因为它们仍然最旧而被重新选中。 */
+/**
+ * 写失败只记录不抛出：这一批没刷上，下一跳会因为它们仍然最旧而被重新选中。
+ *
+ * `price` 与读那一侧同样是选写的，理由见 readVolumeCache 顶部那段。这边的
+ * 后果比读那边更隐蔽：整批 upsert 因为一列不存在而失败，成交量就再也刷不
+ * 新了——而 updated_at 没被刷新，这批下一跳仍然最旧、仍然被选中、仍然失败，
+ * 卡成死循环，日志里只有一行 upsert failed。
+ */
 export async function upsertVolumes(rows: VolumeUpsert[]): Promise<void> {
   if (rows.length === 0) return;
-  try {
+  const now = new Date().toISOString();
+  const write = async (withPrice: boolean) => {
     const client = createServiceRoleClient();
-    const now = new Date().toISOString();
-    await client.from("screener_volume_cache").upsert(
+    const { error } = await client.from("screener_volume_cache").upsert(
       rows.map((r) => ({
         coin: r.coin,
         volume_usd: r.volumeUsd,
-        price: r.price,
+        ...(withPrice ? { price: r.price } : {}),
         updated_at: now,
       })),
       { onConflict: "coin" }
     );
+    if (error) throw new Error(error.message);
+  };
+
+  try {
+    try {
+      await write(true);
+    } catch (err) {
+      console.warn(
+        "[screener] volume cache: price 列写不进，退回不带 price 的写法（成交量照常刷新）",
+        err
+      );
+      await write(false);
+    }
   } catch (err) {
     console.error("[screener] volume cache upsert failed", err);
   }
@@ -130,18 +181,6 @@ export function pickStaleCoins(
 }
 
 /**
- * 轮转刷新一批：挑最旧的 `VOLUME_REFRESH_BATCH` 个候选，逐个调 pairs-markets
- * 取全交易所成交额之和，写回缓存。
- *
- * 跑在「本轮不该扫描」的 cron tick 上——cron 每 5 分钟打一次而扫描间隔是
- * 15 分钟，三次里有两次此前直接 skipped 走人。这件事放在那两跳里做，
- * 对扫描那一跳的配额零影响。
- *
- * 单个币失败写成 null 后跳过（runWithConcurrency 的语义）：它的 updated_at
- * 不会被刷新，所以下一跳它仍然排在最旧的那一批里，会被自动重试。
- * 这就是为什么这里不需要任何重试逻辑。
- */
-/**
  * 各交易所 current_price 的中位数。取中位数而不是均值或某一家：
  * 一行报了个离谱的价（下架的合约、刚上市还没成交）会把均值整个带偏，
  * 而挑某一家就得维护「挑哪家」这条规则，还会因为那家没上这个币而落空。
@@ -158,6 +197,18 @@ function medianPrice(rows: Array<{ current_price: number }>): number | null {
   return prices.length % 2 === 0 ? (prices[mid - 1] + prices[mid]) / 2 : prices[mid];
 }
 
+/**
+ * 轮转刷新一批：挑最旧的 `VOLUME_REFRESH_BATCH` 个候选，逐个调 pairs-markets
+ * 取全交易所成交额之和，写回缓存。
+ *
+ * 跑在「本轮不该扫描」的 cron tick 上——cron 每 5 分钟打一次而扫描间隔是
+ * 15 分钟，三次里有两次此前直接 skipped 走人。这件事放在那两跳里做，
+ * 对扫描那一跳的配额零影响。
+ *
+ * 单个币失败写成 null 后跳过（runWithConcurrency 的语义）：它的 updated_at
+ * 不会被刷新，所以下一跳它仍然排在最旧的那一批里，会被自动重试。
+ * 这就是为什么这里不需要任何重试逻辑。
+ */
 export async function refreshVolumeBatch(coins: string[]): Promise<number> {
   if (coins.length === 0) return 0;
   const rows = await runWithConcurrency(coins.map((coin) => () => getPairsMarkets(coin)));

@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { cn, formatPrice, formatPercent } from "@/lib/utils";
 import type { AlertCardData } from "@/lib/screener/cards";
 import { signedPct } from "@/lib/screener/cards";
+import { signalCopy, triggeredLabel } from "./signal-copy";
 import type { DeadReason } from "@/lib/screener/cards";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -19,13 +20,6 @@ import { toneFor, DIRECTION_CLASSES } from "./scenario-ui";
 // 「触发」两段拼起来的。拼接会拼出「刚刚前触发」这种病句，而且英文与
 // 马来语的语序跟中文不同（triggered 35m ago / dicetuskan 35m lalu），
 // 靠拼接根本排不对。
-function triggeredLabel(iso: string, t: ReturnType<typeof useTranslations>): string {
-  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 1) return t("alerts.just_now");
-  if (mins < 60) return t("alerts.minutes_ago", { n: mins });
-  return t("alerts.hours_ago", { n: Math.round(mins / 60) });
-}
-
 /** direction 三态 pill 的文案，manage 统一显示成"观望"。 */
 function directionLabel(dir: "long" | "short" | "manage", t: ReturnType<typeof useTranslations>): string {
   if (dir === "long") return "LONG";
@@ -116,32 +110,8 @@ export function AlertCard({
   // 场景名与强度徽章都**不显示**：前者读起来像一个已经读懂市场的结论，而实测
   // 不同场景之间的方向准确度全部落在 50% 附近；后者暗示了一个可信度排序，
   // 而各强度档的胜率同样都是 50% 上下。verdict 用大白话说**发生了什么**。
-  let verdict: string;
-  let action: string;
-  let trap = false;
-  if (trigger.type === "scenario") {
-    const sc = trigger.scenario;
-    trap = sc.trap;
-    // strength / oiState 一并传进去：文案里凡是描述 OI 或强度的**定语**，
-    // 都用 ICU select 从这两个值选词，而不是写死。详见 factors/scenario.ts。
-    const vars = {
-      level: formatPrice(sc.structureLevel),
-      cvdPct: formatPercent(sc.cvdPct),
-      oiPct: formatPercent(sc.oiPct),
-      oiState: sc.oiState,
-      strength: sc.strength,
-    };
-    action = t(`scenarios.${sc.kind}.action`, vars);
-    verdict = t(`scenarios.${sc.kind}.reading`, vars);
-  } else {
-    const ig = trigger.ignition;
-    action = t(`ignition.${ig.direction}.action`);
-    verdict = t(`ignition.reading.${ig.direction}`, {
-      level: formatPrice(ig.level),
-      invalid: formatPrice(ig.invalidationPrice),
-      distancePct: `${ig.distancePct.toFixed(2)}%`,
-    });
-  }
+  // 文案的拼装在 signal-copy.ts——主页的信号行与这张卡必须说同一句话
+  const { action, verdict, trap } = signalCopy(trigger, t);
 
   const coin = card.symbol.replace(/-USDT$/, "");
 

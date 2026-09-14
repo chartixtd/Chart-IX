@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
-import type { Video, Article, Order } from "@/types";
+import type { Video, Article, Order, Locale } from "@/types";
 
 export interface ContinueWatchingItem {
   video_id: string;
@@ -96,5 +96,45 @@ export function useDashboardOrders(userId: string | null) {
     // Key is split by userId — never show one user's orders as a placeholder
     // for another (account switch / cross-tab session sync).
     placeholderData: undefined,
+  });
+}
+
+export interface BriefingItem {
+  slug: string;
+  title: Record<Locale, string>;
+  /** 早报覆盖的那一天，YYYY-MM-DD。从 slug 解出来，见下 */
+  day: string;
+}
+
+/**
+ * 最近几期每日早报。
+ *
+ * 早报不是单独的表，就是 `articles` 里 slug 形如 `daily-briefing-YYYY-MM-DD`
+ * 的行（见 lib/briefing/run.ts）。**日期取自 slug 而不是 published_at**：
+ * published_at 是「这一期是什么时候生成的」，流水线重跑或把兜底稿升级成正式稿
+ * 时它会变，而 slug 里的那一天是这期早报**覆盖的那一天**，不会变。
+ * 后台的 BriefingRunner 用的也是这个解法。
+ *
+ * 一行里装着三种语言，不按 locale 过滤——取出来用 title[locale] 挑。
+ */
+export function useDailyBriefings(limit = 3) {
+  return useQuery({
+    queryKey: ["dashboard", "briefings", limit],
+    queryFn: async (): Promise<BriefingItem[]> => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("articles")
+        .select("slug, title")
+        .like("slug", "daily-briefing-%")
+        .eq("is_published", true)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      return ((data as { slug: string; title: Record<Locale, string> }[]) ?? []).map((row) => ({
+        ...row,
+        day: row.slug.replace("daily-briefing-", ""),
+      }));
+    },
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
   });
 }

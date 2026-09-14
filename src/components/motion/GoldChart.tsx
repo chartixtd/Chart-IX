@@ -25,6 +25,8 @@ interface GoldChartProps {
   className?: string;
   /** 是否显示品种标签与价格标签 */
   labels?: boolean;
+  /** 是否画那四条发丝刻度线。行内的迷你曲线要关掉——24px 高的图上它们是噪声 */
+  grid?: boolean;
   /** 曲线相对高度（SVG viewBox 高度），默认 320 */
   height?: number;
 }
@@ -67,6 +69,7 @@ export function GoldChart({
   limit = 168,
   className,
   labels = true,
+  grid = true,
   height = 320,
 }: GoldChartProps) {
   const gradId = useId();
@@ -165,7 +168,7 @@ export function GoldChart({
         </defs>
 
         {/* 发丝刻度：四条水平线，营销面的空间刻度 */}
-        {[0.2, 0.4, 0.6, 0.8].map((f) => (
+        {grid && [0.2, 0.4, 0.6, 0.8].map((f) => (
           <line
             key={f}
             x1="0"

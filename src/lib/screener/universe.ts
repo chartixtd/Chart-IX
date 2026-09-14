@@ -85,7 +85,7 @@ export type AssetClass = "crypto" | "commodity" | "stock";
  *
  * 分类映射：
  *   NCCO        → commodity（金银油气铜，"大宗商品"栏）
- *   NCSK / NCSI → stock（个股与指数 ETF 合并成"美股代币"栏——SPY/QQQ 这类
+ *   NCSK / NCSI → stock（个股与指数 ETF 合并成"股票"栏——SPY/QQQ 这类
  *                 指数 ETF 本身就是在美股交易所挂牌的股票，跟着同一个开收盘）
  *   NCFX        → null（外汇没在需求里，继续排除）
  *   其余        → crypto

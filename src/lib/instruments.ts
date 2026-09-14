@@ -7,7 +7,7 @@
  * 与 src/lib/screener/universe.ts 的 assetClassOf 用的是同一个前缀集合
  * （该文件出于独立性考虑保留自己的正则，二者不做强耦合）。两边的**粒度**
  * 不同是刻意的：这里是交易对列表的 5 个 Tab，screener 那边只有 3 个分栏
- * （NCSK 与 NCSI 合并成「美股代币」、NCFX 直接排除）。共同点是都用四个
+ * （NCSK 与 NCSI 合并成「股票」一栏、NCFX 直接排除）。共同点是都用四个
  * 明确前缀而不是裸 "NC"，避免误伤 NCASH 这类真实币种。
  */
 

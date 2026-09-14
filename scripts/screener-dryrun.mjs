@@ -52,7 +52,7 @@ console.log(`\n候选池 ${payload.rows.length} 个 · 耗时 ${elapsed}s`);
 const LANES = [
   ["crypto", "加密货币"],
   ["commodity", "大宗商品"],
-  ["stock", "美股代币"],
+  ["stock", "股票"],
 ];
 
 for (const [cls, label] of LANES) {

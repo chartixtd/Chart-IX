@@ -64,7 +64,7 @@ describe("assetClassOf", () => {
     expect(assetClassOf("NCCO1OILWTI2USD-USDT")).toBe("commodity");
   });
 
-  it("个股与指数 ETF 都归美股代币", () => {
+  it("个股与指数 ETF 都归股票那一栏", () => {
     expect(assetClassOf("NCSKNVDA2USD-USDT")).toBe("stock");
     expect(assetClassOf("NCSISP5002USD-USDT")).toBe("stock");
   });

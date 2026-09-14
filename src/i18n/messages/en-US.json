@@ -1170,7 +1170,7 @@
         "hint": "Tokenised gold / silver / crude / natural gas contracts"
       },
       "stock": {
-        "title": "US Equity Tokens",
+        "title": "Stocks",
         "hint": "Tokenised single stocks and index ETFs"
       },
       "empty": "Nothing qualified in this lane this round."

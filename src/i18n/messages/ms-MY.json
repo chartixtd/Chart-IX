@@ -1093,7 +1093,7 @@
         "hint": "Kontrak token emas / perak / minyak mentah / gas asli"
       },
       "stock": {
-        "title": "Token Ekuiti AS",
+        "title": "Saham",
         "hint": "Kontrak token saham individu dan ETF indeks"
       },
       "empty": "Tiada instrumen layak dalam lajur ini pusingan ini."

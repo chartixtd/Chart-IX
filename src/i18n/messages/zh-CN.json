@@ -278,6 +278,7 @@
     "paper_trading": "模拟盘",
     "paper_trading_locked": "登录后可用",
     "more_intervals": "更多",
+    "open_in_tradingview": "在 TradingView 中打开",
     "pin_hint": "点击星标固定到常用栏",
     "pin": "固定到常用栏",
     "unpin": "取消固定",

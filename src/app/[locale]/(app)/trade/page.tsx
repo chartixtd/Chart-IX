@@ -65,6 +65,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useSpotTicker, useFuturesTicker, useFuturesContracts } from "@/hooks/useMarketData";
 import { formatInstrumentLabel, isContractOpen } from "@/lib/instruments";
+import { tradingViewChartUrl } from "@/lib/tradingview";
 import { useBingXWebSocket } from "@/hooks/useBingXWebSocket";
 import { usePriceAlertsStore } from "@/stores/priceAlerts";
 import { useChartOverlay } from "@/hooks/useChartOverlay";
@@ -428,7 +429,7 @@ const IntervalBar = memo(function IntervalBar({
             key={int}
             onClick={() => onIntervalChange(int)}
             className={cn(
-              "min-h-[44px] rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
+              "min-h-[44px] shrink-0 rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
               interval === int ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
             )}
           >
@@ -439,7 +440,8 @@ const IntervalBar = memo(function IntervalBar({
         <button
           onClick={() => setMoreOpen((o) => !o)}
           className={cn(
-            "inline-flex min-h-[44px] items-center gap-0.5 rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
+            // shrink-0：这一行在 375px 上放不下，不加的话「更多」会被压成两行折字
+            "inline-flex min-h-[44px] shrink-0 items-center gap-0.5 rounded-xs px-2 text-xs font-medium transition-colors lg:min-h-0 lg:py-0.5",
             !isPinned ? "bg-gold/20 text-gold" : "text-text-muted hover:text-text-primary"
           )}
         >
@@ -491,6 +493,53 @@ const IntervalBar = memo(function IntervalBar({
         </>
       )}
     </div>
+  );
+});
+
+/**
+ * 「在 TradingView 打开当前这张图」。symbol 翻译与各平台会不会跳 App，
+ * 全部写在 src/lib/tradingview.ts 的文件头里——这里只负责发一条普通外链：
+ * 装了 App 的 Android / Windows 由系统自己接管，其余平台落到网页版。
+ */
+const TradingViewLink = memo(function TradingViewLink({
+  symbol,
+  interval,
+  market,
+}: {
+  symbol: string;
+  interval: string;
+  market: MarketType;
+}) {
+  const t = useTranslations("trade");
+  const isFuturesMarket = market === "futures";
+  // 代币化标的（NCSKAAPL2USD 之类）要靠合约的 displayName 才能翻回 AAPL。
+  // 这份数据 TickerBar 在合约市场下已经拉过，react-query 直接命中缓存。
+  const { data: futuresContracts } = useFuturesContracts(isFuturesMarket);
+  const href = useMemo(
+    () =>
+      tradingViewChartUrl({
+        symbol,
+        interval,
+        market,
+        displayName: isFuturesMarket
+          ? futuresContracts?.find((c) => c.symbol === symbol)?.displayName
+          : undefined,
+      }),
+    [symbol, interval, market, isFuturesMarket, futuresContracts]
+  );
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={t("open_in_tradingview")}
+      className="inline-flex min-h-[44px] shrink-0 items-center gap-1 rounded-xs px-2 text-xs font-medium text-text-muted transition-colors hover:text-text-primary lg:min-h-0 lg:py-0.5"
+    >
+      <Icon name="externalLink" className="h-3.5 w-3.5" />
+      {/* 窄屏只留图标——这一行还要塞下周期按钮与恐贪指数 */}
+      <span className="hidden sm:inline">TradingView</span>
+    </a>
   );
 });
 
@@ -608,6 +657,7 @@ export default function TradePage() {
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex items-center border-b border-border-default">
         <IntervalBar interval={interval} onIntervalChange={handleIntervalChange} />
+        <TradingViewLink symbol={symbol} interval={interval} market={market} />
         <div className="ml-auto pr-2">
           <FearGreedIndex compact />
         </div>

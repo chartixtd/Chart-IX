@@ -188,6 +188,13 @@ const PATHS = {
   ),
   chevronUp: <path d="m6 15 6-6 6 6" />,
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  /** 「会离开本站」的通用记号：方框缺角 + 朝外的箭头 */
+  externalLink: (
+    <>
+      <path d="M18 13.5V19a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 19V8a1.5 1.5 0 0 1 1.5-1.5H11" />
+      <path d="M14.5 3.5H20.5V9.5M20.5 3.5 11 13" />
+    </>
+  ),
   // —— 成就徽章（仪表盘）。此前直接渲染数据库里的 emoji，跨平台字形
   // 不一致也跟不了 currentColor，未解锁态只能靠 grayscale 滤镜硬调 ——
   trophy: (

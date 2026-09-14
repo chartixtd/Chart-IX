@@ -41,6 +41,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
+import { LANE_ORDER, DEFAULT_LANE, rowsInLane, cardsInLane } from "@/lib/screener/lanes";
 
 export default function ScreenerLayout({ children }: { children: React.ReactNode }) {
   const t = useTranslations("screener");
@@ -62,10 +63,41 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
     }
   }, [lastUpdated, locale]);
 
+  // 一级 tab：表 vs 卡片。**两者回答的是不同的问题**——「哪些标的值得看」
+  // 与「现在有哪些活着的信号」——所以它在外层，分类在内层。
+  //
+  // 判据从「精确匹配 pathname」改成「路径里有没有 /alerts」：分类拆成真实
+  // 路由之后，卡片那一侧的地址是 /screener/alerts/<栏>，精确匹配会让两个
+  // 一级 tab 同时熄灭。
+  const onAlerts = pathname.includes("/screener/alerts");
   const tabs = [
-    { href: `/${locale}/screener`, label: t("tabs.table"), badge: null as number | null },
-    { href: `/${locale}/screener/alerts`, label: t("tabs.cards"), badge: liveCount },
+    {
+      href: `/${locale}/screener/${DEFAULT_LANE}`,
+      label: t("tabs.table"),
+      badge: null as number | null,
+      active: !onAlerts,
+    },
+    {
+      href: `/${locale}/screener/alerts/${DEFAULT_LANE}`,
+      label: t("tabs.cards"),
+      badge: liveCount,
+      active: onAlerts,
+    },
   ];
+
+  // 二级 tab：三个分栏。角标是**这一栏**的数——表那一排是行数，卡片那一排
+  // 是活卡数（不含灰卡）。为 0 时不画角标，跟一级那排同一个规矩：一个常年
+  // 挂着「0」的角标只是噪音，而「没有角标」本身就说明这一栏空着。
+  const laneBase = onAlerts ? `/${locale}/screener/alerts` : `/${locale}/screener`;
+  const laneTabs = LANE_ORDER.map((lane) => ({
+    key: lane,
+    href: `${laneBase}/${lane}`,
+    label: t(`lanes.${lane}.title`),
+    badge: onAlerts
+      ? cardsInLane(cards, lane).filter((c) => !c.expired).length
+      : rowsInLane(rows, lane).length,
+    active: pathname.endsWith(`/${lane}`),
+  }));
 
   return (
     <div>
@@ -128,9 +160,7 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
           <div className="mx-auto max-w-[110rem] px-4 lg:px-6">
             <nav className="custom-scrollbar -mb-px flex items-center gap-1 overflow-x-auto">
               {tabs.map((tab) => {
-                // 精确匹配而不是 startsWith：/screener 是 /screener/alerts 的前缀，
-                // 用 startsWith 会让两个 tab 在卡片页上同时高亮。
-                const active = pathname === tab.href;
+                const active = tab.active;
                 return (
                   <Link
                     key={tab.href}
@@ -161,6 +191,38 @@ export default function ScreenerLayout({ children }: { children: React.ReactNode
       </section>
 
       <div className="mx-auto max-w-[110rem] px-4 py-10 lg:px-6 lg:py-14">
+        {/* ── 二级 tab：三个分栏 ────────────────────────────────────────
+            **刻意不用跟一级同一套下划线**。两排一模一样的下划线 tab 叠在
+            一起会读成一排被拆断的 tab，读者分不出哪个管哪个；层级要靠视觉
+            分量表达，不是靠位置。这里用正文字号 + 更宽的字距，选中态只给
+            金色文字与一枚金点，不画下划线——一级那条金线仍然是这一页上
+            唯一的「当前位置」强信号。
+
+            落在内容区而不是抬头里：它切换的是下面那块内容，不是整页的身份。 */}
+        {!error && (
+          <nav className="custom-scrollbar -mt-2 mb-10 flex items-center gap-6 overflow-x-auto lg:mb-12">
+            {laneTabs.map((lane) => (
+              <Link
+                key={lane.key}
+                href={lane.href}
+                aria-current={lane.active ? "page" : undefined}
+                className={cn(
+                  "inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap text-sm tracking-wide transition-colors lg:min-h-0",
+                  lane.active ? "text-gold" : "text-text-muted hover:text-text-primary"
+                )}
+              >
+                {lane.active && <span aria-hidden className="h-1 w-1 rounded-full bg-gold" />}
+                {lane.label}
+                {/* 0 不画角标：一个常年挂着「0」的数字只是噪音，而「没有角标」
+                    本身就说明这一栏空着。跟一级那排同一个规矩。 */}
+                {lane.badge > 0 && (
+                  <span className="font-mono text-[11px] tabular-nums text-gold/70">{lane.badge}</span>
+                )}
+              </Link>
+            ))}
+          </nav>
+        )}
+
         {error ? (
           <EmptyState
             icon={<Icon name="alert" className="h-6 w-6" />}

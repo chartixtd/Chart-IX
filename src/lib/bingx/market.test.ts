@@ -112,6 +112,39 @@ describe("getFuturesKlines", () => {
       quoteVolume: 13.5505 * 64974.7,
     }]);
   });
+
+  // 实测（2026-09-14，BTC-USDT/30m/limit=6）：这个端点按时间**降序**返回，
+  // data[0] 是最新那根。下游（尤其 screener/pool-metrics）一律假设
+  // 「数组末尾 = 最近」，`slice(-48)` 在降序数组上取到的是最旧的 48 根。
+  // 这条断言把升序钉死在数据源这一层。
+  it("returns bars oldest-first even though BingX sends them newest-first", async () => {
+    const bar = (time: number, close: string) => ({
+      open: close, high: close, low: close, close, volume: "1", time,
+    });
+    publicRequest.mockResolvedValue([
+      bar(1700007200000, "3"),
+      bar(1700003600000, "2"),
+      bar(1700000000000, "1"),
+    ]);
+    const result = await getFuturesKlines("BTC-USDT", "1h");
+    expect(result.map((b) => b.openTime)).toEqual([
+      1700000000000, 1700003600000, 1700007200000,
+    ]);
+    // 「最后一根 = 当前这根」是下游读现价/最新状态的依据
+    expect(result[result.length - 1].close).toBe(3);
+  });
+
+  it("leaves an already-ascending response in order", async () => {
+    const bar = (time: number, close: string) => ({
+      open: close, high: close, low: close, close, volume: "1", time,
+    });
+    publicRequest.mockResolvedValue([
+      bar(1700000000000, "1"),
+      bar(1700003600000, "2"),
+    ]);
+    const result = await getFuturesKlines("BTC-USDT", "1h");
+    expect(result.map((b) => b.openTime)).toEqual([1700000000000, 1700003600000]);
+  });
 });
 
 describe("getFuturesDepth", () => {

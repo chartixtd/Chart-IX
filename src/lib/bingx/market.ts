@@ -143,7 +143,26 @@ interface RawFuturesKline {
   time: number;
 }
 
-/** 获取合约K线 */
+/**
+ * 获取合约K线，**按时间从旧到新**返回。
+ *
+ * BingX 这个端点本身给的是**降序**（最新的一根在 `data[0]`）。实测
+ * 2026-09-14 `BTC-USDT / 30m / limit=6`：
+ *
+ *   data[0] 04:00   data[1] 03:30   …   data[5] 01:30
+ *
+ * 这里统一转成升序，因为「数组末尾 = 最近」是所有下游代码的默认假设：
+ * `bars.slice(-48)` 取最近 24 小时、`bars[bars.length - 1]` 取当前这根。
+ * 图表那几条路径（kline-history / KlineChart / AlertSpark）各自都补了一次
+ * 升序排序，所以它们一直是对的；**而 screener 的 pool-metrics 没有补**，
+ * 它的 `slice(-48)` 实际取到的是 14 天前那一段——压缩度（唯一的选币排序键）
+ * 与量能比（0.8 那道否决门）因此都算在错误的窗口上，卡片复核用的
+ * `slice(-REVIEW_BARS)` 同理，于是 `scenarioInvalidated` 里每一根都被
+ * `b.time < triggeredAt` 跳过，恒返回「没失效」。
+ *
+ * 修在这里而不是去 pool-metrics 补一次排序：降序是这个端点的性质，
+ * 让每个调用方各自记得排，就是在等下一个忘记排的人。
+ */
 export async function getFuturesKlines(
   symbol: string,
   interval = "1h",
@@ -157,7 +176,11 @@ export async function getFuturesKlines(
   );
   const intervalMs = INTERVAL_MS[interval] ?? 3_600_000;
 
-  return rows.map((row) => {
+  // 排序而不是 reverse：反转只有在上游真的严格降序时才对，
+  // 排序对任何来料顺序都给出同一个正确结果。
+  const ordered = rows.slice().sort((a, b) => a.time - b.time);
+
+  return ordered.map((row) => {
     const close = parseFloat(row.close);
     const volume = parseFloat(row.volume);
     return {

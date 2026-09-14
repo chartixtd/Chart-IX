@@ -536,7 +536,7 @@ const TradingViewLink = memo(function TradingViewLink({
       title={t("open_in_tradingview")}
       className="inline-flex min-h-[44px] shrink-0 items-center gap-1 rounded-xs px-2 text-xs font-medium text-text-muted transition-colors hover:text-text-primary lg:min-h-0 lg:py-0.5"
     >
-      <Icon name="externalLink" className="h-3.5 w-3.5" />
+      <Icon name="tradingview" className="h-5 w-5" />
       {/* 窄屏只留图标——这一行还要塞下周期按钮与恐贪指数 */}
       <span className="hidden sm:inline">TradingView</span>
     </a>

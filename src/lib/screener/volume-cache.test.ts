@@ -3,7 +3,7 @@ import { pickStaleCoins, VOLUME_REFRESH_BATCH } from "./volume-cache";
 import type { CachedVolume } from "./volume-cache";
 
 const cache = (entries: Array<[string, number]>): Map<string, CachedVolume> =>
-  new Map(entries.map(([coin, updatedAt]) => [coin, { volumeUsd: 1, updatedAt }]));
+  new Map(entries.map(([coin, updatedAt]) => [coin, { volumeUsd: 1, price: null, updatedAt }]));
 
 describe("pickStaleCoins", () => {
   it("没缓存过的排在最前——否则新上市的币永远进不了榜单", () => {
@@ -42,7 +42,7 @@ describe("pickStaleCoins", () => {
     for (let round = 0; round < 10; round++) {
       for (const coin of pickStaleCoins(coins, c, 5)) {
         seen.add(coin);
-        c.set(coin, { volumeUsd: 1, updatedAt: clock++ });
+        c.set(coin, { volumeUsd: 1, price: null, updatedAt: clock++ });
       }
     }
     expect(seen.size).toBe(coins.length);

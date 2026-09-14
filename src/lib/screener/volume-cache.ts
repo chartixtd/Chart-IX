@@ -9,19 +9,43 @@ import { getPairsMarkets } from "@/lib/coinglass/market";
  * cron tick 上，那一跳除了这些 pairs-markets 调用之外不花别的配额，
  * 但真实世界里 pg_cron 的触发时刻会漂，两跳挨得近时不该把配额顶满。
  *
- * 60 个/次 × 每 15 分钟两次空转 tick = 每 15 分钟 120 个，
- * 250 多个候选约半小时刷一遍。
+ * 60 个/次 × 每 15 分钟两次空转 tick = 每 15 分钟 120 个。
+ *
+ * **一轮刷完要多久，取决于候选池有多大，而池子刚变大了一倍多。** 加代币化
+ * 标的之前是 250 多个（约半小时一遍）；现在 `listVolumeRefreshCoins` 走的
+ * `preselect` 会同时吐出加密 + 代币化商品 + 代币化美股，实测 672 个
+ * （305 / 28 / 339），一遍要约 85 分钟。
+ *
+ * 没有跟着调大这个批次，理由是刷新跑在空转 tick 上、那一跳的配额虽然空着，
+ * 但 pg_cron 的触发时刻会漂，两跳挨得近时把配额顶满会挤到真正的扫描。
+ * 慢的代价是可承受的：这是 **24 小时**成交量，本身就是慢变量，而新上市的
+ * 标的因为「未缓存的排在刷新队列最前」（见下面 pickStaleCoins），
+ * 不会被这个变长的周期拖住。
  */
 export const VOLUME_REFRESH_BATCH = 60;
 
 export interface CachedVolume {
   volumeUsd: number;
+  /**
+   * CoinGlass 那边这个币名的参考价（各交易所 current_price 的中位数）。
+   *
+   * 唯一的用途是识别**代号撞车**：BingX 的 `NCSKCVX2USD-USDT` 是雪佛龙
+   * （$212），而 CoinGlass 的 `CVX` 是 Convex Finance（$2.13）——两边报价
+   * 差一个数量级就说明映射错了，这一轮该把它整个排除，而不是拿另一个标的
+   * 的持仓量和资金流去填这一行。判据与阈值见 universe.ts 的 sameInstrument。
+   *
+   * null = 还没刷到过 / 上游没给价，此时**不做**这道校验（缺证据不等于
+   * 有问题，跟成交量那条「必须证明达标」刻意相反：那是流动性门槛，
+   * 这是错配探测，把「没探测过」当成「探测到了」会无故删行）。
+   */
+  price: number | null;
   updatedAt: number;
 }
 
 export interface VolumeUpsert {
   coin: string;
   volumeUsd: number;
+  price: number | null;
 }
 
 /**
@@ -39,17 +63,20 @@ export async function readVolumeCache(): Promise<Map<string, CachedVolume>> {
     const client = createServiceRoleClient();
     const { data, error } = await client
       .from("screener_volume_cache")
-      .select("coin, volume_usd, updated_at");
+      .select("coin, volume_usd, price, updated_at");
     if (error) throw new Error(error.message);
     for (const row of data ?? []) {
       const r = row as {
         coin: string;
         volume_usd: number | string;
+        price: number | string | null;
         updated_at: string;
       };
       const v = typeof r.volume_usd === "number" ? r.volume_usd : parseFloat(r.volume_usd);
       if (!Number.isFinite(v)) continue;
-      out.set(r.coin, { volumeUsd: v, updatedAt: new Date(r.updated_at).getTime() });
+      const rawPrice = typeof r.price === "string" ? parseFloat(r.price) : r.price;
+      const price = typeof rawPrice === "number" && Number.isFinite(rawPrice) ? rawPrice : null;
+      out.set(r.coin, { volumeUsd: v, price, updatedAt: new Date(r.updated_at).getTime() });
     }
   } catch (err) {
     console.error("[screener] volume cache read failed, treating all coins as unverified", err);
@@ -67,6 +94,7 @@ export async function upsertVolumes(rows: VolumeUpsert[]): Promise<void> {
       rows.map((r) => ({
         coin: r.coin,
         volume_usd: r.volumeUsd,
+        price: r.price,
         updated_at: now,
       })),
       { onConflict: "coin" }
@@ -113,6 +141,23 @@ export function pickStaleCoins(
  * 不会被刷新，所以下一跳它仍然排在最旧的那一批里，会被自动重试。
  * 这就是为什么这里不需要任何重试逻辑。
  */
+/**
+ * 各交易所 current_price 的中位数。取中位数而不是均值或某一家：
+ * 一行报了个离谱的价（下架的合约、刚上市还没成交）会把均值整个带偏，
+ * 而挑某一家就得维护「挑哪家」这条规则，还会因为那家没上这个币而落空。
+ *
+ * 一个能用的价都没有时返回 null —— 调用方对 null 的处理是「不做这道校验」。
+ */
+function medianPrice(rows: Array<{ current_price: number }>): number | null {
+  const prices = rows
+    .map((x) => x.current_price)
+    .filter((p) => typeof p === "number" && Number.isFinite(p) && p > 0)
+    .sort((a, b) => a - b);
+  if (prices.length === 0) return null;
+  const mid = Math.floor(prices.length / 2);
+  return prices.length % 2 === 0 ? (prices[mid - 1] + prices[mid]) / 2 : prices[mid];
+}
+
 export async function refreshVolumeBatch(coins: string[]): Promise<number> {
   if (coins.length === 0) return 0;
   const rows = await runWithConcurrency(coins.map((coin) => () => getPairsMarkets(coin)));
@@ -129,7 +174,7 @@ export async function refreshVolumeBatch(coins: string[]): Promise<number> {
     // 归宿，而且它会正常参与轮转，哪天 CoinGlass 收录了就自动恢复。
     const volumeUsd = r.reduce((a, x) => a + (Number.isFinite(x.volume_usd) ? x.volume_usd : 0), 0);
     if (!Number.isFinite(volumeUsd)) continue;
-    updates.push({ coin: coins[i], volumeUsd });
+    updates.push({ coin: coins[i], volumeUsd, price: medianPrice(r) });
   }
 
   await upsertVolumes(updates);

@@ -24,6 +24,27 @@ import { SERIES_INTERVAL, PRICE_HISTORY_LIMIT } from "./price-history";
  */
 export const CVD_EXCHANGES = ["Binance", "Bybit", "OKX", "Hyperliquid"] as const;
 
+/*
+ * 加了代币化的大宗商品与美股之后，这四家对它们够不够用——实测过，够。
+ *
+ * 2026-09-14，36 个过了 2000 万成交额门槛的代币化标的（金银油气 + 主要美股
+ * 与指数 ETF），**35 个用这四家能拿到 CVD**。唯一的缺口是 `SP500`
+ * （标普 500 指数本身，不是 SPY 那个 ETF）：OI 有 336 根，CVD 是 0 根——
+ * 这四家都没上它，CoinGlass 的 SP500 持仓量来自 BingX / Bitget 那一批。
+ *
+ * 把交易所列表扩到十家能补回 SP500（实测扩到
+ * Binance,Bybit,OKX,Hyperliquid,Bitget,Gate,KuCoin,HTX,Bitunix,LBank 后
+ * 返回 48 根）。**没有这么做**，理由是代价和收益完全不成比例：这个列表是
+ * 全局的，改它会同时改掉**每一个加密货币**的 CVD 口径，而这四家的选择本身
+ * 是对齐 CoinGlass 网页版默认勾选的——用户拿图来核对 screener 的结论时
+ * 两边必须是同一份数据（见上面那段）。为一个指数代币把所有币的口径挪走，
+ * 还让用户再也对不上图，不划算。
+ *
+ * SP500 的下场是走既有的降级路径：`dataGaps` 里带上 "cvd"，表格那一行的
+ * 分数显示成「—」而不是一个中性分。那正是「没数据」与「没信号」要被
+ * 区分开的场景，见 types.ts ScannerRow.dataGaps 的字段注释。
+ */
+
 /**
  * 主动买/卖成交额（多交易所聚合），CVD 因子与六场景判定的唯一数据源。
  *

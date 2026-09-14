@@ -917,12 +917,12 @@
     "filters": {
       "volume": "Volum 24j ≥",
       "amplitude": "Amplitud 24j",
-      "market_cap": "Permodalan ≥",
+      "market_cap": "Permodalan pasaran ≥ (kripto sahaja)",
       "direction": "Arah",
       "dir_all": "Semua",
       "dir_long": "Long",
       "dir_short": "Short",
-      "quiet_rank": "{n} paling senyap"
+      "quiet_rank": "Paling senyap {crypto}/{commodity}/{stock} setiap lajur"
     },
     "columns": {
       "symbol": "Simbol",
@@ -937,10 +937,10 @@
       "actions": "Tindakan",
       "data_missing": "Data tiada",
       "ignition": "Pencetus",
-      "ignition_hint": "Baru menembusi julat 6j sebelumnya ({level}) — satu-satunya isyarat tanpa lengah pengesahan"
+      "ignition_hint": "Baru menembusi julat 6j sebelumnya ({level}) — satu-satunya isyarat tanpa lengah pengesahan",
+      "market_cap_na": "—",
+      "market_cap_na_hint": "Instrumen token tiada permodalan pasaran yang setara"
     },
-    "table_title": "Keputusan imbasan",
-    "table_hint": "Disusun mengikut skor · klik baris untuk butiran",
     "action_long": "Long",
     "action_short": "Short",
     "action_view": "Lihat",
@@ -1066,6 +1066,21 @@
       "trend_best": "Terbaik ikut trend",
       "medium": "Sederhana",
       "healthy": "Sihat"
+    },
+    "lanes": {
+      "crypto": {
+        "title": "Kripto",
+        "hint": "Volum pasaran ≥ $20J, permodalan pasaran ≥ $30J"
+      },
+      "commodity": {
+        "title": "Komoditi",
+        "hint": "Kontrak token emas / perak / minyak mentah / gas asli"
+      },
+      "stock": {
+        "title": "Token Ekuiti AS",
+        "hint": "Kontrak token saham individu dan ETF indeks"
+      },
+      "empty": "Tiada instrumen layak dalam lajur ini pusingan ini."
     }
   },
   "pwa": {

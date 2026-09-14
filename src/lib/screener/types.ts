@@ -2,6 +2,7 @@ import { RATE_LIMIT_PER_MIN } from "@/lib/coinglass/limits";
 import type { AlertCardData } from "./cards";
 import type { Ignition } from "./ignition";
 import type { Scenario, ScenarioDirection } from "./factors/scenario";
+import type { AssetClass } from "./universe";
 
 export type Direction = "long" | "short";
 
@@ -44,7 +45,7 @@ const BATCH_LAYER_CALLS = 2;
 
 /**
  * 每个币在明细层要打的调用总数：open-interest/aggregated-history +
- * price/history + taker-buy-sell-volume 聚合版，三次。
+ * taker-buy-sell-volume 聚合版，两次。
  *
  * T24 从 4 降到 3：行情层的 pairs-markets 被 screener_volume_cache 取代了。
  * 它此前唯一的作用是取全市场成交额和 BingX 合约 id，而成交额现在由缓存
@@ -56,11 +57,24 @@ const BATCH_LAYER_CALLS = 2;
  * BingX 行必须存在，所以所有带乘数的币（1000PEPE / 1000BONK /
  * 1000000BABYDOGE 等，实测 9 个）此前根本进不了榜单。
  *
- * 现在这个数**就是** pipeline.ts 里 `detailTasks` 的下标基数（`base = i * 3`）
+ * **现在从 3 降到 2：`price/history` 那一次整个删掉了。** 它拉的是
+ * `exchange=BingX` 的 336 根 30m K 线——而 `fetchPoolMetrics` 为了算压缩度，
+ * 本来就给全池每个候选拉了 672 根**同一个交易所、同一个粒度**的 BingX K 线，
+ * 还用 `toPriceBar()` 转成了同一个 `CoinGlassPriceBar` 形状。同一份数据
+ * 花了两次钱，其中一次还占着最稀缺的那份配额。现在直接从池子里切
+ * （见 pool-metrics 的 `PoolScan.bars`）。
+ *
+ * 这一步对代币化标的是**强制**而不是优化：实测
+ * `price/history?exchange=BingX&symbol=NCSKNVDA2USD-USDT` 返回
+ * `code 400 "The requested pair does not exist on the exchange"`——
+ * CoinGlass 根本不索引 BingX 的 NC 交易对。走 BingX 自己的 K 线是唯一的路。
+ *
+ * 这个数**就是** pipeline.ts 里 `detailTasks` 的下标基数（`base = i * 2`）
  * ——T21～T23 期间两者语义不同（那时还有行情层单独一次调用走另一个数组），
- * 是这段代码最容易改错的地方，现在合二为一了。
+ * 是这段代码最容易改错的地方，现在合二为一了。改这个数必须同步改那个
+ * 基数，否则每个币从那里往后读到的都是别的币的数据，分数悄悄整体错位。
  */
-const DETAIL_CALLS_PER_COIN = 3;
+const DETAIL_CALLS_PER_COIN = 2;
 
 /**
  * 一轮扫描进入明细层的币数上限，由 `RATE_LIMIT_PER_MIN` **推导**而不是写死的整数。
@@ -83,7 +97,8 @@ const DETAIL_CALLS_PER_COIN = 3;
 export const DEEP_SCAN_LIMIT = Math.floor((RATE_LIMIT_PER_MIN - BATCH_LAYER_CALLS) / DETAIL_CALLS_PER_COIN);
 
 /**
- * 实际送进明细层的币数：按 24h 振幅**从低到高**排名取前这么多——挑最安静的。
+ * **加密那一栏**送进明细层的币数：按压缩度从低到高排名取前这么多——挑最安静的。
+ * 另外两栏的名额见 CLASS_TABLE_TAKE，这个常量是它的 crypto 那一项。
  *
  * **方向是反的，这是刻意的，而且是实测逼出来的。**
  *
@@ -111,7 +126,39 @@ export const DEEP_SCAN_LIMIT = Math.floor((RATE_LIMIT_PER_MIN - BATCH_LAYER_CALL
 export const QUIET_RANK_TAKE = 20;
 
 /**
- * 留给「已有卡片但这轮掉出振幅前 20」的币的名额。
+ * 每个分栏各自能占几行。**三栏各排各的名，互相不挤。**
+ *
+ * 为什么必须分开排而不是混在一张表里取前 32：压缩度是**无量纲比值**，
+ * 三类标的的振幅量级差着数倍（实测 2026-09-14 全池 913 个标的：加密振幅
+ * 中位 6.17%、代币化股票中位 1.70%）。混排的实测结果是代币化股票拿走
+ * 前 20 名里的 14 个，前三名的 6h 振幅精确等于 0.00——那不是"压缩到极致"，
+ * 是美股休市、根本没在交易。分栏之后加密那一栏只跟加密比，污染不了。
+ *
+ * 名额怎么定的：
+ *
+ *   crypto 20    原样不动。这是现有产品，不能因为加了两栏就缩水。
+ *   stock   8    实测约 40 个代币化股票能过 2000 万成交额门槛，取压缩度前 8。
+ *   commodity 4  **够格的一共就这几个。** 实测 CoinGlass 全市场成交额：
+ *                黄金 $567.6M、WTI $356.5M、布伦特约 $115M、白银 $94.4M 过线；
+ *                铂 $1.9M、钯、铜 $3.0M、天然气 $4.7M 全部差着一个数量级。
+ *                给 4 个就是全收，给更多只是空着。
+ *
+ * 总和 32 ≤ DEEP_SCAN_LIMIT(36) − CARD_RESERVE_SLOTS(4)，这条不等式由
+ * types.test.ts 钉死。要给 stock 加行，先从这个不等式里找空间，
+ * 不要直接调大数字。
+ */
+export const CLASS_TABLE_TAKE = {
+  crypto: QUIET_RANK_TAKE,
+  stock: 8,
+  commodity: 4,
+} as const;
+
+/** 三栏名额之和 —— 主表一轮总共要深扫的币数。 */
+export const TABLE_TAKE_TOTAL =
+  CLASS_TABLE_TAKE.crypto + CLASS_TABLE_TAKE.stock + CLASS_TABLE_TAKE.commodity;
+
+/**
+ * 留给「已有卡片但这轮掉出各自分栏名额」的标的的名额。
  *
  * **卡片的去留已经不依赖这些名额了**：失效只看价格有没有碰到失效线，而复核
  * 碰线只要价格 K 线，那个走的是全池那趟 BingX K 线（见 pool-metrics 的
@@ -119,12 +166,15 @@ export const QUIET_RANK_TAKE = 20;
  * 卡的币继续被完整扫描，好让卡片上的分数与因子跟着刷新，而不是停在出卡那
  * 一刻的旧值。名额不够时那张卡照样活着，只是数字旧一点。
  *
- * 这些名额是**白捡的**：配额允许 DEEP_SCAN_LIMIT(24) 个，而主表只要 20 个，
- * 剩下的 4 个本来就一直空着。实测每轮判出场景的只有 3–4 个币，而且大多
- * 本来就在前 20 里（高振幅），4 个名额绰绰有余。发现新机会的 20 个名额
- * 一个都不占。
+ * 这些名额**跨分栏共用**，与卡片本身不分类是一致的（卡片只回答「现在有
+ * 什么信号」，标的是币还是黄金不改变这个问题）。谁先掉出谁先占，
+ * 不给任何一栏预留。
+ *
+ * 4 个是从 T24 沿用下来的：实测每轮判出场景的只有 3–4 个币，而且大多本来
+ * 就在名额里。加了两栏之后候选变多，这个数要不要涨得拿线上数据说话——
+ * 挤爆时下面 buildScanTargets 里那条 console.warn 会喊出来。
  */
-export const CARD_RESERVE_SLOTS = DEEP_SCAN_LIMIT - QUIET_RANK_TAKE;
+export const CARD_RESERVE_SLOTS = DEEP_SCAN_LIMIT - TABLE_TAKE_TOTAL;
 
 /**
  * 两因子权重：OI 60 / CVD 40。保持退役前 Zone/Sweep/OI/CVD = 30/20/30/20
@@ -211,6 +261,17 @@ export interface ScannerRow {
   amplitude: number;
   /** CoinGlass 全交易所 volume_usd 之和（见上方 price 的注释） */
   volumeUsd: number;
+  /**
+   * 这一行属于哪个分栏。前端按它把主表拆成三段，各段独立排名
+   * （名额见 CLASS_TABLE_TAKE）。
+   */
+  assetClass: AssetClass;
+  /**
+   * 市值。**代币化的商品与股票这里恒为 0，含义是「没有这个概念」而不是
+   * 「市值为零」**——CoinGlass 的期货接口对 TradFi 一律返回 0，而 CoinGecko
+   * 那份按币名索引的表里更不可能有黄金。前端必须按 assetClass 判断要不要
+   * 显示这一列，直接渲染会写出一个「$0」的假事实。
+   */
   marketCap: number;
   marketCapRank: number;
   /** BingX 那一行的资金费率；缺失时是全交易所中位数；都拿不到为 null */
@@ -277,7 +338,7 @@ export const CARD_GRACE_MAX = 12;
  */
 export const CARD_MAX_LIVE = 60;
 
-export const SCANNER_PAYLOAD_VERSION = 12;
+export const SCANNER_PAYLOAD_VERSION = 13;
 
 export interface ScannerPayload {
   /** 见 SCANNER_PAYLOAD_VERSION —— 形状对不上的缓存一律丢弃 */

@@ -21,6 +21,7 @@ export const ScannerTable = memo(function ScannerTable({
   onSortChange,
   onSelect,
   selectedSymbol,
+  skeletonRows = 10,
 }: {
   rows: ScannerRow[];
   isLoading: boolean;
@@ -28,6 +29,8 @@ export const ScannerTable = memo(function ScannerTable({
   onSortChange: (key: string) => void;
   onSelect: (row: ScannerRow) => void;
   selectedSymbol: string | null;
+  /** 骨架行数。分栏之后各栏名额不同，全都画 10 行会让加载态比真实态长一大截。 */
+  skeletonRows?: number;
 }) {
   const t = useTranslations("screener");
   const locale = useLocale();
@@ -35,7 +38,7 @@ export const ScannerTable = memo(function ScannerTable({
   if (isLoading) {
     return (
       <div className="space-y-2 p-3">
-        {Array.from({ length: 10 }).map((_, i) => (
+        {Array.from({ length: skeletonRows }).map((_, i) => (
           <Skeleton key={i} className="h-8 w-full" />
         ))}
       </div>
@@ -223,9 +226,18 @@ export const ScannerTable = memo(function ScannerTable({
       key: "marketCap",
       header: t("columns.market_cap"),
       sortable: true,
-      render: (r) => (
-        <span className="tnum whitespace-nowrap text-sm">{formatCompactUsd(r.marketCap)}</span>
-      ),
+      // 代币化的商品与股票在这一列显示「—」，不是 $0。ScannerRow.marketCap
+      // 对它们恒为 0，含义是「没有这个概念」而不是「市值为零」——CoinGlass
+      // 的期货接口对 TradFi 一律返回 0。直接渲染会写出一个假事实：
+      // 黄金的市值不是零，是这个口径对黄金不成立。
+      render: (r) =>
+        r.assetClass === "crypto" ? (
+          <span className="tnum whitespace-nowrap text-sm">{formatCompactUsd(r.marketCap)}</span>
+        ) : (
+          <span className="text-sm text-text-muted" title={t("columns.market_cap_na_hint")}>
+            {t("columns.market_cap_na")}
+          </span>
+        ),
     },
     {
       key: "actions",

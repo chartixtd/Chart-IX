@@ -993,12 +993,12 @@
     "filters": {
       "volume": "24h volume ≥",
       "amplitude": "24h amplitude",
-      "market_cap": "Market cap ≥",
+      "market_cap": "Market cap ≥ (crypto only)",
       "direction": "Direction",
       "dir_all": "All",
       "dir_long": "Long",
       "dir_short": "Short",
-      "quiet_rank": "Quietest {n}"
+      "quiet_rank": "Quietest {crypto}/{commodity}/{stock} per lane"
     },
     "columns": {
       "symbol": "Symbol",
@@ -1013,10 +1013,10 @@
       "actions": "Actions",
       "data_missing": "Data unavailable",
       "ignition": "Ignition",
-      "ignition_hint": "Just broke the prior 6h range ({level}) — the only signal with no confirmation lag"
+      "ignition_hint": "Just broke the prior 6h range ({level}) — the only signal with no confirmation lag",
+      "market_cap_na": "—",
+      "market_cap_na_hint": "Tokenised instruments have no comparable market cap"
     },
-    "table_title": "Scan results",
-    "table_hint": "Ranked by score · click a row for details",
     "action_long": "Long",
     "action_short": "Short",
     "action_view": "View",
@@ -1142,6 +1142,21 @@
       "trend_best": "Best with trend",
       "medium": "Medium",
       "healthy": "Healthy"
+    },
+    "lanes": {
+      "crypto": {
+        "title": "Crypto",
+        "hint": "Market-wide volume ≥ $20M, market cap ≥ $30M"
+      },
+      "commodity": {
+        "title": "Commodities",
+        "hint": "Tokenised gold / silver / crude / natural gas contracts"
+      },
+      "stock": {
+        "title": "US Equity Tokens",
+        "hint": "Tokenised single stocks and index ETFs"
+      },
+      "empty": "Nothing qualified in this lane this round."
     }
   },
   "pwa": {

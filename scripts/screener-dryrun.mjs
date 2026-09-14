@@ -16,7 +16,7 @@
  *   COINGLASS_API_KEY=... npx tsx scripts/screener-dryrun.mjs
  */
 import { runScan } from "../src/lib/screener/pipeline.ts";
-import { FACTOR_MAX, QUIET_RANK_TAKE } from "../src/lib/screener/types.ts";
+import { FACTOR_MAX, CLASS_TABLE_TAKE } from "../src/lib/screener/types.ts";
 import { readVolumeCache } from "../src/lib/screener/volume-cache.ts";
 
 // 成交量缓存是选币的前置条件：缓存空 = 没有任何币能证明成交量达标 = 空榜。
@@ -43,38 +43,57 @@ const scen = (r) =>
     ? `${r.scenario.kind}${r.scenario.trap ? " ⚠陷阱" : ""} (${r.scenario.direction}, CVD${r.scenario.cvdPct >= 0 ? "+" : ""}${r.scenario.cvdPct.toFixed(1)}% OI${r.scenario.oiPct >= 0 ? "+" : ""}${r.scenario.oiPct.toFixed(1)}%)`
     : "—";
 
-console.log(`\n候选池 ${payload.rows.length} 个 · 耗时 ${elapsed}s\n`);
-console.log(
-  "SYMBOL".padEnd(12),
-  "DIR    ",
-  "TOT",
-  ` OI/${FACTOR_MAX.oi} CVD/${FACTOR_MAX.cvd}`,
-  " VOL(M)",
-  " AMP%",
-  "  点火",
-  " CAP(M)",
-  "场景"
-);
+console.log(`\n候选池 ${payload.rows.length} 个 · 耗时 ${elapsed}s`);
 
-for (const r of payload.rows.slice(0, 40)) {
-  const f = r.factors;
+// 按分栏打印，不是一张大表。三栏各排各的名（压缩度是无量纲比值，而三类
+// 标的的振幅量级差着数倍），混在一起打印就看不出「某一栏没填满」——而
+// 没填满正是这里最该一眼看见的异常：多半是那一栏的成交量缓存还没轮转
+// 刷到，或者撞名探测把一批标的挡掉了。
+const LANES = [
+  ["crypto", "加密货币"],
+  ["commodity", "大宗商品"],
+  ["stock", "美股代币"],
+];
+
+for (const [cls, label] of LANES) {
+  const lane = payload.rows.filter((r) => r.assetClass === cls);
+  const take = CLASS_TABLE_TAKE[cls];
+  const short = lane.length < take ? `  ⚠ 名额 ${take} 个只填了 ${lane.length} 个` : "";
+  console.log(`\n── ${label}  ${lane.length}/${take}${short}`);
   console.log(
-    r.coin.padEnd(12),
-    r.direction.toUpperCase().padEnd(7),
-    (r.dataGaps.length ? "—" : String(r.total)).padStart(3),
-    String(f.oi).padStart(5),
-    String(f.cvd).padStart(6),
-    (r.volumeUsd / 1e6).toFixed(1).padStart(7),
-    r.amplitude.toFixed(1).padStart(5),
-    (r.ignition ? (r.ignition.direction==="up"?"▲":"▼") + r.ignition.distancePct.toFixed(1) : "—").padStart(7),
-    (r.marketCap / 1e6).toFixed(0).padStart(7),
-    scen(r)
+    "SYMBOL".padEnd(12),
+    "DIR    ",
+    "TOT",
+    ` OI/${FACTOR_MAX.oi} CVD/${FACTOR_MAX.cvd}`,
+    " VOL(M)",
+    " AMP%",
+    "  点火",
+    " CAP(M)",
+    "场景"
   );
+  for (const r of lane) {
+    const f = r.factors;
+    console.log(
+      r.coin.padEnd(12),
+      r.direction.toUpperCase().padEnd(7),
+      (r.dataGaps.length ? "—" : String(r.total)).padStart(3),
+      String(f.oi).padStart(5),
+      String(f.cvd).padStart(6),
+      (r.volumeUsd / 1e6).toFixed(1).padStart(7),
+      r.amplitude.toFixed(1).padStart(5),
+      (r.ignition ? (r.ignition.direction==="up"?"▲":"▼") + r.ignition.distancePct.toFixed(1) : "—").padStart(7),
+      // 代币化标的没有市值口径（CoinGlass 期货接口对 TradFi 一律返回 0），
+      // 打成 "0" 会读成「市值为零」，打 "—" 才是实情。
+      (r.assetClass === "crypto" ? (r.marketCap / 1e6).toFixed(0) : "—").padStart(7),
+      scen(r)
+    );
+  }
 }
 
 // 卡片 = 当轮扫描里判出场景、且未被价格打穿失效线的行，按总分排序。
-// 主表行数与卡片数会对不上，那是正常的：掉出振幅前 20 但仍有卡片的币
-// 坐复核名额被扫描，它进卡片但不进主表。
+// **卡片不分栏**——它回答的是「现在有哪些活着的信号」，标的是币还是黄金
+// 不改变这个问题。主表行数与卡片数会对不上，那是正常的：掉出各自分栏名额
+// 但仍有卡片的标的坐复核名额被扫描，它进卡片但不进主表。
 console.log(`\n卡片 ${payload.cards.length} 张（本轮新出现 ${payload.newCards.length} 张），按总分排序：`);
 for (const c of payload.cards) {
   const inv = c.invalidation

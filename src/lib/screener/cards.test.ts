@@ -64,6 +64,7 @@ function row(o: Partial<ScannerRow> = {}): ScannerRow {
     change24h: 1,
     amplitude: 12,
     volumeUsd: 5e7,
+    assetClass: "crypto",
     marketCap: 1e8,
     marketCapRank: 200,
     fundingRate: null,

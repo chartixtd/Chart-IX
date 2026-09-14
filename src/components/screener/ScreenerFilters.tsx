@@ -3,7 +3,7 @@
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { SERVER_GATE } from "@/lib/screener/universe";
-import { QUIET_RANK_TAKE } from "@/lib/screener/types";
+import { CLASS_TABLE_TAKE } from "@/lib/screener/types";
 // FilterState / DEFAULT_FILTERS / DirectionFilter 的唯一定义放在 src/lib/screener/filter.ts
 // （不能在组件里再声明一份 —— 两份定义漂移之后控件和过滤逻辑会对不上，TS 不会报错；
 // 且 vitest 只收集 src/lib 下的测试文件，筛选逻辑必须住在 src/lib 才测得到）。
@@ -56,7 +56,11 @@ export function ScreenerFilters({
       <div className="order-3 col-span-2 bg-bg-primary px-1 py-5 sm:order-2 sm:col-span-1 sm:px-5">
         <dt className="eyebrow">{t("filters.amplitude")}</dt>
         <dd className="mt-3 text-base text-text-primary sm:text-lg">
-          {t("filters.quiet_rank", { n: QUIET_RANK_TAKE })}
+          {t("filters.quiet_rank", {
+            crypto: CLASS_TABLE_TAKE.crypto,
+            commodity: CLASS_TABLE_TAKE.commodity,
+            stock: CLASS_TABLE_TAKE.stock,
+          })}
         </dd>
       </div>
 

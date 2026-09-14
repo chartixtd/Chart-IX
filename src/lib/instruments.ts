@@ -4,9 +4,11 @@
  * swap 行情/K 线/深度接口。这里提供统一的分类与展示名称格式化，供 UI 侧
  * （交易对列表分类 Tab、展示名）复用。
  *
- * 与 src/lib/screener/universe.ts 的 isSyntheticProduct 用的是同一个前缀集合
- * （该文件出于独立性考虑保留自己的正则，二者不做强耦合），但语义一致：
- * 四个明确前缀而不是裸 "NC"，避免误伤 NCASH 这类真实币种。
+ * 与 src/lib/screener/universe.ts 的 assetClassOf 用的是同一个前缀集合
+ * （该文件出于独立性考虑保留自己的正则，二者不做强耦合）。两边的**粒度**
+ * 不同是刻意的：这里是交易对列表的 5 个 Tab，screener 那边只有 3 个分栏
+ * （NCSK 与 NCSI 合并成「美股代币」、NCFX 直接排除）。共同点是都用四个
+ * 明确前缀而不是裸 "NC"，避免误伤 NCASH 这类真实币种。
  */
 
 export type InstrumentCategory = "crypto" | "commodities" | "forex" | "stocks" | "indices";

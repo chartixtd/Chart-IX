@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { compressionRatio, volumeRatio, BARS_24H, BARS_6H, VOLUME_RATIO_MIN } from "./pool-metrics";
-import { fetchPoolMetrics, fetchReviewBars, REVIEW_BARS } from "./pool-metrics";
+import { fetchPoolMetrics, fetchReviewBars, REVIEW_BARS, SCAN_BARS } from "./pool-metrics";
 import { getFuturesKlines } from "@/lib/bingx/market";
 
 vi.mock("@/lib/bingx/market", () => ({ getFuturesKlines: vi.fn() }));
@@ -120,41 +120,44 @@ describe("fetchPoolMetrics 顺带留下的复核 K 线", () => {
     klines.mockImplementation(async () => series(BARS_24H * 3));
   });
 
-  it("只留点名的那几个币，其余一根都不留", async () => {
-    const out = await fetchPoolMetrics(["A-USDT", "B-USDT"], new Set(["A-USDT"]));
-    expect([...out.bars.keys()]).toEqual(["A-USDT"]);
+  // 从「只留点名的那几个」改成「池内每个都留」：这份 K 线现在同时是明细层的
+  // 价格序列（取代了此前那次 CoinGlass price/history），而谁会被选进明细层
+  // 要等压缩度排完名才知道，没法提前点名。
+  it("池内每个标的都留 K 线", async () => {
+    const out = await fetchPoolMetrics(["A-USDT", "B-USDT"]);
+    expect([...out.bars.keys()].sort()).toEqual(["A-USDT", "B-USDT"]);
   });
 
-  it("最多留最近 REVIEW_BARS 根，且转成了流水线通用的形状", async () => {
-    const out = await fetchPoolMetrics(["A-USDT"], new Set(["A-USDT"]));
+  it("最多留最近 SCAN_BARS 根，且转成了流水线通用的形状", async () => {
+    klines.mockImplementation(async () => series(SCAN_BARS * 2));
+    const out = await fetchPoolMetrics(["A-USDT"]);
     const bars = out.bars.get("A-USDT")!;
-    expect(bars).toHaveLength(REVIEW_BARS);
+    expect(bars).toHaveLength(SCAN_BARS);
     // 留的是最近的那一段，不是最早的
-    expect(bars[bars.length - 1].time).toBe((BARS_24H * 3 - 1) * 1_800_000);
+    expect(bars[bars.length - 1].time).toBe((SCAN_BARS * 2 - 1) * 1_800_000);
     expect(bars[0].high).toBe("101");
   });
 
-  it("压缩度算不出来的币，K 线照样留——那是两件事", async () => {
-    // 只有 10 根，凑不出 24 小时，compressionRatio 返回 null；但这个币可能
+  it("根数不足 SCAN_BARS 时有多少留多少", async () => {
+    const out = await fetchPoolMetrics(["A-USDT"]);
+    expect(out.bars.get("A-USDT")).toHaveLength(BARS_24H * 3);
+  });
+
+  it("压缩度算不出来的标的，K 线照样留——那是两件事", async () => {
+    // 只有 10 根，凑不出 24 小时，compressionRatio 返回 null；但这个标的可能
     // 正有一张活卡等着复核。
     klines.mockImplementation(async () => series(10));
-    const out = await fetchPoolMetrics(["A-USDT"], new Set(["A-USDT"]));
+    const out = await fetchPoolMetrics(["A-USDT"]);
     expect(out.metrics.has("A-USDT")).toBe(false);
     expect(out.bars.get("A-USDT")).toHaveLength(10);
   });
 
-  it("不点名时不留任何 K 线，行为跟以前一样", async () => {
-    const out = await fetchPoolMetrics(["A-USDT"]);
-    expect(out.bars.size).toBe(0);
-    expect(out.metrics.has("A-USDT")).toBe(true);
-  });
-
-  it("单个币拉失败只丢它自己", async () => {
+  it("单个标的拉失败只丢它自己", async () => {
     klines.mockImplementation(async (symbol: string) => {
       if (symbol === "A-USDT") throw new Error("boom");
       return series(BARS_24H * 3);
     });
-    const out = await fetchPoolMetrics(["A-USDT", "B-USDT"], new Set(["A-USDT", "B-USDT"]));
+    const out = await fetchPoolMetrics(["A-USDT", "B-USDT"]);
     expect(out.bars.has("A-USDT")).toBe(false);
     expect(out.bars.has("B-USDT")).toBe(true);
   });

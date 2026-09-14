@@ -993,12 +993,12 @@
     "filters": {
       "volume": "24H 成交量 ≥",
       "amplitude": "24H 振幅",
-      "market_cap": "市值 ≥",
+      "market_cap": "市值 ≥（仅加密）",
       "direction": "方向",
       "dir_all": "全部",
       "dir_long": "Long",
       "dir_short": "Short",
-      "quiet_rank": "取最安静的 {n} 个"
+      "quiet_rank": "每栏取最安静的 {crypto}/{commodity}/{stock} 个"
     },
     "columns": {
       "symbol": "Symbol",
@@ -1013,10 +1013,10 @@
       "actions": "操作",
       "data_missing": "数据缺失",
       "ignition": "点火",
-      "ignition_hint": "刚突破前 6 小时区间（{level}）——唯一没有确认延迟的信号"
+      "ignition_hint": "刚突破前 6 小时区间（{level}）——唯一没有确认延迟的信号",
+      "market_cap_na": "—",
+      "market_cap_na_hint": "代币化标的没有可比的市值口径"
     },
-    "table_title": "主扫描表",
-    "table_hint": "按总分排序 · 点击行查看详情",
     "action_long": "做多",
     "action_short": "做空",
     "action_view": "查看",
@@ -1142,6 +1142,21 @@
       "trend_best": "最强顺势",
       "medium": "中强",
       "healthy": "健康"
+    },
+    "lanes": {
+      "crypto": {
+        "title": "加密货币",
+        "hint": "全市场成交额 ≥ 2000 万，市值 ≥ 3000 万"
+      },
+      "commodity": {
+        "title": "大宗商品",
+        "hint": "黄金 / 白银 / 原油 / 天然气等代币化合约"
+      },
+      "stock": {
+        "title": "美股代币",
+        "hint": "个股与指数 ETF 的代币化合约"
+      },
+      "empty": "这一栏这一轮没有达标的标的。"
     }
   },
   "pwa": {

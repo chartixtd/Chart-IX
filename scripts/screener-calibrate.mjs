@@ -28,7 +28,7 @@ import { getPriceHistory } from "../src/lib/coinglass/price-history.ts";
 import { getTakerVolumeHistory, CVD_EXCHANGES } from "../src/lib/coinglass/taker-volume.ts";
 import { classifyScenario } from "../src/lib/screener/factors/scenario.ts";
 import { cvdRawRatio, CVD_WINDOW_BARS, CVD_SATURATION } from "../src/lib/screener/factors/cvd.ts";
-import { coinFromBingXSymbol, isSyntheticProduct, SERVER_GATE } from "../src/lib/screener/universe.ts";
+import { coinFromBingXSymbol, assetClassOf, SERVER_GATE } from "../src/lib/screener/universe.ts";
 
 const SAMPLE_COINS = 14;
 /** 模拟扫描的推进步长，单位是 30m K 线根数（6 根 = 3 小时） */
@@ -43,7 +43,7 @@ const q = (arr, p) => {
 
 const tickers = await getFuturesTickers();
 const pool = tickers
-  .filter((t) => t.symbol.endsWith("-USDT") && !isSyntheticProduct(t.symbol))
+  .filter((t) => t.symbol.endsWith("-USDT") && assetClassOf(t.symbol) === "crypto")
   .map((t) => ({ coin: coinFromBingXSymbol(t.symbol), vol: parseFloat(t.quoteVolume) }))
   .filter((x) => Number.isFinite(x.vol) && x.vol >= SERVER_GATE.minBingxVolumeUsd)
   .sort((a, b) => b.vol - a.vol);

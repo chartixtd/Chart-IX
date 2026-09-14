@@ -1,6 +1,7 @@
 import { getFuturesKlines } from "@/lib/bingx/market";
 import type { BingXKline } from "@/types/bingx";
 import type { CoinGlassPriceBar } from "@/lib/coinglass/types";
+import { PRICE_HISTORY_LIMIT } from "@/lib/coinglass/price-history";
 
 /**
  * 选币用的两个全池指标，来自**同一批 K 线、同一次请求**。
@@ -56,8 +57,24 @@ interface Bar {
 /**
  * 复核活卡要回看多久。24 小时足够：扫描每 15 分钟一轮，两轮之间最多差
  * 半根 K 线，48 根是给「上一轮没跑成 / 部署间隔」留的余量。
+ *
+ * 只剩 `fetchReviewBars` 的默认值在用它——池子里留下来的那份已经改成
+ * `SCAN_BARS`（336 根），是它的超集。
  */
 export const REVIEW_BARS = BARS_24H;
+
+/**
+ * 池子里给每个标的留多少根 K 线。
+ *
+ * 等于 `PRICE_HISTORY_LIMIT`，因为这份 K 线现在同时是**明细层的价格序列**
+ * ——OI 背离的摆动点识别要 7 天才找得可靠，而 OI 与 CVD 两条序列也都按
+ * 这个长度拉，三者必须等长同下标（见 types.ts 的 DETAIL_CALLS_PER_COIN）。
+ *
+ * 为什么留在池子这一趟而不是选完之后再补拉一次：pool-metrics 顶部那条
+ * 「全池连着打两趟会撞 BingX 限流」的实测结论还在生效。这一趟本来就要拉
+ * 672 根，多留 336 根只是少扔一点，不多发一个请求。
+ */
+export const SCAN_BARS = PRICE_HISTORY_LIMIT;
 
 /** BingX 的 K 线转成流水线内部通用的形状（失效判定只读 time/high/low/close）。 */
 function toPriceBar(k: BingXKline): CoinGlassPriceBar {
@@ -134,35 +151,39 @@ export function volumeRatio(bars: Bar[]): number | null {
 }
 
 export interface PoolScan {
-  /** 压缩度算得出来的币。选币的排序键。 */
+  /** 压缩度算得出来的标的。选币的排序键。 */
   metrics: Map<string, PoolMetrics>;
   /**
-   * `keepBarsFor` 点名的币的最近 24 小时 K 线。
+   * 池内每个标的最近 `SCAN_BARS`（336）根 K 线。
    *
-   * 存在的理由是卡片的失效复核：判「有没有碰到失效线」只要价格 K 线，
-   * 而这一批 K 线**已经在手上**了——全池 250 个币本来就要拉一遍来算压缩度。
-   * 不复用它，复核就只能走 CoinGlass 明细层，而那里每轮只够扫 24 个币，
-   * 活卡一旦掉出那 24 个就再也没人复核，只能一直挂着。
+   * 两个消费者，都是**白捡的**——这一趟本来就要为压缩度拉 672 根：
+   *
+   *   ① 卡片的失效复核：判「有没有碰到失效线」只要价格 K 线。不复用它，
+   *      复核就只能走 CoinGlass 明细层，而那里每轮只够扫三十几个标的，
+   *      活卡一旦掉出名额就再也没人复核，只能一直挂着。
+   *   ② **明细层的价格序列**：取代了此前那次 `CoinGlass price/history`
+   *      （同一个交易所、同一个粒度的同一份数据，却花了第二次钱，还占着
+   *      最稀缺的那份配额）。见 types.ts 的 DETAIL_CALLS_PER_COIN。
+   *
+   * 从 48 根放宽到 336 根的内存代价：池子约 250 个标的 × 336 根 ≈ 8.4 万个
+   * 对象，几十 MB 量级，而这一趟的原始 672 根数组本来就更大。
    */
   bars: Map<string, CoinGlassPriceBar[]>;
 }
 
 /**
- * 给全池算这两个指标，顺带留下点名那几个币的 K 线。
+ * 给全池算这两个指标，并留下每个标的的 K 线。
  *
- * **压缩度算不出来的币不进 metrics**——它是排序键，没有键就没法排队。
+ * **压缩度算不出来的标的不进 metrics**——它是排序键，没有键就没法排队。
  * 量能比算不出来的仍然进，只是 volumeRatio 为 null。
  *
- * `bars` 的收集**在压缩度那道门之前**：一个币可能 K 线不足 48 根算不出
+ * `bars` 的收集**在压缩度那道门之前**：一个标的可能 K 线不足 48 根算不出
  * 压缩度，却有一张活卡等着复核，这两件事没有关系。
  *
- * 单个币失败只丢它自己：一个币的 K 线拿不到就把整轮扫描拖垮，是这套
- * 流水线里最不该出现的失败模式。
+ * 单个标的失败只丢它自己：一个标的的 K 线拿不到就把整轮扫描拖垮，
+ * 是这套流水线里最不该出现的失败模式。
  */
-export async function fetchPoolMetrics(
-  symbols: string[],
-  keepBarsFor: ReadonlySet<string> = new Set()
-): Promise<PoolScan> {
+export async function fetchPoolMetrics(symbols: string[]): Promise<PoolScan> {
   const metrics = new Map<string, PoolMetrics>();
   const kept = new Map<string, CoinGlassPriceBar[]>();
   let cursor = 0;
@@ -174,9 +195,7 @@ export async function fetchPoolMetrics(
       const symbol = symbols[i];
       try {
         const bars = await getFuturesKlines(symbol, "30m", BARS_14D);
-        if (keepBarsFor.has(symbol)) {
-          kept.set(symbol, bars.slice(-REVIEW_BARS).map(toPriceBar));
-        }
+        kept.set(symbol, bars.slice(-SCAN_BARS).map(toPriceBar));
         const compression = compressionRatio(bars);
         if (compression === null) continue;
         metrics.set(symbol, { compression, volumeRatio: volumeRatio(bars) });
@@ -191,18 +210,34 @@ export async function fetchPoolMetrics(
 }
 
 /**
- * 补拉几个币的 K 线。给「有活卡、但这一轮根本没进候选池」的币用。
+ * 补拉几个标的的 K 线。两个用途，靠 `limit` 区分：
  *
- * 这种币通常是 0 个（粗筛只看市值与成交量，有卡的币多半还在池子里），
- * 但只要出现一个，它的卡就会因为没人复核而一直挂着——而这条路径上
- * 「没人复核」是唯一会让「碰线才失效」失灵的缺口，所以宁可多拉几次。
+ * ① **卡片复核**（默认 `REVIEW_BARS` = 48 根）：给「有活卡、但这一轮根本
+ *    没进候选池」的标的用。这种通常是 0 个（粗筛只看市值与成交量，有卡的
+ *    多半还在池子里），但只要出现一个，它的卡就会因为没人复核而一直挂着
+ *    ——而这条路径上「没人复核」是唯一会让「碰线才失效」失灵的缺口，
+ *    所以宁可多拉几次。
+ *
+ * ② **明细层的价格序列**（`PRICE_HISTORY_LIMIT` = 336 根）：这一趟取代了
+ *    此前那次 `CoinGlass price/history`，见 types.ts 里 DETAIL_CALLS_PER_COIN
+ *    的说明。只给选中的那三十几个标的拉，**不是给全池拉**——全池每个都留
+ *    336 根，内存上是几十万个对象，而这一趟只多几十次 BingX 请求，不占
+ *    CoinGlass 那份稀缺配额。
+ *
+ * 已实测（2026-09-14，BTC / NVDA / XAU）：BingX 的 336 根 30m K 线与
+ * CoinGlass 的 OI、CVD 两条序列**逐根时间戳全等**，也与此前那条
+ * `price/history?exchange=BingX` 全等。OI 背离判定依赖「同下标 = 同时刻」，
+ * 这个前提在换源之后仍然成立。
  */
-export async function fetchReviewBars(symbols: string[]): Promise<Map<string, CoinGlassPriceBar[]>> {
+export async function fetchReviewBars(
+  symbols: string[],
+  limit: number = REVIEW_BARS
+): Promise<Map<string, CoinGlassPriceBar[]>> {
   const out = new Map<string, CoinGlassPriceBar[]>();
   await Promise.all(
     symbols.map(async (symbol) => {
       try {
-        const bars = await getFuturesKlines(symbol, "30m", REVIEW_BARS);
+        const bars = await getFuturesKlines(symbol, "30m", limit);
         if (bars.length > 0) out.set(symbol, bars.map(toPriceBar));
       } catch {
         // 拉不到就是这一轮复核不了，卡片继续活着。

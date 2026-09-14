@@ -1,15 +1,24 @@
 import { describe, it, expect } from "vitest";
 import { buildScanTargets } from "./pipeline";
 import { SERVER_GATE } from "./universe";
-import { QUIET_RANK_TAKE } from "./types";
+import { CLASS_TABLE_TAKE, QUIET_RANK_TAKE } from "./types";
 import { VOLUME_RATIO_MIN } from "./pool-metrics";
 import type { PoolMetrics } from "./pool-metrics";
 import type { PreselectCandidate } from "./universe";
 import type { CachedVolume } from "./volume-cache";
 import type { BingXTicker } from "@/types/bingx";
 
-function candidate(coin: string): PreselectCandidate {
-  return { bingxSymbol: `${coin}-USDT`, coin, marketCap: 1e8, marketCapRank: 200 };
+function candidate(
+  coin: string,
+  assetClass: PreselectCandidate["assetClass"] = "crypto"
+): PreselectCandidate {
+  return {
+    bingxSymbol: `${coin}-USDT`,
+    coin,
+    assetClass,
+    marketCap: assetClass === "crypto" ? 1e8 : 0,
+    marketCapRank: assetClass === "crypto" ? 200 : 0,
+  };
 }
 
 function ticker(coin: string, high: number, low: number, last = 10): BingXTicker {
@@ -28,7 +37,11 @@ function ticker(coin: string, high: number, low: number, last = 10): BingXTicker
 }
 
 const OK_VOL = SERVER_GATE.minVolumeUsd;
-const vol = (v: number): CachedVolume => ({ volumeUsd: v, updatedAt: 1 });
+const vol = (v: number, price: number | null = null): CachedVolume => ({
+  volumeUsd: v,
+  price,
+  updatedAt: 1,
+});
 
 /**
  * `comp` 是排序键（压缩度）。不给就用 amp 顶上——只是为了让「小的排前面」
@@ -43,9 +56,10 @@ function build(
     comp?: number | null;
     vr?: number | null;
     volumeUsd?: number | null;
+    cls?: PreselectCandidate["assetClass"];
   }>
 ) {
-  const cands = specs.map((s) => candidate(s.coin));
+  const cands = specs.map((s) => candidate(s.coin, s.cls ?? "crypto"));
   const tickers = new Map(
     specs.map((s) => [`${s.coin}-USDT`, ticker(s.coin, 100 * (1 + s.amp / 100), 100)])
   );
@@ -181,5 +195,79 @@ describe("buildScanTargets", () => {
 
   it("成交量恰好等于门槛时放行（门槛是 ≥ 不是 >）", () => {
     expect(build([{ coin: "EDGE", amp: 5, volumeUsd: OK_VOL }])).toHaveLength(1);
+  });
+});
+
+/*
+ * 分栏的全部意义在于**三栏各排各的名**。压缩度是无量纲比值，三类标的的
+ * 振幅量级差着数倍，混排的实测结果是代币化股票拿走前 20 名里的 14 个、
+ * 前三名的 6h 振幅精确等于 0.00（美股休市、根本没在交易）。
+ */
+describe("buildScanTargets 分栏", () => {
+  it("压缩度最低的股票挤不掉任何一个加密的名额", () => {
+    // 股票的压缩度全部比加密低一个量级——混排的话它们会包揽榜首。
+    const specs = [
+      ...Array.from({ length: CLASS_TABLE_TAKE.crypto }, (_, i) => ({
+        coin: `C${i}`,
+        amp: 5,
+        comp: 0.5 + i * 0.01,
+      })),
+      ...Array.from({ length: 5 }, (_, i) => ({
+        coin: `S${i}`,
+        amp: 1,
+        comp: 0.001 + i * 0.0001,
+        cls: "stock" as const,
+      })),
+    ];
+    const out = build(specs);
+    const crypto = out.filter((t) => t.candidate.assetClass === "crypto");
+    expect(crypto).toHaveLength(CLASS_TABLE_TAKE.crypto);
+    expect(out.filter((t) => t.candidate.assetClass === "stock")).toHaveLength(5);
+  });
+
+  it("每一栏各自封顶在自己的名额上", () => {
+    const specs = Array.from({ length: CLASS_TABLE_TAKE.stock + 6 }, (_, i) => ({
+      coin: `S${i}`,
+      amp: 1,
+      comp: 0.1 + i * 0.01,
+      cls: "stock" as const,
+    }));
+    expect(build(specs)).toHaveLength(CLASS_TABLE_TAKE.stock);
+  });
+
+  it("某一栏候选不够时空着，不从别的栏借", () => {
+    // 大宗商品常态就只有四五个够格的，这是预期状态不是异常。
+    const specs = [
+      ...Array.from({ length: CLASS_TABLE_TAKE.crypto + 10 }, (_, i) => ({
+        coin: `C${i}`,
+        amp: 5,
+        comp: 0.5 + i * 0.01,
+      })),
+      { coin: "XAU", amp: 0.3, comp: 0.2, cls: "commodity" as const },
+    ];
+    const out = build(specs);
+    expect(out.filter((t) => t.candidate.assetClass === "crypto")).toHaveLength(
+      CLASS_TABLE_TAKE.crypto
+    );
+    expect(out.filter((t) => t.candidate.assetClass === "commodity")).toHaveLength(1);
+    // 加密多出来的那 10 个没有去填商品空着的名额
+    expect(out).toHaveLength(CLASS_TABLE_TAKE.crypto + 1);
+  });
+
+  it("栏内仍然按压缩度升序", () => {
+    const out = build([
+      { coin: "S2", amp: 1, comp: 0.3, cls: "stock" },
+      { coin: "S0", amp: 1, comp: 0.1, cls: "stock" },
+      { coin: "S1", amp: 1, comp: 0.2, cls: "stock" },
+    ]);
+    expect(out.map((t) => t.candidate.coin)).toEqual(["S0", "S1", "S2"]);
+  });
+
+  it("量能比这道否决门在每一栏里独立生效", () => {
+    const out = build([
+      { coin: "S0", amp: 1, comp: 0.1, vr: 0.1, cls: "stock" },
+      { coin: "S1", amp: 1, comp: 0.2, cls: "stock" },
+    ]);
+    expect(out.map((t) => t.candidate.coin)).toEqual(["S1"]);
   });
 });

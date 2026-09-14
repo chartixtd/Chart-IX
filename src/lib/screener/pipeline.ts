@@ -4,7 +4,6 @@ import { fetchMarketCapRows } from "@/lib/market-cap-fetch";
 import { runWithConcurrency } from "@/lib/coinglass/client";
 import { getFundingRateList } from "@/lib/coinglass/market";
 import { getOpenInterestHistory } from "@/lib/coinglass/open-interest";
-import { getPriceHistory } from "@/lib/coinglass/price-history";
 import { getTakerVolumeHistory } from "@/lib/coinglass/taker-volume";
 import type {
   CoinGlassFundingRow,
@@ -13,7 +12,8 @@ import type {
   CoinGlassOiBar,
 } from "@/lib/coinglass/types";
 import type { BingXTicker } from "@/types/bingx";
-import { preselect, amplitudeFromTicker, SERVER_GATE } from "./universe";
+import { preselect, amplitudeFromTicker, sameInstrument, SERVER_GATE } from "./universe";
+import type { AssetClass } from "./universe";
 import { fetchPoolMetrics, fetchReviewBars, VOLUME_RATIO_MIN } from "./pool-metrics";
 import type { PoolMetrics } from "./pool-metrics";
 import type { PreselectCandidate } from "./universe";
@@ -36,7 +36,12 @@ import { classifyScenario } from "./factors/scenario";
 import { scenarioInvalidated } from "./invalidation";
 import { detectIgnition } from "./ignition";
 import type { Direction, ScannerRow, ScannerPayload } from "./types";
-import { QUIET_RANK_TAKE, CARD_RESERVE_SLOTS, CARD_MAX_LIVE, SCANNER_PAYLOAD_VERSION } from "./types";
+import {
+  CLASS_TABLE_TAKE,
+  CARD_RESERVE_SLOTS,
+  CARD_MAX_LIVE,
+  SCANNER_PAYLOAD_VERSION,
+} from "./types";
 
 /** 用户实际下单的交易所。价格与资金费率都取这一家。 */
 export const BINGX_EXCHANGE = "BingX";
@@ -85,14 +90,15 @@ export interface ScanTarget {
   change24h: number | null;
   /**
    * 进主表还是只坐复核名额。
-   * 复核名额上的币这一轮照样被完整扫描（要算出它的场景还在不在），
-   * 但**不进主表**——主表是「振幅前 20」，它已经不在里面了。
+   * 复核名额上的标的这一轮照样被完整扫描（要算出它的场景还在不在），
+   * 但**不进主表**——主表是各分栏各自的压缩度前 N，它已经不在里面了。
    */
   inMainTable: boolean;
 }
 
 /**
- * 选币：成交量门槛 + 振幅排名。**这一整段不花任何上游调用。**
+ * 选币：成交量门槛 + 撞名探测 + **分栏各自的压缩度排名**。
+ * **这一整段不花任何上游调用。**
  *
  * T24 之前这里是「预排序（爆仓异常度 + 振幅各半）挑出 N 个 → 行情层逐个调
  * pairs-markets 拿成交额 → 不达标的丢掉」。那套的毛病是成交额门槛只对
@@ -133,6 +139,25 @@ export function buildScanTargets(
       typeof ticker.lastPrice === "number" ? ticker.lastPrice : parseFloat(ticker.lastPrice);
     if (!Number.isFinite(price) || price <= 0) continue;
 
+    // **代号撞车的探测。** BingX 的代币化标的要映射成 CoinGlass 的币名才能
+    // 拉 OI 与 CVD，而有一类映射会静默拿到完全不相干的数据：
+    // `NCSKCVX2USD-USDT` 是雪佛龙（$212.11），CoinGlass 的 `CVX` 是
+    // Convex Finance（$2.127）。不报错、不缺字段，只是整行是另一个标的的。
+    //
+    // universe.ts 的 NC_COIN_ALIAS 只能处理**已知**的那几个（CoinGlass 自己
+    // 改了号的 QNT→QNTX / STX→STXX / BB→BBX），黑名单管不住将来新上的标的，
+    // 而 BingX 每周都在上新。价格对照管得住，而且对新标的自动生效。
+    //
+    // 只对代币化标的做：加密不能做，`1000PEPE-USDT` 的报价是 CoinGlass
+    // `PEPE` 的一千倍，合约乘数会让每一个带乘数的币都被误判成撞名。
+    if (candidate.assetClass !== "crypto" && !sameInstrument(price, cached.price)) {
+      console.warn(
+        `[screener] ${candidate.bingxSymbol} → CoinGlass "${candidate.coin}" 报价对不上` +
+          `（BingX ${price} vs ${cached.price}），当作代号撞车排除`
+      );
+      continue;
+    }
+
     // 压缩度算不出来的币直接排除。这跟量能比的处理刻意相反（那个算不出来
     // 就不拦）：量能比是一道**否决门**，证明不了在萎缩不等于在萎缩；
     // 压缩度是**排序键**，没有键就没法排队，硬塞进来只能给它一个编造的
@@ -172,6 +197,21 @@ export function buildScanTargets(
       a.candidate.bingxSymbol.localeCompare(b.candidate.bingxSymbol)
   );
 
+  // **三个分栏各排各的名。** 压缩度是无量纲比值，而三类标的的振幅量级差着
+  // 数倍（实测全池：加密中位 6.17%、代币化股票中位 1.70%），混在一张表里
+  // 取前 N 的实测结果是代币化股票拿走前 20 名里的 14 个、前三名的 6h 振幅
+  // 精确等于 0.00（美股休市、根本没在交易）。分栏之后每一栏只跟自己比。
+  //
+  // 上面那次全局 sort 不是白排的：分组后各组内部仍然保持压缩度升序，
+  // 所以这里只要按组切片，不必再排一次。
+  const byClass = new Map<AssetClass, ScanTarget[]>();
+  for (const t of targets) {
+    const k = t.candidate.assetClass;
+    const list = byClass.get(k);
+    if (list) list.push(t);
+    else byClass.set(k, [t]);
+  }
+
   // **先剔掉成交量萎缩的，再取前 20**——这个顺序换过一次，换之前是反的
   // （先取前 20、再从这 20 个里剔），当时的理由是：「合格的里面取前 20」会用
   // 第 21、22 名把空位补满，等于放宽了压缩度这道排名。
@@ -192,14 +232,25 @@ export function buildScanTargets(
   //
   // 量能比算不出来（null）时放行：证明不了在萎缩不等于在萎缩，拿一个算不
   // 出来的指标删行只会让榜单无声变短。
-  const picked = targets
-    .filter((t) => t.volumeRatio === null || t.volumeRatio >= VOLUME_RATIO_MIN)
-    .slice(0, QUIET_RANK_TAKE);
+  //
+  // 每一栏各取各的名额（CLASS_TABLE_TAKE）。某一栏候选不够时**空着**，
+  // 不从别的栏借——借了就等于回到混排，而混排正是分栏要解决的问题。
+  // 大宗商品那一栏常态就只有四五个够格的（黄金/WTI/布伦特/白银），
+  // 名额比候选多是预期状态，不是异常。
+  const picked: ScanTarget[] = [];
+  for (const cls of ["crypto", "stock", "commodity"] as const) {
+    const take = CLASS_TABLE_TAKE[cls];
+    const lane = (byClass.get(cls) ?? []).filter(
+      (t) => t.volumeRatio === null || t.volumeRatio >= VOLUME_RATIO_MIN
+    );
+    picked.push(...lane.slice(0, take));
+  }
 
-  // 已有卡片但这轮掉出前 20 的币，坐配额里空着的那几个名额继续扫。
+  // 已有卡片但这轮掉出各自分栏名额的标的，坐配额里空着的那几个名额继续扫。
   // 不这么做的话，它们这一轮算不出场景，卡片会因为「排名掉了」而消失
   // ——而卡片消失必须只意味着「信号没了」，否则那个信号就不可信了。
-  // 它们**追加**在 picked 之后而不是顶掉谁：主表的 20 行一个都不少。
+  // 它们**追加**在 picked 之后而不是顶掉谁：三栏的行数一个都不少。
+  // 这些名额跨分栏共用，与「卡片不分类」是一致的。
   const inMain = new Set(picked.map((t) => t.candidate.bingxSymbol));
   const needsReserve = targets.filter(
     (t) => cardSymbols.has(t.candidate.bingxSymbol) && !inMain.has(t.candidate.bingxSymbol)
@@ -213,12 +264,12 @@ export function buildScanTargets(
   //
   // 4 个名额当初是按「每轮判出场景的只有 3–4 个币」定的，那是六场景时代的
   // 数字。点火卡出现得比场景卡频繁得多，而且**刚点火的币按定义正在变吵**，
-  // 很容易下一轮就掉出「最安静的 20 个」——这两件事叠起来，挤爆的概率比
-  // 当初高。真挤爆了就该调 QUIET_RANK_TAKE / CARD_RESERVE_SLOTS 的配比，
-  // 但那要拿线上数据定，不是现在拍。
+  // 很容易下一轮就掉出各自分栏的名额——这两件事叠起来，挤爆的概率比当初高，
+  // 而分三栏之后候选面又宽了一截。真挤爆了就该调 CLASS_TABLE_TAKE /
+  // CARD_RESERVE_SLOTS 的配比，但那要拿线上数据定，不是现在拍。
   if (needsReserve.length > CARD_RESERVE_SLOTS) {
     console.warn(
-      `[screener] 复核名额不够：${needsReserve.length} 个有卡片的币掉出主表，` +
+      `[screener] 复核名额不够：${needsReserve.length} 个有卡片的标的掉出主表，` +
         `只能复核 ${CARD_RESERVE_SLOTS} 个，其余 ${needsReserve.length - CARD_RESERVE_SLOTS} 张卡片会因为排名而不是因为信号消失`
     );
   }
@@ -227,17 +278,21 @@ export function buildScanTargets(
 }
 
 /**
- * 服务端一次算出整池榜单。四段式，一轮固定 `1 + QUIET_RANK_TAKE × 3` 次
- * CoinGlass 调用（当前 61 次）：
+ * 服务端一次算出整池榜单。四段式，一轮最多 `2 + DEEP_SCAN_LIMIT × 2` 次
+ * CoinGlass 调用（当前 74 次，配额是 75）：
  *
- *   ① 批量层（1 次调用）：BingX ticker（0 次）+ CoinGecko 市值（0 次）+
- *      `funding-rate/exchange-list`（1 次，全币资金费率，仅供展示）。
- *   ② 粗筛 `preselect()`：0 次调用，只用批量层已有的数据。
+ *   ① 批量层（2 次调用）：BingX ticker（0 次）+ CoinGecko 市值（0 次）+
+ *      `funding-rate/exchange-list`（全币资金费率，仅供展示）。
+ *   ② 粗筛 `preselect()`：0 次调用，只用批量层已有的数据。**这一步之后
+ *      候选池里同时有加密、代币化大宗商品、代币化美股三类**，各自带着
+ *      `assetClass`（见 universe.ts 的 assetClassOf）。
  *   ③ 选币 `buildScanTargets()`：0 次调用。成交量门槛读 screener_volume_cache
- *      （由 cron 空转的 tick 轮转刷新，见 volume-cache.ts），振幅排名取前
- *      `QUIET_RANK_TAKE` 个（**最安静的**，不是最吵的）。
- *   ④ 明细层（`QUIET_RANK_TAKE × 3` 次）：open-interest/aggregated-history +
- *      price/history + 聚合版 taker-buy-sell-volume。
+ *      （由 cron 空转的 tick 轮转刷新，见 volume-cache.ts），然后**三个分栏
+ *      各按压缩度排各的名**，各取 `CLASS_TABLE_TAKE` 里自己那份名额。
+ *   ④ 明细层（每个标的 2 次）：open-interest/aggregated-history +
+ *      聚合版 taker-buy-sell-volume。**价格序列不在这里**——它来自 ③ 之前
+ *      那趟全池 BingX K 线，那份数据本来就要拉（算压缩度），此前却又花一次
+ *      CoinGlass 调用重新拉了一遍同一个交易所的同一个粒度。
  *
  * `BATCH_LAYER_CALLS + DETAIL_CALLS_PER_COIN × DEEP_SCAN_LIMIT ≤ RATE_LIMIT_PER_MIN`
  * 这条不等式仍然是硬约束（推导式与断言测试见 types.ts）。**它踩过一次真实的坑**：
@@ -338,43 +393,57 @@ export async function runScan(): Promise<ScannerPayload> {
   const liveCards = previousCards.filter((c) => !c.expired);
   const cardSymbols = new Set(liveCards.map((c) => c.symbol));
 
-  // 全池那趟 K 线顺手把有活卡的币留下来（不额外发请求，它本来就要拉全池）。
-  const pool = await fetchPoolMetrics(
-    candidates.map((c) => c.bingxSymbol),
-    cardSymbols
-  );
+  // **先用成交量缓存把候选削一遍，再去拉 K 线。**
+  //
+  // 这道门原本只在 buildScanTargets 里执行，结果是全池每个候选都要拉一趟
+  // 672 根 K 线，然后其中一大半因为成交量不达标被立刻丢掉。加上代币化标的
+  // 之后这笔浪费翻了一倍多（BingX 那边光 NC 前缀就有 338 个），而门槛本身
+  // 不挑时机——它只读缓存，在这里执行和在那里执行的结果一模一样。
+  //
+  // buildScanTargets 里那道门**没有删**：它是那个函数自身契约的一部分
+  // （它的单测直接喂候选，不经过这里），保留等于双保险，代价是零。
+  //
+  // 有活卡但成交量不达标的标的会因此不在池子里，它们的复核 K 线走下面
+  // `missing` 那条补拉路径——那条路径本来就是为「有卡但没进候选池」准备的。
+  const scanPool = candidates.filter((c) => {
+    const cached = volumeCache.get(c.coin);
+    return cached !== undefined && cached.volumeUsd >= SERVER_GATE.minVolumeUsd;
+  });
+
+  // 这一趟 K 线同时供三处：压缩度与量能比（选币）、卡片的失效复核、
+  // 以及明细层的价格序列（取代了此前那次 CoinGlass price/history）。
+  const pool = await fetchPoolMetrics(scanPool.map((c) => c.bingxSymbol));
   const metrics = pool.metrics;
   if (metrics.size === 0) {
     // 全池一个都没拉到 = BingX 那一侧整个挂了。排序键全缺，榜单必然是空的，
     // 与其返回一份空榜让人以为「市场没机会」，不如把原因喊出来。
     console.error("[screener] 全池指标为空，BingX K 线可能不可用——这一轮没有任何候选");
   }
-  const staged = buildScanTargets(candidates, tickerBySymbol, volumeCache, metrics, cardSymbols);
+  const staged = buildScanTargets(scanPool, tickerBySymbol, volumeCache, metrics, cardSymbols);
 
-  // ④ 明细层：三个端点共用同一个并发池，所以并发上限是对上游的真实总上限。
-  // staged 现在最多 DEEP_SCAN_LIMIT 个，入队顺序与下面取结果的 base + 0..2 下标算术
-  // 保持原样不动（评审逐个验算过的对齐关系，见下方注释）。
+  // ④ 明细层：两个端点共用同一个并发池，所以并发上限是对上游的真实总上限。
+  // staged 现在最多 DEEP_SCAN_LIMIT 个，入队顺序与下面取结果的 base + 0..1 下标算术
+  // 必须严格对应。
   //
-  // T21 退役 Zone/Sweep 之后这里从 4 个端点降到 3 个（去掉了 getLiquidationHistory），
-  // 下标基数因此要跟着从 `i * 4` 改成 `i * 3`——这是这次改动最容易漏改的一处：
-  // 只改入队数量、忘了改下标基数，不会报错，只会让每个币从这里往后的
-  // oiBars/priceBars/taker 全部读到别的币的数据，分数悄悄整体错位。
-  // 手工验算（staged 有 3 个币时，detailTasks 的 9 个元素分别对应谁）：
-  //   detailTasks = [oi0, price0, taker0, oi1, price1, taker1, oi2, price2, taker2]
-  //   i=0 → base=0 → detail[0]=oi0  detail[1]=price0  detail[2]=taker0
-  //   i=1 → base=3 → detail[3]=oi1  detail[4]=price1  detail[5]=taker1
-  //   i=2 → base=6 → detail[6]=oi2  detail[7]=price2  detail[8]=taker2
+  // 这里从 3 个端点降到 2 个（去掉了 getPriceHistory），下标基数因此跟着从
+  // `i * 3` 改成 `i * 2`——这是这次改动最容易漏改的一处：只改入队数量、
+  // 忘了改下标基数，不会报错，只会让每个标的从这里往后的 oiBars/taker
+  // 全部读到别的标的的数据，分数悄悄整体错位。
+  // 手工验算（staged 有 3 个标的时，detailTasks 的 6 个元素分别对应谁）：
+  //   detailTasks = [oi0, taker0, oi1, taker1, oi2, taker2]
+  //   i=0 → base=0 → detail[0]=oi0  detail[1]=taker0
+  //   i=1 → base=2 → detail[2]=oi1  detail[3]=taker1
+  //   i=2 → base=4 → detail[4]=oi2  detail[5]=taker2
+  //
+  // 价格序列不在这里拉了——它来自上面那趟全池 BingX K 线（pool.bars）。
+  // 已实测三条序列逐根时间戳全等（BTC / NVDA / XAU，336 根 30m），
+  // OI 背离依赖的「同下标 = 同时刻」这个前提在换源之后仍然成立。
   const detailTasks: Array<() => Promise<unknown>> = [];
   for (const s of staged) {
     detailTasks.push(() => getOpenInterestHistory(s.candidate.coin));
-    // K 线取下单盘口（OI 判断与振幅要跟执行同源），资金流取最深的池子
-    // （CVD 统计的是整个市场的方向，薄盘口取样会让它失效）。
-    // 调用次数不变，只是 exchange 参数不同。
-    // BingX ticker 的 symbol 直接就是 CoinGlass 的 instrument_id（实测 39 个
-    // 里 38 个可用，唯一的例外是 CoinGlass 上根本查不到的币）。这样就不必
-    // 先调 pairs-markets 去找 instrument_id——那一步不但费一次调用，还会
-    // 把所有带乘数的币整个丢掉（见 runScan 顶部第 2 条）。
-    detailTasks.push(() => getPriceHistory(PRICE_EXCHANGE, s.candidate.bingxSymbol));
+    // 资金流取最深的那几个池子（CVD 统计的是整个市场的方向，薄盘口取样
+    // 会让它失效），而 K 线取下单盘口（OI 判断与振幅要跟执行同源）——
+    // 后者现在不在这里，走 pool.bars。
     detailTasks.push(() => getTakerVolumeHistory(s.candidate.coin));
   }
   const detail = await runWithConcurrency(detailTasks);
@@ -390,12 +459,15 @@ export async function runScan(): Promise<ScannerPayload> {
   const now = Date.now();
   for (let i = 0; i < staged.length; i++) {
     const s = staged[i];
-    const base = i * 3;
+    const base = i * 2;
     // 拿不到时传 []，不是 undefined——oiScore 现在吃序列，空数组和「请求失败」
     // 是同一件事，让它自己走中性分支（见 oi.ts oiScore 顶部注释）。
     const oiBars = (detail[base] as CoinGlassOiBar[] | null) ?? [];
-    const priceBars = (detail[base + 1] as CoinGlassPriceBar[] | null) ?? [];
-    const taker = (detail[base + 2] as CoinGlassTakerBar[] | null) ?? [];
+    const taker = (detail[base + 1] as CoinGlassTakerBar[] | null) ?? [];
+    // 价格序列来自全池那趟 BingX K 线。`staged` 里的标的一定在 `pool.bars` 里
+    // （它们是从 metrics 里选出来的，而 metrics 和 bars 同一趟填），
+    // `?? []` 只是不让一个说不通的数据状态把整轮扫描打断。
+    const priceBars = pool.bars.get(s.candidate.bingxSymbol) ?? [];
     scannedBars.set(s.candidate.bingxSymbol, priceBars);
 
     const price = s.price;
@@ -457,6 +529,9 @@ export async function runScan(): Promise<ScannerPayload> {
       // 0 会被任何滑块挡住，这正是「数据不全就别推荐」的正确行为。
       amplitude: amplitudeFromBars(priceBars) ?? 0,
       volumeUsd: s.volumeUsd,
+      assetClass: s.candidate.assetClass,
+      // 代币化标的这里恒为 0（见 ScannerRow.marketCap 的字段注释）——
+      // 前端要按 assetClass 决定这一列显不显示，不能直接渲染成「$0」。
       marketCap: s.candidate.marketCap,
       marketCapRank: s.candidate.marketCapRank,
       fundingRate: pickFundingRate(fundingByCoin.get(s.candidate.coin), BINGX_EXCHANGE),

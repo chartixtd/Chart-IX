@@ -1,11 +1,13 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { useMemo } from "react";
 import { usePaperAccount, usePaperOrders } from "@/hooks/usePaperTrading";
 import { useMarketStore } from "@/stores/market";
 import { useToast } from "@/components/ui/Toast";
 import type { ChartTradeMarker, ChartPriceLine } from "@/components/trade/KlineChart";
+import { buildOverlayLabels, type OverlayLabels } from "@/lib/chart/overlay-labels";
 import type { TradeMarketType } from "@/stores/tradePrefs";
 
 /**
@@ -27,6 +29,7 @@ interface Overlay {
   tradeMarkers: ChartTradeMarker[];
   priceLines: ChartPriceLine[];
 }
+
 
 const EMPTY: Overlay = { tradeMarkers: [], priceLines: [] };
 
@@ -55,6 +58,10 @@ async function postJson(url: string, body: unknown): Promise<{ success: boolean;
 export function useChartOverlay(symbol: string, market: TradeMarketType): Overlay {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const t = useTranslations("trade.chart");
+
+  // 图是 canvas，翻译进不去组件树——译文在这里一次性拼好传给 builders。
+  const labels = useMemo<OverlayLabels>(() => buildOverlayLabels(t), [t]);
 
   // ---- 模拟盘 ----
   const { data: paperAcct } = usePaperAccount(market === "paper");
@@ -104,22 +111,22 @@ export function useChartOverlay(symbol: string, market: TradeMarketType): Overla
 
   return useMemo<Overlay>(() => {
     const onDragSuccess = (queryKey: unknown[]) => queryClient.invalidateQueries({ queryKey });
-    const onDragError = (message: string) => toast(`修改止盈止损失败：${message}`, "error");
+    const onDragError = (message: string) => toast(t("tp_sl_update_failed", { message }), "error");
 
     if (market === "paper") {
       return buildPaper(symbol, paperAcct, paperOrders, () =>
         queryClient.invalidateQueries({ queryKey: ["paper", "account"] })
-      , onDragError);
+      , onDragError, labels);
     }
     if (market === "futures") {
-      return buildFutures(symbol, futuresData, () => onDragSuccess(["overlay", "futures", symbol]), onDragError);
+      return buildFutures(symbol, futuresData, () => onDragSuccess(["overlay", "futures", symbol]), onDragError, labels);
     }
     if (market === "spot") {
-      return buildSpot(symbol, spotData, () => onDragSuccess(["overlay", "spot", symbol]), onDragError);
+      return buildSpot(symbol, spotData, () => onDragSuccess(["overlay", "spot", symbol]), onDragError, labels);
     }
     return EMPTY;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [market, symbol, paperAcct, paperOrders, futuresData, spotData, queryClient]);
+  }, [market, symbol, paperAcct, paperOrders, futuresData, spotData, queryClient, labels]);
 }
 
 // ==================== builders ====================
@@ -136,29 +143,30 @@ function buildPaper(
   orders: Array<{ symbol: string; side: string; price: number; quantity: number; created_at: string; reduce_only?: boolean }> | undefined,
   onDragSuccess: () => void,
   onDragError: (message: string) => void,
+  labels: OverlayLabels,
 ): Overlay {
   const tradeMarkers: ChartTradeMarker[] = (orders ?? [])
     .filter((o) => o.symbol === symbol)
     .map((o) => ({
       time: new Date(o.created_at).getTime(),
       side: o.side === "buy" ? "buy" : "sell",
-      text: `${o.reduce_only ? "平" : "开"}${o.side === "buy" ? "多" : "空"} ${o.price}`,
+      text: labels.positionMarker(o.reduce_only ? "close" : "open", o.side === "buy" ? "long" : "short", o.price),
     }));
 
   const priceLines: ChartPriceLine[] = [];
   const pos = (acct?.positions ?? []).find((p) => p.symbol === symbol);
   if (pos) {
-    const label = pos.side === "long" ? "多" : "空";
+    const side = pos.side === "long" ? "long" : "short";
     if (pos.entry_price > 0) {
-      priceLines.push({ price: pos.entry_price, color: ENTRY_COLOR, title: `进场 ${label} ${pos.leverage}x` });
+      priceLines.push({ price: pos.entry_price, color: ENTRY_COLOR, title: labels.entry(side, pos.leverage) });
     }
     if (pos.liquidation_price > 0) {
-      priceLines.push({ price: pos.liquidation_price, color: LIQ_COLOR, title: "强平", dashed: true });
+      priceLines.push({ price: pos.liquidation_price, color: LIQ_COLOR, title: labels.liquidation, dashed: true });
     }
 
     const setTpSl = async (patch: { takeProfit?: number; stopLoss?: number }) => {
       const result = await postJson("/api/paper/positions/tp-sl", { symbol, ...patch });
-      if (!result.success) onDragError(result.error?.message ?? "未知错误");
+      if (!result.success) onDragError(result.error?.message ?? labels.unknownError);
       else onDragSuccess();
     };
 
@@ -168,7 +176,7 @@ function buildPaper(
       priceLines.push({
         price: pos.take_profit_price,
         color: TP_COLOR,
-        title: "止盈",
+        title: labels.takeProfit,
         dashed: true,
         editable: { kind: "tp", onDragEnd: (price) => setTpSl({ takeProfit: price }) },
       });
@@ -177,7 +185,7 @@ function buildPaper(
       priceLines.push({
         price: pos.stop_loss_price,
         color: SL_COLOR,
-        title: "止损",
+        title: labels.stopLoss,
         dashed: true,
         editable: { kind: "sl", onDragEnd: (price) => setTpSl({ stopLoss: price }) },
       });
@@ -198,6 +206,7 @@ function buildFutures(
   data: { positions: Array<Record<string, unknown>>; orders: Array<Record<string, unknown>> } | undefined,
   onDragSuccess: () => void,
   onDragError: (message: string) => void,
+  labels: OverlayLabels,
 ): Overlay {
   if (!data) return EMPTY;
   const priceLines: ChartPriceLine[] = [];
@@ -211,16 +220,16 @@ function buildFutures(
     const side = String(position.positionSide ?? "");
     const lev = position.leverage ?? "";
     if (isFinite(entry) && entry > 0) {
-      priceLines.push({ price: entry, color: ENTRY_COLOR, title: `进场 ${side === "LONG" ? "多" : "空"} ${lev}x` });
+      priceLines.push({ price: entry, color: ENTRY_COLOR, title: labels.entry(side === "LONG" ? "long" : "short", lev as string | number) });
     }
     if (isFinite(liq) && liq > 0) {
-      priceLines.push({ price: liq, color: LIQ_COLOR, title: "强平", dashed: true });
+      priceLines.push({ price: liq, color: LIQ_COLOR, title: labels.liquidation, dashed: true });
     }
   }
 
   const amend = async (orderId: string, newPrice: number) => {
     const result = await postJson("/api/bingx/futures/order/amend", { symbol, orderId, stopPrice: newPrice });
-    if (!result.success) onDragError(result.error?.message ?? "未知错误");
+    if (!result.success) onDragError(result.error?.message ?? labels.unknownError);
     else onDragSuccess();
   };
 
@@ -232,16 +241,16 @@ function buildFutures(
     const orderId = String(o.orderId ?? "");
     if (kind === "tp" && isFinite(stop) && stop > 0) {
       priceLines.push({
-        price: stop, color: TP_COLOR, title: "止盈", dashed: true,
+        price: stop, color: TP_COLOR, title: labels.takeProfit, dashed: true,
         editable: orderId ? { kind: "tp", onDragEnd: (p) => amend(orderId, p) } : undefined,
       });
     } else if (kind === "sl" && isFinite(stop) && stop > 0) {
       priceLines.push({
-        price: stop, color: SL_COLOR, title: "止损", dashed: true,
+        price: stop, color: SL_COLOR, title: labels.stopLoss, dashed: true,
         editable: orderId ? { kind: "sl", onDragEnd: (p) => amend(orderId, p) } : undefined,
       });
     } else if (type.toUpperCase() === "LIMIT" && isFinite(price) && price > 0) {
-      priceLines.push({ price, color: LIMIT_COLOR, title: `挂单 ${String(o.side ?? "")}`, dashed: true });
+      priceLines.push({ price, color: LIMIT_COLOR, title: labels.limitOrder(String(o.side ?? "")), dashed: true });
     }
   }
 
@@ -264,6 +273,7 @@ function buildSpot(
   data: { trades: Array<Record<string, unknown>>; orders: Array<Record<string, unknown>> } | undefined,
   onDragSuccess: () => void,
   onDragError: (message: string) => void,
+  labels: OverlayLabels,
 ): Overlay {
   if (!data) return EMPTY;
 
@@ -273,7 +283,7 @@ function buildSpot(
     return {
       time: Number(t.time ?? 0),
       side: isBuyer ? "buy" : "sell",
-      text: `${isBuyer ? "买" : "卖"} ${isFinite(price) ? price : ""}`,
+      text: labels.fillMarker(isBuyer ? "buy" : "sell", isFinite(price) ? price : ""),
     };
   });
 
@@ -291,7 +301,7 @@ function buildSpot(
       stopPrice: newPrice,
       cancelOrderId: orderId,
     });
-    if (!result.success) onDragError(result.error?.message ?? "未知错误");
+    if (!result.success) onDragError(result.error?.message ?? labels.unknownError);
     else onDragSuccess();
   };
 
@@ -302,7 +312,7 @@ function buildSpot(
     const stop = parseFloat(String(o.stopPrice ?? ""));
 
     if (type === "LIMIT" && isFinite(price) && price > 0) {
-      priceLines.push({ price, color: LIMIT_COLOR, title: `挂单 ${String(o.side ?? "")}`, dashed: true });
+      priceLines.push({ price, color: LIMIT_COLOR, title: labels.limitOrder(String(o.side ?? "")), dashed: true });
       continue;
     }
 
@@ -310,16 +320,16 @@ function buildSpot(
       const kind = classifySpotStop(String(o.side ?? ""), stop, marketPrice);
       if (kind === "tp") {
         priceLines.push({
-          price: stop, color: TP_COLOR, title: "止盈", dashed: true,
+          price: stop, color: TP_COLOR, title: labels.takeProfit, dashed: true,
           editable: { kind: "tp", onDragEnd: (p) => amend(o, p) },
         });
       } else if (kind === "sl") {
         priceLines.push({
-          price: stop, color: SL_COLOR, title: "止损", dashed: true,
+          price: stop, color: SL_COLOR, title: labels.stopLoss, dashed: true,
           editable: { kind: "sl", onDragEnd: (p) => amend(o, p) },
         });
       } else {
-        priceLines.push({ price: stop, color: LIMIT_COLOR, title: `条件单 ${String(o.side ?? "")}`, dashed: true });
+        priceLines.push({ price: stop, color: LIMIT_COLOR, title: labels.conditionalOrder(String(o.side ?? "")), dashed: true });
       }
     }
   }

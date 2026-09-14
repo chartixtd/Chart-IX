@@ -382,7 +382,23 @@
     },
     "stat_high": "24h High",
     "stat_low": "24h Low",
-    "stat_vol": "24h Vol"
+    "stat_vol": "24h Vol",
+    "chart": {
+      "side_long": "Long",
+      "side_short": "Short",
+      "entry_line": "Entry {side} {leverage}x",
+      "liq_line": "Liq.",
+      "tp_line": "TP",
+      "sl_line": "SL",
+      "limit_line": "Order {side}",
+      "conditional_line": "Stop {side}",
+      "marker_open": "Open {side} {price}",
+      "marker_close": "Close {side} {price}",
+      "marker_buy": "Buy {price}",
+      "marker_sell": "Sell {price}",
+      "tp_sl_update_failed": "Failed to update TP/SL: {message}",
+      "unknown_error": "Unknown error"
+    }
   },
   "upgrade": {
     "banner_title": "Upgrade to Chart-IX Pro",

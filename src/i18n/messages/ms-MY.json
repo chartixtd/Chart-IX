@@ -305,7 +305,23 @@
     },
     "stat_high": "24j Tinggi",
     "stat_low": "24j Rendah",
-    "stat_vol": "24j Vol"
+    "stat_vol": "24j Vol",
+    "chart": {
+      "side_long": "Long",
+      "side_short": "Short",
+      "entry_line": "Masuk {side} {leverage}x",
+      "liq_line": "Liq.",
+      "tp_line": "TP",
+      "sl_line": "SL",
+      "limit_line": "Order {side}",
+      "conditional_line": "Stop {side}",
+      "marker_open": "Buka {side} {price}",
+      "marker_close": "Tutup {side} {price}",
+      "marker_buy": "Beli {price}",
+      "marker_sell": "Jual {price}",
+      "tp_sl_update_failed": "Gagal mengemas kini TP/SL: {message}",
+      "unknown_error": "Ralat tidak diketahui"
+    }
   },
   "upgrade": {
     "banner_title": "Naik Taraf ke Chart-IX Pro",

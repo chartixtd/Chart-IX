@@ -159,6 +159,12 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
 
   // Held in state (not just refs) so the drawing layer re-renders once they exist.
   const [chartApi, setChartApi] = useState<IChartApi | null>(null);
+  // 图表自己画的时间文字（时间轴刻度、十字线上那行日期）用的是
+  // lightweight-charts 的 localization.locale，默认取 navigator.language——
+  // 浏览器是中文的人打开英文站，时间轴会画出「13 9月 '26」。这里让它跟站点
+  // 语言走。ref 是因为建图那个 effect 是 [] 依赖、只跑一次。
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
   const [candleSeries, setCandleSeries] = useState<ISeriesApi<"Candlestick"> | null>(null);
 
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
@@ -352,6 +358,7 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
         vertLine: { color: CHART.crosshair, style: 2, width: 1 },
         horzLine: { color: CHART.crosshair, style: 2, width: 1 },
       },
+      localization: { locale: localeRef.current },
       rightPriceScale: { borderColor: CHART.border },
       timeScale: {
         borderColor: CHART.border,
@@ -403,6 +410,11 @@ export function KlineChart({ symbol, interval = "1h", className, market = "spot"
       prevLastTimeRef.current = null;
     };
   }, []);
+
+  // 切语言目前会整页重挂载，这条是防将来有人把语言切换改成不重挂载的实现。
+  useEffect(() => {
+    chartApi?.applyOptions({ localization: { locale } });
+  }, [chartApi, locale]);
 
   // ---- Reset when symbol/interval changes ----
   useEffect(() => {

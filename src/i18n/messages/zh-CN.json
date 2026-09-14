@@ -382,7 +382,23 @@
     },
     "stat_high": "24h 高",
     "stat_low": "24h 低",
-    "stat_vol": "24h 量"
+    "stat_vol": "24h 量",
+    "chart": {
+      "side_long": "多",
+      "side_short": "空",
+      "entry_line": "进场 {side} {leverage}x",
+      "liq_line": "强平",
+      "tp_line": "止盈",
+      "sl_line": "止损",
+      "limit_line": "挂单 {side}",
+      "conditional_line": "条件单 {side}",
+      "marker_open": "开{side} {price}",
+      "marker_close": "平{side} {price}",
+      "marker_buy": "买 {price}",
+      "marker_sell": "卖 {price}",
+      "tp_sl_update_failed": "修改止盈止损失败：{message}",
+      "unknown_error": "未知错误"
+    }
   },
   "upgrade": {
     "banner_title": "升级至 Chart-IX Pro",

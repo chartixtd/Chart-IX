@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from "@/lib/supabase/middleware";
+import { displayName } from "./universe";
 import {
   getTelegramPushSettings,
   listTargetsFor,
@@ -165,7 +166,8 @@ export function formatAlertMessage(alerts: AlertCardData[], lang: TelegramMessag
 
   const blocks = [...groups.values()].map((cards) => {
     const rows = cards.map((a) => {
-      const coin = escapeHtml(a.symbol.replace(/-USDT$/, ""));
+      // 代币化标的要用 displayName，否则推出去的是 NCSKAAPL2USD
+      const coin = escapeHtml(displayName(a.symbol, a.coin));
       return `<b>${coin}</b> @${fmtTriggerPrice(a.firstPrice)} · OI${a.factors.oi}/CVD${a.factors.cvd}`;
     });
     return [groupHeading(cards[0], lang), ...rows].join("\n");

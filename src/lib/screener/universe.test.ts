@@ -3,6 +3,7 @@ import {
   preselect,
   assetClassOf,
   sameInstrument,
+  displayName,
   PRICE_SANITY_MAX_DEV,
   coinFromBingXSymbol,
   amplitudeFromTicker,
@@ -231,5 +232,20 @@ describe("sameInstrument（代号撞车探测）", () => {
   it("BingX 报价本身非法时放行——那条由价格校验单独负责", () => {
     expect(sameInstrument(0, 100)).toBe(true);
     expect(sameInstrument(NaN, 100)).toBe(true);
+  });
+});
+
+describe("displayName（榜单/卡片/推送上写什么名字）", () => {
+  it("代币化标的用 coin，不是去掉 -USDT 的那一坨", () => {
+    // 去 -USDT 会得到 NCSKAAPL2USD / NCCOGOLD2USD，没人读得懂
+    expect(displayName("NCSKAAPL2USD-USDT", "AAPL")).toBe("AAPL");
+    expect(displayName("NCCOGOLD2USD-USDT", "XAU")).toBe("XAU");
+    expect(displayName("NCSISP5002USD-USDT", "SP500")).toBe("SP500");
+  });
+
+  it("加密维持原样——合约乘数必须看得见", () => {
+    // 卡片上那个价格就是 1000 倍的合约价，标成 PEPE 会让人按现货价读它
+    expect(displayName("1000PEPE-USDT", "PEPE")).toBe("1000PEPE");
+    expect(displayName("BTC-USDT", "BTC")).toBe("BTC");
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { displayName } from "@/lib/screener/universe";
 import { useTranslations, useLocale } from "next-intl";
 import { cn, formatPrice, formatPercent } from "@/lib/utils";
 import type { AlertCardData } from "@/lib/screener/cards";
@@ -113,7 +114,8 @@ export function AlertCard({
   // 文案的拼装在 signal-copy.ts——主页的信号行与这张卡必须说同一句话
   const { action, verdict, trap } = signalCopy(trigger, t);
 
-  const coin = card.symbol.replace(/-USDT$/, "");
+  // 代币化标的不能靠去 -USDT 取名——那会得到 NCSKAAPL2USD。见 displayName。
+  const coin = displayName(card.symbol, card.coin);
 
   return (
     <article

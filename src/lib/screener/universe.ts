@@ -155,6 +155,24 @@ export function coinFromBingXSymbol(symbol: string): string {
 }
 
 /**
+ * 榜单、卡片、推送上这一行该写什么名字。
+ *
+ * 加密维持原样（`symbol` 去掉 -USDT）：`1000PEPE-USDT` 显示成 **1000PEPE**
+ * 而不是 PEPE，因为合约乘数是要看见的——卡片上那个价格就是 1000 倍的合约价，
+ * 标成 PEPE 会让人按现货价读它。
+ *
+ * 代币化标的用 `coin`：`NCSKAAPL2USD-USDT` 显示成 **AAPL**。去掉 -USDT
+ * 只会得到 `NCSKAAPL2USD` 这种没人读得懂的东西，而那正是加了这两栏之后
+ * 卡片与 Telegram 推送上会出现的字样。
+ *
+ * 传 `coin` 而不是在这里重算一遍，是因为它已经过了别名表
+ * （GOLD→XAU、QNT→QNTX 等）——重算等于把那张表再维护一份。
+ */
+export function displayName(symbol: string, coin: string): string {
+  return assetClassOf(symbol) === "crypto" ? symbol.replace(/-USDT$/, "") : coin;
+}
+
+/**
  * 两边报价允许差多少才仍然算「同一个标的」，%。
  *
  * **这个阈值刻意定得很松。** 它要识别的是代号撞车——两个完全不同的标的

@@ -122,6 +122,28 @@ export interface FuturesFillRecord {
   role?: string;
 }
 
+/**
+ * /openApi/swap/v2/trade/allFillOrders 返回的成交明细。
+ *
+ * 字段名和上面那个 FuturesFillRecord（以及现货的成交记录）完全不是一套：
+ * 数量叫 volume 不叫 qty，手续费币种叫 currency 不叫 commissionAsset，
+ * 时间是 "2023-07-04T20:56:01.000+0800" 这种带时区的字符串而不是毫秒数，
+ * 而且没有 symbol 字段。以 ccxt 的 fetchMyTrades 为准（它是照真实响应写的）。
+ *
+ * commission 是负数——手续费是从余额里扣走的。
+ */
+export interface FuturesFillOrder {
+  orderId: string;
+  volume: string;
+  price: string;
+  amount: string;
+  commission: string;
+  currency: string;
+  liquidatedPrice?: string;
+  liquidatedMarginRatio?: string;
+  filledTime?: string;
+}
+
 export interface FuturesForceOrder {
   symbol: string;
   orderId: string;
@@ -591,17 +613,27 @@ export async function getFuturesForceOrders(
 
 // ==================== 成交历史 ====================
 
+/**
+ * 某个交易对在一段时间内的成交明细，用来算实际手续费。
+ *
+ * 三个坑，都按 ccxt 的实现来：
+ *  1. 时间参数叫 startTs / endTs，不是别处那套 startTime / endTime；
+ *  2. 必须带 tradingUnit（CONT=张，COIN=币），默认 CONT；
+ *  3. 数组裹在 data.fill_orders 里，不是直接返回数组。
+ * 交易所对这个接口的回溯窗口是 30 天。
+ */
 export async function getFuturesAllFillOrders(
   apiKey: string, secret: string,
-  params?: { symbol?: string; orderId?: string; startTime?: number; endTime?: number; limit?: number }
-): Promise<FuturesFillRecord[]> {
-  const p: Record<string, string | number> = {};
+  params?: { symbol?: string; startTs?: number; endTs?: number; tradingUnit?: "CONT" | "COIN" }
+): Promise<FuturesFillOrder[]> {
+  const p: Record<string, string | number> = { tradingUnit: params?.tradingUnit ?? "CONT" };
   if (params?.symbol) p.symbol = params.symbol;
-  if (params?.orderId) p.orderId = params.orderId;
-  if (params?.startTime) p.startTime = params.startTime;
-  if (params?.endTime) p.endTime = params.endTime;
-  if (params?.limit) p.limit = params.limit;
-  return signedRequest(apiKey, secret, "GET", "/openApi/swap/v2/trade/allFillOrders", p);
+  if (params?.startTs) p.startTs = params.startTs;
+  if (params?.endTs) p.endTs = params.endTs;
+  const data = await signedRequest<{ fill_orders?: FuturesFillOrder[] } | FuturesFillOrder[]>(
+    apiKey, secret, "GET", "/openApi/swap/v2/trade/allFillOrders", p
+  );
+  return Array.isArray(data) ? data : (data?.fill_orders ?? []);
 }
 
 export async function getFuturesFillHistory(

@@ -50,4 +50,7 @@ export const RATE_LIMITS = {
   FUTURES_TRADE: { windowMs: 1000, max: 5 },
   LOGIN: { windowMs: 1000, max: 5 },
   ADMIN: { windowMs: 1000, max: 20 },
+  // 订单对账：一次调用可能向 BingX 发出几十个查询，所以按 10 秒窗口限，
+  // 不用 MARKET 那种按秒的宽松配额。正常用法（进页面、点刷新）够用。
+  ORDER_SYNC: { windowMs: 10_000, max: 6 },
 } as const;
